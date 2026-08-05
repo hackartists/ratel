@@ -30,6 +30,25 @@ pub fn QuizPanel() -> Element {
         None => Vec::new(),
     };
 
+    // Real analyzed-quiz title. Prefer the active aggregate's `quiz_title`;
+    // when no responses matched the filter (empty aggregates) fall back to the
+    // report's quiz cross-filter `question_title`, then to the generic chip
+    // label. Never a hardcoded sample string.
+    let panel_title = aggregates
+        .first()
+        .map(|q| q.quiz_title.clone())
+        .filter(|t| !t.trim().is_empty())
+        .or_else(|| {
+            detail
+                .report
+                .filters
+                .iter()
+                .find(|f| f.source == AnalyzeFilterSource::Quiz)
+                .map(|f| f.question_title.clone())
+                .filter(|t| !t.trim().is_empty())
+        })
+        .unwrap_or_else(|| tr.detail_panel_chip_quiz.to_string());
+
     rsx! {
         section { class: "panel", "data-panel": "quiz", "data-active": "false",
             h1 { class: "main-title",
@@ -52,7 +71,7 @@ pub fn QuizPanel() -> Element {
                     }
                     "{tr.detail_panel_chip_quiz}"
                 }
-                span { "data-quiz-title": true, "{tr.detail_quiz_title}" }
+                span { "data-quiz-title": true, "{panel_title}" }
             }
 
             if aggregates.is_empty() {
