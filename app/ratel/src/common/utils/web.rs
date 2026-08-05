@@ -80,17 +80,6 @@ pub async fn s3_put_object_native(
     use base64::Engine;
     use wasm_bindgen_futures::JsFuture;
 
-    // The native `s3_put_object` command exists only inside the Tauri WebView
-    // (`window.__TAURI_INTERNALS__.invoke`). When this tauri-web bundle is
-    // served in a plain browser — a mis-deployed web target, or a dev preview —
-    // the invoke throws `Cannot read properties of undefined (reading 'invoke')`
-    // and every upload (logo, etc.) fails. A real browser has no
-    // `tauri://localhost` → S3 cross-origin problem, so fall back to a direct
-    // presigned fetch PUT, exactly like the pure-web build does.
-    if !tauri_ipc_available().await {
-        return s3_put_object_fetch(presigned_url, content_type, file).await;
-    }
-
     #[derive(serde::Deserialize)]
     struct Resp {
         status: u16,
@@ -104,7 +93,18 @@ pub async fn s3_put_object_native(
     let bytes = js_sys::Uint8Array::new(&buf).to_vec();
     let body_b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
 
-    let resp: Resp = invoke_tauri(
+    // Try the native `s3_put_object` command first. It only exists inside the
+    // Tauri WebView (`window.__TAURI_INTERNALS__.invoke`); when this tauri-web
+    // bundle is served in a plain browser — a mis-deployed web target, or a dev
+    // preview — the invoke throws `Cannot read properties of undefined (reading
+    // 'invoke')` and `invoke_tauri` returns `Err`. In that case fall back to a
+    // direct presigned fetch PUT: a real browser has no `tauri://localhost` → S3
+    // cross-origin problem, so the PUT works exactly like the pure-web build.
+    //
+    // Falling back on `Err` (bridge missing) rather than on a non-2xx status
+    // keeps native S3 errors inside the Tauri app intact — a genuine 403/expired
+    // presign there still surfaces as an error instead of a masked CORS failure.
+    let invoke_result: Result<Resp> = invoke_tauri(
         "s3_put_object",
         serde_json::json!({
             "url": presigned_url,
@@ -112,7 +112,15 @@ pub async fn s3_put_object_native(
             "bodyB64": body_b64,
         }),
     )
-    .await?;
+    .await;
+
+    let resp = match invoke_result {
+        Ok(resp) => resp,
+        Err(_) => {
+            // No Tauri IPC bridge (running in a browser) — use fetch instead.
+            return s3_put_object_fetch(presigned_url, content_type, file).await;
+        }
+    };
 
     if !(200..300).contains(&resp.status) {
         error!(
@@ -122,14 +130,6 @@ pub async fn s3_put_object_native(
         return Err(Error::OnlyWebFunction);
     }
     Ok(())
-}
-
-/// True iff the Tauri IPC bridge is present (running inside the Tauri WebView).
-/// False in a plain browser, where `window.__TAURI_INTERNALS__` is undefined.
-#[cfg(feature = "tauri-web")]
-async fn tauri_ipc_available() -> bool {
-    let mut runner = eval(include_str!("web/tauri_available.js"));
-    runner.recv::<bool>().await.unwrap_or(false)
 }
 
 /// Browser fallback for `s3_put_object_native`: PUT the file straight to the
