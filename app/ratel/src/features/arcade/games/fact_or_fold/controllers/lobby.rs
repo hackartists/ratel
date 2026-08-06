@@ -78,18 +78,32 @@ async fn pick_next_subject() -> crate::common::Result<Option<FactFoldSubject>> {
 
     // Both status buckets are queried (oldest `pick_at` first) and the
     // best window match is picked in memory.
-    let (live_res, sched_res) = tokio::join!(
-        FactFoldSubject::list_by_status(SubjectStatus::Live, 50),
-        FactFoldSubject::list_by_status(SubjectStatus::Scheduled, 50),
-    );
-    let live = live_res.map_err(|e| {
-        crate::error!("pick_next_subject live query failed: {e}");
-        FactOrFoldError::StorageFailure
-    })?;
-    let sched = sched_res.map_err(|e| {
-        crate::error!("pick_next_subject scheduled query failed: {e}");
-        FactOrFoldError::StorageFailure
-    })?;
+    //
+    // Sequential, not `tokio::join!`: racing two pooled-connection
+    // queries on one task means that if this future is itself
+    // cancelled mid-flight (e.g. a caller's `tokio::try_join!`
+    // cancelling us because a sibling branch errored), sqlx has to
+    // drop a query future mid-`.await`. sqlx's own pool code flags
+    // that as leaving the connection "in an inconsistent state" and
+    // pings it before reuse to check — but that release-time ping has
+    // no timeout, so a connection wedged by a mid-flight cancellation
+    // can hang forever, permanently leaking that connection's pool
+    // permit. Sequential awaits mean each query fully completes (and
+    // its connection is safely released) before the next one starts,
+    // so a cancellation here can only land between queries, never
+    // inside one. See the same note on `get_lobby_handler`.
+    let live = FactFoldSubject::list_by_status(SubjectStatus::Live, 50)
+        .await
+        .map_err(|e| {
+            crate::error!("pick_next_subject live query failed: {e}");
+            FactOrFoldError::StorageFailure
+        })?;
+    let sched = FactFoldSubject::list_by_status(SubjectStatus::Scheduled, 50)
+        .await
+        .map_err(|e| {
+            crate::error!("pick_next_subject scheduled query failed: {e}");
+            FactOrFoldError::StorageFailure
+        })?;
 
     let candidate = live
         .into_iter()
@@ -173,31 +187,41 @@ async fn create_participants_for_round(
 
 #[get("/api/fact-or-fold/lobby", user: User)]
 pub async fn get_lobby_handler() -> Result<LobbyResponse> {
-    // Independent reads — kick them off in parallel. `current_round`
-    // depends on `lobby.current_round_id` and `already_played_current`
-    // depends on the round's subject, so those load sequentially after.
+    // Sequential reads, deliberately NOT run through `tokio::try_join!`.
+    //
+    // These queries are independent, so joining them looks like a free
+    // latency win — but racing several pooled-connection queries on one
+    // task is a real hazard with sqlx's pool: `try_join!` cancels every
+    // sibling future the moment any one of them returns `Err`, and
+    // sqlx has to drop the cancelled query mid-`.await`. Per sqlx's own
+    // pool code, a connection whose query was dropped mid-flight is
+    // "likely to be left in an inconsistent state" — it pings the
+    // connection before returning it to the idle pool to guard against
+    // that. That release-time ping has no timeout, so a connection
+    // wedged by a mid-flight cancellation can hang forever, silently
+    // and permanently leaking that connection's pool permit. Under the
+    // test suite's shared, never-dropped process-global pool, a handful
+    // of these leaks per run is enough to exhaust `max_connections`
+    // and make unrelated later requests hang for the full
+    // `acquire_timeout` (`pool timed out while waiting for an open
+    // connection`).
+    //
+    // Sequential awaits close that window entirely: each query runs to
+    // completion (and its connection is released) before the next one
+    // starts, so there is never an in-flight query for a `try_join!`
+    // (or any other cancellation) to interrupt.
     let user_id_inner = user_inner_id(&user);
     let user_pk_str = user.pk().to_string();
-    let settings_fut = async { Ok::<_, crate::common::Error>(load_settings_or_default().await) };
-    let lobby_fut = async {
-        FactFoldLobby::get_or_default().await.map_err(|e| {
-            crate::error!("get_lobby_handler lobby read failed: {e}");
-            crate::common::Error::from(FactOrFoldError::StorageFailure)
-        })
-    };
-    let arcade_fut = async {
-        Ok::<_, crate::common::Error>(ArcadeSettings::get_or_default().await.unwrap_or_default())
-    };
-    let pick_fut = async { pick_next_subject().await.map(|s| s.is_some()) };
-    let stats_fut = async {
-        Ok::<_, crate::common::Error>(
-            FactFoldUserStats::get_or_default(&user_id_inner)
-                .await
-                .unwrap_or_default(),
-        )
-    };
-    let (settings, lobby, arcade_settings, subject_available, user_stats) =
-        tokio::try_join!(settings_fut, lobby_fut, arcade_fut, pick_fut, stats_fut)?;
+    let settings = load_settings_or_default().await;
+    let lobby = FactFoldLobby::get_or_default().await.map_err(|e| {
+        crate::error!("get_lobby_handler lobby read failed: {e}");
+        FactOrFoldError::StorageFailure
+    })?;
+    let arcade_settings = ArcadeSettings::get_or_default().await.unwrap_or_default();
+    let subject_available = pick_next_subject().await?.is_some();
+    let user_stats = FactFoldUserStats::get_or_default(&user_id_inner)
+        .await
+        .unwrap_or_default();
 
     let mut current_round: Option<RoundResponse> = None;
     let mut already_joined = false;
@@ -257,29 +281,22 @@ pub async fn join_lobby_handler() -> Result<RoundResponse> {
     let wallet = DdbArcadeWallet::new(cli.clone());
     let user_id = user_inner_id(&user);
 
-    // Settings, lobby, wallet balance and arcade settings are all
-    // independent reads — fan them out in parallel before applying
-    // the chip-balance gate.
-    let settings_fut = async { Ok::<_, crate::common::Error>(load_settings_or_default().await) };
-    let arcade_fut = async {
-        Ok::<_, crate::common::Error>(ArcadeSettings::get_or_default().await.unwrap_or_default())
-    };
-    let balance_fut = async { wallet.balance(&user_id).await };
-    let lobby_fut = async {
-        FactFoldLobby::get_or_default().await.map_err(|e| {
-            crate::error!("join_lobby_handler lobby read failed: {e}");
-            crate::common::Error::from(FactOrFoldError::StorageFailure)
-        })
-    };
-    let stats_fut = async {
-        Ok::<_, crate::common::Error>(
-            FactFoldUserStats::get_or_default(&user_id)
-                .await
-                .unwrap_or_default(),
-        )
-    };
-    let (settings, arcade_settings, chip_balance, mut lobby, user_stats) =
-        tokio::try_join!(settings_fut, arcade_fut, balance_fut, lobby_fut, stats_fut)?;
+    // Sequential reads — see the comment on `get_lobby_handler` for why
+    // fact_or_fold never fans independent DB reads out through
+    // `tokio::try_join!`/`tokio::join!`: cancelling a sibling query
+    // mid-`.await` can wedge its pooled connection and silently leak
+    // the pool permit forever (sqlx's release-time viability ping has
+    // no timeout).
+    let settings = load_settings_or_default().await;
+    let arcade_settings = ArcadeSettings::get_or_default().await.unwrap_or_default();
+    let chip_balance = wallet.balance(&user_id).await?;
+    let mut lobby = FactFoldLobby::get_or_default().await.map_err(|e| {
+        crate::error!("join_lobby_handler lobby read failed: {e}");
+        FactOrFoldError::StorageFailure
+    })?;
+    let user_stats = FactFoldUserStats::get_or_default(&user_id)
+        .await
+        .unwrap_or_default();
 
     let buy_in_chips = arcade_settings.default_buy_in_chips;
     if chip_balance < buy_in_chips {

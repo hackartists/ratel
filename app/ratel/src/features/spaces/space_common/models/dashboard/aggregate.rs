@@ -106,23 +106,44 @@ impl DashboardAggregate {
     /// Atomic single-column increment: `INSERT … ON CONFLICT (space_id) DO
     /// UPDATE SET {column} = table.{column} + $delta`. `column` is a
     /// compile-time-constant identifier (never user input), so the inline
-    /// formatting is injection-safe. Other counters fall back to their
-    /// `DEFAULT 0` on the insert path.
+    /// formatting is injection-safe.
+    ///
+    /// Every counter column is `NOT NULL` with no DB-level default, so the
+    /// INSERT path must supply *all* of them — 0 for the untouched counters,
+    /// `delta` for the bumped one. `ON CONFLICT` then increments only the
+    /// bumped column. This preserves the pre-migration DynamoDB behavior where
+    /// the aggregate item was created on first bump with the other counters
+    /// implicitly zero.
     async fn bump(space_pk: &Partition, column: &'static str, delta: i64) -> crate::common::Result<()> {
         use postgres::Value;
         use postgres::sqlx::{Postgres, QueryBuilder};
 
+        // All NOT-NULL counter columns; the INSERT seeds every one.
+        const COUNTS: [&str; 7] = [
+            "poll_count",
+            "post_count",
+            "poll_response_count",
+            "comment_count",
+            "like_count",
+            "total_points",
+            "meets",
+        ];
+
         let space_id = Self::space_id_of(space_pk);
         let table = Self::table_name();
+        let cols = COUNTS.join(", ");
 
         let mut qb = QueryBuilder::<Postgres>::new(format!(
-            "INSERT INTO \"{table}\" (id, space_id, {column}) VALUES ("
+            "INSERT INTO \"{table}\" (id, space_id, {cols}) VALUES ("
         ));
         Value::from(Uuid::now_v7()).push_bind(&mut qb);
         qb.push(", ");
         Value::from(space_id).push_bind(&mut qb);
-        qb.push(", ");
-        Value::from(delta).push_bind(&mut qb);
+        for c in COUNTS {
+            qb.push(", ");
+            let v = if c == column { delta } else { 0i64 };
+            Value::from(v).push_bind(&mut qb);
+        }
         qb.push(format!(
             ") ON CONFLICT (space_id) DO UPDATE SET {column} = \"{table}\".{column} + "
         ));

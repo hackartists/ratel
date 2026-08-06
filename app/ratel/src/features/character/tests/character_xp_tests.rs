@@ -2,7 +2,7 @@ use super::helpers::*;
 use crate::features::character::models::CharacterXp;
 use crate::features::character::services::apply_character_xp_delta;
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_apply_xp_first_score_inserts_xp_row() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -21,7 +21,7 @@ async fn test_apply_xp_first_score_inserts_xp_row() {
     assert_eq!(xp.total_sp_spent, 0);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_apply_xp_replay_idempotent() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -34,7 +34,7 @@ async fn test_apply_xp_replay_idempotent() {
     assert_eq!(xp.total_xp, 5_000, "replay must not double-count");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_apply_xp_increment_uses_delta() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -47,7 +47,7 @@ async fn test_apply_xp_increment_uses_delta() {
     assert_eq!(xp.total_xp, 5_000);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_apply_xp_negative_delta_does_not_debit() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -58,7 +58,7 @@ async fn test_apply_xp_negative_delta_does_not_debit() {
     assert_eq!(xp.total_xp, 5_000, "monotonic — negative deltas dropped");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_apply_xp_level_up_grants_sp() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -75,7 +75,7 @@ async fn test_apply_xp_level_up_grants_sp() {
     assert_eq!(xp.total_sp_granted, 5 * xp.level);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_apply_xp_per_space_independent() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -86,7 +86,7 @@ async fn test_apply_xp_per_space_independent() {
     assert_eq!(xp.total_xp, 3_000, "delta from each space accumulates");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_character_unauthenticated_rejected() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {
@@ -96,7 +96,7 @@ async fn test_get_character_unauthenticated_rejected() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_character_brand_new_user_returns_default() {
     let ctx = TestContext::setup().await;
     let (status, _, body) = crate::test_get! {
@@ -119,7 +119,7 @@ async fn test_get_character_brand_new_user_returns_default() {
     assert_eq!(mt.next_level_cost, Some(5));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_character_after_xp_delta() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -139,7 +139,7 @@ async fn test_get_character_after_xp_delta() {
     assert_eq!(body.unspent_sp, 20);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_public_character_returns_level_only() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -159,7 +159,7 @@ async fn test_get_public_character_returns_level_only() {
     assert_eq!(body.level, 4);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_public_character_unknown_user_404() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {

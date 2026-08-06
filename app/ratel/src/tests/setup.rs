@@ -44,10 +44,23 @@ impl TestContext {
         let app = dioxus_router.layer(session_layer);
         crate::common::mcp::set_app_router(app.clone());
 
-        // Match the production startup sequence: register arcade
-        // realtime channels with the per-process global hub so the
-        // SSE endpoint can resolve handlers in tests too.
-        crate::features::arcade::games::fact_or_fold::realtime::register_channels().await;
+        // Match the production startup sequence: register arcade realtime
+        // channels with the per-process global hub so the SSE endpoint can
+        // resolve handlers in tests too. Register exactly ONCE per process:
+        // the hub is a global singleton, and re-registering on every
+        // `setup()` churns the hub's async RwLock. Under the shared test
+        // runtime (which never drops), a prior test's lingering SSE
+        // subscriber can hold a read guard, so a later `register()` write
+        // acquire would block forever and stall the whole suite. Once-only
+        // registration matches production (called once at startup) and avoids
+        // the contention entirely.
+        {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static CHANNELS_REGISTERED: AtomicBool = AtomicBool::new(false);
+            if !CHANNELS_REGISTERED.swap(true, Ordering::SeqCst) {
+                crate::features::arcade::games::fact_or_fold::realtime::register_channels().await;
+            }
+        }
 
         let ddb = cli.clone();
         let test_user = create_user_session(app.clone(), &ddb).await;
@@ -85,17 +98,41 @@ async fn init_test_postgres() {
     // (an outer `Tx` plus nested repository reads), so the sqlx default of 10
     // exhausts the pool and callers hit `PoolTimedOut`. The test DB allows 100
     // connections; give the shared test pool generous headroom.
+    //
+    // `after_release` returns `false` so every connection is CLOSED when
+    // returned to the pool instead of being reused. This is the key to the
+    // shared, never-dropped process-global test pool surviving the whole
+    // suite: a controller future that gets cancelled mid-query (e.g. a
+    // `try_join!` aborting a sibling, or any dropped request future) leaves its
+    // sqlx connection in an inconsistent state, and sqlx's reuse path pings
+    // such a connection with no timeout — a single wedged ping permanently
+    // leaks that connection's pool permit, and a few of them across 498 tests
+    // exhaust the pool and make every later test hang for `acquire_timeout`
+    // ("pool timed out"). Closing on release means a possibly-wedged connection
+    // is dropped (fast) rather than pinged/reused, and the next acquire opens a
+    // fresh one. The per-acquire connect cost is negligible against a local PG.
     let pool = postgres::sqlx::postgres::PgPoolOptions::new()
         .max_connections(50)
         .acquire_timeout(std::time::Duration::from_secs(30))
+        .after_release(|_conn, _meta| Box::pin(async move { Ok(false) }))
         .connect(&url)
         .await
         .expect("test postgres: connect (is the postgres container up?)");
     postgres::set_global_pool(pool.clone());
-    postgres::Schema::from_inventory()
-        .migrate(&pool)
+    // Reset to a clean slate at the start of each test process: DROP every
+    // inventory table, then CREATE them fresh. The `ratel_test` DB persists
+    // between `cargo test` runs, and many tests seed rows under fixed natural
+    // keys (e.g. usernames `chld0..chld50`, singleton settings rows). Without a
+    // reset those collide with a previous run's leftovers on the second run
+    // (unique-constraint violations, count assertions off), making the suite
+    // pass once then fail on every re-run. Drop+create makes every run
+    // reproducible. (Mirrors asset's `with_pg` schema rebuild.)
+    let schema = postgres::Schema::from_inventory();
+    schema.drop(&pool).await.ok(); // ignore "table doesn't exist" on first run
+    schema
+        .create(&pool)
         .await
-        .expect("test postgres: schema migrate");
+        .expect("test postgres: schema create");
 }
 
 pub fn create_user_name() -> String {

@@ -50,11 +50,12 @@ pub async fn level_up_handler(skill_id: String) -> Result<CharacterResponse> {
     xp.updated_at = now;
     xp.save().await?;
 
-    // Re-read assembled state for the response.
-    let (xp_res, skill_rows) = tokio::try_join!(
-        CharacterXp::get_by_user(&user_pk),
-        CharacterSkill::list_for_user(&user_pk),
-    )?;
+    // Re-read assembled state for the response. Sequential, NOT
+    // `tokio::try_join!`: racing pooled-connection queries risks a
+    // mid-`.await` cancellation wedging an sqlx connection on its untimed
+    // release-ping, permanently leaking the pool permit (see get_character).
+    let xp_res = CharacterXp::get_by_user(&user_pk).await?;
+    let skill_rows = CharacterSkill::list_for_user(&user_pk).await?;
     let xp = xp_res.ok_or_else(|| Error::NotFound("character row missing after spend".into()))?;
     let skills = CharacterSkill::levels_by_id(&skill_rows);
 

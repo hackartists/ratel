@@ -1,6 +1,6 @@
 use super::helpers::*;
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_level_up_money_tree_l1_success() {
     let ctx = TestContext::setup().await;
     let (status, _, body) = crate::test_post! {
@@ -22,7 +22,7 @@ async fn test_level_up_money_tree_l1_success() {
     assert_eq!(body.total_sp_spent, 5);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_level_up_insufficient_sp_rejected() {
     let ctx = TestContext::setup().await;
     // Brand new user has 5 SP. Buying MoneyTree L1 (5) is fine; trying L2 (cost 9) without more XP should fail.
@@ -41,7 +41,7 @@ async fn test_level_up_insufficient_sp_rejected() {
     assert_eq!(status, 400, "second level-up without XP should be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_level_up_unknown_skill_rejected() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_post! {
@@ -53,7 +53,7 @@ async fn test_level_up_unknown_skill_rejected() {
     assert_eq!(status, 400);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_level_up_v2_skill_rejected() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_post! {
@@ -65,7 +65,7 @@ async fn test_level_up_v2_skill_rejected() {
     assert_eq!(status, 400, "v2 skill must be gated");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_level_up_max_level_rejected() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -89,7 +89,7 @@ async fn test_level_up_max_level_rejected() {
     assert_eq!(status, 400, "11th level-up must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_level_up_unauthenticated_rejected() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_post! {
@@ -100,7 +100,7 @@ async fn test_level_up_unauthenticated_rejected() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_money_tree_boosts_user_reward_amount() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -144,7 +144,7 @@ async fn test_money_tree_boosts_user_reward_amount() {
     assert_eq!(user_reward.total_points, 10_500, "+5% boost expected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_ranker_boosts_additional_score() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();

@@ -139,8 +139,13 @@ pub async fn update_sub_team_doc_handler(
         })?
         .ok_or(SubTeamError::DocumentNotFound)?;
 
+    // NOTE: `updated_at` is applied exactly once, at the end (`if changed`).
+    // The Postgres UPDATE builder emits one `SET col = $n` per setter call and
+    // rejects duplicates ("multiple assignments to same column"); the
+    // DynamoDB-era code set `updated_at` here *and* again in the body branch,
+    // which now errors. Track the timestamp on `existing` and apply it once.
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut upd = SubTeamDocument::update().updated_at(now);
+    let mut upd = SubTeamDocument::update();
     existing.updated_at = now;
     let mut changed = false;
 
@@ -154,12 +159,9 @@ pub async fn update_sub_team_doc_handler(
         if new_body.as_bytes().len() > SUB_TEAM_DOCUMENT_MAX_BODY_BYTES {
             return Err(SubTeamError::DocumentBodyTooLarge.into());
         }
-        // Model helper recomputes body_hash + updated_at.
+        // Model helper recomputes body_hash + updated_at (applied once below).
         existing.update_body(new_body.clone());
-        upd = upd
-            .body(new_body)
-            .body_hash(existing.body_hash.clone())
-            .updated_at(existing.updated_at);
+        upd = upd.body(new_body).body_hash(existing.body_hash.clone());
         changed = true;
     }
 
@@ -184,10 +186,16 @@ pub async fn update_sub_team_doc_handler(
     }
 
     if changed {
-        // Bump version and stamp editor.
+        // Bump version and stamp editor. `updated_at` is set exactly once here
+        // (see the note at the top of this fn) — `existing.updated_at` already
+        // reflects the change time (bumped by `update_body` when the body
+        // changed, else `now`).
         let next_version = existing.version.max(1) + 1;
         let editor = user.username.clone();
-        upd = upd.version(next_version).editor_username(editor.clone());
+        upd = upd
+            .version(next_version)
+            .editor_username(editor.clone())
+            .updated_at(existing.updated_at);
         existing.version = next_version;
         existing.editor_username = editor;
 

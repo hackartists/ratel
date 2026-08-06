@@ -41,19 +41,25 @@ pub async fn update_space_content(
         _ => return Err(SpaceError::UpdateFailed.into()),
     };
 
-    let space_repository = SpaceCommon::repository();
-    let update_space = space_repository.update(
-        space.id,
-        SpaceCommon::update().content(req.content.clone()),
-    );
-    let post_repository = Post::repository();
-    let update_post = post_repository
-        .update(post_uuid, Post::update().body(ContentBody::html(req.content)));
-
-    tokio::try_join!(update_space, update_post).map_err(|e| {
-        crate::error!("failed to update space/post content: {e:?}");
-        SpaceError::UpdateFailed
-    })?;
+    // Sequential, NOT `tokio::try_join!`: racing two pooled-connection writes
+    // means a cancellation can drop one mid-`.await`, wedging its sqlx
+    // connection on the untimed release-ping and permanently leaking the pool
+    // permit (see character/get_character). Two independent updates give the
+    // same result run in sequence.
+    SpaceCommon::repository()
+        .update(space.id, SpaceCommon::update().content(req.content.clone()))
+        .await
+        .map_err(|e| {
+            crate::error!("failed to update space content: {e:?}");
+            SpaceError::UpdateFailed
+        })?;
+    Post::repository()
+        .update(post_uuid, Post::update().body(ContentBody::html(req.content)))
+        .await
+        .map_err(|e| {
+            crate::error!("failed to update post content: {e:?}");
+            SpaceError::UpdateFailed
+        })?;
 
     Ok(())
 }

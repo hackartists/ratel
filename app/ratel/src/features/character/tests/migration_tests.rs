@@ -1,7 +1,7 @@
 use super::helpers::*;
 use crate::common::models::migration::LastBackfillVersion;
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_last_backfill_version_default_unset() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
@@ -9,7 +9,7 @@ async fn test_last_backfill_version_default_unset() {
     assert!(row.is_none(), "no migration row should exist initially");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_advance_to_from_zero_inserts() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
@@ -21,7 +21,7 @@ async fn test_advance_to_from_zero_inserts() {
     assert_eq!(row.version, 1);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_advance_to_with_correct_expected_succeeds() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
@@ -34,7 +34,7 @@ async fn test_advance_to_with_correct_expected_succeeds() {
     assert_eq!(row.version, 2);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_advance_to_with_wrong_expected_fails() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
@@ -48,7 +48,7 @@ async fn test_advance_to_with_wrong_expected_fails() {
     assert_eq!(row.version, 1, "version must not advance on conflict");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_run_migrations_skips_when_migrate_unset() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
@@ -59,7 +59,7 @@ async fn test_run_migrations_skips_when_migrate_unset() {
     assert!(row.is_none(), "MIGRATE unset must not advance version");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_run_migrations_runs_m001() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
@@ -73,37 +73,38 @@ async fn test_run_migrations_runs_m001() {
     s.total_score = 5_000;
     s.save().await.unwrap();
 
-    // Exercise the real `run_migrations` entry point so this test actually
-    // covers the runner's "stored < 1 → run m001" branch. m002 was
-    // deleted alongside BiyardService removal, so the runner now only
-    // advances to version 1; we no longer seed M002_CSV_PATH.
-    //
-    // NOTE (Postgres migration): `run_migrations` retired the m001
-    // character-XP backfill once `CharacterXp` / `SpaceScore` moved off
-    // DynamoDB (see `common/migrations/runner.rs`), so this test's
-    // "CharacterXp got seeded" assertion below now exercises dead code —
-    // flagged for the integrator owning `common/migrations`, not fixed
-    // here (out of this cluster's assigned paths).
+    // Exercise the real `run_migrations` entry point. Post-Postgres-migration
+    // it is a deliberate **no-op**: the m001 character-XP backfill (SpaceScore →
+    // CharacterXp) was retired when `CharacterXp` / `SpaceScore` moved off
+    // DynamoDB, and m002 (Biyard PendingReward) was deleted with BiyardService.
+    // Backfilling existing data is now the ETL migration's job, not the runtime
+    // runner's — so the runner neither advances `LastBackfillVersion` nor seeds
+    // CharacterXp for a fresh environment. This test now pins that contract:
+    // `run_migrations` with `MIGRATE=true` completes cleanly as a safe no-op.
+    // (The version-advance MECHANISM is still covered by the `test_advance_to_*`
+    // and idempotency tests in this file.)
     let ddb = ctx.ddb.clone();
     run_with_env("MIGRATE", "true", move || async move {
-        crate::common::migrations::run_migrations(&ddb).await.unwrap();
+        crate::common::migrations::run_migrations(&ddb)
+            .await
+            .expect("run_migrations must succeed as a no-op");
     })
     .await;
 
-    // Verify the runner advanced past m001. With m002 deleted, version
-    // stops at 1; the m001 execution itself is also confirmed via the
-    // `CharacterXp` row check below.
-    let row = LastBackfillVersion::load().await.unwrap().unwrap();
-    assert_eq!(row.version, 1);
-
-    // Verify CharacterXp seeded.
+    // Retired migrations write nothing: no `LastBackfillVersion` row is created
+    // for a fresh environment, and no CharacterXp is backfilled from SpaceScore.
+    assert!(
+        LastBackfillVersion::load().await.unwrap().is_none(),
+        "retired no-op runner must not write a version row on a fresh DB"
+    );
     use crate::features::character::models::CharacterXp;
-    let xp = CharacterXp::get_by_user(&user_pk).await.unwrap().unwrap();
-    assert_eq!(xp.total_xp, 5_000);
-    assert_eq!(xp.level, 4);
+    assert!(
+        CharacterXp::get_by_user(&user_pk).await.unwrap().is_none(),
+        "retired m001 backfill must not seed CharacterXp"
+    );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_run_migrations_idempotent_at_version() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
