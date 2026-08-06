@@ -1,6 +1,7 @@
 use super::super::dto::{RemoveMemberRequest, RemoveMemberResponse};
 use super::super::*;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 #[delete("/api/teams/:team_pk/members", user: crate::features::auth::User, team: Team, role: crate::features::social::pages::member::dto::TeamRole)]

@@ -1,7 +1,10 @@
 use crate::common::models::auth::AdminUser;
 use crate::features::admin::*;
+#[cfg(feature = "server")]
 use crate::features::auth::{TeamRoleJson, UserTeam, UserTeamGroup};
+#[cfg(feature = "server")]
 use crate::features::posts::models::TeamOwner;
+#[cfg(feature = "server")]
 use crate::features::posts::types::TeamGroupPermissions;
 use crate::features::social::pages::member::dto::TeamRole;
 

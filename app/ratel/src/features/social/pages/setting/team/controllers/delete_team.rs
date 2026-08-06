@@ -2,6 +2,7 @@ use super::dto::DeleteTeamResponse;
 use super::super::*;
 use crate::features::social::types::SocialError;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::{Team, TeamGroup, TeamOwner};
 #[cfg(feature = "server")]
 use postgres::PostgresEntity;

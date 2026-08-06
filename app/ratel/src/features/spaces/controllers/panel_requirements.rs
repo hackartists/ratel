@@ -1,8 +1,8 @@
 use crate::common::attribute::Gender;
 use crate::common::models::auth::{OptionalUser, User};
-use crate::features::spaces::models::{
-    CollectiveAttribute, PanelAttribute, SpacePanelQuota, VerifiableAttribute,
-};
+use crate::features::spaces::models::{CollectiveAttribute, PanelAttribute, VerifiableAttribute};
+#[cfg(feature = "server")]
+use crate::features::spaces::models::SpacePanelQuota;
 use crate::features::spaces::*;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "server")]

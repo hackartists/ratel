@@ -7,6 +7,7 @@ use crate::features::membership::models::{
     Membership, MembershipTier, TeamMembership, TeamMembershipResponse,
 };
 use crate::features::membership::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 

@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 use super::super::models::{AttributeCode, VerifiedAttributes};
 use super::super::*;
 use super::get_credentials::CredentialResponse;

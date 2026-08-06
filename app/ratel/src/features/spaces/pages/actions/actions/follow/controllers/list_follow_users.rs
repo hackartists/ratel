@@ -1,6 +1,9 @@
+#[cfg(feature = "server")]
 use crate::common::models::auth::UserFollow;
 use crate::common::models::space::SpaceCommon;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
+#[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::follow::models::SpaceFollowUser;
 use crate::features::spaces::pages::actions::actions::follow::*;
 use std::collections::HashSet;

@@ -13,8 +13,10 @@ use crate::features::spaces::pages::actions::actions::discussion::SpacePost;
 use crate::features::spaces::pages::apps::apps::analyzes::{
     AnalyzeFilterSource, AnalyzeReportFilter, AnalyzeReportStatus, FollowTargetAggregate,
     PollQuestionAggregate, QuizQuestionAggregate, SpaceAnalyzeDiscussionResult,
-    SpaceAnalyzeDiscussionResultColumn, SpaceAnalyzeReport, SpaceAnalyzeReportResult,
+    SpaceAnalyzeReport, SpaceAnalyzeReportResult,
 };
+#[cfg(feature = "server")]
+use crate::features::spaces::pages::apps::apps::analyzes::SpaceAnalyzeDiscussionResultColumn;
 use crate::features::spaces::pages::report::types::{
     ActionSource, Analyze, AnalyzeItem, ChartOption, CrossFilterChip, DiscussionData,
 };

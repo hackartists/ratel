@@ -1,6 +1,7 @@
 use super::super::dto::{AddTeamMemberRequest, AddTeamMemberResponse};
 use super::super::*;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use std::collections::HashSet;
 

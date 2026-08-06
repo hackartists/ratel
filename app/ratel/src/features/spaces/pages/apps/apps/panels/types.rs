@@ -57,6 +57,7 @@ pub struct SpacePanelQuotaResponse {
     pub attributes: PanelAttribute,
 }
 
+#[cfg(feature = "server")]
 impl From<SpacePanelQuota> for SpacePanelQuotaResponse {
     fn from(panel: SpacePanelQuota) -> Self {
         let attributes_vec = if panel.attributes_vec.0.is_empty()

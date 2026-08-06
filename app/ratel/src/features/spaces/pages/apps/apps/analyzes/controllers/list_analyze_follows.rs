@@ -1,4 +1,5 @@
 use crate::common::ListResponse;
+#[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::follow::SpaceFollowUser;
 use crate::features::spaces::pages::apps::apps::analyzes::*;
 use crate::features::spaces::pages::apps::models::SpaceApp;

@@ -1,5 +1,7 @@
 use crate::features::spaces::pages::apps::apps::general::*;
-use crate::spaces::{InvitationStatus, SpaceInvitationMember};
+use crate::spaces::InvitationStatus;
+#[cfg(feature = "server")]
+use crate::spaces::SpaceInvitationMember;
 
 const DEFAULT_LIMIT: i32 = 20;
 const MAX_LIMIT: i32 = 100;
@@ -15,6 +17,7 @@ pub struct SpaceInvitationListItem {
     pub created_at: i64,
 }
 
+#[cfg(feature = "server")]
 impl From<SpaceInvitationMember> for SpaceInvitationListItem {
     fn from(member: SpaceInvitationMember) -> Self {
         Self {

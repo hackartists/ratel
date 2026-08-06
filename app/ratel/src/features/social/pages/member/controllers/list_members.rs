@@ -1,6 +1,7 @@
 use super::super::dto::*;
 use super::super::*;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::TeamOwner;
 #[cfg(feature = "server")]
 use postgres::PostgresEntity;

@@ -7,6 +7,7 @@ use crate::features::membership::models::TeamPayment;
 #[cfg(feature = "server")]
 use crate::features::membership::services::portone::PortOne;
 use crate::features::membership::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 

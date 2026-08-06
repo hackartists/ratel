@@ -1,4 +1,5 @@
 use crate::common::ListResponse;
+#[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::quiz::{SpaceQuiz, SpaceQuizColumn};
 use crate::features::spaces::pages::actions::models::SpaceAction;
 use crate::features::spaces::pages::apps::apps::analyzes::*;

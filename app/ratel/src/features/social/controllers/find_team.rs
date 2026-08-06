@@ -2,6 +2,7 @@ use crate::features::social::controllers::dto::TeamResponse;
 use crate::features::social::*;
 
 use crate::features::auth::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 #[get("/api/teams/find?username", user: OptionalUser)]

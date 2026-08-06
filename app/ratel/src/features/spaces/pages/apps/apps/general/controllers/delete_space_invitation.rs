@@ -1,4 +1,5 @@
 use crate::features::spaces::pages::apps::apps::general::*;
+#[cfg(feature = "server")]
 use crate::spaces::SpaceInvitationMember;
 
 #[delete(

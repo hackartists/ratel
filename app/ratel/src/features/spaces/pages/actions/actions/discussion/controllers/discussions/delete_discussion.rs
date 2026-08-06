@@ -1,4 +1,5 @@
 use crate::features::spaces::pages::actions::actions::discussion::*;
+#[cfg(feature = "server")]
 use crate::features::spaces::space_common::models::aggregate::DashboardAggregate;
 
 #[mcp_tool(name = "delete_discussion", description = "Delete a discussion from a space. Requires creator role.")]

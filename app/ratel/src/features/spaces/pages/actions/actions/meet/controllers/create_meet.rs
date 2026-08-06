@@ -1,5 +1,6 @@
 use crate::features::spaces::pages::actions::actions::meet::*;
 use crate::features::spaces::pages::actions::models::SpaceAction;
+#[cfg(feature = "server")]
 use crate::features::spaces::space_common::models::aggregate::DashboardAggregate;
 
 #[mcp_tool(

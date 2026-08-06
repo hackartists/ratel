@@ -1,6 +1,7 @@
 use super::dto::TeamResponse;
 use super::super::*;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 #[get("/api/teams/:username/settings", user: crate::features::auth::OptionalUser, team: Team)]

@@ -10,7 +10,7 @@ pub struct CreateGlobalRewardRequest {
 }
 
 #[post("/api/admin/rewards", _user: AdminUser)]
-pub async fn create_reward(req: CreateGlobalRewardRequest) -> Result<Reward> {
+pub async fn create_reward(req: CreateGlobalRewardRequest) -> Result<RewardResponse> {
     if Reward::get_by_behavior(&req.behavior).await?.is_some() {
         return Err(SpaceRewardError::RewardAlreadyExists.into());
     }
@@ -18,5 +18,5 @@ pub async fn create_reward(req: CreateGlobalRewardRequest) -> Result<Reward> {
     let reward = Reward::new(req.behavior, req.point, req.period, req.condition);
     reward.create().await?;
 
-    Ok(reward)
+    Ok(RewardResponse::from(reward))
 }

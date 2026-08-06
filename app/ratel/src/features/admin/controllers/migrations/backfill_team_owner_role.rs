@@ -1,6 +1,8 @@
 use crate::common::models::auth::AdminUser;
 use crate::features::admin::*;
+#[cfg(feature = "server")]
 use crate::features::auth::UserTeam;
+#[cfg(feature = "server")]
 use crate::features::posts::models::TeamOwner;
 use crate::features::social::pages::member::dto::TeamRole;
 

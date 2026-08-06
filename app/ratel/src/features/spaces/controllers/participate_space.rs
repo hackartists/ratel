@@ -2,14 +2,19 @@ use crate::common::models::auth::{OptionalUser, User};
 use crate::common::models::space::SpaceCommon;
 use crate::common::utils::time::get_now_timestamp_millis;
 use crate::common::SpaceVisibility;
-use crate::features::activity::{models::SpaceScore, types::AuthorPartition};
+use crate::features::activity::types::AuthorPartition;
+#[cfg(feature = "server")]
+use crate::features::activity::models::SpaceScore;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Post;
 use crate::features::posts::types::TeamGroupPermission;
-use crate::features::spaces::models::{
-    PanelAttribute, SpacePanelParticipant, SpacePanelQuota, SpaceParticipant,
-};
+use crate::features::spaces::models::{PanelAttribute, SpaceParticipant};
+#[cfg(feature = "server")]
+use crate::features::spaces::models::{SpacePanelParticipant, SpacePanelQuota};
 use crate::features::spaces::*;
-use crate::spaces::{InvitationStatus, SpaceInvitationMember};
+use crate::spaces::InvitationStatus;
+#[cfg(feature = "server")]
+use crate::spaces::SpaceInvitationMember;
 #[cfg(feature = "server")]
 use postgres::PostgresEntity;
 

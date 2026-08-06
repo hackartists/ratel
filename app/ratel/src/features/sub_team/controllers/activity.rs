@@ -9,6 +9,7 @@
 //! and return the fixed privacy notice inline (AC-20).
 
 use crate::common::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 use crate::features::sub_team::types::{

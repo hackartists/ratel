@@ -8,6 +8,7 @@ use crate::features::membership::models::{
 use crate::features::membership::models::{
     Membership, MembershipTier, TeamMembership, UserMembership,
 };
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 use super::MembershipGrantTargetType;

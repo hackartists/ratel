@@ -10,7 +10,7 @@ pub struct UpdateGlobalRewardRequest {
 }
 
 #[put("/api/admin/rewards", _user: AdminUser)]
-pub async fn update_reward(req: UpdateGlobalRewardRequest) -> Result<Reward> {
+pub async fn update_reward(req: UpdateGlobalRewardRequest) -> Result<RewardResponse> {
     use crate::common::models::reward::RewardConditionValue;
 
     let Some(mut reward) = Reward::get_by_behavior(&req.behavior).await? else {
@@ -24,5 +24,5 @@ pub async fn update_reward(req: UpdateGlobalRewardRequest) -> Result<Reward> {
 
     let reward = reward.save().await?;
 
-    Ok(reward)
+    Ok(RewardResponse::from(reward))
 }

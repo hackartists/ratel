@@ -1,5 +1,6 @@
 use crate::features::spaces::models::RespondentAttr;
 use crate::features::spaces::*;
+#[cfg(feature = "server")]
 pub use crate::common::models::did::VerifiedAttributes;
 use crate::common::models::User;
 

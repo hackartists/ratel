@@ -1,6 +1,7 @@
 use super::super::dto::{EligibleAdminResponse, TeamDao, TeamDaoTeamResponse};
 use super::super::*;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::{Team, TeamOwner};
 #[cfg(feature = "server")]
 use postgres::PostgresEntity;

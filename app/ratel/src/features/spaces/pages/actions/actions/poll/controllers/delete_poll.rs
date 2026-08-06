@@ -1,4 +1,5 @@
 use crate::features::spaces::pages::actions::actions::poll::*;
+#[cfg(feature = "server")]
 use crate::features::spaces::space_common::models::aggregate::DashboardAggregate;
 
 #[mcp_tool(name = "delete_poll", description = "Delete a poll from a space. Requires creator role.")]

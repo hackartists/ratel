@@ -1,4 +1,6 @@
-use crate::common::models::space::{PARTICIPANT_KIND, SpaceParticipant, SpaceParticipantColumn};
+use crate::common::models::space::{PARTICIPANT_KIND, SpaceParticipant};
+#[cfg(feature = "server")]
+use crate::common::models::space::SpaceParticipantColumn;
 use crate::common::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]

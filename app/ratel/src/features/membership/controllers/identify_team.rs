@@ -9,6 +9,7 @@ use rmcp::schemars;
 use crate::features::membership::services::portone::PortOne;
 use crate::features::membership::services::portone::VerifiedCustomer;
 use crate::features::membership::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 use serde::{Deserialize, Serialize};

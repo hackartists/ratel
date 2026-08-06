@@ -5,6 +5,7 @@ use crate::features::membership::models::{
     ENTERPRISE_MAX_CREDITS_PER_SPACE, ENTERPRISE_MONTHLY_REFILL_CREDITS, Membership,
     MembershipResponse, MembershipTier, TeamMembership, UserMembership,
 };
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 const ENTERPRISE_DISPLAY_ORDER: i32 = 999;

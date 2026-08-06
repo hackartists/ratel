@@ -1,6 +1,7 @@
 use super::super::dto::{TeamMemberResponse, UpdateMemberRoleRequest};
 use super::super::*;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::{Team, TeamOwner};
 
 #[patch("/api/teams/:team_pk/members/role", user: crate::features::auth::User, team: Team, role: crate::features::social::pages::member::dto::TeamRole)]

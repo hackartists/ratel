@@ -1,4 +1,5 @@
 use crate::common::models::space::SpaceCommon;
+#[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::follow::models::SpaceFollowUser;
 use crate::features::spaces::pages::actions::actions::follow::*;
 use crate::features::spaces::pages::actions::actions::follow::types::SpaceFollowError;

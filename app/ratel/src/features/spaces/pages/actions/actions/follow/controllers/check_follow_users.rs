@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::spaces::pages::actions::actions::follow::*;
 #[cfg(feature = "server")]

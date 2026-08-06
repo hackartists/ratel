@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 use super::super::models::VerifiedAttributes;
 use super::super::*;
 #[cfg(feature = "server")]

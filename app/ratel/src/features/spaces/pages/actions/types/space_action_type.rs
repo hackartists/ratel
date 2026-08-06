@@ -1,7 +1,4 @@
-use crate::{
-    common::RewardUserBehavior, features::spaces::pages::actions::*,
-    spaces::pages::actions::actions::quiz::SpaceQuiz,
-};
+use crate::{common::RewardUserBehavior, features::spaces::pages::actions::*};
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;

@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 use crate::auth::UserTeam;
 use crate::features::social::*;
 #[cfg(feature = "server")]

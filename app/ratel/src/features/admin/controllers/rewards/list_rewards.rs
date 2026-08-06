@@ -9,6 +9,7 @@ pub struct RewardResponse {
     pub condition: RewardCondition,
 }
 
+#[cfg(feature = "server")]
 impl From<Reward> for RewardResponse {
     fn from(value: Reward) -> Self {
         Self {

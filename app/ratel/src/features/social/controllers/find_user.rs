@@ -1,7 +1,9 @@
 use crate::features::social::pages::member::dto::FoundUserResponse;
 use crate::features::social::pages::member::{MemberError};
 use crate::features::social::*;
-use crate::features::auth::{User, UserPhoneNumber};
+use crate::features::auth::User;
+#[cfg(feature = "server")]
+use crate::features::auth::UserPhoneNumber;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]

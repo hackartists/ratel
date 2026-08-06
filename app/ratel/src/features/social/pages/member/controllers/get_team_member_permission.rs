@@ -1,6 +1,7 @@
 use super::super::*;
 
 use super::super::dto::{TeamMemberPermission, TeamRole};
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 #[get("/api/teams/:username/members/permission", user: crate::features::auth::OptionalUser, team: Team)]

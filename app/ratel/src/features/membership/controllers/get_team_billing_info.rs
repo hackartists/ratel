@@ -4,6 +4,7 @@ use crate::features::membership::controllers::get_billing_info::BillingInfoRespo
 use crate::features::membership::controllers::normalize_error;
 use crate::features::membership::models::TeamPayment;
 use crate::features::membership::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 

@@ -1,4 +1,5 @@
 use crate::common::*;
+#[cfg(feature = "server")]
 use crate::common::models::notification::UserInboxNotification;
 use crate::features::auth::User;
 use crate::features::notifications::types::NotificationsError;

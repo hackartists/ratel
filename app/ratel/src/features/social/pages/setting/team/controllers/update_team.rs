@@ -2,6 +2,7 @@ use super::dto::{TeamResponse, UpdateTeamRequest};
 use super::super::*;
 use crate::features::social::types::SocialError;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 #[cfg(feature = "server")]
 use postgres::PostgresEntity;

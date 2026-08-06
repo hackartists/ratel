@@ -1,4 +1,6 @@
-use crate::common::models::auth::{AdminUser, TestAccount};
+use crate::common::models::auth::AdminUser;
+#[cfg(feature = "server")]
+use crate::common::models::auth::TestAccount;
 use crate::features::admin::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -2,6 +2,7 @@ use super::*;
 use crate::features::auth::User;
 use crate::features::membership::models::TeamPurchase;
 use crate::features::membership::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 use crate::social::pages::membership::user::controllers::PurchaseHistoryItem;

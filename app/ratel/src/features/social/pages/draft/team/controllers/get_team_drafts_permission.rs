@@ -1,6 +1,7 @@
 use super::dto::TeamDraftPermission;
 use super::super::*;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 #[get("/api/teams/:username/drafts/permission", user: crate::features::auth::OptionalUser, team: Team)]

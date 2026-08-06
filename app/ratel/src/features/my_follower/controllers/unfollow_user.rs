@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 use crate::common::models::auth::UserFollow;
 use crate::features::my_follower::*;
 
