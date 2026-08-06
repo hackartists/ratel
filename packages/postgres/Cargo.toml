@@ -1,0 +1,24 @@
+[package]
+name = "postgres"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+postgres-macros = { path = "../postgres-macros" }
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json",
+] }
+uuid = { version = "1", features = ["v7"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+sha2 = "0.10"
+tokio = { version = "1", features = ["sync"] }   # Tx 내부 Mutex (tokio::sync)
+# `#[postgres(global)]` 엔티티를 프로세스 인벤토리에 자동 등록 → `Schema::from_inventory()`
+# (M7). 워크스페이스가 ts-server-fn-axum 경유로 이미 쓰는 버전이라 그대로 resolve 된다.
+inventory = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+trybuild = "1"

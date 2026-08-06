@@ -1,0 +1,8 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: assets-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust   # 패스워드 없음 — 네트워크 레벨 보안 전제 (spec)

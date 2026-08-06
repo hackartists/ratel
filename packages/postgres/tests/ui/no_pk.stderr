@@ -1,0 +1,7 @@
+error: PostgresEntity requires a primary key: add #[postgres(pk)] or an `id` field
+ --> tests/ui/no_pk.rs:7:1
+  |
+7 | / pub struct NoPk {
+8 | |     pub name: String,
+9 | | }
+  | |_^
