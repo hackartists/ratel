@@ -11,7 +11,7 @@ use crate::features::cross_posting::services::user_id_of;
 /// resolve historical handles for past `SyndicationJob` references).
 #[get("/api/cross-posting/connections", user: User)]
 pub async fn list_connections_handler() -> Result<Vec<ConnectionResponse>> {
-    let user_id = user_id_of(&user.pk);
+    let user_id = user_id_of(&user.pk());
 
     // At most 3 rows per user (Bluesky / LinkedIn / Threads), so no pagination.
     let rows = SocialConnection::find_by_user(&user_id).await.map_err(|e| {

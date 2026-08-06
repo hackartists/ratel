@@ -3,67 +3,66 @@ use crate::common::*;
 #[allow(unused_imports)]
 use rmcp::schemars;
 
-/// One row per (round, user). Written by the settlement handler
-/// (PR6) with the §FR-28~30 breakdown. `idempotency_key` is the
-/// stable composite `{round_id}#{user_id}` — a re-run of the handler
-/// hits the same row and a `create_if_not_exists` is a no-op, so
-/// chips never get credited twice.
+use postgres::PostgresEntity;
+use postgres::ops::StringOp;
+use uuid::Uuid;
+
+/// One row per (round, user). `idempotency_key` is the stable
+/// composite `{round_id}#{user_id}` — an `insert_new` re-run hits the
+/// UNIQUE constraint and fails, so chips never get credited twice
+/// (same guarantee the DynamoDB `create` conditional put gave).
 ///
-/// All amounts are in *chips* (the in-game token), not RP. The
-/// chip ↔ RP conversion happens at the wallet boundary
-/// (`ArcadeWallet::convert_*`), not here.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(
-    feature = "server",
-    derive(DynamoEntity, rmcp::schemars::JsonSchema)
-)]
+/// All amounts are in *chips*.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "fact_fold_settlements")]
 pub struct FactFoldSettlement {
-    pub pk: Partition,  // Partition::FactFold(round_id)
-    pub sk: EntityType, // EntityType::FactFoldSettlement(user_id)
+    pub id: Uuid,
+
+    #[postgres(index)]
+    pub round_id: String,
+    pub user_id: String,
 
     pub created_at: i64,
     pub updated_at: i64,
 
-    pub user_pk: Partition,
+    /// Rendered `Partition` string of the user.
+    pub user_pk: String,
 
-    /// `{round_id}#{user_id}` — used by the create-if-not-exists
-    /// path so settlement re-runs are no-ops.
+    /// `{round_id}#{user_id}` — the create-if-not-exists dedup key.
+    #[postgres(unique)]
     pub idempotency_key: String,
 
     // ── Breakdown ─────────────────────────────────────────────────
-    /// Stake refund for a winning player (= the player's own stake).
-    /// 0 for losers.
     pub base_refund: i64,
-    /// `(own_stake) × (correct_side_multiplier_bps − 10_000) / 10_000`.
-    /// 0 for losers.
     pub correct_bonus: i64,
-    /// Share of the loser pool, proportional to the winner's stake.
-    /// 0 for losers.
     pub pool_share: i64,
-    /// Citation bonus credited to the player whose rationale was
-    /// cited by another winning flipper (§FR-29).
     pub influence_bonus: i64,
-    /// Insider's correctness bonus (§FR-30). Non-zero only for the
-    /// round insider when they bet on the truth side.
     pub insider_bonus: i64,
 
     /// Final chips credited back to the wallet for this user.
-    /// `chips_out = base_refund + correct_bonus + pool_share +
-    /// influence_bonus + insider_bonus`. The wallet's
-    /// `settle(round, chips_out)` uses this number directly.
     pub chips_out: i64,
 }
 
-#[cfg(feature = "server")]
 impl FactFoldSettlement {
-    pub fn keys(round_id: &str, user_id: &str) -> (Partition, EntityType) {
-        (
-            Partition::FactFold(round_id.to_string()),
-            EntityType::FactFoldSettlement(user_id.to_string()),
-        )
-    }
-
     pub fn idempotency_key_for(round_id: &str, user_id: &str) -> String {
         format!("{round_id}#{user_id}")
+    }
+
+    /// Every settlement row for a round.
+    pub async fn list_by_round(round_id: &str) -> crate::common::Result<Vec<Self>> {
+        Ok(Self::repository()
+            .find(Self::query().round_id(StringOp::Eq(round_id.to_string())))
+            .await
+            .map_err(crate::common::Error::from)?
+            .items)
+    }
+
+    /// Create-if-not-exists on `idempotency_key`. Returns `Err` when a
+    /// row already exists (the caller treats that as "already settled").
+    pub async fn insert_new(&self) -> crate::common::Result<Self> {
+        Self::repository()
+            .insert(self)
+            .await
+            .map_err(crate::common::Error::from)
     }
 }

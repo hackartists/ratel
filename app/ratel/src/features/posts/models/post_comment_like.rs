@@ -1,98 +1,101 @@
-use crate::features::posts::types::*;
 use crate::features::posts::*;
 
-use super::PostComment;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, DynamoEntity)]
+/// A user's like on a comment (or comment reply).
+///
+/// Postgres migration: the DynamoDB identity `(pk = PostLike(feed_id),
+/// sk = PostCommentLike(user_id, comment_id))` collapses to a surrogate `id`
+/// PK plus the natural key `unique(comment_id, user_pk)`. `post_id` is kept as
+/// a plain reference column so a post's whole comment-like set can be swept in
+/// one query. All ids are cross-feature/intra-feature references stored as
+/// plain columns (no `references=` FK yet).
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "post_comment_likes", unique(comment_id, user_pk))]
 pub struct PostCommentLike {
-    pub pk: Partition,
-    pub sk: EntityType,
+    pub id: Uuid,
 
-    #[dynamo(prefix = "LIKE", name = "find_by_user", index = "gsi1", pk)]
-    pub user_pk: Partition,
-    #[dynamo(index = "gsi1", sk)]
+    #[postgres(index)]
+    pub post_id: Uuid,
+
+    #[postgres(index)]
+    pub comment_id: Uuid,
+
+    #[postgres(index)]
+    pub user_pk: String,
+
+    #[postgres(order)]
     pub created_at: i64,
 }
 
 #[cfg(feature = "server")]
 impl PostCommentLike {
-    pub fn normalize_feed_id(raw: &str) -> String {
-        raw.strip_prefix("FEED#").unwrap_or(raw).to_string()
-    }
-    pub fn new(post_pk: Partition, comment_sk: EntityType, user_pk: Partition) -> Self {
-        let created_at = chrono::Utc::now().timestamp();
-
-        let (pk, sk) = Self::keys(post_pk, comment_sk, &user_pk);
-
+    pub fn new(post_id: Uuid, comment_id: Uuid, user_pk: String) -> Self {
         Self {
-            pk,
-            sk,
-            created_at,
+            id: Uuid::now_v7(),
+            post_id,
+            comment_id,
             user_pk,
+            created_at: chrono::Utc::now().timestamp(),
         }
     }
 
-    pub fn keys(
-        post_pk: Partition,
-        comment_sk: EntityType,
+    /// The single like row for `(comment, user)`, if any.
+    pub async fn find_one(comment_id: Uuid, user_pk: &Partition) -> Result<Option<Self>> {
+        use postgres::ops::{StringOp, UuidOp};
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .comment_id(UuidOp::Eq(comment_id))
+                    .user_pk(StringOp::Eq(user_pk.to_string())),
+            )
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// Insert a comment-like row (idempotent on `(comment_id, user_pk)`).
+    pub async fn add(post_id: Uuid, comment_id: Uuid, user_pk: String) -> Result<()> {
+        let row = Self::new(post_id, comment_id, user_pk);
+        Self::repository()
+            .upsert_on(&["comment_id", "user_pk"], &row)
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(())
+    }
+
+    /// Delete the comment-like row for `(comment, user)`, if present.
+    pub async fn remove(comment_id: Uuid, user_pk: &Partition) -> Result<()> {
+        if let Some(row) = Self::find_one(comment_id, user_pk).await? {
+            Self::repository()
+                .delete(row.id)
+                .await
+                .map_err(crate::common::Error::from)?;
+        }
+        Ok(())
+    }
+
+    /// Which of `comment_ids` the given user has liked. Replaces the DynamoDB
+    /// `batch_get` of per-comment like keys.
+    pub async fn liked_comment_ids(
         user_pk: &Partition,
-    ) -> (Partition, EntityType) {
-        let pk = match post_pk {
-            Partition::Feed(s) if !s.is_empty() => Partition::PostLike(s),
-            Partition::PostReply(s) if !s.is_empty() => {
-                Partition::PostLike(Self::normalize_feed_id(&s))
-            }
-            _ => panic!(
-                "post_pk must be Partition::Feed or Partition::PostReply with non-empty inner value"
-            ),
-        };
-
-        let comment_id = match &comment_sk {
-            EntityType::PostComment(id) => id.to_string(),
-            EntityType::PostCommentReply(_, id) => id.to_string(),
-            _ => panic!("comment_sk must be EntityType::PostComment or PostCommentReply"),
-        };
-
-        let user_id = match user_pk {
-            Partition::User(id) => id.clone(),
-            _ => panic!("user_pk must be Partition::User"),
-        };
-
-        let sk = EntityType::PostCommentLike(user_id, comment_id);
-
-        (pk, sk)
-    }
-}
-
-impl PartialEq<PostComment> for PostCommentLike {
-    fn eq(&self, post: &PostComment) -> bool {
-        let cid = match &post.sk {
-            EntityType::PostComment(id) => id,
-            EntityType::PostCommentReply(_, id) => id,
-            _ => return false,
-        };
-
-        match &self.sk {
-            EntityType::PostCommentLike(_, comment_id) if comment_id == cid => {}
-            _ => return false,
+        comment_ids: Vec<Uuid>,
+    ) -> Result<std::collections::HashSet<Uuid>> {
+        use postgres::ops::{StringOp, UuidOp};
+        if comment_ids.is_empty() {
+            return Ok(Default::default());
         }
-        let feed_id = match &self.pk {
-            Partition::PostLike(id) => id.clone(),
-            _ => return false,
-        };
-
-        let op_feed_id = match &post.pk {
-            Partition::Feed(id) => id.clone(),
-            Partition::PostReply(id) => id.strip_prefix("FEED#").unwrap_or(id).to_string(),
-            _ => return false,
-        };
-
-        feed_id == op_feed_id
-    }
-}
-
-impl PartialEq<PostComment> for &PostCommentLike {
-    fn eq(&self, post: &PostComment) -> bool {
-        (**self).eq(post)
+        let page = Self::repository()
+            .find(
+                Self::query()
+                    .user_pk(StringOp::Eq(user_pk.to_string()))
+                    .comment_id(UuidOp::In(comment_ids)),
+            )
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(page.items.into_iter().map(|l| l.comment_id).collect())
     }
 }

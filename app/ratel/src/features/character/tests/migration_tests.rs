@@ -5,8 +5,7 @@ use crate::common::models::migration::LastBackfillVersion;
 async fn test_last_backfill_version_default_unset() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
-    let (pk, sk) = LastBackfillVersion::singleton_keys();
-    let row = LastBackfillVersion::get(&ctx.ddb, &pk, Some(&sk)).await.unwrap();
+    let row = LastBackfillVersion::load().await.unwrap();
     assert!(row.is_none(), "no migration row should exist initially");
 }
 
@@ -14,9 +13,8 @@ async fn test_last_backfill_version_default_unset() {
 async fn test_advance_to_from_zero_inserts() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
-    LastBackfillVersion::advance_to(&ctx.ddb, 0, 1).await.unwrap();
-    let (pk, sk) = LastBackfillVersion::singleton_keys();
-    let row = LastBackfillVersion::get(&ctx.ddb, &pk, Some(&sk))
+    LastBackfillVersion::advance_to(0, 1).await.unwrap();
+    let row = LastBackfillVersion::load()
         .await
         .unwrap()
         .expect("row should exist after advance");
@@ -27,10 +25,9 @@ async fn test_advance_to_from_zero_inserts() {
 async fn test_advance_to_with_correct_expected_succeeds() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
-    LastBackfillVersion::advance_to(&ctx.ddb, 0, 1).await.unwrap();
-    LastBackfillVersion::advance_to(&ctx.ddb, 1, 2).await.unwrap();
-    let (pk, sk) = LastBackfillVersion::singleton_keys();
-    let row = LastBackfillVersion::get(&ctx.ddb, &pk, Some(&sk))
+    LastBackfillVersion::advance_to(0, 1).await.unwrap();
+    LastBackfillVersion::advance_to(1, 2).await.unwrap();
+    let row = LastBackfillVersion::load()
         .await
         .unwrap()
         .expect("row should exist");
@@ -41,11 +38,10 @@ async fn test_advance_to_with_correct_expected_succeeds() {
 async fn test_advance_to_with_wrong_expected_fails() {
     let ctx = TestContext::setup().await;
     reset_migration_state(&ctx.ddb).await;
-    LastBackfillVersion::advance_to(&ctx.ddb, 0, 1).await.unwrap();
-    let res = LastBackfillVersion::advance_to(&ctx.ddb, 0, 2).await;
+    LastBackfillVersion::advance_to(0, 1).await.unwrap();
+    let res = LastBackfillVersion::advance_to(0, 2).await;
     assert!(res.is_err(), "advancing with stale expected should be rejected");
-    let (pk, sk) = LastBackfillVersion::singleton_keys();
-    let row = LastBackfillVersion::get(&ctx.ddb, &pk, Some(&sk))
+    let row = LastBackfillVersion::load()
         .await
         .unwrap()
         .expect("row should still be at 1");
@@ -59,8 +55,7 @@ async fn test_run_migrations_skips_when_migrate_unset() {
     std::env::remove_var("MIGRATE");
     crate::common::migrations::run_migrations(&ctx.ddb).await.unwrap();
 
-    let (pk, sk) = LastBackfillVersion::singleton_keys();
-    let row = LastBackfillVersion::get(&ctx.ddb, &pk, Some(&sk)).await.unwrap();
+    let row = LastBackfillVersion::load().await.unwrap();
     assert!(row.is_none(), "MIGRATE unset must not advance version");
 }
 
@@ -71,17 +66,24 @@ async fn test_run_migrations_runs_m001() {
     // Seed a SpaceScore so the backfill has work to do.
     use crate::features::activity::models::SpaceScore;
     use crate::features::activity::types::AuthorPartition;
-    let user_pk = ctx.test_user.0.pk.clone();
+    let user_pk = ctx.test_user.0.pk();
     let space_part = SpacePartition("seed".into());
     let author = AuthorPartition::from(user_pk.clone());
     let mut s = SpaceScore::new(space_part, author, "u".into(), "".into());
     s.total_score = 5_000;
-    s.create(&ctx.ddb).await.unwrap();
+    s.save().await.unwrap();
 
     // Exercise the real `run_migrations` entry point so this test actually
     // covers the runner's "stored < 1 → run m001" branch. m002 was
     // deleted alongside BiyardService removal, so the runner now only
     // advances to version 1; we no longer seed M002_CSV_PATH.
+    //
+    // NOTE (Postgres migration): `run_migrations` retired the m001
+    // character-XP backfill once `CharacterXp` / `SpaceScore` moved off
+    // DynamoDB (see `common/migrations/runner.rs`), so this test's
+    // "CharacterXp got seeded" assertion below now exercises dead code —
+    // flagged for the integrator owning `common/migrations`, not fixed
+    // here (out of this cluster's assigned paths).
     let ddb = ctx.ddb.clone();
     run_with_env("MIGRATE", "true", move || async move {
         crate::common::migrations::run_migrations(&ddb).await.unwrap();
@@ -91,20 +93,12 @@ async fn test_run_migrations_runs_m001() {
     // Verify the runner advanced past m001. With m002 deleted, version
     // stops at 1; the m001 execution itself is also confirmed via the
     // `CharacterXp` row check below.
-    let (pk, sk) = LastBackfillVersion::singleton_keys();
-    let row = LastBackfillVersion::get(&ctx.ddb, &pk, Some(&sk))
-        .await
-        .unwrap()
-        .unwrap();
+    let row = LastBackfillVersion::load().await.unwrap().unwrap();
     assert_eq!(row.version, 1);
 
     // Verify CharacterXp seeded.
     use crate::features::character::models::CharacterXp;
-    let (xpk, xsk) = CharacterXp::user_keys(&user_pk);
-    let xp = CharacterXp::get(&ctx.ddb, &xpk, Some(&xsk))
-        .await
-        .unwrap()
-        .unwrap();
+    let xp = CharacterXp::get_by_user(&user_pk).await.unwrap().unwrap();
     assert_eq!(xp.total_xp, 5_000);
     assert_eq!(xp.level, 4);
 }
@@ -116,8 +110,8 @@ async fn test_run_migrations_idempotent_at_version() {
     // Pre-advance to the latest known migration version so `run_migrations`
     // has nothing to do. Bumping this whenever a new migration lands keeps
     // the "already at HEAD = no-op" invariant honest.
-    LastBackfillVersion::advance_to(&ctx.ddb, 0, 1).await.unwrap();
-    LastBackfillVersion::advance_to(&ctx.ddb, 1, 2).await.unwrap();
+    LastBackfillVersion::advance_to(0, 1).await.unwrap();
+    LastBackfillVersion::advance_to(1, 2).await.unwrap();
 
     let ddb = ctx.ddb.clone();
     run_with_env("MIGRATE", "true", move || async move {
@@ -125,11 +119,7 @@ async fn test_run_migrations_idempotent_at_version() {
     })
     .await;
 
-    let (pk, sk) = LastBackfillVersion::singleton_keys();
-    let row = LastBackfillVersion::get(&ctx.ddb, &pk, Some(&sk))
-        .await
-        .unwrap()
-        .unwrap();
+    let row = LastBackfillVersion::load().await.unwrap().unwrap();
     assert_eq!(row.version, 2, "no further migrations to run");
 }
 

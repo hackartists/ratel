@@ -1,10 +1,13 @@
-use crate::features::spaces::pages::report::models::SpaceAnalyze;
 use crate::features::spaces::pages::report::*;
-use crate::features::spaces::pages::report::types::SpaceReportError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateAnalyzeHtmlRequest {
     pub html_contents: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UpdateAnalyzeResponse {
+    pub html_contents: Option<String>,
 }
 
 // FIXME: implement middleware and authorization
@@ -12,31 +15,35 @@ pub struct UpdateAnalyzeHtmlRequest {
 pub async fn update_analyze(
     space_pk: SpacePartition,
     req: UpdateAnalyzeHtmlRequest,
-) -> Result<SpaceAnalyze> {
-    let partition = Partition::Space(space_pk.to_string());
+) -> Result<UpdateAnalyzeResponse> {
+    use crate::features::spaces::pages::report::models::SpaceAnalyze;
+    use crate::features::spaces::pages::report::types::SpaceReportError;
 
-    let conf = ServerConfig::default();
-    let dynamo = conf.dynamodb();
-
-    let analyze = SpaceAnalyze::get(dynamo, &partition, Some(EntityType::SpaceAnalyze))
+    let mut analyze = SpaceAnalyze::get_for(&space_pk)
         .await
         .map_err(|e| {
             crate::error!("update_analyze: failed to load analyze: {:?}", e);
             SpaceReportError::AnalyzeLoadFailed
-        })?;
-    let mut analyze = analyze.unwrap_or_default();
-    analyze.pk = partition.clone();
-    analyze.sk = EntityType::SpaceAnalyze;
+        })?
+        .unwrap_or_default();
 
-    SpaceAnalyze::updater(partition.clone(), EntityType::SpaceAnalyze)
-        .with_html_contents(req.html_contents.clone())
-        .execute(dynamo)
+    if analyze.space_id.is_empty() {
+        analyze.space_id = space_pk.0.clone();
+    }
+    if analyze.created_at == 0 {
+        analyze.created_at = crate::common::utils::time::get_now_timestamp_millis();
+    }
+    analyze.html_contents = Some(req.html_contents.clone());
+
+    SpaceAnalyze::repository()
+        .upsert_on(&["space_id"], &analyze)
         .await
         .map_err(|e| {
             crate::error!("failed to update analyze: {e:?}");
             SpaceReportError::AnalyzeUpdateFailed
         })?;
-    analyze.html_contents = Some(req.html_contents);
 
-    Ok(analyze)
+    Ok(UpdateAnalyzeResponse {
+        html_contents: Some(req.html_contents),
+    })
 }

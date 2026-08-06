@@ -18,19 +18,14 @@ pub async fn delete_space_file(
         return Err(Error::NoPermission);
     }
 
-    let cli = crate::features::spaces::pages::apps::apps::file::config::get().common.dynamodb();
-
     let space_pk: Partition = space_pk.into();
-    let (pk, sk) = SpaceFile::keys(&space_pk);
 
-    if let Some(mut space_file) = SpaceFile::get(cli, &pk, Some(sk.clone())).await? {
+    if let Some(mut space_file) = SpaceFile::get_by_space(&space_pk).await? {
         space_file
             .files
+            .0
             .retain(|f| f.url.as_ref() != Some(&req.file_url));
-        SpaceFile::updater(&pk, sk)
-            .with_files(space_file.files)
-            .execute(cli)
-            .await?;
+        space_file.save().await?;
     }
 
     Ok(true)

@@ -2,6 +2,8 @@ use crate::features::auth::*;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[cfg(feature = "server")]
 const DEFAULT_PROFILE_URL: &str = "https://metadata.ratel.foundation/ratel/default-profile.png";
@@ -33,23 +35,25 @@ pub struct DeleteAccountResponse {
 #[post("/api/auth/account/delete", user: User, session: Extension<tower_sessions::Session>)]
 pub async fn delete_account_handler() -> Result<DeleteAccountResponse> {
     let Extension(session) = session;
-    let conf = crate::features::auth::config::get();
-    let cli = conf.dynamodb();
 
     let uid = user.id();
+    let user_pk = user.pk();
     let now = crate::common::utils::time::now();
 
     // 1) Soft-delete + anonymize the user row. Updating `email`/`username`
-    //    rewrites their GSI keys, so the original values stop resolving and
-    //    become available for a fresh signup.
-    User::updater(user.pk.clone(), user.sk.clone())
-        .with_deleted_at(now)
-        .with_email(format!("deleted+{uid}@deleted.ratel"))
-        .with_username(format!("deleted_{uid}"))
-        .with_display_name(ANON_AUTHOR_NAME.to_string())
-        .with_profile_url(DEFAULT_PROFILE_URL.to_string())
-        .with_updated_at(now)
-        .execute(cli)
+    //    rewrites their indexed columns, so the original values stop
+    //    resolving and become available for a fresh signup.
+    User::repository()
+        .update(
+            user.id,
+            User::update()
+                .deleted_at(now)
+                .email(format!("deleted+{uid}@deleted.ratel"))
+                .username(format!("deleted_{uid}"))
+                .display_name(ANON_AUTHOR_NAME.to_string())
+                .profile_url(DEFAULT_PROFILE_URL.to_string())
+                .updated_at(now),
+        )
         .await
         .map_err(|e| {
             crate::error!("delete_account: anonymize user {uid} failed: {e}");
@@ -59,17 +63,16 @@ pub async fn delete_account_handler() -> Result<DeleteAccountResponse> {
     // 2) Remove auth-linkage rows so re-auth via any method can't resurrect the
     //    account. Best-effort: a missing row is fine, and a failure here must
     //    not leave the user half-deleted (the row above is already tombstoned).
-    let _ = UserEvmAddress::delete(cli, user.pk.clone(), Some(EntityType::UserEvmAddress)).await;
-    let _ = UserOAuth::delete(cli, user.pk.clone(), Some(EntityType::UserOAuth)).await;
-    let _ =
-        UserPhoneNumber::delete(cli, user.pk.clone(), Some(EntityType::UserPhoneNumber)).await;
-    let _ = UserPrincipal::delete(cli, user.pk.clone(), Some(EntityType::UserPrincipal)).await;
-    let _ = UserTelegram::delete(cli, user.pk.clone(), Some(EntityType::UserTelegram)).await;
+    let _ = UserEvmAddress::delete_for_user(&user_pk).await;
+    let _ = UserOAuth::delete_for_user(&user_pk).await;
+    let _ = UserPhoneNumber::delete_for_user(&user_pk).await;
+    let _ = UserPrincipal::delete_for_user(&user_pk).await;
+    let _ = UserTelegram::delete_for_user(&user_pk).await;
 
     // 3) Anonymize author snapshots on the user's posts & comments (content
     //    preserved, identity hidden). Best-effort — never fails the deletion.
-    anonymize_user_posts(cli, &user.pk).await;
-    anonymize_user_comments(cli, &user.pk).await;
+    anonymize_user_posts(&user_pk).await;
+    anonymize_user_comments(&user_pk).await;
 
     // 4) Flush the current session.
     let _ = session.flush().await;
@@ -80,13 +83,24 @@ pub async fn delete_account_handler() -> Result<DeleteAccountResponse> {
 }
 
 #[cfg(feature = "server")]
-async fn anonymize_user_posts(cli: &aws_sdk_dynamodb::Client, user_pk: &Partition) {
-    use crate::features::posts::models::Post;
+async fn anonymize_user_posts(user_pk: &Partition) {
+    use crate::features::posts::models::{Post, PostColumn};
+    use postgres::Order;
+    use postgres::ops::StringOp;
 
-    let mut bookmark: Option<String> = None;
+    let page_size: i64 = 50;
+    let mut page: i64 = 1;
     for _ in 0..MAX_ANON_PAGES {
-        let opts = Post::opt_with_bookmark(bookmark.clone()).limit(50);
-        let (items, next) = match Post::find_by_user_pk(cli, user_pk, opts).await {
+        let page_data = match Post::repository()
+            .find(
+                Post::query()
+                    .user_pk(StringOp::Eq(user_pk.to_string()))
+                    .order_by(PostColumn::CreatedAt, Order::Desc)
+                    .page(page)
+                    .page_size(page_size),
+            )
+            .await
+        {
             Ok(v) => v,
             Err(e) => {
                 crate::error!("delete_account: list posts failed: {e}");
@@ -94,33 +108,47 @@ async fn anonymize_user_posts(cli: &aws_sdk_dynamodb::Client, user_pk: &Partitio
             }
         };
 
-        for p in items {
-            if let Err(e) = Post::updater(p.pk.clone(), p.sk.clone())
-                .with_author_display_name(ANON_AUTHOR_NAME.to_string())
-                .with_author_username(ANON_AUTHOR_USERNAME.to_string())
-                .with_author_profile_url(DEFAULT_PROFILE_URL.to_string())
-                .execute(cli)
+        for p in &page_data.items {
+            if let Err(e) = Post::repository()
+                .update(
+                    p.id,
+                    Post::update()
+                        .author_display_name(ANON_AUTHOR_NAME.to_string())
+                        .author_username(ANON_AUTHOR_USERNAME.to_string())
+                        .author_profile_url(DEFAULT_PROFILE_URL.to_string()),
+                )
                 .await
             {
-                crate::error!("delete_account: anonymize post {:?} failed: {e}", p.pk);
+                crate::error!("delete_account: anonymize post {:?} failed: {e}", p.id);
             }
         }
 
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => return,
+        if page >= page_data.total_pages {
+            return;
         }
+        page += 1;
     }
 }
 
 #[cfg(feature = "server")]
-async fn anonymize_user_comments(cli: &aws_sdk_dynamodb::Client, user_pk: &Partition) {
-    use crate::features::posts::models::PostComment;
+async fn anonymize_user_comments(user_pk: &Partition) {
+    use crate::features::posts::models::{PostComment, PostCommentColumn};
+    use postgres::Order;
+    use postgres::ops::StringOp;
 
-    let mut bookmark: Option<String> = None;
+    let page_size: i64 = 50;
+    let mut page: i64 = 1;
     for _ in 0..MAX_ANON_PAGES {
-        let opts = PostComment::opt_with_bookmark(bookmark.clone()).limit(50);
-        let (items, next) = match PostComment::find_by_user_pk(cli, user_pk, opts).await {
+        let page_data = match PostComment::repository()
+            .find(
+                PostComment::query()
+                    .author_pk(StringOp::Eq(user_pk.to_string()))
+                    .order_by(PostCommentColumn::CreatedAt, Order::Desc)
+                    .page(page)
+                    .page_size(page_size),
+            )
+            .await
+        {
             Ok(v) => v,
             Err(e) => {
                 crate::error!("delete_account: list comments failed: {e}");
@@ -128,21 +156,24 @@ async fn anonymize_user_comments(cli: &aws_sdk_dynamodb::Client, user_pk: &Parti
             }
         };
 
-        for c in items {
-            if let Err(e) = PostComment::updater(c.pk.clone(), c.sk.clone())
-                .with_author_display_name(ANON_AUTHOR_NAME.to_string())
-                .with_author_username(ANON_AUTHOR_USERNAME.to_string())
-                .with_author_profile_url(DEFAULT_PROFILE_URL.to_string())
-                .execute(cli)
+        for c in &page_data.items {
+            if let Err(e) = PostComment::repository()
+                .update(
+                    c.id,
+                    PostComment::update()
+                        .author_display_name(ANON_AUTHOR_NAME.to_string())
+                        .author_username(ANON_AUTHOR_USERNAME.to_string())
+                        .author_profile_url(DEFAULT_PROFILE_URL.to_string()),
+                )
                 .await
             {
-                crate::error!("delete_account: anonymize comment {:?} failed: {e}", c.pk);
+                crate::error!("delete_account: anonymize comment {:?} failed: {e}", c.id);
             }
         }
 
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => return,
+        if page >= page_data.total_pages {
+            return;
         }
+        page += 1;
     }
 }

@@ -4,18 +4,24 @@ use crate::features::membership::models::{
 };
 use crate::features::membership::services::portone::PortOne;
 use crate::features::membership::*;
-use aws_sdk_dynamodb::types::TransactWriteItem;
 
+/// A user's or team's membership row, abstracted so the upgrade/downgrade flow
+/// can be written once. Postgres writes go through the natural-key upsert
+/// helpers (`save` / `save_in_tx`) instead of DynamoDB `TransactWriteItem`s.
+#[async_trait::async_trait]
 pub trait MembershipEntity: Clone + Send + Sync {
-    fn owner_pk(&self) -> Partition;
-    fn membership_pk(&self) -> &MembershipPartition;
-    fn set_membership_pk(&mut self, pk: MembershipPartition);
-    fn next_membership(&self) -> Option<&MembershipPartition>;
-    fn set_next_membership(&mut self, pk: Option<MembershipPartition>);
+    fn membership_pk(&self) -> &MembershipTier;
+    fn set_membership_pk(&mut self, pk: MembershipTier);
+    fn next_membership(&self) -> Option<&MembershipTier>;
+    fn set_next_membership(&mut self, pk: Option<MembershipTier>);
     fn expired_at(&self) -> i64;
     fn set_updated_at(&mut self, timestamp: i64);
     fn calculate_remaining_duration_days(&self) -> i32;
-    fn upsert_transact_write_item(&self) -> TransactWriteItem;
+
+    /// Natural-key upsert (standalone).
+    async fn save(&self) -> Result<()>;
+    /// Natural-key upsert within an open transaction.
+    async fn save_in_tx(&self, tx: &postgres::Tx) -> Result<()>;
 
     fn is_infinite(&self) -> bool {
         self.expired_at() == i64::MAX
@@ -43,18 +49,16 @@ pub trait PaymentEntity: Clone + Send + Sync {
         scheduled_at: String,
     ) -> Result<Self::Purchase>;
 
-    async fn cancel_scheduled_payments(
-        &self,
-        cli: &aws_sdk_dynamodb::Client,
-        portone: &PortOne,
-    ) -> Result<()>;
+    async fn cancel_scheduled_payments(&self, portone: &PortOne) -> Result<()>;
 
-    fn upsert_transact_write_item(&self) -> TransactWriteItem;
+    /// Natural-key upsert of the payment profile within an open transaction.
+    async fn upsert_in_tx(&self, tx: &postgres::Tx) -> Result<()>;
 }
 
+#[async_trait::async_trait]
 pub trait PurchaseEntity: Clone + Send + Sync + Into<PaymentReceipt> {
-    fn pk(&self) -> &CompositePartition;
-    fn create_transact_write_item(&self) -> TransactWriteItem;
+    /// Insert the purchase row within an open transaction.
+    async fn insert_in_tx(&self, tx: &postgres::Tx) -> Result<()>;
 }
 
 #[async_trait::async_trait]
@@ -83,21 +87,16 @@ impl PaymentEntity for UserPayment {
             .await
     }
 
-    async fn cancel_scheduled_payments(
-        &self,
-        cli: &aws_sdk_dynamodb::Client,
-        portone: &PortOne,
-    ) -> Result<()> {
-        self.cancel_scheduled_payments(cli, portone).await
+    async fn cancel_scheduled_payments(&self, portone: &PortOne) -> Result<()> {
+        self.cancel_scheduled_payments(portone).await
     }
 
-    fn upsert_transact_write_item(&self) -> TransactWriteItem {
-        self.upsert_transact_write_item()
+    async fn upsert_in_tx(&self, tx: &postgres::Tx) -> Result<()> {
+        self.upsert_in_tx(tx).await
     }
 }
 
 pub async fn handle_downgrade<M, P>(
-    cli: &aws_sdk_dynamodb::Client,
     portone: &PortOne,
     entity_membership: &M,
     payment: Option<&P>,
@@ -108,24 +107,22 @@ where
     M: MembershipEntity,
     P: PaymentEntity,
 {
-    let new_membership = Membership::get_by_membership_tier(cli, &new_tier).await?;
+    let new_membership = Membership::get_by_membership_tier(&new_tier).await?;
 
     let mut updated_membership = entity_membership.clone();
-    updated_membership.set_next_membership(Some(new_membership.pk.clone().into()));
+    updated_membership.set_next_membership(Some(new_membership.tier.clone()));
     updated_membership.set_updated_at(crate::common::utils::time::now());
 
     if let Some(payment) = payment {
-        let _ = payment.cancel_scheduled_payments(cli, portone).await;
+        let _ = payment.cancel_scheduled_payments(portone).await;
     }
 
-    let txs = vec![updated_membership.upsert_transact_write_item()];
-    crate::transact_write_all_items_with_failover!(cli, txs);
+    updated_membership.save().await?;
 
     Ok(new_membership)
 }
 
 pub async fn handle_upgrade<M, P, NewMembershipFn>(
-    cli: &aws_sdk_dynamodb::Client,
     portone: &PortOne,
     entity_membership: &M,
     current_membership: Membership,
@@ -138,9 +135,9 @@ pub async fn handle_upgrade<M, P, NewMembershipFn>(
 where
     M: MembershipEntity,
     P: PaymentEntity,
-    NewMembershipFn: FnOnce(&Membership, &CompositePartition) -> Result<TransactWriteItem>,
+    NewMembershipFn: FnOnce(&Membership) -> Result<M>,
 {
-    let new_membership = Membership::get_by_membership_tier(cli, &new_tier).await?;
+    let new_membership = Membership::get_by_membership_tier(&new_tier).await?;
 
     let tx_type = TransactionType::PurchaseMembership(new_tier.clone());
     let amount = match currency {
@@ -157,37 +154,36 @@ where
         .purchase(portone, tx_type.clone(), amount, currency)
         .await?;
 
-    let new_membership_item = new_membership_fn(&new_membership, purchase.pk())?;
+    let new_user_membership = new_membership_fn(&new_membership)?;
 
-    let mut txs = vec![purchase.create_transact_write_item(), new_membership_item];
-
+    // Atomic multi-write replacing the DynamoDB TransactWriteItems batch:
+    // purchase insert + new membership upsert + optional payment upsert.
+    let tx = postgres::Tx::begin().await.map_err(crate::common::Error::from)?;
+    purchase.insert_in_tx(&tx).await?;
+    new_user_membership.save_in_tx(&tx).await?;
     if should_update_payment {
-        txs.push(payment.upsert_transact_write_item());
+        payment.upsert_in_tx(&tx).await?;
     }
-
-    crate::transact_write_all_items_with_failover!(cli, txs);
+    tx.commit().await.map_err(crate::common::Error::from)?;
 
     Ok((purchase, new_membership))
 }
 
+#[async_trait::async_trait]
 impl MembershipEntity for UserMembership {
-    fn owner_pk(&self) -> Partition {
-        self.pk.clone()
-    }
-
-    fn membership_pk(&self) -> &MembershipPartition {
+    fn membership_pk(&self) -> &MembershipTier {
         &self.membership_pk
     }
 
-    fn set_membership_pk(&mut self, pk: MembershipPartition) {
+    fn set_membership_pk(&mut self, pk: MembershipTier) {
         self.membership_pk = pk;
     }
 
-    fn next_membership(&self) -> Option<&MembershipPartition> {
+    fn next_membership(&self) -> Option<&MembershipTier> {
         self.next_membership.as_ref()
     }
 
-    fn set_next_membership(&mut self, pk: Option<MembershipPartition>) {
+    fn set_next_membership(&mut self, pk: Option<MembershipTier>) {
         self.next_membership = pk;
     }
 
@@ -203,29 +199,35 @@ impl MembershipEntity for UserMembership {
         self.calculate_remaining_duration_days()
     }
 
-    fn upsert_transact_write_item(&self) -> TransactWriteItem {
-        self.upsert_transact_write_item()
+    async fn save(&self) -> Result<()> {
+        self.save().await
+    }
+
+    async fn save_in_tx(&self, tx: &postgres::Tx) -> Result<()> {
+        UserMembership::repository()
+            .with_tx(tx)
+            .upsert_on(&["user_pk"], self)
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(())
     }
 }
 
+#[async_trait::async_trait]
 impl MembershipEntity for crate::features::membership::models::TeamMembership {
-    fn owner_pk(&self) -> Partition {
-        self.pk.clone()
-    }
-
-    fn membership_pk(&self) -> &MembershipPartition {
+    fn membership_pk(&self) -> &MembershipTier {
         &self.membership_pk
     }
 
-    fn set_membership_pk(&mut self, pk: MembershipPartition) {
+    fn set_membership_pk(&mut self, pk: MembershipTier) {
         self.membership_pk = pk;
     }
 
-    fn next_membership(&self) -> Option<&MembershipPartition> {
+    fn next_membership(&self) -> Option<&MembershipTier> {
         self.next_membership.as_ref()
     }
 
-    fn set_next_membership(&mut self, pk: Option<MembershipPartition>) {
+    fn set_next_membership(&mut self, pk: Option<MembershipTier>) {
         self.next_membership = pk;
     }
 
@@ -241,8 +243,17 @@ impl MembershipEntity for crate::features::membership::models::TeamMembership {
         self.calculate_remaining_duration_days()
     }
 
-    fn upsert_transact_write_item(&self) -> TransactWriteItem {
-        self.upsert_transact_write_item()
+    async fn save(&self) -> Result<()> {
+        self.save().await
+    }
+
+    async fn save_in_tx(&self, tx: &postgres::Tx) -> Result<()> {
+        crate::features::membership::models::TeamMembership::repository()
+            .with_tx(tx)
+            .upsert_on(&["team_pk"], self)
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(())
     }
 }
 
@@ -272,15 +283,11 @@ impl PaymentEntity for crate::features::membership::models::TeamPayment {
             .await
     }
 
-    async fn cancel_scheduled_payments(
-        &self,
-        cli: &aws_sdk_dynamodb::Client,
-        portone: &PortOne,
-    ) -> Result<()> {
-        self.cancel_scheduled_payments(cli, portone).await
+    async fn cancel_scheduled_payments(&self, portone: &PortOne) -> Result<()> {
+        self.cancel_scheduled_payments(portone).await
     }
 
-    fn upsert_transact_write_item(&self) -> TransactWriteItem {
-        self.upsert_transact_write_item()
+    async fn upsert_in_tx(&self, tx: &postgres::Tx) -> Result<()> {
+        self.upsert_in_tx(tx).await
     }
 }

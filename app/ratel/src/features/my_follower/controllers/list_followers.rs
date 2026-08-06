@@ -1,39 +1,47 @@
+use crate::common::models::auth::UserFollow;
 use crate::features::my_follower::controllers::dto::FollowUserItem;
 use crate::features::my_follower::controllers::profile::build_profiles;
 use crate::features::my_follower::*;
-use crate::common::models::auth::UserFollow;
 use std::collections::HashSet;
+use std::str::FromStr;
+
+/// Rows per page. Matches the old DynamoDB query's `limit(10)`.
+const PAGE_SIZE: i64 = 10;
 
 #[get("/api/my-follower/followers?bookmark", user: crate::features::auth::User)]
 pub async fn list_followers(bookmark: Option<String>) -> Result<ListResponse<FollowUserItem>> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
+    let user_pk = user.pk();
 
-    let mut opt = UserFollow::opt()
-        .sk(EntityType::Follower(String::default()).to_string())
-        .limit(10);
-    if let Some(bookmark) = bookmark {
-        opt = opt.bookmark(bookmark);
-    }
+    // `bookmark` carries the next 1-based page number as an opaque string —
+    // the client treats it as an opaque cursor, so this is a transparent
+    // swap of the DynamoDB cursor for a Postgres page number.
+    let page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
 
-    let (follows, bookmark) = UserFollow::query(cli, user.pk.clone(), opt).await?;
-    let follower_pks: Vec<Partition> = follows.into_iter().map(|follow| follow.user_pk).collect();
-
-    let profiles = build_profiles(cli, &follower_pks).await?;
-
-    let following_keys: Vec<(Partition, EntityType)> = follower_pks
-        .iter()
-        .map(|pk| UserFollow::following_keys(&user.pk, pk))
-        .collect();
-    let following_records: Vec<UserFollow> = if following_keys.is_empty() {
-        vec![]
+    let page_result = UserFollow::list_followers_page(&user_pk, page, PAGE_SIZE).await?;
+    let next_bookmark = if page < page_result.total_pages {
+        Some((page + 1).to_string())
     } else {
-        UserFollow::batch_get(cli, following_keys).await?
+        None
     };
-    let following_targets: HashSet<String> = following_records
+
+    let follower_pks: Vec<Partition> = page_result
+        .items
         .into_iter()
-        .map(|record| record.target_user_pk.to_string())
+        .filter_map(|follow| Partition::from_str(&follow.user_pk).ok())
         .collect();
+
+    let profiles = build_profiles(&follower_pks).await?;
+
+    let following_targets: HashSet<String> =
+        UserFollow::following_targets_in(&user_pk, &follower_pks)
+            .await?
+            .into_iter()
+            .map(|record| record.target_user_pk)
+            .collect();
 
     let items = follower_pks
         .into_iter()
@@ -46,10 +54,13 @@ pub async fn list_followers(bookmark: Option<String>) -> Result<ListResponse<Fol
                 username: profile.username.clone(),
                 user_type: profile.user_type,
                 description: profile.description.clone(),
-                is_following: following_targets.contains(&pk.to_string()),
+                is_following: following_targets.contains(&key),
             })
         })
         .collect();
 
-    Ok(ListResponse { items, bookmark })
+    Ok(ListResponse {
+        items,
+        bookmark: next_bookmark,
+    })
 }

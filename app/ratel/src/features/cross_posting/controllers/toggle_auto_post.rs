@@ -14,7 +14,7 @@ pub async fn toggle_auto_post_handler(
     platform: SocialPlatform,
     req: ToggleAutoPostRequest,
 ) -> Result<ConnectionResponse> {
-    let user_id = user_id_of(&user.pk);
+    let user_id = user_id_of(&user.pk());
     let now = crate::common::utils::time::now();
 
     let existing = SocialConnection::find_by_user_platform(&user_id, platform)

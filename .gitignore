@@ -84,3 +84,4 @@ GoogleService-Info.plist
 
 # Generated NDK tool-name shims for vendored OpenSSL Android build
 /app/ratel-tauri/.ndk-shims/
+/ratel-prod-export

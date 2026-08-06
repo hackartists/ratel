@@ -24,31 +24,34 @@ pub async fn get_my_score_handler(space_id: SpacePartition) -> Result<MyScoreRes
         return Ok(MyScoreResponse::default());
     };
 
-    let author = AuthorPartition::from(user.pk.clone());
+    let author = AuthorPartition::from(user.pk());
 
-    let score_opt = SpaceScore::get_for(&space_id, &author)
+    let score = SpaceScore::get_for(&space_id, &author)
         .await
         .map_err(|e| {
             crate::error!("score: {e:?}");
             ActivityError::ScoreLoadFailed
-        })?;
+        })?
+        .unwrap_or_default();
 
-    // Rank = number of participants with a strictly higher total_score, + 1.
-    // No score row yet (never participated) → rank 0, mirroring the old
-    // "user not found in the ranking list" behaviour.
-    let rank = match &score_opt {
-        Some(score) => {
-            let higher = SpaceScore::count_higher(&space_id, score.total_score)
-                .await
-                .map_err(|e| {
-                    crate::error!("ranking: {e:?}");
-                    ActivityError::RankingLoadFailed
-                })?;
-            (higher as u32) + 1
-        }
-        None => 0,
-    };
-    let score = score_opt.unwrap_or_default();
+    // Rank = the participant's position in the full space ranking, ordered by
+    // the DynamoDB GSI2 composite sort key (`total_score DESC, updated_at DESC,
+    // author_pk DESC`). Ties are broken by those secondary keys, so each
+    // participant gets a unique 1-based rank. A participant with no score row
+    // (never in the ranking list) → rank 0, mirroring the original
+    // `position(...)` / `unwrap_or(0)` behaviour.
+    let all_scores = SpaceScore::find_all_by_space_ranked(&space_id)
+        .await
+        .map_err(|e| {
+            crate::error!("ranking: {e:?}");
+            ActivityError::RankingLoadFailed
+        })?;
+    let author_key = author.to_string();
+    let rank = all_scores
+        .iter()
+        .position(|s| s.author_pk == author_key)
+        .map(|pos| (pos as u32) + 1)
+        .unwrap_or(0);
 
     Ok(MyScoreResponse {
         total_score: score.total_score,

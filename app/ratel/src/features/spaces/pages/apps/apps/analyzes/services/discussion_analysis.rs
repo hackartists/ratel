@@ -18,6 +18,7 @@
 
 use crate::common::utils::time::get_now_timestamp_millis;
 use crate::features::spaces::pages::apps::apps::analyzes::*;
+use postgres::PostgresEntity;
 use std::collections::HashSet;
 
 /// Outer wrapper: catches every failure path inside the analysis
@@ -34,8 +35,8 @@ pub async fn process_discussion_analysis(
         Ok(()) => Ok(()),
         Err(e) => {
             crate::error!(
-                "discussion_analysis failed for sk={} report={} discussion={}: {e}",
-                row.sk,
+                "discussion_analysis failed for id={} report={} discussion={}: {e}",
+                row.request_id,
                 row.report_id,
                 row.discussion_id,
             );
@@ -52,11 +53,10 @@ async fn try_process_discussion_analysis(
     cli: &aws_sdk_dynamodb::Client,
     row: &SpaceAnalyzeDiscussionResult,
 ) -> Result<()> {
-    let space_pk = row.pk.clone();
+    let space_pk = row.space_partition();
 
     // 1. Load parent report — fail-fast if missing.
-    let report_sk = EntityType::SpaceAnalyzeReport(row.report_id.clone());
-    let report = match SpaceAnalyzeReport::get(cli, &space_pk, Some(report_sk)).await? {
+    let report = match SpaceAnalyzeReport::get_for_space(&space_pk, &row.report_id).await? {
         Some(r) => r,
         None => {
             crate::error!(
@@ -113,30 +113,36 @@ async fn try_process_discussion_analysis(
     let (network_nodes, network_edges) =
         services::text_pipeline::text_network::run_text_network(&token_docs, row.params.top_n_network);
 
-    // 6. Overwrite the row with results. updater's `with_*` setters
-    //    flip every field in one transactional UpdateItem.
-    SpaceAnalyzeDiscussionResult::updater(row.pk.clone(), row.sk.clone())
-        .with_status(AnalyzeReportStatus::Finish)
-        .with_analyzed_comment_count(comment_count)
-        .with_topics(topics)
-        .with_tfidf_terms(tfidf_terms)
-        .with_network_nodes(network_nodes)
-        .with_network_edges(network_edges)
-        .with_updated_at(get_now_timestamp_millis())
-        .execute(cli)
+    // 6. Overwrite the row with results — one partial update flips
+    //    every result field at once.
+    SpaceAnalyzeDiscussionResult::repository()
+        .update(
+            row.id,
+            SpaceAnalyzeDiscussionResult::update()
+                .status(AnalyzeReportStatus::Finish)
+                .analyzed_comment_count(comment_count)
+                .topics(TopicRows(topics))
+                .tfidf_terms(TermScores(tfidf_terms))
+                .network_nodes(NetworkNodes(network_nodes))
+                .network_edges(NetworkEdges(network_edges))
+                .updated_at(get_now_timestamp_millis()),
+        )
         .await?;
 
     Ok(())
 }
 
 async fn mark_failed(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     row: &SpaceAnalyzeDiscussionResult,
 ) -> Result<()> {
-    SpaceAnalyzeDiscussionResult::updater(row.pk.clone(), row.sk.clone())
-        .with_status(AnalyzeReportStatus::Failed)
-        .with_updated_at(get_now_timestamp_millis())
-        .execute(cli)
+    SpaceAnalyzeDiscussionResult::repository()
+        .update(
+            row.id,
+            SpaceAnalyzeDiscussionResult::update()
+                .status(AnalyzeReportStatus::Failed)
+                .updated_at(get_now_timestamp_millis()),
+        )
         .await?;
     Ok(())
 }

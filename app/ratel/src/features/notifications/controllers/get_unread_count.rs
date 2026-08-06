@@ -4,6 +4,7 @@ use crate::features::auth::User;
 use crate::features::notifications::types::{NotificationsError, UnreadCountResponse};
 
 const UNREAD_COUNT_CAP: i64 = 100;
+const PAGE_SIZE: i64 = 30;
 
 #[mcp_tool(
     name = "get_unread_count",
@@ -16,43 +17,37 @@ pub async fn get_unread_count_handler(
     )]
     space_id: Option<SpacePartition>,
 ) -> Result<UnreadCountResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
+    let user_id = user.id.to_string();
 
     // When scoping to a space, notifications carry their space only inside the
     // payload, so scan more pages (capped) and count only matching rows.
-    let max_pages = if space_id.is_some() { 5 } else { 4 };
+    let max_pages: i64 = if space_id.is_some() { 5 } else { 4 };
     let mut count: i64 = 0;
-    let mut bookmark: Option<String> = None;
-    for _ in 0..max_pages {
-        // Filter by the sparse GSI sort-key prefix so rows we rewrote to the
-        // read sentinel ("R") are skipped — only "U#..." unread keys match.
-        let opts = UserInboxNotification::opt_with_bookmark(bookmark)
-            .sk("U".to_string())
-            .limit(30);
-        let (items, next) =
-            UserInboxNotification::find_inbox_unread_by_user(cli, user.pk.clone(), opts)
+
+    for page in 1..=max_pages {
+        let page_result =
+            UserInboxNotification::find_for_user(&user_id, true, page, PAGE_SIZE)
                 .await
                 .map_err(|e| {
-                    crate::error!("unread-count GSI query failed: {e}");
+                    crate::error!("unread-count query failed: {e}");
                     NotificationsError::ListFailed
                 })?;
         count += match &space_id {
-            Some(sid) => items
+            Some(sid) => page_result
+                .items
                 .iter()
                 .filter(|it| it.payload.space_id().as_ref() == Some(sid))
                 .count() as i64,
-            None => items.len() as i64,
+            None => page_result.items.len() as i64,
         };
         if count >= UNREAD_COUNT_CAP {
             return Ok(UnreadCountResponse {
                 count: UNREAD_COUNT_CAP,
             });
         }
-        if next.is_none() {
+        if page >= page_result.total_pages {
             break;
         }
-        bookmark = next;
     }
     Ok(UnreadCountResponse { count })
 }

@@ -13,22 +13,16 @@ pub async fn list_space_incentive_tokens(
 ) -> Result<ListResponse<SpaceIncentiveToken>> {
     use crate::features::spaces::pages::apps::apps::incentive_pool::models::SpaceIncentive;
     SpaceIncentive::can_view(role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let dynamo = common_config.dynamodb();
 
     let space_pk: Partition = space_pk.into();
-    let incentive = SpaceIncentive::get(dynamo, &space_pk, Some(&EntityType::SpaceIncentive))
+    let incentive = SpaceIncentive::get_by_space(&space_pk)
         .await?
         .ok_or(Error::NotFound("Space incentive not found".to_string()))?;
 
-    let mut opt = SpaceIncentiveToken::opt_with_bookmark(bookmark);
-    if let Some(limit) = limit {
-        opt = opt.limit(limit.max(1));
-    }
+    let page_size = limit.map(|l| l.max(1) as i64).unwrap_or(100);
 
     let (items, bookmark) =
-        SpaceIncentiveToken::find_by_incentive_address(dynamo, &incentive.contract_address, opt)
-            .await?;
+        SpaceIncentiveToken::find_page(&incentive.contract_address, bookmark, page_size).await?;
 
     Ok((items, bookmark).into())
 }

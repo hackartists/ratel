@@ -3,11 +3,15 @@ use crate::common::*;
 #[allow(unused_imports)]
 use rmcp::schemars;
 
+use postgres::{PostgresEntity, PostgresEnum};
+use uuid::Uuid;
+
 /// Wallet transaction kind. Together with `amount` (signed) this is
 /// the full record of what happened. `ref_*` fields are optional
 /// breadcrumbs back to the entity that caused the txn.
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, PostgresEnum,
+)]
 pub enum ArcadeTxnKind {
     /// RP → chip conversion. `amount` is positive (chips credited).
     #[default]
@@ -25,46 +29,50 @@ pub enum ArcadeTxnKind {
 }
 
 /// Append-only ledger row for the arcade wallet. Each chip movement
-/// (convert / buy-in / settle / ...) writes one row. The pk is the
-/// same as the balance row, so a single pk query reads the full
-/// history in one round-trip; `sk = EntityType::ArcadeWalletTxn(ulid)`
-/// makes the rows time-sortable.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(
-    feature = "server",
-    derive(DynamoEntity, rmcp::schemars::JsonSchema)
-)]
+/// (convert / buy-in / settle / ...) writes one row.
+///
+/// Postgres migration: the DynamoDB `(ArcadeWallet(user_id),
+/// ArcadeWalletTxn(txn_id))` pair becomes a surrogate `id` PK; the
+/// globally-unique `txn_id` (uuid_v7) is the natural key. `user_id`
+/// is the bare user id, indexed for per-user history sweeps.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "arcade_wallet_transactions")]
 pub struct ArcadeWalletTransaction {
-    pub pk: Partition,  // Partition::ArcadeWallet(user_id)
-    pub sk: EntityType, // EntityType::ArcadeWalletTxn(txn_id)
+    pub id: Uuid,
 
+    /// Bare user id. Indexed for per-user ledger scans.
+    #[postgres(index)]
+    pub user_id: String,
+
+    /// Globally-unique txn id (uuid_v7, time-sortable). UNIQUE.
+    #[postgres(unique)]
+    pub txn_id: String,
+
+    #[postgres(order)]
     pub created_at: i64,
     pub updated_at: i64,
 
     pub kind: ArcadeTxnKind,
 
     /// Signed chip delta. Positive = credited, negative = debited.
-    /// Sum of all txn amounts for a pk must equal the balance row's
-    /// `chip_balance` invariant.
     pub amount: i64,
 
-    /// Player chip balance *after* this txn was applied. Useful for
-    /// idempotency / audit trails when reconstructing history.
+    /// Player chip balance *after* this txn was applied.
     pub balance_after: i64,
 
     /// For BuyIn / Settle: the round this txn relates to. Stored as
-    /// the raw round id (no prefix) so it round-trips with the
-    /// FactFold partition.
+    /// the raw round id (no prefix).
     #[serde(default)]
     pub ref_round_id: Option<String>,
 }
 
-#[cfg(feature = "server")]
 impl ArcadeWalletTransaction {
-    pub fn keys(user_id: &str, txn_id: &str) -> (Partition, EntityType) {
-        (
-            Partition::ArcadeWallet(user_id.to_string()),
-            EntityType::ArcadeWalletTxn(txn_id.to_string()),
-        )
+    /// Insert a fresh ledger row. `txn_id` is globally unique so this
+    /// is always a new row.
+    pub async fn insert_row(&self) -> crate::common::Result<Self> {
+        Self::repository()
+            .insert(self)
+            .await
+            .map_err(crate::common::Error::from)
     }
 }

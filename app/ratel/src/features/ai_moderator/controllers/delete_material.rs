@@ -10,10 +10,7 @@ pub async fn delete_material(
 ) -> Result<()> {
     role.is_creator()?;
 
-    // Membership lives in the (still DynamoDB-backed) membership feature.
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    super::require_premium(cli, &user).await?;
+    super::require_premium(&user).await?;
 
     let material_id = material_id
         .parse::<uuid::Uuid>()

@@ -22,6 +22,8 @@ use crate::features::sub_team::models::SubTeamLink;
 use crate::features::sub_team::services::activity_aggregation::{
     build_sub_team_summary, compute_activity_counts, compute_member_activity, list_sub_team_links,
 };
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
 // ── GET /api/teams/:team_pk/sub-teams ─────────────────────────────
 //
@@ -43,7 +45,7 @@ pub async fn list_sub_teams_handler(
     let cfg = crate::common::CommonConfig::default();
     let cli = cfg.dynamodb();
 
-    let (links, truncated) = list_sub_team_links(cli, &team.pk).await?;
+    let (links, truncated) = list_sub_team_links(&team.partition()).await?;
 
     let mut items: Vec<SubTeamSummaryResponse> = Vec::with_capacity(links.len());
     for link in &links {
@@ -87,8 +89,7 @@ pub async fn get_sub_team_detail_handler(
 
     // Verify the parent→child link exists so a parent admin can't query
     // arbitrary teams' activity just by URL-guessing.
-    let link_sk = EntityType::SubTeamLink(sub_team_id.clone());
-    let link = SubTeamLink::get(cli, &team.pk, Some(link_sk))
+    let link = SubTeamLink::find_link(&team.partition(), &sub_team_id)
         .await
         .map_err(|e| {
             crate::error!("get_sub_team_detail link fetch failed: {e}");
@@ -97,7 +98,9 @@ pub async fn get_sub_team_detail_handler(
         .ok_or(SubTeamError::SubTeamLinkNotFound)?;
 
     let sub_team_pk = Partition::Team(sub_team_id.clone());
-    let child = Team::get(cli, &sub_team_pk, Some(EntityType::Team))
+    let sub_team_uuid = Uuid::parse_str(&sub_team_id)
+        .map_err(|_| SubTeamError::ActivityAggregationFailed)?;
+    let child = Team::get_by_id(sub_team_uuid)
         .await
         .map_err(|e| {
             crate::error!("get_sub_team_detail team fetch failed: {e}");
@@ -143,8 +146,7 @@ pub async fn get_sub_team_activity_handler(
     let cli = cfg.dynamodb();
 
     // Authorize: link must exist.
-    let link_sk = EntityType::SubTeamLink(sub_team_id.clone());
-    let _link = SubTeamLink::get(cli, &team.pk, Some(link_sk))
+    let _link = SubTeamLink::find_link(&team.partition(), &sub_team_id)
         .await
         .map_err(|e| {
             crate::error!("get_sub_team_activity link fetch failed: {e}");
@@ -180,8 +182,7 @@ pub async fn get_sub_team_member_activity_handler(
     let cli = cfg.dynamodb();
 
     // Authorize: link must exist.
-    let link_sk = EntityType::SubTeamLink(sub_team_id.clone());
-    let _link = SubTeamLink::get(cli, &team.pk, Some(link_sk))
+    let _link = SubTeamLink::find_link(&team.partition(), &sub_team_id)
         .await
         .map_err(|e| {
             crate::error!("get_sub_team_member_activity link fetch failed: {e}");

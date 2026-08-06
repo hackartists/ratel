@@ -5,8 +5,6 @@ use crate::features::cross_posting::types::{
     CrossPostingError, EngagementCountsView, SyndicationJobView, SyndicationPanelResponse,
 };
 use crate::features::posts::models::Post;
-#[cfg(feature = "server")]
-use crate::features::cross_posting::services::feed_id_of;
 
 /// Author-only syndication panel (FR-7 #41–#45). Shows per-platform
 /// dispatch state, retry diagnostics, and engagement counts for one of
@@ -17,12 +15,9 @@ use crate::features::cross_posting::services::feed_id_of;
 pub async fn get_syndication_panel_handler(
     post_id: FeedPartition,
 ) -> Result<SyndicationPanelResponse> {
-    let conf = crate::features::posts::config::get();
-    let cli = conf.dynamodb();
+    let post_uuid = uuid::Uuid::parse_str(&post_id.0).map_err(|_| CrossPostingError::NotAuthorized)?;
 
-    let post_pk: Partition = post_id.clone().into();
-
-    let post = Post::get(cli, &post_pk, Some(EntityType::Post))
+    let post = Post::get_by_feed_id(post_uuid)
         .await
         .map_err(|e| {
             crate::error!("get_syndication_panel post lookup failed: {e}");
@@ -30,11 +25,11 @@ pub async fn get_syndication_panel_handler(
         })?
         .ok_or(CrossPostingError::NotAuthorized)?;
 
-    if post.user_pk != user.pk {
+    if post.user_pk != user.pk().to_string() {
         return Err(CrossPostingError::NotAuthorized.into());
     }
 
-    let post_id_str = feed_id_of(&post_pk);
+    let post_id_str = post.feed_id();
     let jobs = SyndicationJob::find_by_post(&post_id_str).await.map_err(|e| {
         crate::error!("get_syndication_panel jobs query failed: {e}");
         CrossPostingError::ListFailed

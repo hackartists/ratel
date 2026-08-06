@@ -22,20 +22,21 @@ pub async fn add_comment_handler(
     let conf = crate::features::posts::config::get();
     let cli = conf.dynamodb();
 
-    let post_pk: Partition = post_id.clone().into();
+    let post_uuid = uuid::Uuid::parse_str(&post_id.0)
+        .map_err(|_| Error::NotFound("Post not found".into()))?;
 
-    let post = Post::get(cli, &post_pk, Some(EntityType::Post))
+    let post = Post::get_by_feed_id(post_uuid)
         .await?
         .ok_or(Error::NotFound("Post not found".into()))?;
 
-    match &post.user_pk {
-        team_pk if matches!(team_pk, &Partition::Team(_)) => {
-            Team::has_permission(cli, team_pk, &user.pk, TeamGroupPermission::PostRead).await?;
+    match post.author_partition() {
+        team_pk if matches!(team_pk, Partition::Team(_)) => {
+            Team::has_permission(cli, &team_pk, &user.pk(), TeamGroupPermission::PostRead).await?;
         }
         _ => {}
     }
 
-    let comment = Post::comment(cli, post.pk.clone(), req.content, req.images, user.clone()).await?;
+    let comment = Post::comment(post_uuid, req.content, req.images, user.clone()).await?;
 
     // Essence indexing happens via the DynamoDB Stream pipeline.
 
@@ -47,9 +48,8 @@ pub async fn add_comment_handler(
             post_id
         );
         crate::common::utils::mention::create_mention_notifications(
-            cli,
             &comment.content,
-            &user.pk,
+            &user.pk(),
             &user.display_name,
             &cta_url,
         )

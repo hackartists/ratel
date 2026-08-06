@@ -28,12 +28,8 @@ pub async fn refresh_space_incentive_tokens(
 
     SpaceIncentive::can_view(role)?;
 
-    let common_config = crate::common::CommonConfig::default();
-    let dynamo = common_config.dynamodb();
-
     let space_pk: Partition = space_pk.into();
-    let incentive =
-        SpaceIncentive::get(dynamo, &space_pk, Some(&EntityType::SpaceIncentive)).await?;
+    let incentive = SpaceIncentive::get_by_space(&space_pk).await?;
     let Some(incentive) = incentive else {
         return Err(Error::NotFound("Space incentive not found".to_string()));
     };
@@ -74,7 +70,7 @@ pub async fn refresh_space_incentive_tokens(
 
     if last_block < latest {
         let logs = fetch_transfer_logs(&provider, incentive_addr, last_block + 1, latest).await?;
-        let mut token_set = load_existing_tokens(dynamo, incentive_addr).await?;
+        let mut token_set = load_existing_tokens(incentive_addr).await?;
         for log in logs {
             token_set.insert(log.address);
         }
@@ -84,7 +80,6 @@ pub async fn refresh_space_incentive_tokens(
                 fetch_token_state(&provider, token, incentive_addr).await;
 
             SpaceIncentiveToken::upsert_balance(
-                dynamo,
                 format_addr(incentive_addr),
                 format_addr(token),
                 symbol.to_string(),
@@ -100,7 +95,7 @@ pub async fn refresh_space_incentive_tokens(
         let mut updated_incentive = incentive.clone();
         updated_incentive.last_block = latest.as_u64() as i64;
         updated_incentive.updated_at = get_now_timestamp_millis();
-        updated_incentive.upsert(dynamo).await?;
+        updated_incentive.save().await?;
         last_block = latest;
     }
 
@@ -111,15 +106,12 @@ pub async fn refresh_space_incentive_tokens(
 }
 
 #[cfg(feature = "server")]
-async fn load_existing_tokens(
-    cli: &aws_sdk_dynamodb::Client,
-    incentive_addr: Address,
-) -> Result<HashSet<Address>> {
+async fn load_existing_tokens(incentive_addr: Address) -> Result<HashSet<Address>> {
     use crate::features::spaces::pages::apps::apps::incentive_pool::models::SpaceIncentiveToken;
     use crate::features::spaces::pages::apps::apps::incentive_pool::utils::format_addr;
 
     let mut token_set = HashSet::new();
-    let items = SpaceIncentiveToken::list_token_addresses(cli, format_addr(incentive_addr)).await?;
+    let items = SpaceIncentiveToken::list_token_addresses(format_addr(incentive_addr)).await?;
 
     for token_address in items {
         if let Ok(parsed) = token_address.parse::<Address>() {

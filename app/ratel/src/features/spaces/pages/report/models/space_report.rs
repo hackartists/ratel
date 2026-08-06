@@ -1,18 +1,36 @@
 use crate::features::spaces::pages::report::*;
 #[cfg(feature = "server")]
-#[allow(unused_imports)]
-use rmcp::schemars;
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, DynamoEntity)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+/// Opaque jsonb wrapper for the report's Notion-style block list. A single
+/// tuple newtype serializes transparently, so the column holds the bare JSON
+/// array (no wrapper key).
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, postgres::PostgresJson)]
+pub struct ReportBlockList(pub Vec<ReportBlock>);
+
+/// One saved report on a space.
+///
+/// Postgres migration: the DynamoDB identity was `pk = Space(space_id)` +
+/// `sk = SpaceReport(uuid)`. It becomes a surrogate `id` PK holding that same
+/// report uuid (so the public `SpaceReportEntityType` string == `id`), plus a
+/// plain `space_id` column (cross-feature reference to the spaces feature — no
+/// FK yet). The `find_by_status` GSI (gsi1: `pk=Space`, sk ordered by
+/// `(status, created_at)`) becomes an ordered query on the `space_id` index
+/// filtered by the `status` native enum column.
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, postgres::PostgresEntity)]
+#[postgres(table = "space_reports")]
 pub struct SpaceReport {
-    #[dynamo(index = "gsi1", name = "find_by_status", pk)]
-    pub pk: Partition,
-    pub sk: EntityType,
-    #[dynamo(index = "gsi1", order = 2, sk)]
+    pub id: Uuid,
+
+    /// Cross-feature reference to the space (bare id).
+    #[postgres(index)]
+    pub space_id: String,
+
+    #[postgres(order)]
     pub created_at: i64,
     pub updated_at: i64,
-    #[dynamo(index = "gsi1", order = 1, sk)]
     #[serde(default)]
     pub status: ReportStatus,
 
@@ -23,13 +41,10 @@ pub struct SpaceReport {
     #[serde(default)]
     pub html_contents: Option<String>,
 
-    /// Notion-style block list rendered by the detail editor. Stored
-    /// inline on the row so the editor can fetch + save in a single
-    /// round-trip; for large reports this risks the 400 KB per-item
-    /// DynamoDB ceiling, but the realistic upper bound (a few dozen
-    /// blocks, a few KB each) sits comfortably under it.
+    /// Notion-style block list rendered by the detail editor. Stored inline as
+    /// a jsonb column (see `ReportBlockList`).
     #[serde(default)]
-    pub blocks: Vec<ReportBlock>,
+    pub blocks: ReportBlockList,
 }
 
 #[cfg(feature = "server")]
@@ -37,19 +52,22 @@ impl SpaceReport {
     pub fn new(space_pk: SpacePartition, title: String, description: String) -> Self {
         use crate::common::utils::time::get_now_timestamp_millis;
         let now = get_now_timestamp_millis();
-        let pk: Partition = space_pk.into();
-        let sk = EntityType::SpaceReport(uuid::Uuid::now_v7().to_string());
         Self {
-            pk,
-            sk,
+            id: Uuid::now_v7(),
+            space_id: space_pk.0,
             created_at: now,
             updated_at: now,
             status: ReportStatus::Draft,
             title,
             description,
             html_contents: None,
-            blocks: Vec::new(),
+            blocks: ReportBlockList::default(),
         }
+    }
+
+    /// The report's public id string (== the surrogate `id` uuid).
+    pub fn report_id(&self) -> String {
+        self.id.to_string()
     }
 
     pub fn can_view(_role: SpaceUserRole) -> Result<()> {

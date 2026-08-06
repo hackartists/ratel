@@ -1,5 +1,6 @@
 use crate::common::types::UserType;
 use crate::features::auth::User;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 use crate::features::posts::*;
@@ -14,15 +15,14 @@ pub struct Author {
 }
 
 impl From<User> for Author {
-    fn from(
-        User {
-            pk,
+    fn from(user: User) -> Self {
+        let pk = user.pk();
+        let User {
             display_name,
             profile_url,
             username,
             ..
-        }: User,
-    ) -> Self {
+        } = user;
         Self {
             pk,
             display_name,
@@ -33,21 +33,14 @@ impl From<User> for Author {
     }
 }
 
+#[cfg(feature = "server")]
 impl From<Team> for Author {
-    fn from(
-        Team {
-            pk,
-            display_name,
-            profile_url,
-            username,
-            ..
-        }: Team,
-    ) -> Self {
+    fn from(team: Team) -> Self {
         Self {
-            pk,
-            display_name,
-            profile_url,
-            username,
+            pk: team.partition(),
+            display_name: team.display_name,
+            profile_url: team.profile_url,
+            username: team.username,
             user_type: UserType::Team,
         }
     }

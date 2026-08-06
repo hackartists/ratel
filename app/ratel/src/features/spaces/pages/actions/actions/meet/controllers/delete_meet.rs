@@ -11,25 +11,19 @@ pub async fn delete_meet(
     #[mcp(description = "Meet sort key (e.g. 'SpaceMeet#<uuid>')")] meet_sk: SpaceMeetEntityType,
 ) -> Result<String> {
     SpaceMeet::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_pk.into();
-    let meet_sk_entity: EntityType = meet_sk.into();
 
-    let _meet = SpaceMeet::get(cli, &space_pk, Some(meet_sk_entity.clone()))
+    let meet = SpaceMeet::get_one(&space_pk, &meet_sk)
         .await?
         .ok_or(MeetActionError::NotFound)?;
 
-    SpaceMeet::delete(cli, &space_pk, Some(meet_sk_entity))
-        .await
-        .map_err(|e| {
-            crate::error!("delete meet failed: {e}");
-            MeetActionError::DeleteFailed
-        })?;
+    SpaceMeet::repository().delete(meet.id).await.map_err(|e| {
+        crate::error!("delete meet failed: {e}");
+        MeetActionError::DeleteFailed
+    })?;
 
-    // Decrement meet count in aggregate
-    let agg_item = DashboardAggregate::inc_meets(&space_pk, -1);
-    crate::transact_write_items!(cli, vec![agg_item]).ok();
+    // Decrement meet count in aggregate.
+    let space_pk_partition: Partition = space_pk.into();
+    let _ = DashboardAggregate::inc_meets(&space_pk_partition, -1).await;
 
     Ok("success".to_string())
 }

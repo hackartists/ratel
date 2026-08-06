@@ -12,10 +12,9 @@ use crate::common::ListResponse;
 use crate::features::spaces::pages::actions::actions::discussion::SpacePost;
 use crate::features::spaces::pages::apps::apps::analyzes::{
     AnalyzeFilterSource, AnalyzeReportFilter, AnalyzeReportStatus, FollowTargetAggregate,
-    PollQuestionAggregate, QuizQuestionAggregate, SpaceAnalyzeDiscussionResult, SpaceAnalyzeReport,
-    SpaceAnalyzeReportResult,
+    PollQuestionAggregate, QuizQuestionAggregate, SpaceAnalyzeDiscussionResult,
+    SpaceAnalyzeDiscussionResultColumn, SpaceAnalyzeReport, SpaceAnalyzeReportResult,
 };
-use crate::features::spaces::pages::report::models::SpaceReport;
 use crate::features::spaces::pages::report::types::{
     ActionSource, Analyze, AnalyzeItem, ChartOption, CrossFilterChip, DiscussionData,
 };
@@ -30,19 +29,17 @@ use std::collections::{HashMap, HashSet};
 pub async fn list_report_analyzes(
     space_pk: SpacePartition,
 ) -> Result<ListResponse<Analyze>> {
-    SpaceReport::can_view(role)?;
-    let space_partition: Partition = space_pk.into();
+    use crate::features::spaces::pages::report::models::SpaceReport;
 
-    let conf = ServerConfig::default();
-    let dynamo = conf.dynamodb();
+    SpaceReport::can_view(role)?;
+    let space_partition: Partition = space_pk.clone().into();
 
     // Pre-fetch discussion (SpacePost) titles for the whole space once.
-    // The discussion-analysis sk only carries ids, so we need a side
+    // The discussion-analysis row only carries ids, so we need a side
     // lookup to surface titles in the picker. Doing it once instead of
     // per-report keeps this from blowing up into N*M queries when the
     // space accumulates many reports.
-    let post_titles: HashMap<String, String> =
-        fetch_space_discussion_titles(dynamo, &space_partition).await?;
+    let post_titles: HashMap<String, String> = fetch_space_discussion_titles(&space_pk).await?;
 
     // Page through every analyze report under the space. The detail
     // picker doesn't paginate so we surface them all at once; if this
@@ -50,16 +47,8 @@ pub async fn list_report_analyzes(
     let mut bookmark: Option<String> = None;
     let mut analyzes: Vec<Analyze> = Vec::new();
     loop {
-        let mut opt = SpaceAnalyzeReport::opt()
-            .sk(EntityType::SpaceAnalyzeReport(String::default()).to_string())
-            .scan_index_forward(false)
-            .limit(50);
-        if let Some(bm) = bookmark.take() {
-            opt = opt.bookmark(bm);
-        }
-
         let (reports, next_bookmark) =
-            SpaceAnalyzeReport::query(dynamo, space_partition.clone(), opt)
+            SpaceAnalyzeReport::list_page(&space_partition, bookmark.take(), 50)
                 .await
                 .map_err(|e| {
                     crate::error!("list_report_analyzes: query failed: {e:?}");
@@ -70,16 +59,12 @@ pub async fn list_report_analyzes(
             if !matches!(report.status, AnalyzeReportStatus::Finish) {
                 continue;
             }
-            let report_id = match &report.sk {
-                EntityType::SpaceAnalyzeReport(id) => id.clone(),
-                _ => continue,
-            };
+            let report_id = report.report_id();
 
             // Result row is optional — if it's gone (cleanup race,
             // dev-only state), surface the analyze with empty items
             // rather than dropping it.
-            let result_sk = EntityType::SpaceAnalyzeReportResult(report_id.clone());
-            let result = SpaceAnalyzeReportResult::get(dynamo, &space_partition, Some(result_sk))
+            let result = SpaceAnalyzeReportResult::get_for_report(&space_partition, &report_id)
                 .await
                 .map_err(|e| {
                     crate::error!("list_report_analyzes: result get failed: {e:?}");
@@ -91,8 +76,7 @@ pub async fn list_report_analyzes(
             // picker only surfaces discussions that already have
             // LDA/TF-IDF/network payloads ready to embed.
             let discussion_items =
-                latest_finished_discussions(dynamo, &space_partition, &report_id, &post_titles)
-                    .await?;
+                latest_finished_discussions(&space_partition, &report_id, &post_titles).await?;
 
             analyzes.push(project_analyze(
                 report_id,
@@ -159,31 +143,23 @@ fn project_analyze(
 
 /// Pre-fetch every space discussion's title once so we can join it onto
 /// `SpaceAnalyzeDiscussionResult` rows (which only carry the
-/// discussion_id). Paginates through `SpacePost::find_by_space_ordered`
-/// — same source used by the analyze detail page's sidebar list.
+/// discussion_id). Paginates through `SpacePost::list_by_space` — same
+/// source used by the analyze detail page's sidebar list.
 #[cfg(feature = "server")]
 async fn fetch_space_discussion_titles(
-    cli: &aws_sdk_dynamodb::Client,
-    space_pk: &Partition,
+    space_pk: &SpacePartition,
 ) -> Result<HashMap<String, String>> {
     let mut titles: HashMap<String, String> = HashMap::new();
     let mut bookmark: Option<String> = None;
     loop {
-        let opt = SpacePost::opt_with_bookmark(bookmark.clone())
-            .scan_index_forward(false)
-            .limit(50);
-        let (posts, next) = SpacePost::find_by_space_ordered(cli, space_pk.clone(), opt)
+        let (posts, next) = SpacePost::list_by_space(space_pk, None, bookmark.take(), 50)
             .await
             .map_err(|e| {
                 crate::error!("list_report_analyzes: discussion title query failed: {e:?}");
                 crate::features::spaces::pages::report::types::SpaceReportError::ReportListFailed
             })?;
         for post in posts {
-            let id = match post.sk {
-                EntityType::SpacePost(id) => id,
-                _ => continue,
-            };
-            titles.insert(id, post.title.trim().to_string());
+            titles.insert(post.post_id.clone(), post.title.trim().to_string());
         }
         match next {
             Some(b) => bookmark = Some(b),
@@ -195,32 +171,35 @@ async fn fetch_space_discussion_titles(
 
 /// For a given report, return the latest finished
 /// `SpaceAnalyzeDiscussionResult` per discussion, projected into
-/// `AnalyzeItem`. UUIDv7 in the sk gives lexicographic = chronological
-/// order, so a `scan_index_forward(false)` sweep yields newest-first
-/// and the first row seen per `discussion_id` is the latest. Rows still
-/// `InProgress` are skipped — the picker only surfaces discussions whose
-/// LDA/TF-IDF/network payload is ready to embed.
+/// `AnalyzeItem`. `id` is UUIDv7, so ordering by it descending is
+/// chronological newest-first, and the first row seen per
+/// `discussion_id` is the latest. Rows still `InProgress` are skipped —
+/// the picker only surfaces discussions whose LDA/TF-IDF/network
+/// payload is ready to embed.
 #[cfg(feature = "server")]
 async fn latest_finished_discussions(
-    cli: &aws_sdk_dynamodb::Client,
     space_pk: &Partition,
     report_id: &str,
     post_titles: &HashMap<String, String>,
 ) -> Result<Vec<AnalyzeItem>> {
-    // The on-disk sk prefix is the SCREAMING_SNAKE form emitted by the
-    // DynamoEnum derive — using the variant name `SpaceAnalyzeDiscussionResult`
-    // verbatim here would silently miss every row.
-    let sk_prefix = format!("SPACE_ANALYZE_DISCUSSION_RESULT#{}#", report_id);
-    let opt = SpaceAnalyzeDiscussionResult::opt()
-        .sk(sk_prefix)
-        .scan_index_forward(false)
-        .limit(100);
-    let (rows, _) = SpaceAnalyzeDiscussionResult::query(cli, space_pk.clone(), opt)
+    use postgres::PostgresEntity;
+    use postgres::Order;
+    use postgres::ops::StringOp;
+
+    let rows = SpaceAnalyzeDiscussionResult::repository()
+        .find(
+            SpaceAnalyzeDiscussionResult::query()
+                .space_pk(StringOp::Eq(space_pk.to_string()))
+                .report_id(StringOp::Eq(report_id.to_string()))
+                .order_by(SpaceAnalyzeDiscussionResultColumn::Id, Order::Desc)
+                .page_size(100),
+        )
         .await
         .map_err(|e| {
             crate::error!("list_report_analyzes: discussion result query failed: {e:?}");
             crate::features::spaces::pages::report::types::SpaceReportError::ReportListFailed
-        })?;
+        })?
+        .items;
 
     let mut seen: HashSet<String> = HashSet::new();
     let mut items: Vec<AnalyzeItem> = Vec::new();
@@ -247,10 +226,10 @@ async fn latest_finished_discussions(
             options: Vec::new(),
             respondent_count: row.analyzed_comment_count.max(0) as u32,
             discussion_data: Some(DiscussionData {
-                topics: row.topics,
-                tfidf_terms: row.tfidf_terms,
-                network_nodes: row.network_nodes,
-                network_edges: row.network_edges,
+                topics: row.topics.0,
+                tfidf_terms: row.tfidf_terms.0,
+                network_nodes: row.network_nodes.0,
+                network_edges: row.network_edges.0,
             }),
             text_answers: Vec::new(),
         });

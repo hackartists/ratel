@@ -4,38 +4,72 @@ use crate::features::arcade::games::fact_or_fold::types::{RevealSource, SubjectS
 #[allow(unused_imports)]
 use rmcp::schemars;
 
+use postgres::ops::{EnumOp, StringOp};
+use postgres::{Order, PostgresEntity, PostgresJson};
+use uuid::Uuid;
+
+/// jsonb newtype for the reveal-source list. serde treats the
+/// single-field tuple newtype transparently → stored as a bare JSON
+/// array. `Deref`/`DerefMut` expose the inner `Vec` so call sites read
+/// it like a plain vector.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresJson)]
+pub struct RevealSourceList(pub Vec<RevealSource>);
+
+impl std::ops::Deref for RevealSourceList {
+    type Target = Vec<RevealSource>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for RevealSourceList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+/// jsonb newtype for the free-form category tag list (bare JSON array).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresJson)]
+pub struct CategoryTagList(pub Vec<String>);
+
+impl std::ops::Deref for CategoryTagList {
+    type Target = Vec<String>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for CategoryTagList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// Single subject = single round's content (a news item players will
-/// judge as Real or Fake). Stored under the shared anchor pk
-/// `Partition::FactFoldSubjects` with a sk carrying the subject id
-/// (`EntityType::FactFoldSubject(subject_id)`) so a single `query` on
-/// the anchor pk lists every subject.
+/// judge as Real or Fake).
 ///
-/// Lifecycle: Draft → Scheduled (optional) → Live (round in progress)
-/// → Settled. Once Live, only `reveal_sources` may grow (roadmap §FR-43).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(
-    feature = "server",
-    derive(DynamoEntity, rmcp::schemars::JsonSchema)
-)]
+/// Postgres migration: the DynamoDB shared-anchor-pk +
+/// `FactFoldSubject(subject_id)` sort key becomes a surrogate `id` PK
+/// plus a `unique(subject_id)` natural key. The old GSI3 `(status,
+/// pick_at)` partition is now just two indexed columns queried
+/// directly. `creator_pk` is a cross-feature actor reference stored as
+/// the rendered `Partition` string (no FK).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "fact_fold_subjects")]
 pub struct FactFoldSubject {
-    pub pk: Partition,  // Partition::FactFoldSubjects
-    pub sk: EntityType, // EntityType::FactFoldSubject(subject_id)
+    pub id: Uuid,
+
+    /// Business subject id (was the sort-key inner). UNIQUE.
+    #[postgres(unique)]
+    pub subject_id: String,
 
     pub created_at: i64,
     pub updated_at: i64,
 
-    /// Operator who authored this subject.
-    pub creator_pk: Partition,
+    /// Operator who authored this subject (rendered `Partition` string).
+    pub creator_pk: String,
 
-    /// Status drives the GSI3 partition: `pick_next_subject` queries
-    /// `Live` (already-activated, FIFO-pickable) and `Scheduled`
-    /// (queued for a future timestamp) partitions independently, so
-    /// the per-status FIFO is computed at index time rather than in
-    /// memory.
-    #[cfg_attr(
-        feature = "server",
-        dynamo(prefix = "FFS", name = "find_by_status", index = "gsi3", pk)
-    )]
+    /// Was the GSI3 partition; now an indexed column so the per-status
+    /// FIFO scans stay index-backed.
+    #[postgres(index)]
     pub status: SubjectStatus,
 
     pub verdict: Verdict,
@@ -46,59 +80,32 @@ pub struct FactFoldSubject {
     /// Difficulty stars 1..=5.
     pub difficulty: i32,
 
-    #[serde(default)]
-    pub category_tags: Vec<String>,
+    pub category_tags: CategoryTagList,
 
     pub source_label: String,
 
-    /// Single private statement delivered to the insider. v1 has no
-    /// "possibly-false" mafia statement — see roadmap §FR-26.
+    /// Single private statement delivered to the insider.
     pub insider_statement: String,
 
     pub reveal_summary: String,
 
-    #[serde(default)]
-    pub reveal_sources: Vec<RevealSource>,
+    pub reveal_sources: RevealSourceList,
 
-    /// Millis since epoch; None for plain drafts. When Some, the
-    /// scheduler activates the subject as the live round at this time.
+    /// Millis since epoch; None for plain drafts.
     pub scheduled_at: Option<i64>,
 
-    /// Materialized sort key for FIFO picking — equal to
-    /// `scheduled_at.unwrap_or(created_at)`. Lives on the row as a
-    /// real i64 (not derived per query) so the GSI3 sort key sees a
-    /// stable, indexable column. Update sites that change
-    /// `scheduled_at` must also update this field.
-    #[serde(default)]
-    #[cfg_attr(
-        feature = "server",
-        dynamo(prefix = "PICK", index = "gsi3", sk)
-    )]
+    /// Materialized FIFO sort key — equal to
+    /// `scheduled_at.unwrap_or(created_at)`. Was the GSI3 sort key;
+    /// now an indexed column.
+    #[postgres(index)]
     pub pick_at: i64,
 
-    /// Millis since epoch when the subject's active window ends.
-    /// `pick_next_subject` filters by `now ∈ [scheduled_at, expires_at]`
-    /// — a subject past `expires_at` is auto-retired and never picked
-    /// again. `0` means "not yet set" (legacy rows or drafts without a
-    /// window); pick logic treats `0` as an indefinite/no-expiry value
-    /// so existing data keeps the prior "until manually settled" semantics.
-    #[serde(default)]
+    /// Millis since epoch when the subject's active window ends. `0`
+    /// means "no expiry".
     pub expires_at: i64,
 }
 
-#[cfg(feature = "server")]
 impl FactFoldSubject {
-    pub fn anchor_pk() -> Partition {
-        Partition::FactFoldSubjects
-    }
-
-    pub fn keys(subject_id: &str) -> (Partition, EntityType) {
-        (
-            Partition::FactFoldSubjects,
-            EntityType::FactFoldSubject(subject_id.to_string()),
-        )
-    }
-
     /// Build a fresh draft from a creation request. Caller is responsible
     /// for validation and uniqueness check; this only assembles the row.
     pub fn new_draft(
@@ -124,38 +131,96 @@ impl FactFoldSubject {
         };
         let pick_at = scheduled_at.unwrap_or(now);
         Self {
-            pk: Partition::FactFoldSubjects,
-            sk: EntityType::FactFoldSubject(subject_id),
+            id: Uuid::now_v7(),
+            subject_id,
             created_at: now,
             updated_at: now,
-            creator_pk,
+            creator_pk: creator_pk.to_string(),
             status,
             verdict,
             headline_text,
             body_excerpt,
             difficulty,
-            category_tags,
+            category_tags: CategoryTagList(category_tags),
             source_label,
             insider_statement,
             reveal_summary,
-            reveal_sources,
+            reveal_sources: RevealSourceList(reveal_sources),
             scheduled_at,
             pick_at,
             expires_at,
         }
     }
 
-    /// Inner id encoded in the sort key.
-    pub fn id(&self) -> Option<String> {
-        match &self.sk {
-            EntityType::FactFoldSubject(id) => Some(id.clone()),
-            _ => None,
-        }
-    }
-
-    /// True once a round has been started against this subject; mutation
-    /// rules tighten (roadmap §FR-43).
+    /// True once a round has been started against this subject.
     pub fn is_locked(&self) -> bool {
         matches!(self.status, SubjectStatus::Live | SubjectStatus::Settled)
+    }
+
+    /// Point read by business subject id.
+    pub async fn get_by_subject_id(subject_id: &str) -> crate::common::Result<Option<Self>> {
+        Self::repository()
+            .find_one(Self::query().subject_id(StringOp::Eq(subject_id.to_string())))
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// All subjects in a given status, oldest `pick_at` first (FIFO).
+    pub async fn list_by_status(
+        status: SubjectStatus,
+        limit: i64,
+    ) -> crate::common::Result<Vec<Self>> {
+        Ok(Self::repository()
+            .find(
+                Self::query()
+                    .status(EnumOp::Eq(status))
+                    .order_by(FactFoldSubjectColumn::PickAt, Order::Asc)
+                    .limit(limit),
+            )
+            .await
+            .map_err(crate::common::Error::from)?
+            .items)
+    }
+
+    /// Paginated listing, newest `created_at` first. `status = Some`
+    /// filters to that status; `None` with `exclude_deleted` skips
+    /// soft-deleted rows.
+    pub async fn list_page(
+        status: Option<SubjectStatus>,
+        exclude_deleted: bool,
+        limit: i64,
+        offset: i64,
+    ) -> crate::common::Result<Vec<Self>> {
+        let mut q = Self::query();
+        match status {
+            Some(s) => q = q.status(EnumOp::Eq(s)),
+            None if exclude_deleted => q = q.status(EnumOp::Ne(SubjectStatus::Deleted)),
+            None => {}
+        }
+        q = q
+            .order_by(FactFoldSubjectColumn::CreatedAt, Order::Desc)
+            .limit(limit)
+            .offset(offset);
+        Ok(Self::repository()
+            .find(q)
+            .await
+            .map_err(crate::common::Error::from)?
+            .items)
+    }
+
+    /// Create-if-not-exists on `subject_id` (fails if it already exists).
+    pub async fn insert_new(&self) -> crate::common::Result<Self> {
+        Self::repository()
+            .insert(self)
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// Natural-key upsert on `subject_id` (full-row overwrite).
+    pub async fn save(&self) -> crate::common::Result<Self> {
+        Self::repository()
+            .upsert_on(&["subject_id"], self)
+            .await
+            .map_err(crate::common::Error::from)
     }
 }

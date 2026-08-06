@@ -15,26 +15,24 @@ pub async fn remove_quiz_file(
     req: RemoveQuizFileRequest,
 ) -> Result<()> {
     SpaceQuiz::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_id.clone().into();
     let link_target = FileLinkTarget::Quiz(quiz_id.to_string());
-    let quiz_sk: EntityType = quiz_id.into();
 
-    let quiz = SpaceQuiz::get(cli, &space_pk, Some(quiz_sk.clone()))
+    let mut quiz = SpaceQuiz::get_one(&space_id, &quiz_id)
         .await?
         .ok_or(SpaceActionQuizError::NotFound)?;
 
     let updated_files: Vec<File> = quiz
         .files
-        .into_iter()
+        .iter()
         .filter(|f| f.url.as_ref() != Some(&req.file_url))
+        .cloned()
         .collect();
 
-    SpaceQuiz::updater(&space_pk, &quiz_sk)
-        .with_files(updated_files)
-        .execute(cli)
-        .await?;
+    quiz.files = QuizFiles(updated_files);
+    SpaceQuiz::repository()
+        .upsert(&quiz)
+        .await
+        .map_err(crate::common::Error::from)?;
 
     delete_file_link(
         space_id,

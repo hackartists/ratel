@@ -42,7 +42,7 @@ pub async fn connect_bluesky_handler(req: ConnectBlueskyRequest) -> Result<Conne
     // password sessions don't expire on Bluesky's side, so no
     // token_expires_at.
     let row = seal_and_upsert_connection(ConnectionUpsert {
-            user_id: crate::features::cross_posting::services::user_id_of(&user.pk),
+            user_id: crate::features::cross_posting::services::user_id_of(&user.pk()),
             platform: SocialPlatform::Bluesky,
             decrypted: DecryptedCredentials::Bluesky {
                 did: session.did.clone(),

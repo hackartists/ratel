@@ -8,14 +8,13 @@ use crate::common::models::migration::LastBackfillVersion;
 /// Operational rule: set `MIGRATE=true` on **exactly one** instance per
 /// release (typically a one-shot Lambda / ECS task). The conditional
 /// version bump is a safety net, not the primary contention guard.
-pub async fn run_migrations(cli: &aws_sdk_dynamodb::Client) -> crate::common::Result<()> {
+pub async fn run_migrations(_cli: &aws_sdk_dynamodb::Client) -> crate::common::Result<()> {
     if std::env::var("MIGRATE").as_deref() != Ok("true") {
         tracing::info!("MIGRATE not set — skipping migrations");
         return Ok(());
     }
 
-    let (pk, sk) = LastBackfillVersion::singleton_keys();
-    let stored = LastBackfillVersion::get(cli, &pk, Some(&sk))
+    let stored = LastBackfillVersion::load()
         .await?
         .map(|r| r.version)
         .unwrap_or(0);

@@ -61,17 +61,10 @@ pub async fn backfill_user_points_from_history(
 ) -> Result<BackfillUserPointsResponse> {
     use crate::common::models::auth::User;
     use crate::common::models::reward::UserRewardHistory;
-    use crate::common::types::{EntityType, Partition};
-    use aws_sdk_dynamodb::types::AttributeValue;
+    use crate::common::types::Partition;
+    use postgres::PostgresEntity;
     use std::collections::HashMap;
-
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
-    let table_name = format!(
-        "{}-main",
-        std::env::var("DYNAMO_TABLE_PREFIX").unwrap_or_else(|_| "ratel-dev".to_string())
-    );
+    use std::str::FromStr;
 
     let dry_run = dry_run.unwrap_or(false);
     let overwrite = overwrite.unwrap_or(false);
@@ -81,65 +74,59 @@ pub async fn backfill_user_points_from_history(
         ..Default::default()
     };
 
-    // ---- Step 1: scan ratel main, sum `point` per pk ----------------
+    // ---- Step 1: page through every UserRewardHistory row, sum `point` per user ----
     //
-    // Per-event UserRewardHistory rows have `###` somewhere in `sk`
-    // (the period separator); the aggregate UserReward rows that share
-    // the same partition do NOT. This is the exact filter the
-    // `backfill_user_reward_history_gsi` migration uses to single out
-    // event rows; reusing it keeps the two migrations in sync.
-    //
-    // We deserialize each item to `UserRewardHistory` so we get a
-    // typed `pk: CompositePartition<Partition, Partition>` and `point:
-    // i64` instead of fishing through raw `AttributeValue`s.
+    // Postgres migration note: the old DynamoDB `contains(sk, "###")`
+    // filter distinguished per-event `UserRewardHistory` rows from the
+    // aggregate `UserReward` rows that shared the same partition. That
+    // distinction no longer applies — `UserRewardHistory` now has its own
+    // dedicated table (`user_reward_histories`), so every row here is
+    // already a per-event row; no filter is needed.
     //
     // Keyed by raw UUID string (not `Partition`) because `Partition`
     // doesn't derive `Hash`. We carry only USER-target rows forward;
     // TEAM rows are filtered out at insert time.
     let mut totals: HashMap<String, i64> = HashMap::new();
-    let mut last_key: Option<HashMap<String, AttributeValue>> = None;
 
+    const PAGE_SIZE: i64 = 200;
+    let mut page_num: i64 = 1;
     loop {
-        let mut scan = cli
-            .scan()
-            .table_name(&table_name)
-            .filter_expression("contains(sk, :sep)")
-            .expression_attribute_values(":sep", AttributeValue::S("###".to_string()))
-            .limit(200);
+        let page = UserRewardHistory::repository()
+            .find(UserRewardHistory::query().page(page_num).page_size(PAGE_SIZE))
+            .await
+            .map_err(|e| {
+                crate::error!("UserRewardHistory scan failed: {e}");
+                crate::common::Error::NotFound(format!("scan failed: {e}"))
+            })?;
 
-        if let Some(k) = last_key.take() {
-            scan = scan.set_exclusive_start_key(Some(k));
+        if page.items.is_empty() {
+            break;
         }
 
-        let page = scan.send().await.map_err(|e| {
-            crate::error!("ratel main scan failed: {e}");
-            crate::common::Error::NotFound(format!("ratel main scan failed: {e}"))
-        })?;
-
-        for item in page.items.unwrap_or_default() {
+        for h in page.items {
             response.history_rows_scanned += 1;
 
-            match serde_dynamo::from_item::<_, UserRewardHistory>(item) {
-                Ok(h) => {
-                    // h.pk = CompositePartition(target_pk, Partition::Reward).
-                    // We key totals by the *target* UUID (USER only —
-                    // teams have their own balance migration when needed).
-                    if let Partition::User(uid) = &h.pk.0 {
-                        let slot = totals.entry(uid.clone()).or_insert(0);
-                        *slot = slot.saturating_add(h.point);
-                    }
+            match Partition::from_str(&h.target_pk) {
+                Ok(Partition::User(uid)) => {
+                    let slot = totals.entry(uid).or_insert(0);
+                    *slot = slot.saturating_add(h.point);
+                }
+                Ok(_) => {
+                    // Non-User target (e.g. Team) — not handled by this
+                    // migration, same as the old `if let Partition::User(..)`
+                    // filter.
                 }
                 Err(e) => {
                     response.history_rows_skipped_invalid += 1;
-                    tracing::debug!(error = %e, "failed to deserialize UserRewardHistory");
+                    tracing::debug!(error = %e, "failed to parse UserRewardHistory.target_pk");
                 }
             }
         }
 
-        match page.last_evaluated_key {
-            Some(k) if !k.is_empty() => last_key = Some(k),
-            _ => break,
+        if page_num >= page.total_pages {
+            break;
         }
+        page_num += 1;
     }
 
     response.users_with_balance = totals.values().filter(|v| **v > 0).count();
@@ -169,7 +156,7 @@ pub async fn backfill_user_points_from_history(
 
         let target_pk = Partition::User(user_uuid.clone());
 
-        let user = match User::get(cli, target_pk.clone(), Some(&EntityType::User)).await {
+        let user = match User::find_by_pk(&target_pk).await {
             Ok(Some(u)) => u,
             Ok(None) => {
                 response.skipped_user_not_found += 1;
@@ -177,7 +164,7 @@ pub async fn backfill_user_points_from_history(
                 continue;
             }
             Err(e) => {
-                crate::error!("User::get failed for {target_pk}: {e}");
+                crate::error!("User::find_by_pk failed for {target_pk}: {e}");
                 response.skipped_user_not_found += 1;
                 continue;
             }
@@ -204,16 +191,24 @@ pub async fn backfill_user_points_from_history(
             continue;
         }
 
-        if let Err(e) = User::updater(target_pk.clone(), EntityType::User)
-            .with_points(*total)
-            .with_updated_at(now)
-            .execute(cli)
-            .await
+        // Direct `points`/`updated_at` set (was `User::updater(..).with_points(..)`).
         {
-            crate::error!(
-                "User::updater(with_points) failed for {target_pk}: {e}"
-            );
-            continue;
+            use postgres::Value;
+            use postgres::sqlx::{Postgres, QueryBuilder};
+
+            let table = User::table_name();
+            let mut qb =
+                QueryBuilder::<Postgres>::new(format!("UPDATE \"{table}\" SET points = "));
+            Value::from(*total).push_bind(&mut qb);
+            qb.push(", updated_at = ");
+            Value::from(now).push_bind(&mut qb);
+            qb.push(" WHERE id = ");
+            Value::from(user.id).push_bind(&mut qb);
+
+            if let Err(e) = User::repository().db().execute(qb).await {
+                crate::error!("User points update failed for {target_pk}: {e}");
+                continue;
+            }
         }
 
         response.updated += 1;

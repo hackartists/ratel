@@ -64,8 +64,6 @@ pub async fn register_essence_handler(
     round_id: FactFoldRoundEntityType,
     req: RegisterEssenceRequest,
 ) -> Result<RegisterEssenceResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let inner_round_id = round_id.0.clone();
 
     if !req.register {
@@ -75,13 +73,12 @@ pub async fn register_essence_handler(
     }
 
     let user_id = user
-        .pk
+        .pk()
         .to_string()
         .strip_prefix("USER#")
-        .unwrap_or(&user.pk.to_string())
+        .unwrap_or(&user.pk().to_string())
         .to_string();
-    let (pk, sk) = FactFoldRationale::keys(&inner_round_id, &user_id);
-    let mut rationale = FactFoldRationale::get(cli, &pk, Some(sk.clone()))
+    let mut rationale = FactFoldRationale::get_by_round_user(&inner_round_id, &user_id)
         .await
         .map_err(|e| {
             crate::error!("register_essence_handler rationale read failed: {e}");
@@ -104,7 +101,7 @@ pub async fn register_essence_handler(
     if !rationale.essence_registered {
         rationale.essence_registered = true;
         rationale.updated_at = crate::common::utils::time::get_now_timestamp_millis();
-        rationale.upsert(cli).await.map_err(|e| {
+        rationale.save().await.map_err(|e| {
             crate::error!("register_essence_handler rationale upsert failed: {e}");
             FactOrFoldError::StorageFailure
         })?;

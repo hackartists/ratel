@@ -30,22 +30,19 @@ pub async fn respond_quiz(
     let cli = common_config.dynamodb();
     let space_id = space_pk;
     let space_pk: Partition = space_id.clone().into();
-    let quiz_sk: EntityType = quiz_id.clone().into();
 
-    let quiz = SpaceQuiz::get(cli, &space_pk, Some(quiz_sk.clone()))
+    let quiz = SpaceQuiz::get_one(&space_id, &quiz_id)
         .await?
         .ok_or(Error::NotFound("Quiz not found".into()))?;
 
-    let space_action = crate::features::spaces::pages::actions::models::SpaceAction::get(
-        cli,
-        &CompositePartition(space_id.clone(), quiz_id.clone()),
-        Some(EntityType::SpaceAction),
+    let space_action = crate::features::spaces::pages::actions::models::SpaceAction::get_one(
+        &space_id,
+        &quiz_id.0,
     )
     .await?
     .ok_or(Error::SpaceActionNotFound)?;
 
     let deps_met = crate::features::spaces::pages::actions::services::dependency::dependencies_met(
-        cli,
         &space,
         &space_action,
         &member.pk,
@@ -63,13 +60,12 @@ pub async fn respond_quiz(
         return Err(SpaceActionQuizError::NotAvailableInCurrentStatus.into());
     }
 
-    let answer_sk = EntityType::SpaceQuizAnswer(quiz_id.to_string());
-    let correct = SpaceQuizAnswer::get(cli, &space_pk, Some(answer_sk))
+    let correct = SpaceQuizAnswer::get_one(&space_id, &quiz_id)
         .await?
         .ok_or(Error::NotFound("Quiz answer not found".into()))?;
 
     if !crate::features::spaces::pages::actions::actions::poll::types::validate_answers(
-        quiz.questions.clone(),
+        quiz.questions.0.clone(),
         req.answers.clone(),
     ) {
         return Err(SpaceActionQuizError::AnswersMismatch.into());
@@ -77,19 +73,19 @@ pub async fn respond_quiz(
 
     let total_allowed = quiz.retry_count.saturating_add(1).min(MAX_TOTAL_ATTEMPTS);
     let limit: i32 = total_allowed as i32;
-    let attempts = SpaceQuizAttempt::list_by_quiz_user(cli, &quiz_id, &member.pk, limit).await?;
+    let attempts = SpaceQuizAttempt::list_by_quiz_user(&quiz_id, &member.pk, limit).await?;
     if attempts.len() as i64 >= total_allowed {
         return Err(SpaceActionQuizError::NoRemainingAttempts.into());
     }
     let score = calculate_score(&quiz.questions, &correct.answers, &req.answers)?;
     let attempt = SpaceQuizAttempt::new(space_id.clone(), quiz_id.clone(), member.clone(), req.answers, score, quiz.pass_score);
-    attempt.create(cli).await?;
+    SpaceQuizAttempt::repository()
+        .insert(&attempt)
+        .await
+        .map_err(crate::common::Error::from)?;
 
     if attempts.is_empty() {
-        SpaceQuiz::updater(&space_pk, &quiz_sk)
-            .increase_user_response_count(1)
-            .execute(cli)
-            .await?;
+        SpaceQuiz::bump_response_count(quiz.id, 1).await?;
     }
 
     // Reward payout + XP recording run on EventBridge via SPACE_QUIZ_ATTEMPT#

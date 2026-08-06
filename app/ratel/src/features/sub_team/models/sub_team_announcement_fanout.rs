@@ -1,60 +1,54 @@
 use crate::common::*;
 #[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+use uuid::Uuid;
 
 /// Per-child marker pointing at the parent's anchor announcement Post.
 ///
-/// **Why this exists:** earlier implementations cloned the parent's Post
-/// onto every recognized sub-team's feed via `Post::create`, which
-/// produced one Post row per (child × announcement). That broke every
-/// natural invariant the platform assumed about Posts — same announcement
-/// rendered with different `/posts/{uuid}` URLs depending on which team
-/// you were on, likes / comments / shares scattered across rows, the
-/// parent admin couldn't see the reception their own broadcast received,
-/// and the wall list count diverged from the detail-page count.
+/// **Postgres migration:** the DynamoDB `(pk = Team(child), sk =
+/// SubTeamAnnouncementFanout(announcement_id))` identity becomes a surrogate
+/// `id` PK plus `unique(child_team_pk, announcement_id)` — one marker per
+/// (child, announcement) so re-fanout is idempotent. `child_team_pk` holds the
+/// raw `"TEAM#…"` partition string.
 ///
-/// Now there is **one anchor Post** (`pk = Feed(announcement_id)`,
-/// authored by the parent team) and one of these markers per recognized
-/// child. Child wall queries (`list_team_posts_handler`) read their own
-/// Posts plus their fanout markers, batch-get the anchor Posts the
-/// markers point at, and union the result. Every reader — parent admin,
-/// every child — sees the same anchor URL, same likes / comments / shares,
-/// same content. Direct messages use the same marker pattern with a
-/// single targeted child.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, DynamoEntity)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+/// There is one anchor Post (`pk = Feed(announcement_id)`) and one of these
+/// markers per recognized child. Child wall queries read their markers,
+/// batch-get the anchor Posts they point at, and union the result.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
+#[cfg_attr(
+    feature = "server",
+    postgres(
+        table = "sub_team_announcement_fanouts",
+        unique(child_team_pk, announcement_id)
+    )
+)]
 pub struct SubTeamAnnouncementFanout {
-    /// `Partition::Team(child_team_id)` — the child team whose wall
-    /// should surface this announcement.
-    pub pk: Partition,
-    /// `EntityType::SubTeamAnnouncementFanout(announcement_id)` — unique
-    /// per (child, announcement) so re-publishing or re-fanout of the
-    /// same announcement is idempotent.
-    pub sk: EntityType,
+    /// Surrogate primary key.
+    pub id: Uuid,
 
-    /// Anchor Post pk in string form (`"FEED#{announcement_id}"`).
-    /// String rather than `Partition` so DynamoDB stores a single
-    /// scalar attribute we can plug straight into a batch_get key.
-    pub anchor_post_pk: String,
+    /// The child team whose wall should surface this announcement
+    /// (`"TEAM#…"` partition string). Indexed.
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub child_team_pk: String,
 
-    /// Raw announcement id, mirroring the anchor Post's inner
-    /// `announcement_id`. Indexed inline (no separate field) — keeps
-    /// the wall query from having to re-parse the sk.
+    /// Raw announcement id. Indexed.
+    #[cfg_attr(feature = "server", postgres(index))]
     pub announcement_id: String,
 
-    /// Raw parent team UUID. Lets the wall renderer (and the
-    /// draft-space filter in `list_team_posts_handler`) reason about
-    /// parent identity without re-resolving the anchor Post.
+    /// Anchor Post pk in string form (`"FEED#{announcement_id}"`).
+    pub anchor_post_pk: String,
+
+    /// Raw parent team UUID.
     pub parent_team_id: String,
 
-    /// True when the source announcement was a direct message
-    /// (`target_child_team_id.is_some()`). Lets the wall surface a
-    /// "direct" badge later without a second lookup.
+    /// True when the source announcement was a direct message.
     pub is_direct: bool,
 
-    /// Timestamp of the anchor Post — used to order the marker
-    /// alongside the child's own posts in the wall.
+    /// Timestamp of the anchor Post — orders the marker in the child's wall.
     pub created_at: i64,
 
     pub updated_at: i64,
@@ -72,14 +66,30 @@ impl SubTeamAnnouncementFanout {
     ) -> Self {
         let anchor_post_pk = Partition::Feed(announcement_id.clone()).to_string();
         Self {
-            pk: child_team_pk,
-            sk: EntityType::SubTeamAnnouncementFanout(announcement_id.clone()),
+            id: Uuid::now_v7(),
+            child_team_pk: child_team_pk.to_string(),
+            announcement_id: announcement_id.clone(),
             anchor_post_pk,
-            announcement_id,
             parent_team_id,
             is_direct,
             created_at: anchor_created_at,
             updated_at: anchor_created_at,
         }
+    }
+
+    /// The marker for `(child, announcement)`, if any.
+    pub async fn find_marker(
+        child_pk: &Partition,
+        announcement_id: &str,
+    ) -> crate::common::Result<Option<Self>> {
+        use postgres::ops::StringOp;
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .child_team_pk(StringOp::Eq(child_pk.to_string()))
+                    .announcement_id(StringOp::Eq(announcement_id.to_string())),
+            )
+            .await
+            .map_err(crate::common::Error::from)
     }
 }

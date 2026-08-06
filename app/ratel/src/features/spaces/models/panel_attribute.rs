@@ -3,6 +3,9 @@ use crate::common::attribute::Age;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+// Postgres migration: stored as an opaque jsonb column on `space_panel_quotas`
+// (server-only derive; wire representation is unchanged).
+#[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum PanelAttribute {
     #[default]

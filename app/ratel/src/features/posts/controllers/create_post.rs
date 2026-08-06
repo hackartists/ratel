@@ -23,10 +23,10 @@ pub async fn create_post_handler(team_id: Option<TeamPartition>) -> Result<Creat
         tracing::debug!(
             "Creating post under team: {:?} by user {:?}",
             team_id,
-            user.pk
+            user.pk()
         );
         let team_pk: Partition = team_id.into();
-        Team::get_permitted_team(cli, team_pk, user.pk, TeamGroupPermission::PostWrite)
+        Team::get_permitted_team(cli, team_pk, user.pk(), TeamGroupPermission::PostWrite)
             .await?
             .into()
     } else {
@@ -34,10 +34,12 @@ pub async fn create_post_handler(team_id: Option<TeamPartition>) -> Result<Creat
     };
 
     let post = Post::draft(author);
-    post.create(cli).await?;
+    let post = post.create().await?;
 
     // Essence indexing is now driven by the DynamoDB Stream pipeline
     // (see `common::stream_handler::essence_index_dispatch`).
 
-    Ok(CreatePostResponse { post_pk: post.pk })
+    Ok(CreatePostResponse {
+        post_pk: Partition::Feed(post.id.to_string()),
+    })
 }

@@ -2,22 +2,22 @@ use super::dto::DeleteTeamResponse;
 use super::super::*;
 use crate::features::social::types::SocialError;
 
-#[cfg(feature = "server")]
-use aws_sdk_dynamodb::types::TransactWriteItem;
 use crate::features::posts::models::{Team, TeamGroup, TeamOwner};
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[delete("/api/teams/:username/settings", user: crate::features::auth::User, team: Team)]
 pub async fn delete_team_handler(username: String) -> Result<DeleteTeamResponse> {
     let conf = super::super::config::get();
     let cli = conf.common.dynamodb();
 
-    let team_pk = team.pk.clone();
+    let team_pk = team.partition();
 
-    let team_owner = TeamOwner::get(cli, &team_pk, Some(&EntityType::TeamOwner))
+    let team_owner = TeamOwner::find_by_team(team.id)
         .await?
         .ok_or(Error::NotFound("Team owner not found".into()))?;
 
-    if team_owner.user_pk != user.pk {
+    if team_owner.user_pk != user.pk().to_string() {
         return Err(SocialError::SessionNotFound.into());
     }
 
@@ -36,93 +36,86 @@ pub async fn delete_team_handler(username: String) -> Result<DeleteTeamResponse>
         crate::error!("delete_team: sub-team cascade failed (proceeding anyway): {e}");
     }
 
-    let mut transact_items: Vec<TransactWriteItem> = Vec::new();
+    // Every deletion below runs in a single Postgres transaction — strictly
+    // more atomic than the old DynamoDB transact-write (which itself
+    // chunked into batches of 25 and thus wasn't atomic across the whole
+    // set once a team had more than 25 total rows to remove).
+    let tx = postgres::Tx::begin().await.map_err(crate::common::Error::from)?;
+    let mut deleted_count = 0usize;
 
-    let mut team_group_bookmark: Option<String> = None;
-    loop {
-        let mut option = crate::features::posts::models::TeamGroupQueryOption::builder()
-            .limit(50)
-            .sk(EntityType::TeamGroup(String::default()).to_string());
-        if let Some(b) = &team_group_bookmark {
-            option = option.bookmark(b.clone());
-        }
-        let (team_groups, next) = TeamGroup::query(cli, team_pk.clone(), option).await?;
-        for group in team_groups {
-            transact_items.push(TeamGroup::delete_transact_write_item(
-                group.pk.clone(),
-                group.sk.clone(),
-            ));
-        }
-        if next.is_none() {
-            break;
-        }
-        team_group_bookmark = next;
-    }
-
-    let mut bookmark: Option<String> = None;
-    loop {
-        let mut option = crate::features::auth::UserTeamQueryOption::builder();
-        if let Some(b) = &bookmark {
-            option = option.bookmark(b.clone());
-        }
-        let (user_teams, next) = crate::features::auth::UserTeam::find_by_team(
-            cli,
-            &EntityType::UserTeam(team_pk.to_string()),
-            option,
-        )
-        .await?;
-        for user_team in user_teams {
-            transact_items.push(crate::features::auth::UserTeam::delete_transact_write_item(
-                user_team.pk,
-                user_team.sk,
-            ));
-        }
-        if next.is_none() {
-            break;
-        }
-        bookmark = next;
-    }
-
-    let mut user_group_bookmark: Option<String> = None;
-    loop {
-        let mut option = crate::features::auth::UserTeamGroupQueryOption::builder().limit(50);
-        if let Some(b) = &user_group_bookmark {
-            option = option.bookmark(b.clone());
-        }
-        let (user_team_groups, next) =
-            crate::features::auth::UserTeamGroup::find_by_team_pk(cli, &team_pk, option).await?;
-        for utg in user_team_groups {
-            transact_items.push(crate::features::auth::UserTeamGroup::delete_transact_write_item(
-                utg.pk, utg.sk,
-            ));
-        }
-        if next.is_none() {
-            break;
-        }
-        user_group_bookmark = next;
-    }
-
-    transact_items.push(TeamOwner::delete_transact_write_item(
-        team_owner.pk.clone(),
-        team_owner.sk.clone(),
-    ));
-    transact_items.push(Team::delete_transact_write_item(
-        team.pk.clone(),
-        team.sk.clone(),
-    ));
-
-    let deleted_count = transact_items.len();
-
-    for chunk in transact_items.chunks(25) {
-        cli.transact_write_items()
-            .set_transact_items(Some(chunk.to_vec()))
-            .send()
+    let team_groups = {
+        use postgres::ops::UuidOp;
+        TeamGroup::repository()
+            .with_tx(&tx)
+            .find(TeamGroup::query().team_id(UuidOp::Eq(team.id)))
             .await
-            .map_err(|e| {
-                crate::error!("Failed to delete team entities: {e}");
-                SocialError::TeamDeleteFailed
-            })?;
+            .map_err(crate::common::Error::from)?
+            .items
+    };
+    for group in &team_groups {
+        TeamGroup::repository()
+            .with_tx(&tx)
+            .delete(group.id)
+            .await
+            .map_err(crate::common::Error::from)?;
+        deleted_count += 1;
     }
+
+    let user_teams = crate::features::auth::UserTeam::repository()
+        .with_tx(&tx)
+        .find({
+            use postgres::ops::StringOp;
+            crate::features::auth::UserTeam::query().team_pk(StringOp::Eq(team_pk.to_string()))
+        })
+        .await
+        .map_err(crate::common::Error::from)?
+        .items;
+    for user_team in &user_teams {
+        crate::features::auth::UserTeam::repository()
+            .with_tx(&tx)
+            .delete(user_team.id)
+            .await
+            .map_err(crate::common::Error::from)?;
+        deleted_count += 1;
+    }
+
+    let user_team_groups = crate::features::auth::UserTeamGroup::repository()
+        .with_tx(&tx)
+        .find({
+            use postgres::ops::StringOp;
+            crate::features::auth::UserTeamGroup::query()
+                .team_pk(StringOp::Eq(team_pk.to_string()))
+        })
+        .await
+        .map_err(crate::common::Error::from)?
+        .items;
+    for utg in &user_team_groups {
+        crate::features::auth::UserTeamGroup::repository()
+            .with_tx(&tx)
+            .delete(utg.id)
+            .await
+            .map_err(crate::common::Error::from)?;
+        deleted_count += 1;
+    }
+
+    TeamOwner::repository()
+        .with_tx(&tx)
+        .delete(team_owner.id)
+        .await
+        .map_err(crate::common::Error::from)?;
+    deleted_count += 1;
+
+    Team::repository()
+        .with_tx(&tx)
+        .delete(team.id)
+        .await
+        .map_err(crate::common::Error::from)?;
+    deleted_count += 1;
+
+    tx.commit().await.map_err(|e| {
+        crate::error!("Failed to delete team entities: {e}");
+        SocialError::TeamDeleteFailed
+    })?;
 
     Ok(DeleteTeamResponse {
         message: format!("Team '{}' has been successfully deleted", username),

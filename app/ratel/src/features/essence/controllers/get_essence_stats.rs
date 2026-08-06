@@ -8,7 +8,7 @@ use crate::features::auth::User;
 /// show accurate totals in one roundtrip instead of paginating the index.
 #[get("/api/essences/stats", user: User)]
 pub async fn get_essence_stats_handler() -> Result<EssenceStatsResponse> {
-    let stats = UserEssenceStats::get_or_default(&user.pk.to_string()).await?;
+    let stats = UserEssenceStats::get_or_default(&user.pk().to_string()).await?;
     Ok(EssenceStatsResponse {
         total_sources: stats.total_sources,
         total_words: stats.total_words,

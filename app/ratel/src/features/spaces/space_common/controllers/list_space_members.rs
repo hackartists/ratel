@@ -1,4 +1,4 @@
-use crate::common::models::space::SpaceParticipant;
+use crate::common::models::space::{PARTICIPANT_KIND, SpaceParticipant, SpaceParticipantColumn};
 use crate::common::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -39,8 +39,10 @@ pub async fn list_space_members(
     bookmark: Option<String>,
     query: Option<String>,
 ) -> Result<ListResponse<SpaceMemberResponse>> {
-    let common_config = crate::common::CommonConfig::default();
-    let dynamo = common_config.dynamodb();
+    use postgres::Order;
+    use postgres::PostgresEntity;
+    use postgres::ops::StringOp;
+
     let space_pk: Partition = space_id.into();
 
     let normalized_query = query
@@ -51,11 +53,34 @@ pub async fn list_space_members(
 
     match normalized_query {
         None => {
-            let opts = SpaceParticipant::opt_with_bookmark(bookmark).limit(50);
-            let (participants, next_bookmark) =
-                SpaceParticipant::find_by_space(dynamo, space_pk, opts).await?;
+            // `bookmark` carries the 1-based page number (opaque to the client).
+            let page = bookmark
+                .as_deref()
+                .and_then(|b| b.parse::<i64>().ok())
+                .filter(|p| *p >= 1)
+                .unwrap_or(1);
+            let page_size = 50i64;
 
-            let members = participants
+            let result = SpaceParticipant::repository()
+                .find(
+                    SpaceParticipant::query()
+                        .space_pk(StringOp::Eq(space_pk.to_string()))
+                        .kind(StringOp::Eq(PARTICIPANT_KIND.to_string()))
+                        .order_by(SpaceParticipantColumn::CreatedAt, Order::Desc)
+                        .page(page)
+                        .page_size(page_size),
+                )
+                .await
+                .map_err(crate::common::Error::from)?;
+
+            let next_bookmark = if page < result.total_pages {
+                Some((page + 1).to_string())
+            } else {
+                None
+            };
+
+            let members = result
+                .items
                 .into_iter()
                 .map(SpaceMemberResponse::from)
                 .collect();
@@ -69,19 +94,12 @@ pub async fn list_space_members(
             let mut matches: Vec<SpaceMemberResponse> = Vec::new();
             let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-            // Fast path: DynamoDB GSI3 indexes participants by username, so a
-            // `begins_with(username, q)` query reads only matching rows —
-            // typically a single-digit RCU cost even on large spaces.
-            let gsi_opts = SpaceParticipant::opt()
-                .sk(q.clone())
-                .limit(SEARCH_MAX_RESULTS as i32);
-            // NOTE: SEARCH_MAX_RESULTS stays usize because it's compared
-            // against Vec::len() in the loops below — the cast to i32 only
-            // happens at the DDB boundary.
-            let (gsi_matches, _) =
-                SpaceParticipant::search_users_by_space(dynamo, space_pk.clone(), gsi_opts).await?;
+            // Fast path: username-prefix match via the indexed `username`
+            // column — replaces the DynamoDB GSI3 `begins_with(username, q)`
+            // query.
+            let gsi_matches = SpaceParticipant::search_users_by_space(&space_pk, &q).await?;
             for p in gsi_matches {
-                let pk_str = p.user_pk.to_string();
+                let pk_str = p.user_pk.clone();
                 if seen.insert(pk_str) {
                     matches.push(SpaceMemberResponse::from(p));
                     if matches.len() >= SEARCH_MAX_RESULTS {
@@ -90,32 +108,38 @@ pub async fn list_space_members(
                 }
             }
 
-            // Fallback: scan by space for display_name prefix matches. Covers
-            // cases where the visible display name diverges from the
+            // Fallback: page-scan by space for display_name prefix matches.
+            // Covers cases where the visible display name diverges from the
             // underlying username — notably non-ASCII names whose username
-            // is transliterated. Bounded by MAX_PAGES to keep worst-case
-            // RCU predictable.
+            // is transliterated. Bounded by SEARCH_MAX_PAGES to keep the
+            // worst case predictable.
             if matches.len() < SEARCH_MAX_RESULTS {
-                let mut next: Option<String> = None;
+                let mut page = 1i64;
                 let mut pages = 0;
                 loop {
                     if pages >= SEARCH_MAX_PAGES || matches.len() >= SEARCH_MAX_RESULTS {
                         break;
                     }
-                    let scan_opts =
-                        SpaceParticipant::opt_with_bookmark(next.clone()).limit(SEARCH_PAGE_LIMIT);
-                    let (participants, nb) =
-                        SpaceParticipant::find_by_space(dynamo, space_pk.clone(), scan_opts)
-                            .await?;
+                    let result = SpaceParticipant::repository()
+                        .find(
+                            SpaceParticipant::query()
+                                .space_pk(StringOp::Eq(space_pk.to_string()))
+                                .kind(StringOp::Eq(PARTICIPANT_KIND.to_string()))
+                                .order_by(SpaceParticipantColumn::CreatedAt, Order::Desc)
+                                .page(page)
+                                .page_size(SEARCH_PAGE_LIMIT as i64),
+                        )
+                        .await
+                        .map_err(crate::common::Error::from)?;
 
-                    for p in participants {
-                        let pk_str = p.user_pk.to_string();
+                    for p in &result.items {
+                        let pk_str = p.user_pk.clone();
                         if seen.contains(&pk_str) {
                             continue;
                         }
                         if p.display_name.to_lowercase().starts_with(&q) {
                             seen.insert(pk_str);
-                            matches.push(SpaceMemberResponse::from(p));
+                            matches.push(SpaceMemberResponse::from(p.clone()));
                             if matches.len() >= SEARCH_MAX_RESULTS {
                                 break;
                             }
@@ -123,10 +147,10 @@ pub async fn list_space_members(
                     }
 
                     pages += 1;
-                    match nb {
-                        Some(b) => next = Some(b),
-                        None => break,
+                    if page >= result.total_pages {
+                        break;
                     }
+                    page += 1;
                 }
             }
 

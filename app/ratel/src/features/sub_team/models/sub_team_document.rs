@@ -1,26 +1,34 @@
 use crate::common::*;
+use crate::features::sub_team::models::json::FileList;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+use uuid::Uuid;
 
-/// Maximum stored body length (64 KB) — enforced on create / update. Keeps
-/// the DynamoDB item under the 400 KB per-item ceiling with headroom for the
-/// other metadata fields.
+/// Maximum stored body length (64 KB) — enforced on create / update.
 pub const SUB_TEAM_DOCUMENT_MAX_BODY_BYTES: usize = 64 * 1024;
 
-/// A sub-team governance document (e.g., bylaws, privacy notice). Phase 1 is
-/// title + plain markdown body + order + required flag; attachments and
-/// versioning are deferred to Phase 2.
+/// A sub-team governance document (e.g., bylaws, privacy notice).
 ///
-/// `body_hash` is a sha256 of the current body and is what applicants snapshot
-/// into `SubTeamDocAgreement.body_hash_snapshot` at submit time. On each
-/// update we recompute it, which invalidates any in-flight agreements that
-/// were hashed against the previous version.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, DynamoEntity)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+/// **Postgres migration:** the DynamoDB `(pk = Team(team), sk =
+/// SubTeamDocument(doc_id))` identity becomes a surrogate `id` PK (equal to the
+/// former doc_id uuid) plus `team_pk` (raw `"TEAM#…"` partition string,
+/// indexed).
+///
+/// `body_hash` is a sha256 of the current body — applicants snapshot it into
+/// `SubTeamDocAgreement.body_hash_snapshot` at submit time.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
+#[cfg_attr(feature = "server", postgres(table = "sub_team_documents"))]
 pub struct SubTeamDocument {
-    pub pk: Partition,  // Partition::Team(team_id) — same team that owns the doc
-    pub sk: EntityType, // EntityType::SubTeamDocument(doc_id)
+    /// Surrogate primary key (former doc_id).
+    pub id: Uuid,
+
+    /// Owning team partition string (`"TEAM#…"`). Indexed.
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub team_pk: String,
 
     pub created_at: i64,
     pub updated_at: i64,
@@ -29,49 +37,27 @@ pub struct SubTeamDocument {
     /// Plain markdown; rendered read-only in Phase 1.
     pub body: String,
 
-    /// If true, applicants to this team's sub-team program must explicitly
-    /// agree to this document before submitting.
-    #[serde(default)]
     pub required: bool,
 
     /// Display order; lower values render earlier.
-    #[serde(default)]
     pub order: i32,
 
     /// sha256 of `body` at last update — re-agreement anchor.
     pub body_hash: String,
 
-    /// Monotonically-increasing revision; starts at 1 on create and
-    /// bumps by 1 on every successful update. Surfaced in the
-    /// composer's "문서 정보 · Version" row (`v{version}`).
-    #[serde(default)]
+    /// Monotonically-increasing revision; starts at 1 on create.
     pub version: i32,
 
-    /// Username of the last editor — denormalized for the composer
-    /// "Editor" row (`@{editor_username}`). Empty on legacy rows; UI
-    /// falls back to `—`.
-    #[serde(default)]
+    /// Username of the last editor — denormalized for the composer.
     pub editor_username: String,
 
-    /// File attachments shown next to the body in the composer and
-    /// reflected as `{N} 파일 · {size}` on the docs tab. Embedded
-    /// (not a separate entity) — mirrors the pattern used by
-    /// `SpaceQuiz` / `SpaceFile` / discussion `SpacePost`.
-    #[serde(default)]
-    pub attachments: Vec<File>,
+    /// File attachments. Stored as jsonb.
+    pub attachments: FileList,
 
-    /// Category tag attached at create-time when the doc is authored
-    /// as a bylaw (`"Bylaws"`) or a club rule (`"ClubBylaws"`). Drives
-    /// the bylaws page filter. Empty / `None` = regular sub-team doc
-    /// (the existing "required reading" use case).
-    #[serde(default)]
+    /// Category tag (`"Bylaws"` / `"ClubBylaws"`); `None` = regular doc.
     pub category: Option<String>,
 
-    /// `Post.pk` of the backing post written alongside the doc at
-    /// create time. The post carries the same body + category and is
-    /// the source of truth for likes/comments — the bylaws card pulls
-    /// engagement counts from this post and links to it on click.
-    #[serde(default)]
+    /// `Post.pk` of the backing post written alongside a bylaw doc.
     pub backing_post_id: Option<String>,
 }
 
@@ -86,12 +72,11 @@ impl SubTeamDocument {
         editor_username: String,
         attachments: Vec<File>,
     ) -> Self {
-        let doc_id = uuid::Uuid::new_v4().to_string();
         let now = crate::common::utils::time::get_now_timestamp_millis();
         let body_hash = hash_body(&body);
         Self {
-            pk: team_pk,
-            sk: EntityType::SubTeamDocument(doc_id),
+            id: Uuid::now_v7(),
+            team_pk: team_pk.to_string(),
             created_at: now,
             updated_at: now,
             title,
@@ -101,16 +86,47 @@ impl SubTeamDocument {
             body_hash,
             version: 1,
             editor_username,
-            attachments,
+            attachments: FileList(attachments),
             category: None,
             backing_post_id: None,
         }
+    }
+
+    /// The former doc_id — the surrogate `id` in string form.
+    pub fn doc_id(&self) -> String {
+        self.id.to_string()
     }
 
     pub fn update_body(&mut self, body: String) {
         self.body_hash = hash_body(&body);
         self.body = body;
         self.updated_at = crate::common::utils::time::get_now_timestamp_millis();
+    }
+
+    /// Every document under a team (excludes version snapshots, which live in
+    /// a separate table).
+    pub async fn list_for_team(team_pk: &Partition) -> crate::common::Result<Vec<Self>> {
+        use postgres::ops::StringOp;
+        Ok(Self::repository()
+            .find(Self::query().team_pk(StringOp::Eq(team_pk.to_string())))
+            .await
+            .map_err(crate::common::Error::from)?
+            .items)
+    }
+
+    /// Load a doc by id, scoped to the owning team.
+    pub async fn find_in_team(
+        team_pk: &Partition,
+        doc_id: &str,
+    ) -> crate::common::Result<Option<Self>> {
+        let Ok(uuid) = doc_id.parse::<Uuid>() else {
+            return Ok(None);
+        };
+        let row = Self::repository()
+            .get(uuid)
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(row.filter(|d| d.team_pk == team_pk.to_string()))
     }
 }
 

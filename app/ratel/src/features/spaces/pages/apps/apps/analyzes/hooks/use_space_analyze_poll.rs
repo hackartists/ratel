@@ -388,12 +388,12 @@ fn build_response_rows(
 
     let mut final_by_user: HashMap<String, SpacePollUserAnswer> = HashMap::new();
     for answer in &result.final_answers {
-        final_by_user.insert(user_key_from_pk(&answer.pk.to_string()), answer.clone());
+        final_by_user.insert(user_key_from_pk(&answer.actor_pk), answer.clone());
     }
 
     let mut sample_by_user: HashMap<String, SpacePollUserAnswer> = HashMap::new();
     for answer in &result.sample_answers {
-        sample_by_user.insert(user_key_from_pk(&answer.pk.to_string()), answer.clone());
+        sample_by_user.insert(user_key_from_pk(&answer.actor_pk), answer.clone());
     }
 
     let mut user_order = Vec::new();

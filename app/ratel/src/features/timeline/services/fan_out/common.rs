@@ -6,61 +6,50 @@ use crate::features::timeline::models::{TimelineEntry, TimelineReason};
 
 /// Collect all follower user_pks of `target_pk`, adding them to `entries` with a custom reason.
 pub(super) async fn collect_followers_with_reason(
-    cli: &aws_sdk_dynamodb::Client,
     target_pk: &Partition,
     seen: &mut HashSet<String>,
     entries: &mut Vec<(Partition, TimelineReason)>,
     reason: TimelineReason,
 ) -> Result<()> {
-    let mut bookmark: Option<String> = None;
+    let mut page: i64 = 1;
     loop {
-        let mut opt = UserFollow::opt()
-            .sk(EntityType::Follower(String::default()).to_string())
-            .limit(100);
-        if let Some(bk) = bookmark {
-            opt = opt.bookmark(bk);
-        }
-
-        let (follows, next_bookmark) = UserFollow::query(cli, target_pk.clone(), opt).await?;
-        for follow in follows {
-            let key = follow.user_pk.to_string();
+        let result = UserFollow::list_followers_page(target_pk, page, 100).await?;
+        for follow in &result.items {
+            // `user_pk` on a `Follower` row is the follower's partition string.
+            let key = follow.user_pk.clone();
             if seen.insert(key) {
-                entries.push((follow.user_pk, reason.clone()));
+                let follower_pk: Partition = match follow.user_pk.parse() {
+                    Ok(pk) => pk,
+                    Err(_) => continue,
+                };
+                entries.push((follower_pk, reason.clone()));
             }
         }
 
-        bookmark = next_bookmark;
-        if bookmark.is_none() {
+        if page >= result.total_pages {
             break;
         }
+        page += 1;
     }
     Ok(())
 }
 
 /// Collect follower PKs into `seen` without creating entries (for dedup purposes).
 pub(super) async fn collect_follower_pks(
-    cli: &aws_sdk_dynamodb::Client,
     target_pk: &Partition,
     seen: &mut HashSet<String>,
 ) -> Result<()> {
-    let mut bookmark: Option<String> = None;
+    let mut page: i64 = 1;
     loop {
-        let mut opt = UserFollow::opt()
-            .sk(EntityType::Follower(String::default()).to_string())
-            .limit(100);
-        if let Some(bk) = bookmark {
-            opt = opt.bookmark(bk);
+        let result = UserFollow::list_followers_page(target_pk, page, 100).await?;
+        for follow in &result.items {
+            seen.insert(follow.user_pk.clone());
         }
 
-        let (follows, next_bookmark) = UserFollow::query(cli, target_pk.clone(), opt).await?;
-        for follow in follows {
-            seen.insert(follow.user_pk.to_string());
-        }
-
-        bookmark = next_bookmark;
-        if bookmark.is_none() {
+        if page >= result.total_pages {
             break;
         }
+        page += 1;
     }
     Ok(())
 }

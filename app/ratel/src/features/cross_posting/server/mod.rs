@@ -65,8 +65,6 @@ async fn linkedin_callback(
     // otherwise the Dioxus router renders "Page not found". We resolve it
     // once up-front so every error / success branch below can call
     // `connections_url(...)` without an extra DB hop.
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let user_pk: crate::common::Partition = match user_pk_str.parse() {
         Ok(p) => p,
         Err(_) => {
@@ -77,13 +75,7 @@ async fn linkedin_callback(
             return Redirect::to(site_base_url()).into_response();
         }
     };
-    let username = match crate::features::auth::User::get(
-        cli,
-        &user_pk,
-        Some(crate::common::EntityType::User),
-    )
-    .await
-    {
+    let username = match crate::features::auth::User::find_by_pk(&user_pk).await {
         Ok(Some(u)) => u.username,
         _ => {
             tracing::error!(?user_pk, "linkedin callback: user record not found");

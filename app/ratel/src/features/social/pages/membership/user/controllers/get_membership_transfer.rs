@@ -46,7 +46,7 @@ pub async fn get_purchase_history_handler(
         .unwrap_or(1);
     let page_size: i64 = 20;
 
-    let user_pk = user.pk.to_string();
+    let user_pk = user.pk().to_string();
 
     let page: postgres::Page<UserPurchaseLocal> = UserPurchaseLocal::repository()
         .find(

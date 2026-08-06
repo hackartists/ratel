@@ -6,8 +6,6 @@ use crate::features::arcade::games::fact_or_fold::realtime::chat::FactFoldChatCh
 use crate::features::arcade::realtime::hub::global_hub;
 
 pub async fn register_channels() {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb().clone();
     let hub = global_hub();
-    hub.register(FactFoldChatChannel::new(cli)).await;
+    hub.register(FactFoldChatChannel::new()).await;
 }

@@ -53,7 +53,6 @@ pub async fn send_reply_on_comment(
     use std::str::FromStr;
 
     let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let ses = cfg.ses();
 
     let pk = match Partition::from_str(parent_comment_pk) {
@@ -80,10 +79,8 @@ pub async fn send_reply_on_comment(
     };
 
     let thread = match source {
-        ReplyCommentSource::Post => fetch_post_comment_thread(cli, &pk, &sk).await,
-        ReplyCommentSource::SpaceDiscussion => {
-            fetch_space_discussion_thread(cli, &pk, &sk).await
-        }
+        ReplyCommentSource::Post => fetch_post_comment_thread(&pk, &sk).await,
+        ReplyCommentSource::SpaceDiscussion => fetch_space_discussion_thread(&pk, &sk).await,
     };
 
     let Some((parent_content, parent_author_pk, reply_author_pks)) = thread else {
@@ -108,13 +105,7 @@ pub async fn send_reply_on_comment(
             continue;
         }
 
-        let user = match crate::common::models::User::get(
-            cli,
-            &pk,
-            Some(EntityType::User),
-        )
-        .await
-        {
+        let user = match crate::common::models::User::find_by_pk(&pk).await {
             Ok(Some(u)) => u,
             Ok(None) => {
                 tracing::warn!("Reply-notification target user not found: {}", pk_str);
@@ -178,9 +169,14 @@ pub async fn send_reply_on_comment(
     Ok(())
 }
 
+/// `pk`/`sk` carry the parent comment's old DynamoDB identity, preserved as
+/// the wire shape of `NotificationData::ReplyOnComment` (see
+/// `reply_to_comment_handler`, which still builds `Partition::Feed(post_id)` /
+/// `EntityType::PostComment(comment_id)` strings for this exact purpose).
+/// `PostComment` itself is now `Uuid`-keyed, so those strings are parsed back
+/// into `(post_id, comment_id)` uuids here.
 #[cfg(feature = "server")]
 async fn fetch_post_comment_thread(
-    cli: &aws_sdk_dynamodb::Client,
     pk: &crate::common::types::Partition,
     sk: &crate::common::types::EntityType,
 ) -> Option<(
@@ -188,11 +184,24 @@ async fn fetch_post_comment_thread(
     crate::common::types::Partition,
     Vec<crate::common::types::Partition>,
 )> {
+    use crate::common::types::{EntityType, Partition};
     use crate::features::posts::models::PostComment;
+    use std::str::FromStr;
 
-    let parent = match PostComment::get(cli, pk, Some(sk.clone())).await {
-        Ok(Some(p)) => p,
-        Ok(None) => {
+    let post_id = match pk {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).ok()?,
+        _ => return None,
+    };
+    let comment_id = match sk {
+        EntityType::PostComment(id) | EntityType::PostCommentReply(_, id) => {
+            uuid::Uuid::parse_str(id).ok()?
+        }
+        _ => return None,
+    };
+
+    let parent = match PostComment::get_by_id(comment_id).await {
+        Ok(Some(p)) if p.post_id == post_id => p,
+        Ok(_) => {
             tracing::warn!("Parent post comment not found: {}/{}", pk, sk);
             return None;
         }
@@ -203,17 +212,17 @@ async fn fetch_post_comment_thread(
     };
 
     let mut author_pks: Vec<crate::common::types::Partition> = Vec::new();
-    let mut bookmark: Option<String> = None;
-    for _ in 0..5 {
-        match PostComment::list_by_comment(cli, pk.clone(), sk.clone(), bookmark.clone()).await {
-            Ok((items, next)) => {
-                for r in items {
-                    author_pks.push(r.author_pk);
+    for page in 1..=5i64 {
+        match PostComment::list_by_comment(comment_id, page, 100).await {
+            Ok(p) => {
+                for r in &p.items {
+                    if let Ok(parsed) = Partition::from_str(&r.author_pk) {
+                        author_pks.push(parsed);
+                    }
                 }
-                if next.is_none() {
+                if page >= p.total_pages {
                     break;
                 }
-                bookmark = next;
             }
             Err(e) => {
                 tracing::error!("PostComment::list_by_comment failed: {}", e);
@@ -222,12 +231,17 @@ async fn fetch_post_comment_thread(
         }
     }
 
-    Some((parent.content, parent.author_pk, author_pks))
+    let parent_author = Partition::from_str(&parent.author_pk).unwrap_or(Partition::None);
+    Some((parent.content, parent_author, author_pks))
 }
 
+/// `pk`/`sk` carry the parent comment's old DynamoDB identity
+/// (`Partition::SpacePost(post_id)` / `EntityType::SpacePostComment(id)` or
+/// `SpacePostCommentReply(parent, id)`), preserved as the wire shape of
+/// `NotificationData::ReplyOnComment`. `SpacePostComment` is still
+/// string-keyed by `(post_id, comment_id)`, so those are recovered directly.
 #[cfg(feature = "server")]
 pub(crate) async fn fetch_space_discussion_thread(
-    cli: &aws_sdk_dynamodb::Client,
     pk: &crate::common::types::Partition,
     sk: &crate::common::types::EntityType,
 ) -> Option<(
@@ -235,9 +249,21 @@ pub(crate) async fn fetch_space_discussion_thread(
     crate::common::types::Partition,
     Vec<crate::common::types::Partition>,
 )> {
+    use crate::common::types::{EntityType, Partition};
     use crate::features::spaces::pages::actions::actions::discussion::SpacePostComment;
+    use std::str::FromStr;
 
-    let parent = match SpacePostComment::get(cli, pk, Some(sk.clone())).await {
+    let post_id = match pk {
+        Partition::SpacePost(id) => id.clone(),
+        _ => return None,
+    };
+    let comment_leaf = match sk {
+        EntityType::SpacePostComment(id) => id.clone(),
+        EntityType::SpacePostCommentReply(_, reply) => reply.clone(),
+        _ => return None,
+    };
+
+    let parent = match SpacePostComment::get_by_leaf(&post_id, &comment_leaf).await {
         Ok(Some(p)) => p,
         Ok(None) => {
             tracing::warn!("Parent space post comment not found: {}/{}", pk, sk);
@@ -249,17 +275,28 @@ pub(crate) async fn fetch_space_discussion_thread(
         }
     };
 
-    let opt = SpacePostComment::opt_all()
-        .scan_index_forward(false)
-        .limit(100);
-    let author_pks: Vec<crate::common::types::Partition> =
-        match SpacePostComment::list_by_comment(cli, sk.clone(), opt).await {
-            Ok((items, _)) => items.into_iter().map(|r| r.author_pk).collect(),
+    let mut author_pks: Vec<crate::common::types::Partition> = Vec::new();
+    let mut bookmark: Option<String> = None;
+    for _ in 0..5 {
+        match SpacePostComment::list_by_comment(sk.clone(), bookmark.clone(), 100).await {
+            Ok((items, next)) => {
+                for r in items {
+                    if let Ok(parsed) = Partition::from_str(&r.author_pk) {
+                        author_pks.push(parsed);
+                    }
+                }
+                if next.is_none() {
+                    break;
+                }
+                bookmark = next;
+            }
             Err(e) => {
                 tracing::error!("SpacePostComment::list_by_comment failed: {}", e);
-                Vec::new()
+                break;
             }
-        };
+        }
+    }
 
-    Some((parent.content, parent.author_pk, author_pks))
+    let parent_author = Partition::from_str(&parent.author_pk).unwrap_or(Partition::None);
+    Some((parent.content, parent_author, author_pks))
 }

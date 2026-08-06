@@ -112,8 +112,7 @@ pub async fn settle_round_internal(
     cli: &aws_sdk_dynamodb::Client,
     round_id: &str,
 ) -> Result<SettleRoundResponse> {
-    let (round_pk, round_sk) = FactFoldRound::keys(round_id);
-    let mut round = FactFoldRound::get(cli, &round_pk, Some(round_sk.clone()))
+    let mut round = FactFoldRound::get_by_round_id(round_id)
         .await
         .map_err(|e| {
             crate::error!("settle_round_internal round read failed: {e}");
@@ -124,20 +123,15 @@ pub async fn settle_round_internal(
     // Idempotency: if the round is already Settled, just return
     // the already-persisted breakdown.
     if matches!(round.status, RoundStatus::Settled) {
-        let breakdowns = load_existing_breakdowns(cli, &round_pk).await?;
+        let breakdowns = load_existing_breakdowns(round_id).await?;
         return Ok(SettleRoundResponse {
             round_id: round_id.to_string(),
             outcomes: breakdowns,
         });
     }
 
-    // Load all the round-scoped rows. v1 fits comfortably in a
-    // single pk query (4 players, ≤8 rows total — round + 4
-    // participants + 4 bets + ≤4 rationales + settlement targets).
-    let subject_pk = FactFoldSubject::anchor_pk();
-    let subject_sk: EntityType =
-        crate::FactFoldSubjectEntityType(round.subject_id.clone()).into();
-    let subject = FactFoldSubject::get(cli, &subject_pk, Some(subject_sk))
+    // Load all the round-scoped rows.
+    let subject = FactFoldSubject::get_by_subject_id(&round.subject_id)
         .await
         .map_err(|e| {
             crate::error!("settle_round_internal subject read failed: {e}");
@@ -145,39 +139,27 @@ pub async fn settle_round_internal(
         })?
         .ok_or(FactOrFoldError::RoundNotFound)?;
 
-    // Per-participant entities.
-    let opts_p = FactFoldParticipant::opt()
-        .sk("FACT_FOLD_PARTICIPANT".to_string())
-        .limit(50);
-    let (participants, _) = FactFoldParticipant::query(cli, round_pk.clone(), opts_p)
+    let participants = FactFoldParticipant::list_by_round(round_id)
         .await
         .map_err(|e| {
             crate::error!("settle_round_internal participants query failed: {e}");
             FactOrFoldError::StorageFailure
         })?;
 
-    let opts_b = FactFoldBet::opt().sk("FACT_FOLD_BET".to_string()).limit(50);
-    let (bets, _) = FactFoldBet::query(cli, round_pk.clone(), opts_b)
-        .await
-        .map_err(|e| {
-            crate::error!("settle_round_internal bets query failed: {e}");
-            FactOrFoldError::StorageFailure
-        })?;
+    let bets = FactFoldBet::list_by_round(round_id).await.map_err(|e| {
+        crate::error!("settle_round_internal bets query failed: {e}");
+        FactOrFoldError::StorageFailure
+    })?;
 
-    let opts_r = FactFoldRationale::opt()
-        .sk("FACT_FOLD_RATIONALE".to_string())
-        .limit(50);
-    let (rationales, _) = FactFoldRationale::query(cli, round_pk.clone(), opts_r)
+    let rationales = FactFoldRationale::list_by_round(round_id)
         .await
         .map_err(|e| {
             crate::error!("settle_round_internal rationales query failed: {e}");
             FactOrFoldError::StorageFailure
         })?;
 
-    let fof_settings = FactFoldSettings::get_or_default(cli)
-        .await
-        .unwrap_or_default();
-    let arcade_settings = ArcadeSettings::get_or_default(cli).await.unwrap_or_default();
+    let fof_settings = FactFoldSettings::get_or_default().await.unwrap_or_default();
+    let arcade_settings = ArcadeSettings::get_or_default().await.unwrap_or_default();
     let buy_in = arcade_settings.default_buy_in_chips;
 
     let outcomes = settle_round(SettleRoundInput {
@@ -193,16 +175,17 @@ pub async fn settle_round_internal(
     let mut breakdowns: Vec<SettlementBreakdown> = Vec::with_capacity(outcomes.len());
 
     for o in outcomes.iter() {
-        // Per-user settlement row. `create` errors if a row already
-        // exists — we treat that as "this user already settled,
-        // skip the wallet + stats steps to avoid double credit".
-        let (settle_pk, settle_sk) = FactFoldSettlement::keys(round_id, &o.user_id);
+        // Per-user settlement row. `insert_new` errors on the UNIQUE
+        // idempotency_key if a row already exists — we treat that as
+        // "this user already settled, skip the wallet + stats steps to
+        // avoid double credit".
         let row = FactFoldSettlement {
-            pk: settle_pk,
-            sk: settle_sk,
+            id: uuid::Uuid::now_v7(),
+            round_id: round_id.to_string(),
+            user_id: o.user_id.clone(),
             created_at: now,
             updated_at: now,
-            user_pk: Partition::User(o.user_id.clone()),
+            user_pk: Partition::User(o.user_id.clone()).to_string(),
             idempotency_key: FactFoldSettlement::idempotency_key_for(round_id, &o.user_id),
             base_refund: o.base_refund,
             correct_bonus: o.correct_bonus,
@@ -211,7 +194,7 @@ pub async fn settle_round_internal(
             insider_bonus: o.insider_bonus,
             chips_out: o.chips_out,
         };
-        let inserted = row.create(cli).await.is_ok();
+        let inserted = row.insert_new().await.is_ok();
         breakdowns.push(SettlementBreakdown::from(o));
 
         if !inserted {
@@ -233,8 +216,7 @@ pub async fn settle_round_internal(
         // Update lifetime stats. Also clear `current_round_id` —
         // the user is no longer in-flight, so lobby/join should let
         // them queue for the next subject.
-        let mut stats = FactFoldUserStats::get_or_default(cli, &o.user_id).await?;
-        let prev_accuracy_bps = compute_accuracy_bps(stats.correct_count, stats.total_rounds);
+        let mut stats = FactFoldUserStats::get_or_default(&o.user_id).await?;
         stats.total_rounds += 1;
         if o.won {
             stats.correct_count += 1;
@@ -243,7 +225,7 @@ pub async fn settle_round_internal(
         stats.last_played_at = now;
         stats.current_round_id = None;
         stats.updated_at = now;
-        if let Err(e) = stats.upsert(cli).await {
+        if let Err(e) = stats.save().await {
             crate::error!(
                 "settle_round_internal user_stats upsert failed for {}: {e}",
                 o.user_id
@@ -256,37 +238,32 @@ pub async fn settle_round_internal(
         // so the user can still pick up a fresh subject when the
         // window rotates.
         let play = FactFoldSubjectPlay::new(&o.user_id, &round.subject_id, round_id);
-        if let Err(e) = play.create(cli).await {
+        if let Err(e) = play.insert_new().await {
             crate::error!(
                 "settle_round_internal subject_play marker write failed for {}: {e}",
                 o.user_id
             );
         }
 
-        // Mirror to the leaderboard anchor: delete the previous
-        // accuracy-keyed row (if any), then write the new one.
-        // The leaderboard is sk-DESC at `Partition::FactFoldLeaderboard`
-        // so a query returns top-accuracy users first.
+        // Mirror to the leaderboard: one row per user keyed on
+        // `user_id`. `accuracy_bps` is a plain column now, so the old
+        // delete-old-sk / write-new-sk dance collapses into a single
+        // in-place `save` (upsert_on user_id). A `accuracy_bps DESC`
+        // query still returns top-accuracy users first.
         let new_accuracy_bps = compute_accuracy_bps(stats.correct_count, stats.total_rounds);
-        if stats.total_rounds > 1 {
-            let (prev_pk, prev_sk) =
-                FactFoldLeaderboardEntry::keys(prev_accuracy_bps, &o.user_id);
-            let _ = FactFoldLeaderboardEntry::delete(cli, &prev_pk, Some(prev_sk)).await;
-        }
-        let (lb_pk, lb_sk) = FactFoldLeaderboardEntry::keys(new_accuracy_bps, &o.user_id);
         let entry = FactFoldLeaderboardEntry {
-            pk: lb_pk,
-            sk: lb_sk,
+            id: uuid::Uuid::now_v7(),
+            user_id: o.user_id.clone(),
             created_at: stats.created_at,
             updated_at: now,
-            user_pk: Partition::User(o.user_id.clone()),
+            user_pk: Partition::User(o.user_id.clone()).to_string(),
             accuracy_bps: new_accuracy_bps,
             total_rounds: stats.total_rounds,
             correct_count: stats.correct_count,
             lifetime_delta_chips: stats.lifetime_delta_chips,
             last_played_at: now,
         };
-        if let Err(e) = entry.upsert(cli).await {
+        if let Err(e) = entry.save().await {
             crate::error!(
                 "settle_round_internal leaderboard upsert failed for {}: {e}",
                 o.user_id
@@ -300,7 +277,7 @@ pub async fn settle_round_internal(
     round.status = RoundStatus::Settled;
     round.settled_at = Some(now);
     round.updated_at = now;
-    round.upsert(cli).await.map_err(|e| {
+    round.save().await.map_err(|e| {
         crate::error!("settle_round_internal round upsert failed: {e}");
         FactOrFoldError::StorageFailure
     })?;
@@ -323,14 +300,8 @@ pub fn compute_accuracy_bps(correct: i64, total: i64) -> i32 {
 }
 
 #[cfg(feature = "server")]
-async fn load_existing_breakdowns(
-    cli: &aws_sdk_dynamodb::Client,
-    round_pk: &Partition,
-) -> Result<Vec<SettlementBreakdown>> {
-    let opts = FactFoldSettlement::opt()
-        .sk("FACT_FOLD_SETTLEMENT".to_string())
-        .limit(50);
-    let (rows, _) = FactFoldSettlement::query(cli, round_pk.clone(), opts)
+async fn load_existing_breakdowns(round_id: &str) -> Result<Vec<SettlementBreakdown>> {
+    let rows = FactFoldSettlement::list_by_round(round_id)
         .await
         .map_err(|e| {
             crate::error!("load_existing_breakdowns query failed: {e}");
@@ -343,7 +314,7 @@ async fn load_existing_breakdowns(
             // outcome; we just project it.
             let won = r.base_refund > 0;
             SettlementBreakdown {
-                user_pk: UserPartition::from(r.user_pk.clone()),
+                user_pk: crate::features::arcade::games::fact_or_fold::types::dto::user_partition_from_pk(&r.user_pk),
                 stake: 0, // not persisted on the settlement row
                 won,
                 base_refund: r.base_refund,

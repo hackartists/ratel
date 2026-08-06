@@ -55,8 +55,6 @@ pub async fn analyze_discussion(
         return Err(Error::InvalidFormat);
     }
 
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
 
     // Confirm the parent report exists + is Finish before letting the
@@ -64,8 +62,7 @@ pub async fn analyze_discussion(
     // stream Lambda pure (it can assume the row was admissible at
     // creation time).
     let report_id_str = report_id.to_string();
-    let report_sk = EntityType::SpaceAnalyzeReport(report_id_str.clone());
-    let report = SpaceAnalyzeReport::get(cli, &space_pk, Some(report_sk))
+    let report = SpaceAnalyzeReport::get_for_space(&space_pk, &report_id_str)
         .await?
         .ok_or(Error::NotFound("Analyze report not found".into()))?;
     if !matches!(report.status, AnalyzeReportStatus::Finish) {
@@ -84,10 +81,13 @@ pub async fn analyze_discussion(
     );
     let request_id = row.request_id.clone();
 
-    row.create(cli).await.map_err(|e| {
-        crate::error!("analyze_discussion: failed to enqueue request: {e}");
-        e
-    })?;
+    SpaceAnalyzeDiscussionResult::repository()
+        .insert(&row)
+        .await
+        .map_err(|e| {
+            crate::error!("analyze_discussion: failed to enqueue request: {e}");
+            e
+        })?;
 
     Ok(AnalyzeDiscussionResponse {
         request_id,

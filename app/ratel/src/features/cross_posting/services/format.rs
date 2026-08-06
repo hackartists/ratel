@@ -26,7 +26,7 @@ const ELLIPSIS: char = '…';
 pub fn format_for_platform(post: &Post, platform: SocialPlatform, backlink: &str) -> String {
     let limit = platform.char_limit();
     let title = post.title.trim();
-    let body = post.body.to_plain_text();
+    let body = post.body.0.to_plain_text();
 
     // Reserve trailing "\n{backlink}" — backlink is non-truncatable.
     let suffix = format!("\n{backlink}");

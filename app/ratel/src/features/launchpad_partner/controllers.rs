@@ -4,7 +4,7 @@
 #![cfg(feature = "server")]
 
 use crate::common::models::auth::User;
-use crate::common::types::{EntityType, Partition};
+use crate::common::types::Partition;
 use crate::common::utils::time::get_now_timestamp_millis;
 use crate::features::launchpad_partner::config::LaunchpadPartnerConfig;
 use crate::features::launchpad_partner::error::PartnerError;
@@ -16,11 +16,8 @@ use crate::features::launchpad_partner::types::{
 /// Read the user's local point balance (`User.points`).
 pub async fn lookup(company_user_key: &str) -> Result<LookupResponse, PartnerError> {
     let cfg = LaunchpadPartnerConfig::default();
-    let cli = crate::common::CommonConfig::default();
-    let cli = cli.dynamodb();
-    let pk = Partition::User(company_user_key.to_string());
 
-    let user = User::get(cli, pk, Some(EntityType::User))
+    let user = User::find_by_pk_str(company_user_key)
         .await
         .map_err(|e| {
             crate::error!("launchpad lookup: get user failed: {e}");
@@ -40,9 +37,6 @@ pub async fn deduct(req: &DeductBody) -> Result<DeductResponse, PartnerError> {
     if req.point_amount <= 0 {
         return Err(PartnerError::InvalidAmount);
     }
-    let cli = crate::common::CommonConfig::default();
-    let cli = cli.dynamodb();
-    let pk = Partition::User(req.company_user_key.clone());
 
     // Idempotency: replay a stored result instead of double-debiting.
     if let Ok(Some(existing)) =
@@ -55,7 +49,7 @@ pub async fn deduct(req: &DeductBody) -> Result<DeductResponse, PartnerError> {
         });
     }
 
-    let user = User::get(cli, pk.clone(), Some(EntityType::User))
+    let user = User::find_by_pk_str(&req.company_user_key)
         .await
         .map_err(|e| {
             crate::error!("launchpad deduct: get user failed: {e}");
@@ -66,15 +60,26 @@ pub async fn deduct(req: &DeductBody) -> Result<DeductResponse, PartnerError> {
         return Err(PartnerError::Insufficient);
     }
 
-    User::updater(pk, EntityType::User)
-        .decrease_points(req.point_amount)
-        .with_updated_at(get_now_timestamp_millis())
-        .execute(cli)
-        .await
-        .map_err(|e| {
+    // Atomic decrement — mirrors the old `updater(...).decrease_points(...)`.
+    {
+        use postgres::PostgresEntity;
+        use postgres::Value;
+        use postgres::sqlx::{Postgres, QueryBuilder};
+
+        let table = User::table_name();
+        let mut qb =
+            QueryBuilder::<Postgres>::new(format!("UPDATE \"{table}\" SET points = points - "));
+        Value::from(req.point_amount).push_bind(&mut qb);
+        qb.push(", updated_at = ");
+        Value::from(get_now_timestamp_millis()).push_bind(&mut qb);
+        qb.push(" WHERE id = ");
+        Value::from(user.id).push_bind(&mut qb);
+
+        User::repository().db().execute(qb).await.map_err(|e| {
             crate::error!("launchpad deduct: decrease_points failed: {e}");
             PartnerError::Server
         })?;
+    }
 
     let remaining = user.points - req.point_amount;
     let brand_tx_id = format!("ratel_{}", req.idempotency_key);
@@ -109,7 +114,7 @@ pub async fn deduct(req: &DeductBody) -> Result<DeductResponse, PartnerError> {
         hist.action_name = Some("포인트 교환".to_string());
         hist.month = Some(crate::common::utils::time::current_month());
         hist.transaction_id = Some(brand_tx_id.clone());
-        if let Err(e) = hist.create(cli).await {
+        if let Err(e) = hist.create().await {
             crate::error!("launchpad deduct: reward-history write failed: {e}");
         }
     }

@@ -24,9 +24,9 @@ pub fn ConfigCard() -> Element {
     let mut response_editable = use_signal(|| poll.response_editable);
     let mut encrypted_upload = use_signal(|| poll.encrypted_upload_enabled);
     let initial_prerequisite = poll.space_action.prerequisite;
-    let saved_credits = poll.space_action.credits;
+    let saved_credits = poll.space_action.credits as u64;
     let action_status = poll.space_action.status.clone();
-    let initial_depends_on = poll.space_action.depends_on.clone();
+    let initial_depends_on = poll.space_action.depends_on.0.clone();
     let initial_status = poll.space_action.status.clone();
 
     let action_id_for_signal = action_id_str.clone();

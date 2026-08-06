@@ -11,14 +11,25 @@ use std::collections::{HashMap, HashSet};
 use crate::common::*;
 use crate::common::models::space::SpaceCommon;
 use crate::common::types::{SpacePublishState, SpaceVisibility};
-use crate::features::auth::{UserTeam, UserTeamQueryOption};
-use crate::features::posts::models::{Post, TeamOwner};
+use crate::features::auth::UserTeam;
+use crate::features::posts::models::{Post, PostColumn, TeamOwner};
 use crate::features::posts::types::{PostStatus, Visibility};
 use crate::features::sub_team::models::SubTeamLink;
 use crate::features::sub_team::types::{
     ActivityCountsResponse, ActivityWindow, MemberActivityResponse, PrivacyNotice, SubTeamError,
     SubTeamSummaryResponse,
 };
+use postgres::PostgresEntity;
+use uuid::Uuid;
+
+/// Parse a `Partition::Team(id)` into its `Uuid` — Postgres `Team`/`TeamOwner`
+/// rows are keyed by the raw uuid, not the `"TEAM#…"` partition string.
+fn team_uuid(team_pk: &Partition) -> Option<Uuid> {
+    match team_pk {
+        Partition::Team(id) => Uuid::parse_str(id).ok(),
+        _ => None,
+    }
+}
 
 /// Phase 1 per-parent cap. Beyond this the list endpoint truncates to the
 /// most-recently-approved 50 rows and sets `truncated: true` on the
@@ -46,21 +57,11 @@ pub fn compute_range(window: ActivityWindow) -> (i64, i64) {
 /// ordered by `approved_at` DESC. The second tuple element is `true` when
 /// the parent has more than the cap — the response envelope exposes this
 /// as the `truncated` flag.
-pub async fn list_sub_team_links(
-    cli: &aws_sdk_dynamodb::Client,
-    parent_pk: &Partition,
-) -> Result<(Vec<SubTeamLink>, bool)> {
-    // Query one beyond the cap so we can detect truncation without a second
-    // round-trip.
-    let opts = SubTeamLink::opt()
-        .sk("SUB_TEAM_LINK".to_string())
-        .limit((MAX_SUB_TEAMS as i32) + 1);
-    let (mut items, _) = SubTeamLink::query(cli, parent_pk.clone(), opts)
-        .await
-        .map_err(|e| {
-            crate::error!("list_sub_team_links query failed: {e}");
-            SubTeamError::ActivityAggregationFailed
-        })?;
+pub async fn list_sub_team_links(parent_pk: &Partition) -> Result<(Vec<SubTeamLink>, bool)> {
+    let mut items = SubTeamLink::list_for_parent(parent_pk).await.map_err(|e| {
+        crate::error!("list_sub_team_links query failed: {e}");
+        SubTeamError::ActivityAggregationFailed
+    })?;
 
     // Order newest-approved first so truncation drops the oldest rows.
     items.sort_by(|a, b| b.approved_at.cmp(&a.approved_at));
@@ -80,9 +81,13 @@ pub async fn build_sub_team_summary(
     link: &SubTeamLink,
 ) -> Result<SubTeamSummaryResponse> {
     let child_pk = Partition::Team(link.child_team_id.clone());
+    let child_uuid = Uuid::parse_str(&link.child_team_id).map_err(|e| {
+        crate::error!("build_sub_team_summary: invalid child_team_id: {e}");
+        SubTeamError::ActivityAggregationFailed
+    })?;
 
     // Load the child team for identity fields.
-    let team = crate::features::posts::models::Team::get(cli, &child_pk, Some(EntityType::Team))
+    let team = crate::features::posts::models::Team::get_by_id(child_uuid)
         .await
         .map_err(|e| {
             crate::error!("build_sub_team_summary team load failed: {e}");
@@ -129,20 +134,12 @@ pub async fn compute_activity_counts(
     // itself is technically "active", but FR-6 #36 wants individual
     // members). Use the post's user_pk when it's a User, else attribute
     // to the team and keep it as "team post".
-    let mut active: HashSet<String> = HashSet::new();
-    for p in &posts {
-        match &p.user_pk {
-            Partition::User(_) => {
-                active.insert(p.user_pk.to_string());
-            }
-            _ => {
-                // Team-authored post counts the team-level author itself;
-                // record it as a single "member" entry keyed on the team
-                // pk so we don't inflate the number with duplicates.
-                active.insert(p.user_pk.to_string());
-            }
-        }
-    }
+    // Team-authored posts count the team-level author itself as a single
+    // "member" entry keyed on the team pk, same as user-authored posts —
+    // both branches inserted the same `user_pk` string, so a plain insert
+    // reproduces the original behavior without needing to distinguish
+    // `Partition::User` from `Partition::Team`.
+    let active: HashSet<String> = posts.iter().map(|p| p.user_pk.clone()).collect();
     let active_member_count = active.len() as i64;
 
     let space_count = count_public_spaces_in_range(cli, sub_team_pk, range_start_ms, range_end_ms)
@@ -235,67 +232,43 @@ pub async fn compute_member_activity(
 /// owner. Bounded by `MAX_SCAN_PAGES` × `PAGE_SIZE` (same envelope as
 /// the rest of this module).
 async fn count_team_members(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     team_pk: &Partition,
 ) -> Result<i64> {
-    let user_team_sk = EntityType::UserTeam(team_pk.to_string());
     let mut user_pks: HashSet<String> = HashSet::new();
-    let mut bookmark: Option<String> = None;
-    for _ in 0..MAX_SCAN_PAGES {
-        let mut opt = UserTeamQueryOption::builder().limit(PAGE_SIZE);
-        if let Some(bm) = bookmark.as_ref() {
-            opt = opt.bookmark(bm.clone());
-        }
-        let (rows, next) = UserTeam::find_by_team(cli, &user_team_sk, opt)
-            .await
-            .map_err(|e| {
-                crate::error!("count_team_members query failed: {e}");
-                SubTeamError::ActivityAggregationFailed
-            })?;
-        for row in rows {
-            user_pks.insert(row.pk.to_string());
-        }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
-        }
+    let rows = UserTeam::find_by_team(team_pk).await.map_err(|e| {
+        crate::error!("count_team_members query failed: {e}");
+        SubTeamError::ActivityAggregationFailed
+    })?;
+    for row in rows {
+        user_pks.insert(row.user_pk.clone());
     }
-    if let Ok(Some(owner)) = TeamOwner::get(cli, team_pk, Some(&EntityType::TeamOwner)).await {
-        user_pks.insert(owner.user_pk.to_string());
+    if let Some(uuid) = team_uuid(team_pk) {
+        if let Ok(Some(owner)) = TeamOwner::find_by_team(uuid).await {
+            user_pks.insert(owner.user_pk.clone());
+        }
     }
     Ok(user_pks.len() as i64)
 }
 
 async fn resolve_team_member_pks(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     team_pk: &Partition,
 ) -> Result<Vec<Partition>> {
     let mut seen: HashSet<String> = HashSet::new();
 
-    if let Ok(Some(owner)) = TeamOwner::get(cli, team_pk, Some(&EntityType::TeamOwner)).await {
-        seen.insert(owner.user_pk.to_string());
+    if let Some(uuid) = team_uuid(team_pk) {
+        if let Ok(Some(owner)) = TeamOwner::find_by_team(uuid).await {
+            seen.insert(owner.user_pk.clone());
+        }
     }
 
-    let user_team_sk = EntityType::UserTeam(team_pk.to_string());
-    let mut bookmark: Option<String> = None;
-    for _ in 0..MAX_SCAN_PAGES {
-        let mut opt = UserTeamQueryOption::builder().limit(PAGE_SIZE);
-        if let Some(bm) = bookmark.as_ref() {
-            opt = opt.bookmark(bm.clone());
-        }
-        let (rows, next) = UserTeam::find_by_team(cli, &user_team_sk, opt)
-            .await
-            .map_err(|e| {
-                crate::error!("resolve_team_member_pks query failed: {e}");
-                SubTeamError::ActivityAggregationFailed
-            })?;
-        for row in rows {
-            seen.insert(row.pk.to_string());
-        }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
-        }
+    let rows = UserTeam::find_by_team(team_pk).await.map_err(|e| {
+        crate::error!("resolve_team_member_pks query failed: {e}");
+        SubTeamError::ActivityAggregationFailed
+    })?;
+    for row in rows {
+        seen.insert(row.user_pk.clone());
     }
 
     Ok(seen
@@ -315,75 +288,84 @@ async fn resolve_team_member_pks(
 /// would then fail on rows missing `created_at` (PostComment has only
 /// `updated_at`), aborting the whole query.
 async fn list_team_posts_in_range(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     team_pk: &Partition,
     start_ms: i64,
     end_ms: i64,
 ) -> Result<Vec<Post>> {
-    let mut out: Vec<Post> = Vec::new();
-    let mut bookmark: Option<String> = None;
-    for _ in 0..MAX_SCAN_PAGES {
-        let opts = Post::opt_with_bookmark(bookmark.clone())
-            .filter_sk_eq("POST")
-            .limit(PAGE_SIZE);
-        let (items, next) = Post::find_by_user_pk(cli, team_pk, opts).await.map_err(|e| {
+    use postgres::Order;
+    use postgres::ops::StringOp;
+    // Bounded to the same `MAX_SCAN_PAGES * PAGE_SIZE` (~500) most-recent
+    // posts the old paginated DynamoDB scan visited; filtering (status /
+    // visibility / range) happens client-side exactly as before.
+    let cap = MAX_SCAN_PAGES as i64 * PAGE_SIZE as i64;
+    let page = Post::repository()
+        .find(
+            Post::query()
+                .user_pk(StringOp::Eq(team_pk.to_string()))
+                .order_by(PostColumn::CreatedAt, Order::Desc)
+                .page(1)
+                .page_size(cap),
+        )
+        .await
+        .map_err(|e| {
             crate::error!("list_team_posts_in_range query failed: {e}");
             SubTeamError::ActivityAggregationFailed
         })?;
-        for p in items {
-            if p.status != PostStatus::Published {
-                continue;
-            }
-            // FR-6 #39 / AC-15 — exclude private posts.
-            if matches!(p.visibility, Some(Visibility::Private)) {
-                continue;
-            }
-            if p.created_at < start_ms || p.created_at > end_ms {
-                continue;
-            }
-            out.push(p);
+
+    let mut out: Vec<Post> = Vec::new();
+    for p in page.items {
+        if p.status != PostStatus::Published {
+            continue;
         }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
+        // FR-6 #39 / AC-15 — exclude private posts.
+        if matches!(p.visibility, Some(Visibility::Private)) {
+            continue;
         }
+        if p.created_at < start_ms || p.created_at > end_ms {
+            continue;
+        }
+        out.push(p);
     }
     Ok(out)
 }
 
 /// List a user's posts since `since_ms`, excluding Private and Draft.
-/// See `list_team_posts_in_range` for the exact-sk-match rationale.
+/// See `list_team_posts_in_range` for the bounded-scan rationale.
 async fn list_user_posts_in_range(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     user_pk: &Partition,
     since_ms: i64,
 ) -> Result<Vec<Post>> {
-    let mut out: Vec<Post> = Vec::new();
-    let mut bookmark: Option<String> = None;
-    for _ in 0..MAX_SCAN_PAGES {
-        let opts = Post::opt_with_bookmark(bookmark.clone())
-            .filter_sk_eq("POST")
-            .limit(PAGE_SIZE);
-        let (items, next) = Post::find_by_user_pk(cli, user_pk, opts).await.map_err(|e| {
+    use postgres::Order;
+    use postgres::ops::StringOp;
+    let cap = MAX_SCAN_PAGES as i64 * PAGE_SIZE as i64;
+    let page = Post::repository()
+        .find(
+            Post::query()
+                .user_pk(StringOp::Eq(user_pk.to_string()))
+                .order_by(PostColumn::CreatedAt, Order::Desc)
+                .page(1)
+                .page_size(cap),
+        )
+        .await
+        .map_err(|e| {
             crate::error!("list_user_posts_in_range query failed: {e}");
             SubTeamError::ActivityAggregationFailed
         })?;
-        for p in items {
-            if p.status != PostStatus::Published {
-                continue;
-            }
-            if matches!(p.visibility, Some(Visibility::Private)) {
-                continue;
-            }
-            if p.created_at < since_ms {
-                continue;
-            }
-            out.push(p);
+
+    let mut out: Vec<Post> = Vec::new();
+    for p in page.items {
+        if p.status != PostStatus::Published {
+            continue;
         }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
+        if matches!(p.visibility, Some(Visibility::Private)) {
+            continue;
         }
+        if p.created_at < since_ms {
+            continue;
+        }
+        out.push(p);
     }
     Ok(out)
 }
@@ -399,45 +381,33 @@ async fn max_post_updated_at(
 }
 
 async fn count_public_spaces_in_range(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     user_pk: &Partition,
     start_ms: i64,
     end_ms: i64,
 ) -> Result<i64> {
+    let cap = MAX_SCAN_PAGES as usize * PAGE_SIZE as usize;
+    // `find_by_user_pk` returns every space authored by the user, newest
+    // first — capped client-side to the same ~500-row bound the old
+    // paginated DynamoDB scan enforced.
+    let items = SpaceCommon::find_by_user_pk(user_pk).await.map_err(|e| {
+        crate::error!("count_public_spaces_in_range query failed: {e}");
+        SubTeamError::ActivityAggregationFailed
+    })?;
     let mut count: i64 = 0;
-    let mut bookmark: Option<String> = None;
-    for _ in 0..MAX_SCAN_PAGES {
-        // `filter_sk_eq("SPACE_COMMON")` drops non-SpaceCommon entity
-        // types that share the `USER_PK#…` GSI1 pk (see
-        // `list_team_posts_in_range` for rationale). Exact match so a
-        // future `SPACE_COMMON_xxx` sk wouldn't be accidentally matched.
-        let opts = SpaceCommon::opt_with_bookmark(bookmark.clone())
-            .filter_sk_eq("SPACE_COMMON")
-            .limit(PAGE_SIZE);
-        let (items, next) = SpaceCommon::find_by_user_pk(cli, user_pk, opts)
-            .await
-            .map_err(|e| {
-                crate::error!("count_public_spaces_in_range query failed: {e}");
-                SubTeamError::ActivityAggregationFailed
-            })?;
-        for s in items {
-            if s.publish_state != SpacePublishState::Published {
-                continue;
-            }
-            // Only Public spaces count — Private and Team-scoped spaces
-            // are excluded from the parent-facing dashboard.
-            if !matches!(s.visibility, SpaceVisibility::Public) {
-                continue;
-            }
-            if s.created_at < start_ms || s.created_at > end_ms {
-                continue;
-            }
-            count += 1;
+    for s in items.into_iter().take(cap) {
+        if s.publish_state != SpacePublishState::Published {
+            continue;
         }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
+        // Only Public spaces count — Private and Team-scoped spaces
+        // are excluded from the parent-facing dashboard.
+        if !matches!(s.visibility, SpaceVisibility::Public) {
+            continue;
         }
+        if s.created_at < start_ms || s.created_at > end_ms {
+            continue;
+        }
+        count += 1;
     }
     Ok(count)
 }
@@ -452,11 +422,11 @@ async fn count_user_public_spaces_in_range(
 }
 
 async fn load_user_identity(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     user_pk: &Partition,
 ) -> (String, String, String) {
     use crate::common::models::auth::User;
-    match User::get(cli, user_pk, Some(EntityType::User)).await {
+    match User::find_by_pk(user_pk).await {
         Ok(Some(u)) => (u.username, u.display_name, u.profile_url),
         _ => (String::new(), String::new(), String::new()),
     }

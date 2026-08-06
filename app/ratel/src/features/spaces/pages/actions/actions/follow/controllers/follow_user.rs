@@ -1,9 +1,10 @@
 use crate::common::models::auth::UserFollow;
 use crate::common::models::space::SpaceCommon;
-use crate::features::posts::models::Team;
 use crate::features::spaces::pages::actions::actions::follow::models::SpaceFollowUser;
 use crate::features::spaces::pages::actions::actions::follow::*;
 use crate::features::spaces::pages::actions::actions::follow::types::SpaceFollowError;
+
+use super::follow_counters::{bump_target_followers_tx, bump_user_followings_tx};
 
 #[mcp_tool(name = "follow_user", description = "Follow a user as part of a space follow action. Requires participant role.")]
 #[post(
@@ -21,73 +22,84 @@ pub async fn follow_user(
     #[mcp(description = "Target user partition key to follow (e.g. 'USER#<uuid>')")]
     target_pk: Partition,
 ) -> Result<()> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
-    if target_pk == user.pk {
+    if target_pk == user.pk() {
         return Err(SpaceFollowError::CannotFollowSelf.into());
     }
 
-    let is_allowed_target = if target_pk == space.user_pk {
+    use std::str::FromStr;
+    let space_user_pk =
+        Partition::from_str(&space.user_pk).unwrap_or(Partition::User(space.user_pk.clone()));
+    let is_allowed_target = if target_pk == space_user_pk {
         true
     } else {
-        let (pk, sk) = SpaceFollowUser::keys(&space_id, &target_pk);
-        SpaceFollowUser::get(cli, &pk, Some(sk)).await?.is_some()
+        SpaceFollowUser::get_one(&space_id, &target_pk)
+            .await?
+            .is_some()
     };
 
     if !is_allowed_target {
         return Err(SpaceFollowError::InvalidFollowTarget.into());
     }
 
-    let (follower_pk, follower_sk) = UserFollow::follower_keys(&target_pk, &user.pk);
-    if UserFollow::get(cli, follower_pk.clone(), Some(follower_sk.clone()))
+    if UserFollow::find_follower(&target_pk, &user.pk())
         .await?
         .is_some()
     {
         return Ok(());
     }
 
-    let (follower_record, following_record) =
-        UserFollow::new_follow_records_with_space(
-            user.pk.clone(),
-            target_pk.clone(),
-            Some(space_id.to_string()),
-            Some(follow_id.to_string()),
-            Some(member.display_name.clone()),
-            Some(member.profile_url.clone()),
-        );
+    let (follower_record, following_record) = UserFollow::new_follow_records_with_space(
+        user.pk().clone(),
+        target_pk.clone(),
+        Some(space_id.to_string()),
+        Some(follow_id.to_string()),
+        Some(member.display_name.clone()),
+        Some(member.profile_url.clone()),
+    );
 
-    let follow_tx = follower_record.create_transact_write_item();
-    let following_tx = following_record.create_transact_write_item();
-    let target_update = match &target_pk {
-        Partition::User(_) => {
-            crate::common::models::auth::User::updater(target_pk.clone(), EntityType::User)
-                .increase_followers_count(1)
-                .transact_write_item()
-        }
-        Partition::Team(_) => Team::updater(target_pk.clone(), EntityType::Team)
-            .increase_followers(1)
-            .transact_write_item(),
-        _ => return Err(SpaceFollowError::InvalidTarget.into()),
-    };
-    let follower_update =
-        crate::common::models::auth::User::updater(user.pk.clone(), EntityType::User)
-            .increase_followings_count(1)
-            .transact_write_item();
+    if !matches!(&target_pk, Partition::User(_) | Partition::Team(_)) {
+        return Err(SpaceFollowError::InvalidTarget.into());
+    }
 
-    cli.transact_write_items()
-        .set_transact_items(Some(vec![
-            follow_tx,
-            following_tx,
-            target_update,
-            follower_update,
-        ]))
-        .send()
+    let tx = postgres::Tx::begin().await.map_err(|e| {
+        crate::error!("Failed to begin tx: {e}");
+        SpaceFollowError::FollowFailed
+    })?;
+
+    UserFollow::repository()
+        .with_tx(&tx)
+        .insert(&follower_record)
         .await
         .map_err(|e| {
-            crate::error!("Failed to follow user: {:?}", e);
+            crate::error!("Failed to follow user: {e}");
             SpaceFollowError::FollowFailed
         })?;
+    UserFollow::repository()
+        .with_tx(&tx)
+        .insert(&following_record)
+        .await
+        .map_err(|e| {
+            crate::error!("Failed to follow user: {e}");
+            SpaceFollowError::FollowFailed
+        })?;
+
+    bump_target_followers_tx(&tx, &target_pk, 1)
+        .await
+        .map_err(|e| {
+            crate::error!("Failed to follow user: {e}");
+            SpaceFollowError::FollowFailed
+        })?;
+    bump_user_followings_tx(&tx, &user.pk(), 1)
+        .await
+        .map_err(|e| {
+            crate::error!("Failed to follow user: {e}");
+            SpaceFollowError::FollowFailed
+        })?;
+
+    tx.commit().await.map_err(|e| {
+        crate::error!("Failed to follow user: {e}");
+        SpaceFollowError::FollowFailed
+    })?;
 
     // Reward payout + XP recording run on EventBridge via FOLLOWER# INSERT →
     // handle_follow_xp. See features/activity/services/handle_xp_event.rs.

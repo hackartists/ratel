@@ -30,10 +30,7 @@ pub async fn update_ai_moderator_config(
 
     role.is_creator()?;
 
-    // Membership lives in the (still DynamoDB-backed) membership feature.
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    super::require_premium(cli, &user).await?;
+    super::require_premium(&user).await?;
 
     if req.reply_interval < 1 {
         return Err(AiModeratorError::InvalidReplyInterval.into());

@@ -14,11 +14,7 @@ pub struct CredentialResponse {
 
 #[get("/api/me/credentials", user: crate::features::auth::User)]
 pub async fn get_credentials_handler() -> Result<CredentialResponse> {
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
-
-    let pk = CompositePartition(user.pk.clone(), Partition::Attributes);
-    let res = VerifiedAttributes::get(cli, pk, None::<String>)
+    let res = VerifiedAttributes::get_by_user(&user.pk())
         .await?
         .unwrap_or_default();
 

@@ -10,6 +10,27 @@ use crate::features::sub_team::models::{
 };
 use std::collections::HashMap;
 
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+
+#[cfg(feature = "server")]
+fn bookmark_to_page(bookmark: &Option<String>) -> i64 {
+    bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1)
+}
+
+#[cfg(feature = "server")]
+fn next_bookmark(page: i64, total_pages: i64) -> Option<String> {
+    if page < total_pages {
+        Some((page + 1).to_string())
+    } else {
+        None
+    }
+}
+
 #[get("/api/posts/by-user/:username?bookmark", user: OptionalUser)]
 pub async fn list_user_posts_handler(
     username: String,
@@ -26,27 +47,26 @@ pub async fn list_user_posts_handler(
         bookmark
     );
 
-    let (users, _) =
-        crate::features::auth::User::find_by_username(cli, &username, Default::default()).await?;
-    let target_user = users.into_iter().next().ok_or(Error::PostInvalidUsername)?;
-    let user_pk = target_user.pk;
+    let target_user = crate::features::auth::User::find_by_username(&username)
+        .await?
+        .ok_or(Error::PostInvalidUsername)?;
+    let user_pk = target_user.pk();
     let is_owner = match &user {
-        Some(user) => user.pk == user_pk,
+        Some(user) => user.pk() == user_pk,
         None => false,
     };
 
-    let mut query_options = Post::opt().limit(10).sk(if is_owner {
-        // FIXME: When user is owner, it doesn't support time-sorted result.
-        PostStatus::Published.to_string()
+    let page = bookmark_to_page(&bookmark);
+    // Owner sees all visibilities; others only Public.
+    let visibility = if is_owner {
+        None
     } else {
-        format!("{}#{}", PostStatus::Published, Visibility::Public)
-    });
-
-    if let Some(bookmark) = bookmark {
-        query_options = query_options.bookmark(bookmark);
-    }
-
-    let (posts, bookmark) = Post::find_by_user_and_status(cli, &user_pk, query_options).await?;
+        Some(Visibility::Public)
+    };
+    let result =
+        Post::find_by_user_and_status(&user_pk, PostStatus::Published, visibility, page, 10).await?;
+    let bookmark = next_bookmark(page, result.total_pages);
+    let posts = result.items;
 
     tracing::debug!(
         "list_user_posts_handler: found {} posts, next bookmark = {:?}",
@@ -54,30 +74,18 @@ pub async fn list_user_posts_handler(
         bookmark
     );
 
-    let likes = match (&user, posts.is_empty()) {
+    let liked_ids = match (&user, posts.is_empty()) {
         (Some(user), false) => {
-            PostLike::batch_get(
-                cli,
-                posts
-                    .iter()
-                    .map(|post| PostLike::keys(&post.pk, &user.pk))
-                    .collect(),
-            )
-            .await?
+            let ids: Vec<uuid::Uuid> = posts.iter().map(|p| p.id).collect();
+            PostLike::liked_post_ids(&user.pk(), ids).await?
         }
-        _ => vec![],
+        _ => Default::default(),
     };
 
-    tracing::debug!("list_user_posts_handler: returning {} items", posts.len());
     let items: Vec<PostResponse> = posts
         .into_iter()
         .map(|post| {
-            let post_like_pk = post
-                .pk
-                .clone()
-                .to_post_like_key()
-                .expect("to_post_like_key");
-            let liked = likes.iter().any(|like| like.pk == post_like_pk);
+            let liked = liked_ids.contains(&post.id);
             PostResponse::from(post).with_like(liked)
         })
         .collect();
@@ -103,66 +111,45 @@ pub async fn list_team_posts_handler(
         bookmark
     );
 
-    let gsi2_sk_prefix = Team::compose_gsi2_sk(String::default());
-    let opt = Team::opt().limit(1).sk(gsi2_sk_prefix);
-    let (teams, _): (Vec<Team>, _) = Team::find_by_username_prefix(cli, &teamname, opt).await?;
-    let team = teams
-        .into_iter()
-        .find(|t| t.username == teamname)
+    let team = Team::find_by_username(&teamname)
+        .await?
         .ok_or(Error::NotFound(format!("Team not found: {}", teamname)))?;
-    let team_pk = team.pk;
+    let team_pk = team.partition();
 
+    let page = bookmark_to_page(&bookmark);
+    // Category filtering is applied client-side below, so pull a larger page
+    // when a category is requested (mirrors the old fetch_limit heuristic).
     let fetch_limit = if category.is_some() { 50 } else { 10 };
-    let mut query_options = Post::opt()
-        .limit(fetch_limit)
-        .sk(PostStatus::Published.to_string());
+    let result =
+        Post::find_by_user_and_status(&team_pk, PostStatus::Published, None, page, fetch_limit)
+            .await?;
+    let bookmark = next_bookmark(page, result.total_pages);
+    let posts = result.items;
 
-    if let Some(bookmark) = bookmark {
-        query_options = query_options.bookmark(bookmark);
-    }
+    // Union the team's own Posts with broadcast anchor Posts.
+    let viewer_pk = user.as_ref().map(|u| u.pk());
+    let posts = merge_broadcast_anchors(cli, &team_pk, posts, viewer_pk.as_ref()).await;
 
-    let (posts, bookmark) = Post::find_by_user_and_status(cli, &team_pk, query_options).await?;
-
-    // Union the team's own Posts with anchor Posts pointed at by every
-    // `SubTeamAnnouncementFanout` marker filed under this team — those
-    // are broadcasts a parent team published, surfaced into this team's
-    // wall WITHOUT cloning the Post row (the anchor lives at
-    // `Feed(announcement_id)` on the parent team's pk). One row per
-    // announcement, same URL / likes / comments everywhere. Broadcasts
-    // are only added to the result when the viewer is a member of this
-    // team — non-members and anonymous visitors see the team's own
-    // Posts only.
-    let posts = merge_broadcast_anchors(cli, &team_pk, posts, user.as_ref().map(|u| &u.pk)).await;
-
-    // Category filter:
-    // - When caller passes `category`, return ONLY posts that carry it
-    //   (used by the bylaws page with "Bylaws" / "ClubBylaws").
-    // - When omitted, hide bylaws-category posts so the team's main
-    //   feed never surfaces them — they live on the dedicated bylaws
-    //   page only.
+    // Category filter.
     let posts = if let Some(ref cat) = category {
         posts
             .into_iter()
-            .filter(|p| p.categories.iter().any(|c| c == cat.as_str()))
+            .filter(|p| p.categories.0.iter().any(|c| c == cat.as_str()))
             .collect::<Vec<_>>()
     } else {
         posts
             .into_iter()
             .filter(|p| {
                 !p.categories
+                    .0
                     .iter()
                     .any(|c| c == "Bylaws" || c == "ClubBylaws")
             })
             .collect::<Vec<_>>()
     };
 
-    // Hide broadcast Posts whose attached Space is still Draft. The
-    // Space designer's "Publish" button is what flips publish_state →
-    // Published, and until then no team should see the half-built Space
-    // in their feed — children via the fanout markers, parent via the
-    // anchor on their own wall. (The broadcast management tab still
-    // surfaces the row so the parent admin can find and design it.)
-    let posts = filter_unpublished_broadcast_spaces(cli, &team_pk, posts).await;
+    // Hide broadcast Posts whose attached Space is still Draft (child walls only).
+    let posts = filter_unpublished_broadcast_spaces(&team_pk, posts).await;
 
     tracing::debug!(
         "list_team_posts_handler: found {} posts, next bookmark = {:?}",
@@ -170,29 +157,18 @@ pub async fn list_team_posts_handler(
         bookmark
     );
 
-    let likes = match (&user, posts.is_empty()) {
+    let liked_ids = match (&user, posts.is_empty()) {
         (Some(user), false) => {
-            PostLike::batch_get(
-                cli,
-                posts
-                    .iter()
-                    .map(|post| PostLike::keys(&post.pk, &user.pk))
-                    .collect(),
-            )
-            .await?
+            let ids: Vec<uuid::Uuid> = posts.iter().map(|p| p.id).collect();
+            PostLike::liked_post_ids(&user.pk(), ids).await?
         }
-        _ => vec![],
+        _ => Default::default(),
     };
 
     let items: Vec<PostResponse> = posts
         .into_iter()
         .map(|post| {
-            let post_like_pk = post
-                .pk
-                .clone()
-                .to_post_like_key()
-                .expect("to_post_like_key");
-            let liked = likes.iter().any(|like| like.pk == post_like_pk);
+            let liked = liked_ids.contains(&post.id);
             PostResponse::from(post).with_like(liked)
         })
         .collect();
@@ -203,39 +179,9 @@ pub async fn list_team_posts_handler(
 /// Union the team's own Posts with anchor Posts pointed at by every
 /// `SubTeamAnnouncementFanout` marker filed under this team's pk.
 ///
-/// The marker pattern replaces the older "clone the Post into every
-/// child team's feed" fanout. One anchor Post lives on the parent's
-/// pk; each recognized child gets a single lightweight marker row
-/// pointing at it. This function reads those markers, batch-gets the
-/// anchor Posts, and merges them into the wall result, dedup'd against
-/// the team's own Posts.
-///
-/// **Audience gate:** broadcast anchors are only included when the
-/// `viewer` is a member of this team (the wall's team) — non-members
-/// landing on a recognized child's wall URL don't see the parent's
-/// broadcast Posts. Anonymous viewers are also excluded. The full
-/// audience for a broadcast (parent's members + every recognized
-/// child's members) is enforced separately in `get_post_handler` via
-/// `broadcast_access::can_view_broadcast_post` so the canonical
-/// `/posts/{id}` URL also denies non-members.
-///
-/// Union sources of broadcast anchor Posts for this wall:
-///
-/// 1. **Child team wall** — anchors reached via `SubTeamAnnouncementFanout`
-///    markers filed under this child team's pk by the fanout service.
-/// 2. **Parent team wall** — anchors reached via the parent's own
-///    `SubTeamAnnouncement` rows. The parent's gsi5 page query
-///    eventually returns the same Posts, but only when they fall
-///    inside the current page's `created_at` window. Pulling them
-///    directly here guarantees broadcasts pin to page 0 regardless
-///    of how many regular Posts have been written since.
-///
-/// Both sources run unconditionally — each is empty for the wrong
-/// kind of wall (child has no announcements, parent has no markers),
-/// so the union is a no-op in those cases.
-///
-/// Sort order: `pinned_as_announcement` desc first (broadcast anchors
-/// always pin), then `created_at` desc for the rest.
+/// `SubTeamAnnouncementFanout` / `SubTeamAnnouncement` / `Post` are all
+/// Postgres now; `cli` is retained only for the (still-DynamoDB)
+/// team-membership gate below (`is_team_member_public`).
 #[cfg(feature = "server")]
 async fn merge_broadcast_anchors(
     cli: &aws_sdk_dynamodb::Client,
@@ -243,18 +189,23 @@ async fn merge_broadcast_anchors(
     own_posts: Vec<Post>,
     viewer: Option<&Partition>,
 ) -> Vec<Post> {
-    // Collect anchor pks from both sources before any membership /
-    // batch_get work — if neither source returns anything, short-circuit.
-    let mut anchor_pks: Vec<Partition> = Vec::new();
+    let mut anchor_ids: Vec<uuid::Uuid> = Vec::new();
 
     // Source 1 — fanout markers (child team wall).
-    let opt = SubTeamAnnouncementFanout::opt()
-        .limit(100)
-        .sk("SUB_TEAM_ANNOUNCEMENT_FANOUT".to_string());
-    match SubTeamAnnouncementFanout::query(cli, team_pk.clone(), opt).await {
-        Ok((markers, _)) => {
-            for m in markers {
-                anchor_pks.push(Partition::Feed(m.announcement_id));
+    use postgres::ops::StringOp;
+    match SubTeamAnnouncementFanout::repository()
+        .find(
+            SubTeamAnnouncementFanout::query()
+                .child_team_pk(StringOp::Eq(team_pk.to_string()))
+                .page_size(100),
+        )
+        .await
+    {
+        Ok(page) => {
+            for m in page.items {
+                if let Ok(id) = uuid::Uuid::parse_str(&m.announcement_id) {
+                    anchor_ids.push(id);
+                }
             }
         }
         Err(e) => {
@@ -262,27 +213,20 @@ async fn merge_broadcast_anchors(
         }
     };
 
-    // Source 2 — parent team's own announcements. Only run when the
-    // wall is on a Team partition (non-Team walls have no announcements).
+    // Source 2 — parent team's own announcements.
     if matches!(team_pk, Partition::Team(_)) {
-        let opt = SubTeamAnnouncement::opt()
-            .limit(100)
-            .sk("SUB_TEAM_ANNOUNCEMENT#".to_string());
-        match SubTeamAnnouncement::query(cli, team_pk.clone(), opt).await {
-            Ok((announcements, _)) => {
-                for a in announcements {
-                    // Only Published announcements have a live anchor
-                    // Post. Direct messages and drafts skip this path —
-                    // direct messages already land in own_posts via
-                    // `user_pk = child_team_pk`, and drafts have no
-                    // anchor Post to surface yet.
+        match SubTeamAnnouncement::page_for_team(team_pk, 1, 100).await {
+            Ok(page) => {
+                for a in page.items {
                     if !matches!(a.status, SubTeamAnnouncementStatus::Published) {
                         continue;
                     }
                     if a.target_child_team_id.is_some() {
                         continue;
                     }
-                    anchor_pks.push(Partition::Feed(a.announcement_id));
+                    if let Ok(id) = uuid::Uuid::parse_str(&a.announcement_id) {
+                        anchor_ids.push(id);
+                    }
                 }
             }
             Err(e) => {
@@ -291,17 +235,15 @@ async fn merge_broadcast_anchors(
         };
     }
 
-    if anchor_pks.is_empty() {
+    if anchor_ids.is_empty() {
         return own_posts;
     }
 
-    // Dedup anchor pks before the batch_get — both sources can name
-    // the same announcement on edge cases.
-    let mut seen: HashMap<String, ()> = HashMap::new();
-    anchor_pks.retain(|p| seen.insert(p.to_string(), ()).is_none());
+    // Dedup anchor ids before the batch fetch.
+    let mut seen: HashMap<uuid::Uuid, ()> = HashMap::new();
+    anchor_ids.retain(|p| seen.insert(*p, ()).is_none());
 
-    // Membership gate — only surface broadcast anchors to members of
-    // this wall's team. Anonymous viewers never see them.
+    // Membership gate.
     let viewer_is_member = match viewer {
         Some(v) => crate::features::sub_team::services::broadcast_access::is_team_member_public(
             cli, team_pk, v,
@@ -314,11 +256,7 @@ async fn merge_broadcast_anchors(
         return own_posts;
     }
 
-    let keys: Vec<(Partition, EntityType)> = anchor_pks
-        .into_iter()
-        .map(|pk| (pk, EntityType::Post))
-        .collect();
-    let anchors: Vec<Post> = Post::batch_get(cli, keys).await.unwrap_or_default();
+    let anchors: Vec<Post> = Post::get_many(anchor_ids).await.unwrap_or_default();
     let anchors: Vec<Post> = anchors
         .into_iter()
         .filter(|p| matches!(p.status, PostStatus::Published))
@@ -326,17 +264,13 @@ async fn merge_broadcast_anchors(
 
     let mut by_pk: HashMap<String, Post> = HashMap::new();
     for p in own_posts {
-        by_pk.insert(p.pk.to_string(), p);
+        by_pk.insert(p.id.to_string(), p);
     }
     for p in anchors {
-        by_pk.entry(p.pk.to_string()).or_insert(p);
+        by_pk.entry(p.id.to_string()).or_insert(p);
     }
 
     let mut merged: Vec<Post> = by_pk.into_values().collect();
-    // Pinned (broadcast anchors flagged `pinned_as_announcement`) sit at
-    // the top; the rest fall back to `created_at` desc. Stable ordering
-    // means a newly published broadcast pops to the front of the wall
-    // even when older non-broadcast posts have higher created_at.
     merged.sort_by(|a, b| {
         b.pinned_as_announcement
             .cmp(&a.pinned_as_announcement)
@@ -345,24 +279,11 @@ async fn merge_broadcast_anchors(
     merged
 }
 
-/// Hide broadcast Posts whose attached Space is still in `Draft`
-/// publish-state from **child team walls only**. Parent admins must
-/// still see their own broadcast on the parent team's wall — they're
-/// the ones who need to open the Space designer and publish it, so
-/// hiding it from the parent would leave them with no entry point
-/// outside the broadcast management tab.
-///
-/// Rule:
-/// - Wall team == announcement's parent team (`announcement_parent_team_id`)
-///   → show the row regardless of Space publish_state.
-/// - Wall team != parent (child team wall, surfaced via fanout marker)
-///   → hide until the parent publishes the Space.
+/// Hide broadcast Posts whose attached Space is still in `Draft` publish-state
+/// from child team walls only. `SpaceCommon` is now Postgres, so the space
+/// lookup is a single indexed `space_pk IN (...)` query — no `cli` needed.
 #[cfg(feature = "server")]
-async fn filter_unpublished_broadcast_spaces(
-    cli: &aws_sdk_dynamodb::Client,
-    team_pk: &Partition,
-    posts: Vec<Post>,
-) -> Vec<Post> {
+async fn filter_unpublished_broadcast_spaces(team_pk: &Partition, posts: Vec<Post>) -> Vec<Post> {
     let wall_team_id: Option<&str> = match team_pk {
         Partition::Team(id) => Some(id.as_str()),
         _ => None,
@@ -372,7 +293,7 @@ async fn filter_unpublished_broadcast_spaces(
         .iter()
         .filter(|p| p.announcement_id.is_some() && p.space_pk.is_some())
         .filter(|p| p.announcement_parent_team_id.as_deref() != wall_team_id)
-        .filter_map(|p| p.space_pk.clone())
+        .filter_map(|p| p.space_pk.as_ref().and_then(|s| s.parse::<Partition>().ok()))
         .collect();
     to_check.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
     to_check.dedup_by(|a, b| a.to_string() == b.to_string());
@@ -381,15 +302,16 @@ async fn filter_unpublished_broadcast_spaces(
         return posts;
     }
 
-    let keys: Vec<(Partition, EntityType)> = to_check
-        .iter()
-        .cloned()
-        .map(|pk| (pk, EntityType::SpaceCommon))
-        .collect();
-    let spaces: Vec<SpaceCommon> = SpaceCommon::batch_get(cli, keys).await.unwrap_or_default();
+    use postgres::ops::StringOp;
+    let space_pk_strings: Vec<String> = to_check.iter().map(|p| p.to_string()).collect();
+    let spaces: Vec<SpaceCommon> = SpaceCommon::repository()
+        .find(SpaceCommon::query().space_pk(StringOp::In(space_pk_strings)))
+        .await
+        .map(|page| page.items)
+        .unwrap_or_default();
     let publish_states: HashMap<String, SpacePublishState> = spaces
         .into_iter()
-        .map(|s| (s.pk.to_string(), s.publish_state))
+        .map(|s| (s.space_pk.clone(), s.publish_state))
         .collect();
 
     posts
@@ -405,7 +327,7 @@ async fn filter_unpublished_broadcast_spaces(
                 return true;
             };
             matches!(
-                publish_states.get(&space_pk.to_string()),
+                publish_states.get(space_pk),
                 Some(SpacePublishState::Published)
             )
         })

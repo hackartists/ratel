@@ -2,7 +2,9 @@ use crate::features::essence::models::UserEssenceStats;
 use crate::features::essence::types::*;
 use crate::*;
 use postgres::PostgresEntity;
+use postgres::Value;
 use postgres::ops::{EnumOp, StringOp};
+use postgres::sqlx::{Postgres, QueryBuilder};
 use uuid::Uuid;
 
 /// One row per source a user has contributed to their Essence House.

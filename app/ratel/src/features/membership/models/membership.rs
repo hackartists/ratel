@@ -4,11 +4,34 @@ use crate::features::membership::*;
 #[allow(unused_imports)]
 use rmcp::schemars;
 
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+use uuid::Uuid;
+
 pub const ENTERPRISE_MONTHLY_REFILL_CREDITS: i64 = 1_000_000;
 pub const ENTERPRISE_MAX_CREDITS_PER_SPACE: i64 = 1_000;
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, SerializeDisplay, DeserializeFromStr, Default, DynamoEnum)]
+/// Membership tier. Postgres stores it as a `TEXT` column (a `#[postgres(text)]`
+/// enum, because the `Enterprise(String)` catch-all can't be a native PG enum).
+/// The wire representation is unchanged — `Display`/`FromStr` (via `DynamoEnum`)
+/// still drive JSON, so response DTOs keep emitting `"Free"`, `"ENTERPRISE#..."`
+/// etc. The DB `pg_label` (snake_case unit labels + raw enterprise inner string)
+/// is a separate, internally-consistent channel.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    Eq,
+    SerializeDisplay,
+    DeserializeFromStr,
+    Default,
+    DynamoEnum,
+)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
+#[cfg_attr(feature = "server", postgres(text))]
 pub enum MembershipTier {
     #[default]
     Free,
@@ -18,8 +41,13 @@ pub enum MembershipTier {
     Enterprise(String),
 }
 
-#[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr, Default, DynamoEnum, Eq, PartialEq)]
+/// Membership lifecycle status. Unit-variant enum → `TEXT` column.
+#[derive(
+    Debug, Clone, SerializeDisplay, DeserializeFromStr, Default, DynamoEnum, Eq, PartialEq,
+)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
+#[cfg_attr(feature = "server", postgres(text))]
 pub enum MembershipStatus {
     #[default]
     Active,
@@ -28,29 +56,38 @@ pub enum MembershipStatus {
     Suspended,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, DynamoEntity, Default)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+/// Membership plan catalog. One row per tier.
+///
+/// Postgres migration: the DynamoDB identity `pk = Membership(tier)` +
+/// `sk = Membership` collapses to a surrogate `id` PK with the natural key
+/// `unique(tier)`. The `find_active` GSI (`is_active` + `display_order`) is
+/// unused in application code, so `is_active`/`display_order` remain plain
+/// columns and the aux GSI sort-key duplicate (`display_order_indexed`) is
+/// dropped.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(PostgresEntity))]
+#[cfg_attr(feature = "server", postgres(table = "memberships"))]
 pub struct Membership {
-    pub pk: Partition,
-    pub sk: EntityType,
+    pub id: Uuid,
 
+    #[cfg_attr(feature = "server", postgres(unique))]
+    pub tier: MembershipTier,
+
+    #[cfg_attr(feature = "server", postgres(order))]
     pub created_at: i64,
     pub updated_at: i64,
 
     pub credits: i64,
-    pub tier: MembershipTier,
     pub price_dollars: i64,
     pub price_won: i64,
     pub display_order: i32,
     pub duration_days: i32,
     pub max_credits_per_space: i64,
 
-    #[dynamo(index = "gsi1", pk, prefix = "ACTIVE", name = "find_active")]
     pub is_active: bool,
-    #[dynamo(index = "gsi1", sk, prefix = "ORDER")]
-    pub display_order_indexed: i32,
 }
 
+#[cfg(feature = "server")]
 impl Membership {
     pub fn calculate_remaining_price(&self, currency: Currency, remaining_days: i32) -> i64 {
         if self.duration_days <= 0 || remaining_days <= 0 || remaining_days >= self.duration_days {
@@ -68,43 +105,68 @@ impl Membership {
             Currency::Krw => self.price_won,
         }
     }
-}
 
-#[cfg(feature = "server")]
-impl Membership {
-    pub async fn get_by_membership_tier(
-        cli: &aws_sdk_dynamodb::Client,
-        tier: &MembershipTier,
-    ) -> Result<Self> {
-        let pk = Partition::Membership(tier.to_string());
-        let m = Membership::get(cli, pk, Some(EntityType::Membership))
-            .await?
-            .ok_or_else(|| Error::NotFound("Membership not found".to_string()))?;
-        Ok(m)
+    /// The catalog row for a tier. Replaces the DynamoDB
+    /// `get(Membership(tier), Membership)` point lookup.
+    pub async fn get_by_membership_tier(tier: &MembershipTier) -> Result<Self> {
+        use postgres::ops::EnumOp;
+        Membership::repository()
+            .find_one(Membership::query().tier(EnumOp::Eq(tier.clone())))
+            .await
+            .map_err(crate::common::Error::from)?
+            .ok_or_else(|| Error::NotFound("Membership not found".to_string()))
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, DynamoEntity, Default)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg(feature = "server")]
+impl From<Membership> for MembershipResponse {
+    fn from(membership: Membership) -> Self {
+        Self {
+            id: MembershipPartition(membership.tier.to_string()),
+            tier: membership.tier,
+            price_dollars: membership.price_dollars,
+            credits: membership.credits,
+            duration_days: membership.duration_days,
+            display_order: membership.display_order,
+            is_active: membership.is_active,
+            created_at: membership.created_at,
+            updated_at: membership.updated_at,
+            max_credits_per_space: membership.max_credits_per_space,
+        }
+    }
+}
+
+/// A user's current membership. One row per user (`unique(user_pk)`).
+///
+/// Postgres migration: DynamoDB `pk = <user>` + `sk = UserMembership`
+/// collapses to a surrogate `id` with `unique(user_pk)`. `membership_pk` /
+/// `next_membership` (formerly `MembershipPartition`) become the `MembershipTier`
+/// enum directly — the join to `memberships.tier` is by enum value. `user_pk`
+/// holds the owning user's full `Partition` string (`USER#…`), a cross-feature
+/// reference, so no `references=` FK yet.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(PostgresEntity))]
+#[cfg_attr(feature = "server", postgres(table = "user_memberships", unique(user_pk)))]
 pub struct UserMembership {
-    pub pk: Partition,
+    pub id: Uuid,
 
-    #[dynamo(prefix = "TS", index = "gsi1", sk)]
-    pub sk: EntityType,
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub user_pk: String,
 
+    #[cfg_attr(feature = "server", postgres(order))]
     pub created_at: i64,
     pub updated_at: i64,
     pub expired_at: i64,
 
-    #[dynamo(prefix = "UM", name = "find_by_membership", index = "gsi1", pk)]
-    pub membership_pk: MembershipPartition,
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub membership_pk: MembershipTier,
     pub status: MembershipStatus,
 
     pub total_credits: i64,
     pub remaining_credits: i64,
 
     pub auto_renew: bool,
-    pub next_membership: Option<MembershipPartition>,
+    pub next_membership: Option<MembershipTier>,
 
     #[serde(default)]
     pub monthly_refill_credits: i64,
@@ -112,10 +174,11 @@ pub struct UserMembership {
     pub next_refill_at: i64,
 }
 
+#[cfg(feature = "server")]
 impl UserMembership {
     pub fn new(
         user_pk: UserPartition,
-        membership_pk: MembershipPartition,
+        membership_pk: MembershipTier,
         duration_days: i32,
         credits: i64,
     ) -> Result<Self> {
@@ -126,9 +189,11 @@ impl UserMembership {
             created_at + (duration_days as i64) * (24 * 60 * 60 * 1_000)
         };
 
+        let owner: Partition = user_pk.into();
+
         Ok(Self {
-            pk: user_pk.into(),
-            sk: EntityType::UserMembership,
+            id: Uuid::now_v7(),
+            user_pk: owner.to_string(),
             membership_pk,
             created_at,
             updated_at: created_at,
@@ -141,6 +206,49 @@ impl UserMembership {
             monthly_refill_credits: 0,
             next_refill_at: 0,
         })
+    }
+
+    pub fn with_auto_renew(mut self, auto_renew: bool) -> Self {
+        self.auto_renew = auto_renew;
+        self
+    }
+
+    /// One membership row per user, keyed by the natural key `user_pk`.
+    pub async fn find_by_user(user_pk: &str) -> Result<Option<Self>> {
+        use postgres::ops::StringOp;
+        UserMembership::repository()
+            .find_one(UserMembership::query().user_pk(StringOp::Eq(user_pk.to_string())))
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// Every membership on a tier — replaces the `find_by_membership` GSI used
+    /// by the admin enterprise-membership listing.
+    pub async fn find_by_membership_page(
+        tier: MembershipTier,
+        page: i64,
+        page_size: i64,
+    ) -> Result<postgres::Page<Self>> {
+        use postgres::ops::EnumOp;
+        UserMembership::repository()
+            .find(
+                UserMembership::query()
+                    .membership_pk(EnumOp::Eq(tier))
+                    .order_by(UserMembershipColumn::CreatedAt, postgres::Order::Desc)
+                    .page(page)
+                    .page_size(page_size),
+            )
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// Natural-key upsert on `user_pk`, preserving the surrogate `id`.
+    pub async fn save(&self) -> Result<()> {
+        UserMembership::repository()
+            .upsert_on(&["user_pk"], self)
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(())
     }
 
     pub fn is_infinite(&self) -> bool {
@@ -166,10 +274,6 @@ impl UserMembership {
         remaining_days as i32
     }
 
-    pub fn with_purchase_id(self, _purchase_id: CompositePartition) -> Self {
-        self
-    }
-
     pub fn renewal_date_rfc_3339(&self) -> Option<String> {
         if self.is_infinite() {
             return None;
@@ -184,7 +288,7 @@ impl UserMembership {
     }
 
     /// Use credits from this membership (validates and deducts locally).
-    /// Must be followed by a DB updater in a transaction to persist.
+    /// Must be followed by a DB write to persist.
     pub fn use_credits(&mut self, amount: i64) -> Result<()> {
         if self.remaining_credits < amount {
             return Err(SpaceRewardError::CreditsExceedBalance.into());
@@ -198,7 +302,6 @@ impl UserMembership {
 
 #[cfg(feature = "server")]
 pub async fn ensure_user_membership_monthly_refill(
-    cli: &aws_sdk_dynamodb::Client,
     mut membership: UserMembership,
 ) -> Result<UserMembership> {
     let now = crate::common::utils::time::now();
@@ -216,7 +319,7 @@ pub async fn ensure_user_membership_monthly_refill(
             .unwrap_or(next_refill_at + 30 * 24 * 60 * 60 * 1_000);
     }
     membership.next_refill_at = next_refill_at;
-    membership.upsert(cli).await?;
+    membership.save().await?;
 
     Ok(membership)
 }
@@ -236,23 +339,6 @@ pub struct MembershipResponse {
     pub max_credits_per_space: i64,
 }
 
-impl From<Membership> for MembershipResponse {
-    fn from(membership: Membership) -> Self {
-        Self {
-            id: membership.pk.into(),
-            tier: membership.tier,
-            price_dollars: membership.price_dollars,
-            credits: membership.credits,
-            duration_days: membership.duration_days,
-            display_order: membership.display_order,
-            is_active: membership.is_active,
-            created_at: membership.created_at,
-            updated_at: membership.updated_at,
-            max_credits_per_space: membership.max_credits_per_space,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 pub struct UserMembershipResponse {
@@ -270,52 +356,60 @@ impl UserMembershipResponse {
     }
 }
 
+#[cfg(feature = "server")]
 impl From<UserMembership> for UserMembershipResponse {
     fn from(user_membership: UserMembership) -> Self {
         Self {
-            tier: user_membership.membership_pk,
+            tier: MembershipPartition(user_membership.membership_pk.to_string()),
             expired_at: user_membership.expired_at,
             total_credits: user_membership.total_credits,
             remaining_credits: user_membership.remaining_credits,
             max_credits_per_space: 0,
-            next_membership: user_membership.next_membership,
+            next_membership: user_membership
+                .next_membership
+                .map(|tier| MembershipPartition(tier.to_string())),
         }
     }
 }
 
 // ── Team Membership ──────────────────────────────────────────────────
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, DynamoEntity, Default)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+/// A team's current membership. One row per team (`unique(team_pk)`). Mirrors
+/// [`UserMembership`]; `team_pk` holds the team's `Partition` string (`TEAM#…`).
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(PostgresEntity))]
+#[cfg_attr(feature = "server", postgres(table = "team_memberships", unique(team_pk)))]
 pub struct TeamMembership {
-    pub pk: Partition,
+    pub id: Uuid,
 
-    #[dynamo(prefix = "TS", index = "gsi1", sk)]
-    pub sk: EntityType,
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub team_pk: String,
 
+    #[cfg_attr(feature = "server", postgres(order))]
     pub created_at: i64,
     pub updated_at: i64,
     pub expired_at: i64,
 
-    #[dynamo(prefix = "TM", name = "find_by_membership", index = "gsi1", pk)]
-    pub membership_pk: MembershipPartition,
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub membership_pk: MembershipTier,
     pub status: MembershipStatus,
 
     pub total_credits: i64,
     pub remaining_credits: i64,
 
     pub auto_renew: bool,
-    pub next_membership: Option<MembershipPartition>,
+    pub next_membership: Option<MembershipTier>,
     #[serde(default)]
     pub monthly_refill_credits: i64,
     #[serde(default)]
     pub next_refill_at: i64,
 }
 
+#[cfg(feature = "server")]
 impl TeamMembership {
     pub fn new(
         team_pk: TeamPartition,
-        membership_pk: MembershipPartition,
+        membership_pk: MembershipTier,
         duration_days: i32,
         credits: i64,
     ) -> Result<Self> {
@@ -326,9 +420,11 @@ impl TeamMembership {
             created_at + (duration_days as i64) * (24 * 60 * 60 * 1_000)
         };
 
+        let owner: Partition = team_pk.into();
+
         Ok(Self {
-            pk: team_pk.into(),
-            sk: EntityType::TeamMembership,
+            id: Uuid::now_v7(),
+            team_pk: owner.to_string(),
             membership_pk,
             created_at,
             updated_at: created_at,
@@ -341,6 +437,45 @@ impl TeamMembership {
             monthly_refill_credits: 0,
             next_refill_at: 0,
         })
+    }
+
+    pub fn with_auto_renew(mut self, auto_renew: bool) -> Self {
+        self.auto_renew = auto_renew;
+        self
+    }
+
+    pub async fn find_by_team(team_pk: &str) -> Result<Option<Self>> {
+        use postgres::ops::StringOp;
+        TeamMembership::repository()
+            .find_one(TeamMembership::query().team_pk(StringOp::Eq(team_pk.to_string())))
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    pub async fn find_by_membership_page(
+        tier: MembershipTier,
+        page: i64,
+        page_size: i64,
+    ) -> Result<postgres::Page<Self>> {
+        use postgres::ops::EnumOp;
+        TeamMembership::repository()
+            .find(
+                TeamMembership::query()
+                    .membership_pk(EnumOp::Eq(tier))
+                    .order_by(TeamMembershipColumn::CreatedAt, postgres::Order::Desc)
+                    .page(page)
+                    .page_size(page_size),
+            )
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    pub async fn save(&self) -> Result<()> {
+        TeamMembership::repository()
+            .upsert_on(&["team_pk"], self)
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(())
     }
 
     pub fn is_infinite(&self) -> bool {
@@ -364,10 +499,6 @@ impl TeamMembership {
         let remaining_millis = self.expired_at - now;
         let remaining_days = remaining_millis / self.day_unit();
         remaining_days as i32
-    }
-
-    pub fn with_purchase_id(self, _purchase_id: CompositePartition) -> Self {
-        self
     }
 
     pub fn renewal_date_rfc_3339(&self) -> Option<String> {
@@ -396,7 +527,6 @@ impl TeamMembership {
 
 #[cfg(feature = "server")]
 pub async fn ensure_team_membership_monthly_refill(
-    cli: &aws_sdk_dynamodb::Client,
     mut membership: TeamMembership,
 ) -> Result<TeamMembership> {
     let now = crate::common::utils::time::now();
@@ -414,7 +544,7 @@ pub async fn ensure_team_membership_monthly_refill(
             .unwrap_or(next_refill_at + 30 * 24 * 60 * 60 * 1_000);
     }
     membership.next_refill_at = next_refill_at;
-    membership.upsert(cli).await?;
+    membership.save().await?;
 
     Ok(membership)
 }
@@ -430,15 +560,18 @@ pub struct TeamMembershipResponse {
     pub next_membership: Option<MembershipPartition>,
 }
 
+#[cfg(feature = "server")]
 impl From<TeamMembership> for TeamMembershipResponse {
     fn from(team_membership: TeamMembership) -> Self {
         Self {
-            tier: team_membership.membership_pk,
+            tier: MembershipPartition(team_membership.membership_pk.to_string()),
             expired_at: team_membership.expired_at,
             total_credits: team_membership.total_credits,
             remaining_credits: team_membership.remaining_credits,
             max_credits_per_space: 0,
-            next_membership: team_membership.next_membership,
+            next_membership: team_membership
+                .next_membership
+                .map(|tier| MembershipPartition(tier.to_string())),
         }
     }
 }

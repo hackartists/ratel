@@ -1,27 +1,39 @@
+use crate::common::models::auth::UserFollow;
 use crate::features::my_follower::controllers::dto::FollowUserItem;
 use crate::features::my_follower::controllers::profile::build_profiles;
 use crate::features::my_follower::*;
-use crate::common::models::auth::UserFollow;
+use std::str::FromStr;
+
+/// Rows per page. Matches the old DynamoDB query's `limit(10)`.
+const PAGE_SIZE: i64 = 10;
 
 #[get("/api/my-follower/followings?bookmark", user: crate::features::auth::User)]
 pub async fn list_followings(bookmark: Option<String>) -> Result<ListResponse<FollowUserItem>> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
+    let user_pk = user.pk();
 
-    let mut opt = UserFollow::opt()
-        .sk(EntityType::Following(String::default()).to_string())
-        .limit(10);
-    if let Some(bookmark) = bookmark {
-        opt = opt.bookmark(bookmark);
-    }
+    // `bookmark` carries the next 1-based page number as an opaque string —
+    // the client treats it as an opaque cursor, so this is a transparent
+    // swap of the DynamoDB cursor for a Postgres page number.
+    let page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
 
-    let (follows, bookmark) = UserFollow::query(cli, user.pk.clone(), opt).await?;
-    let target_pks: Vec<Partition> = follows
+    let page_result = UserFollow::list_followings_page(&user_pk, page, PAGE_SIZE).await?;
+    let next_bookmark = if page < page_result.total_pages {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
+
+    let target_pks: Vec<Partition> = page_result
+        .items
         .into_iter()
-        .map(|follow| follow.target_user_pk)
+        .filter_map(|follow| Partition::from_str(&follow.target_user_pk).ok())
         .collect();
 
-    let profiles = build_profiles(cli, &target_pks).await?;
+    let profiles = build_profiles(&target_pks).await?;
 
     let items = target_pks
         .into_iter()
@@ -39,5 +51,8 @@ pub async fn list_followings(bookmark: Option<String>) -> Result<ListResponse<Fo
         })
         .collect();
 
-    Ok(ListResponse { items, bookmark })
+    Ok(ListResponse {
+        items,
+        bookmark: next_bookmark,
+    })
 }

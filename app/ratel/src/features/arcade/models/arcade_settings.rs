@@ -4,42 +4,54 @@ use crate::features::arcade::types::ArcadeSettingsResponse;
 #[allow(unused_imports)]
 use rmcp::schemars;
 
-/// Singleton settings row for the whole arcade. Lives at
-/// `Partition::ArcadeSettings + EntityType::ArcadeSettings`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(
-    feature = "server",
-    derive(DynamoEntity, rmcp::schemars::JsonSchema)
-)]
+use postgres::PostgresEntity;
+use postgres::ops::StringOp;
+use uuid::Uuid;
+
+/// Singleton settings row for the whole arcade.
+///
+/// Postgres migration: the DynamoDB singleton `(ArcadeSettings,
+/// ArcadeSettings)` pair becomes a surrogate `id` PK plus a fixed
+/// `singleton` natural key (UNIQUE) so `save`/`get_or_default` always
+/// hit the one row.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "arcade_settings")]
 pub struct ArcadeSettings {
-    pub pk: Partition,
-    pub sk: EntityType,
+    pub id: Uuid,
+
+    /// Fixed natural key — one row for the whole arcade.
+    #[postgres(unique)]
+    pub singleton: String,
 
     pub created_at: i64,
     pub updated_at: i64,
 
-    #[serde(default)]
     pub rp_to_chip_ratio_bps: i32,
-    #[serde(default)]
     pub default_buy_in_chips: i64,
-    #[serde(default)]
     pub min_convert_rp: i64,
-    #[serde(default)]
     pub redeem_enabled: bool,
 }
 
-#[cfg(feature = "server")]
+/// The fixed value of the `singleton` natural key column.
+pub const ARCADE_SETTINGS_SINGLETON: &str = "arcade_settings";
+
 impl ArcadeSettings {
-    pub fn keys() -> (Partition, EntityType) {
-        (Partition::ArcadeSettings, EntityType::ArcadeSettings)
+    /// Load the singleton row, or `ArcadeSettingsResponse::default()`
+    /// when it has not been initialised yet.
+    pub async fn get_or_default() -> crate::common::Result<ArcadeSettingsResponse> {
+        let row = Self::repository()
+            .find_one(Self::query().singleton(StringOp::Eq(ARCADE_SETTINGS_SINGLETON.to_string())))
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(row.map(ArcadeSettingsResponse::from).unwrap_or_default())
     }
 
-    pub async fn get_or_default(
-        cli: &aws_sdk_dynamodb::Client,
-    ) -> crate::common::Result<ArcadeSettingsResponse> {
-        let (pk, sk) = Self::keys();
-        let row = ArcadeSettings::get(cli, &pk, Some(sk)).await?;
-        Ok(row.map(ArcadeSettingsResponse::from).unwrap_or_default())
+    /// Natural-key upsert on the fixed singleton key.
+    pub async fn save(&self) -> crate::common::Result<Self> {
+        Self::repository()
+            .upsert_on(&["singleton"], self)
+            .await
+            .map_err(crate::common::Error::from)
     }
 }
 

@@ -4,8 +4,6 @@ use crate::features::cross_posting::models::{JobState, SyndicationJob};
 use crate::features::cross_posting::types::{CrossPostingError, SocialPlatform};
 use crate::features::posts::models::Post;
 #[cfg(feature = "server")]
-use crate::features::cross_posting::services::feed_id_of;
-#[cfg(feature = "server")]
 use postgres::PostgresEntity;
 
 /// Author-initiated retry of a single `SyndicationJob` (FR-7 #44).
@@ -25,12 +23,9 @@ use postgres::PostgresEntity;
 /// `attempts` is reset to 0 — the counter is purely informational now.
 #[post("/api/cross-posting/posts/{post_id}/jobs/{platform}/retry", user: User)]
 pub async fn retry_job_handler(post_id: FeedPartition, platform: SocialPlatform) -> Result<()> {
-    let conf = crate::features::posts::config::get();
-    let cli = conf.dynamodb();
+    let post_uuid = uuid::Uuid::parse_str(&post_id.0).map_err(|_| CrossPostingError::NotAuthorized)?;
 
-    let post_pk: Partition = post_id.into();
-
-    let post = Post::get(cli, &post_pk, Some(EntityType::Post))
+    let post = Post::get_by_feed_id(post_uuid)
         .await
         .map_err(|e| {
             crate::error!("retry_job post lookup failed: {e}");
@@ -38,11 +33,11 @@ pub async fn retry_job_handler(post_id: FeedPartition, platform: SocialPlatform)
         })?
         .ok_or(CrossPostingError::NotAuthorized)?;
 
-    if post.user_pk != user.pk {
+    if post.user_pk != user.pk().to_string() {
         return Err(CrossPostingError::NotAuthorized.into());
     }
 
-    let post_id_str = feed_id_of(&post_pk);
+    let post_id_str = post.feed_id();
     let job = SyndicationJob::find_by_post_platform(&post_id_str, platform)
         .await
         .map_err(|e| {

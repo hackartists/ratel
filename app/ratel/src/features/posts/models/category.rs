@@ -4,13 +4,26 @@ use crate::*;
 #[allow(unused_imports)]
 use rmcp::schemars;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, DynamoEntity, PartialEq)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
-pub struct Category {
-    pub pk: Partition,
-    pub sk: EntityType,
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
+/// Post category tag.
+///
+/// Postgres migration: the DynamoDB single-table identity
+/// `(pk = Category, sk = Category(name))` collapses to a surrogate `id` PK plus
+/// the natural key `unique(name)`. The old `find_all` GSI scan becomes an
+/// ordered `Category::query()` on the `name` index.
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "post_categories", unique(name))]
+pub struct Category {
+    pub id: Uuid,
+
+    #[postgres(index)]
     pub name: String,
+    #[postgres(order)]
     pub created_at: i64,
 }
 
@@ -19,96 +32,62 @@ impl Category {
     pub fn new(name: String) -> Self {
         let created_at = chrono::Utc::now().timestamp_millis();
         Self {
-            pk: Partition::Category,
-            sk: EntityType::Category(name.clone()),
+            id: Uuid::now_v7(),
             name,
             created_at,
         }
     }
 
-    pub async fn get_or_create_by_name(
-        cli: &aws_sdk_dynamodb::Client,
-        name: String,
-    ) -> Result<Self> {
-        let category = Self::new(name.clone());
+    /// Idempotent get-or-create by natural key `name`. The DynamoDB
+    /// conditional-create + on-conflict-get is replaced by a natural-key
+    /// upsert on `name`, which preserves the existing `id`/`created_at` when
+    /// the row already exists.
+    pub async fn get_or_create_by_name(name: String) -> Result<Self> {
+        use postgres::ops::StringOp;
 
-        match category.create(cli).await {
-            Ok(_) => Ok(category),
-            Err(Error::Aws(crate::common::utils::aws::error::AwsError::DynamoDb(
-                aws_sdk_dynamodb::Error::ConditionalCheckFailedException(_),
-            ))) => Self::get(cli, Partition::Category, Some(EntityType::Category(name)))
-                .await?
-                .ok_or_else(|| Error::NotFound("category".to_string())),
-            Err(e) => Err(e),
-        }
-    }
-
-
-}
-
-#[cfg(all(test, feature = "server"))]
-mod tests {
-    use super::*;
-    use aws_sdk_dynamodb::{
-        Client, Config,
-        config::{Credentials, Region},
-    };
-    use crate::dynamodb::DynamoConfig;
-    use crate::common::aws_config::AwsConfig;
-
-    async fn setup_ddb() -> Client {
-        let dynamo_config = DynamoConfig::default();
-        let aws_config = AwsConfig::default();
-
-        let mut builder = Config::builder()
-            .region(Region::new(aws_config.region))
-            .behavior_version_latest()
-            .credentials_provider(Credentials::new(
-                aws_config.access_key_id,
-                aws_config.secret_access_key,
-                None,
-                None,
-                "loaded-from-config",
-            ));
-
-        if let Some(ep) = dynamo_config.endpoint {
-            builder = builder.endpoint_url(ep);
+        if let Some(existing) = Self::repository()
+            .find_one(Self::query().name(StringOp::Eq(name.clone())))
+            .await
+            .map_err(crate::common::Error::from)?
+        {
+            return Ok(existing);
         }
 
-        Client::from_conf(builder.build())
+        let category = Self::new(name);
+        Self::repository()
+            .upsert_on(&["name"], &category)
+            .await
+            .map_err(crate::common::Error::from)
     }
 
-    #[tokio::test]
-    async fn test_upsert_category() {
-        let cli = setup_ddb().await;
-        let result = Category::get_or_create_by_name(&cli, "Policy".to_string()).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().name, "Policy");
+    /// All categories, newest-first (mirrors the old `find_all` scan). `page`
+    /// is 1-based.
+    pub async fn list(page: i64, page_size: i64) -> Result<postgres::Page<Self>> {
+        Self::repository()
+            .find(
+                Self::query()
+                    .order_by(CategoryColumn::CreatedAt, postgres::Order::Desc)
+                    .page(page)
+                    .page_size(page_size),
+            )
+            .await
+            .map_err(crate::common::Error::from)
     }
 
-    #[tokio::test]
-    async fn test_upsert_is_idempotent() {
-        let cli = setup_ddb().await;
-        let a = Category::get_or_create_by_name(&cli, "Idempotent".to_string()).await.unwrap();
-        let b = Category::get_or_create_by_name(&cli, "Idempotent".to_string()).await.unwrap();
-        assert_eq!(a.created_at, b.created_at);
-    }
-
-    #[tokio::test]
-    async fn test_upsert_empty_name_is_handled_by_controller() {
-        let cli = setup_ddb().await;
-        // 빈 이름 검증은 controller에서 담당하므로, 모델 레벨에서는 저장 가능
-        let result = Category::get_or_create_by_name(&cli, "".to_string()).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_find_all_contains_created_category() {
-        let cli = setup_ddb().await;
-        let name = format!("TestCat-{}", chrono::Utc::now().timestamp_millis());
-        Category::get_or_create_by_name(&cli, name.clone()).await.unwrap();
-
-        let (all, _) = Category::query(&cli, Partition::Category, Category::opt().limit(100)).await.unwrap();
-        assert!(all.iter().any(|c| c.name == name));
+    /// Delete a category by its natural key `name`.
+    pub async fn delete_by_name(name: String) -> Result<()> {
+        use postgres::ops::StringOp;
+        let Some(existing) = Self::repository()
+            .find_one(Self::query().name(StringOp::Eq(name)))
+            .await
+            .map_err(crate::common::Error::from)?
+        else {
+            return Ok(());
+        };
+        Self::repository()
+            .delete(existing.id)
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(())
     }
 }

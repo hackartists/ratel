@@ -6,16 +6,15 @@ use crate::features::sub_team::types::{
     CreateSubTeamFormFieldRequest, ReorderFormFieldsRequest, SubTeamError, SubTeamFormFieldResponse,
     TeamProfileLink, UpdateSubTeamFormFieldRequest,
 };
+#[cfg(feature = "server")]
+use crate::features::sub_team::models::json::StringList;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
-const FORM_FIELD_SK_PREFIX: &str = "SUB_TEAM_FORM_FIELD";
-const LIST_PAGE_LIMIT: i32 = 100;
-
+#[cfg(feature = "server")]
 fn sort_fields(items: &mut [SubTeamFormField]) {
-    // Locked defaults (팀 이름 / 설립 목적) always render before any
-    // custom fields, regardless of their stored `order` value, so
-    // admins can't accidentally bury them with a higher-priority
-    // row. Among locked rows we still respect `order`, and ditto for
-    // the unlocked tail.
+    // Locked defaults (팀 이름 / 설립 목적) always render before any custom
+    // fields, regardless of their stored `order` value.
     items.sort_by(|a, b| {
         b.locked
             .cmp(&a.locked)
@@ -26,46 +25,33 @@ fn sort_fields(items: &mut [SubTeamFormField]) {
 
 // ── GET list ─────────────────────────────────────────────────────
 //
-// First-call seeding: if the team's form is empty we lazily lay down
-// two `locked: true` defaults — "팀 이름" linked to `team.display_name`
-// and "설립 목적" linked to `team.description`. These are baseline
-// fields every sub-team application needs, so we hard-code them
-// rather than asking the admin to recreate them by hand. Subsequent
-// calls return them just like any other row.
+// First-call seeding lays down two `locked: true` defaults — "팀 이름"
+// and "설립 목적" — when the team's form is empty.
 #[get("/api/teams/:team_pk/sub-teams/form-fields", user: crate::features::auth::User)]
 pub async fn list_sub_team_form_fields_handler(
     team_pk: TeamPartition,
 ) -> Result<ListResponse<SubTeamFormFieldResponse>> {
     let _ = user;
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let parent_pk: Partition = team_pk.into();
 
-    let opts = SubTeamFormField::opt()
-        .sk(FORM_FIELD_SK_PREFIX.to_string())
-        .limit(LIST_PAGE_LIMIT);
-    let (mut items, next) = SubTeamFormField::query(cli, parent_pk.clone(), opts)
+    let mut items = SubTeamFormField::list_for_team(&parent_pk)
         .await
         .map_err(|e| {
             crate::error!("list_sub_team_form_fields query failed: {e}");
             SubTeamError::FormFieldNotFound
         })?;
 
-    // Backfill any missing locked defaults — runs on every list call
-    // so a team that pre-dates the seeding logic still ends up with
-    // both rows. Each default is gated on its own `linked_to` so we
-    // never duplicate a row that already exists.
-    let seeded = ensure_default_fields(cli, &parent_pk, &items).await;
+    // Backfill any missing locked defaults — runs on every list call.
+    let seeded = ensure_default_fields(&parent_pk, &items).await;
     items.extend(seeded);
 
     sort_fields(&mut items);
     let items: Vec<SubTeamFormFieldResponse> = items.into_iter().map(Into::into).collect();
-    Ok((items, next).into())
+    Ok((items, None).into())
 }
 
 #[cfg(feature = "server")]
 async fn ensure_default_fields(
-    cli: &aws_sdk_dynamodb::Client,
     parent_pk: &Partition,
     existing: &[SubTeamFormField],
 ) -> Vec<SubTeamFormField> {
@@ -102,7 +88,7 @@ async fn ensure_default_fields(
             Some(link),
             true,
         );
-        if let Err(e) = field.create(cli).await {
+        if let Err(e) = SubTeamFormField::repository().insert(&field).await {
             crate::error!("ensure_default_fields create failed: {e}");
             continue;
         }
@@ -122,14 +108,12 @@ pub async fn create_sub_team_form_field_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
 
     let order = body.order.unwrap_or(0);
     let options = body.options.unwrap_or_default();
 
     let field = SubTeamFormField::new(
-        team.pk.clone(),
+        team.partition(),
         body.label,
         body.field_type,
         body.required,
@@ -138,7 +122,7 @@ pub async fn create_sub_team_form_field_handler(
         body.linked_to,
     );
 
-    field.create(cli).await.map_err(|e| {
+    SubTeamFormField::repository().insert(&field).await.map_err(|e| {
         crate::error!("create_sub_team_form_field execute failed: {e}");
         SubTeamError::FormFieldNotFound
     })?;
@@ -158,11 +142,8 @@ pub async fn update_sub_team_form_field_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let sk = EntityType::SubTeamFormField(field_id);
 
-    let existing = SubTeamFormField::get(cli, &team.pk, Some(sk.clone()))
+    let existing = SubTeamFormField::find_in_team(&team.partition(), &field_id)
         .await
         .map_err(|e| {
             crate::error!("update_sub_team_form_field get failed: {e}");
@@ -170,54 +151,56 @@ pub async fn update_sub_team_form_field_handler(
         })?
         .ok_or(SubTeamError::FormFieldNotFound)?;
 
-    // Locked defaults are immutable from the admin form-builder. The
-    // controller still loads the row so we can return a clean error.
+    // Locked defaults are immutable from the admin form-builder.
     if existing.locked {
         return Err(Error::UnauthorizedAccess);
     }
 
     let mut updated = existing;
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut updater = SubTeamFormField::updater(&team.pk, &sk).with_updated_at(now);
+    let mut upd = SubTeamFormField::update().updated_at(now);
     updated.updated_at = now;
     let mut changed = false;
 
     if let Some(label) = body.label {
-        updater = updater.with_label(label.clone());
+        upd = upd.label(label.clone());
         updated.label = label;
         changed = true;
     }
     if let Some(field_type) = body.field_type {
-        updater = updater.with_field_type(field_type);
+        upd = upd.field_type(field_type);
         updated.field_type = field_type;
         changed = true;
     }
     if let Some(required) = body.required {
-        updater = updater.with_required(required);
+        upd = upd.required(required);
         updated.required = required;
         changed = true;
     }
     if let Some(order) = body.order {
-        updater = updater.with_order(order);
+        upd = upd.order(order);
         updated.order = order;
         changed = true;
     }
     if let Some(options) = body.options {
-        updater = updater.with_options(options.clone());
-        updated.options = options;
+        upd = upd.options(StringList(options.clone()));
+        updated.options = StringList(options);
         changed = true;
     }
     if let Some(linked_to) = body.linked_to {
-        updater = updater.with_linked_to(linked_to);
+        upd = upd.linked_to(Some(linked_to));
         updated.linked_to = Some(linked_to);
         changed = true;
     }
 
     if changed {
-        updater.execute(cli).await.map_err(|e| {
-            crate::error!("update_sub_team_form_field execute failed: {e}");
-            SubTeamError::FormFieldNotFound
-        })?;
+        SubTeamFormField::repository()
+            .update(updated.id, upd)
+            .await
+            .map_err(|e| {
+                crate::error!("update_sub_team_form_field execute failed: {e}");
+                SubTeamError::FormFieldNotFound
+            })?;
     }
 
     Ok(updated.into())
@@ -234,21 +217,21 @@ pub async fn delete_sub_team_form_field_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let sk = EntityType::SubTeamFormField(field_id);
 
-    // Refuse to delete locked defaults — admins should never lose
-    // the seed rows (team name / 설립 목적).
-    if let Ok(Some(existing)) =
-        SubTeamFormField::get(cli, &team.pk, Some(sk.clone())).await
-    {
-        if existing.locked {
-            return Err(Error::UnauthorizedAccess);
-        }
+    // Refuse to delete locked defaults.
+    let existing = SubTeamFormField::find_in_team(&team.partition(), &field_id)
+        .await
+        .ok()
+        .flatten();
+    let Some(existing) = existing else {
+        return Ok(String::new());
+    };
+    if existing.locked {
+        return Err(Error::UnauthorizedAccess);
     }
 
-    SubTeamFormField::delete(cli, &team.pk, Some(sk))
+    SubTeamFormField::repository()
+        .delete(existing.id)
         .await
         .map_err(|e| {
             crate::error!("delete_sub_team_form_field execute failed: {e}");
@@ -269,25 +252,23 @@ pub async fn reorder_sub_team_form_fields_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
 
     let now = crate::common::utils::time::get_now_timestamp_millis();
 
     for (idx, field_id) in body.field_ids.iter().enumerate() {
-        let sk = EntityType::SubTeamFormField(field_id.clone());
         // Silently skip non-existent ids per spec.
-        let existing = SubTeamFormField::get(cli, &team.pk, Some(sk.clone()))
+        let existing = SubTeamFormField::find_in_team(&team.partition(), field_id)
             .await
             .ok()
             .flatten();
-        if existing.is_none() {
+        let Some(existing) = existing else {
             continue;
-        }
-        let _ = SubTeamFormField::updater(&team.pk, &sk)
-            .with_order(idx as i32)
-            .with_updated_at(now)
-            .execute(cli)
+        };
+        let _ = SubTeamFormField::repository()
+            .update(
+                existing.id,
+                SubTeamFormField::update().order(idx as i32).updated_at(now),
+            )
             .await
             .map_err(|e| {
                 crate::error!("reorder_sub_team_form_fields per-row failed: {e}");

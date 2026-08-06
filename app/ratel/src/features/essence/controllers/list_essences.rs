@@ -33,7 +33,7 @@ pub async fn list_essences_handler(
         .filter(|p| *p >= 1)
         .unwrap_or(1);
 
-    let result = Essence::list_for_user(&user.pk, sort, kind_filter, page, page_size).await?;
+    let result = Essence::list_for_user(&user.pk(), sort, kind_filter, page, page_size).await?;
     let has_next = result.page < result.total_pages;
     let items: Vec<EssenceResponse> = result
         .items

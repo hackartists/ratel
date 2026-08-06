@@ -35,12 +35,9 @@ pub async fn post_chat_handler(
     round_id: FactFoldRoundEntityType,
     req: PostChatRequest,
 ) -> Result<PostChatResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let inner_round_id = round_id.0.clone();
 
-    let (pk, sk) = FactFoldRound::keys(&inner_round_id);
-    let round = FactFoldRound::get(cli, &pk, Some(sk))
+    let round = FactFoldRound::get_by_round_id(&inner_round_id)
         .await
         .map_err(|e| {
             crate::error!("post_chat_handler round read failed: {e}");
@@ -50,11 +47,11 @@ pub async fn post_chat_handler(
 
     // Lazy advance so a stale client doesn't sneak chat past a
     // deadline that already passed.
-    let settings = crate::features::arcade::games::fact_or_fold::models::FactFoldSettings::get_or_default(cli)
+    let settings = crate::features::arcade::games::fact_or_fold::models::FactFoldSettings::get_or_default()
         .await
         .unwrap_or_default();
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let round = stage_machine::advance_round_if_due(cli, round, &settings, now).await?;
+    let round = stage_machine::advance_round_if_due(round, &settings, now).await?;
 
     if !matches!(round.status, RoundStatus::Debate) {
         // Chat is only open during the live-debate stage. For PR4
@@ -65,7 +62,8 @@ pub async fn post_chat_handler(
         return Err(FactOrFoldError::RationaleStageMismatch.into());
     }
 
-    if !round.participant_pks.iter().any(|p| p == &user.pk) {
+    let user_pk_str = user.pk().to_string();
+    if !round.participant_pks.iter().any(|p| p == &user_pk_str) {
         return Err(FactOrFoldError::NotRoundParticipant.into());
     }
 
@@ -75,17 +73,18 @@ pub async fn post_chat_handler(
         return Err(FactOrFoldError::RationaleInvalid.into());
     }
 
-    // DB write. The DDB Stream / EventBridge fan-out (PR4f stream
-    // listener wiring below) takes care of the SSE push.
-    let row = FactFoldChatMessage::new(&inner_round_id, user.pk.clone(), req.text);
-    row.create(cli).await.map_err(|e| {
+    // DB write. The stream / event fan-out takes care of the SSE push.
+    let row = FactFoldChatMessage::new(&inner_round_id, user.pk().clone(), req.text);
+    row.insert_new().await.map_err(|e| {
         crate::error!("post_chat_handler create failed: {e}");
         FactOrFoldError::StorageFailure
     })?;
 
     Ok(PostChatResponse {
-        msg_id: row.id().unwrap_or_default(),
-        author_pk: UserPartition::from(row.author_pk.clone()),
+        msg_id: row.msg_id.clone(),
+        author_pk: crate::features::arcade::games::fact_or_fold::types::dto::user_partition_from_pk(
+            &row.author_pk,
+        ),
         text: row.text,
         sent_at: row.sent_at,
     })
@@ -110,12 +109,9 @@ pub async fn list_chat_handler(
     round_id: FactFoldRoundEntityType,
     since: Option<String>,
 ) -> Result<ListChatResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let inner_round_id = round_id.0.clone();
 
-    let (pk, sk) = FactFoldRound::keys(&inner_round_id);
-    let round = FactFoldRound::get(cli, &pk, Some(sk))
+    let round = FactFoldRound::get_by_round_id(&inner_round_id)
         .await
         .map_err(|e| {
             crate::error!("list_chat_handler round read failed: {e}");
@@ -123,17 +119,15 @@ pub async fn list_chat_handler(
         })?
         .ok_or(FactOrFoldError::RoundNotFound)?;
 
-    if !round.participant_pks.iter().any(|p| p == &user.pk) {
+    let user_pk_str = user.pk().to_string();
+    if !round.participant_pks.iter().any(|p| p == &user_pk_str) {
         return Err(FactOrFoldError::NotRoundParticipant.into());
     }
 
-    // sk-prefix query orders chronologically (uuid_v7 inner). v1
-    // uses a single-page fetch — round transcripts are bounded
+    // Newest-first transcript (matches the DynamoEntity query DESC
+    // default). v1 single-page fetch — round transcripts are bounded
     // (~4 players × 70s × 80 chars).
-    let opts = FactFoldChatMessage::opt()
-        .sk("FACT_FOLD_CHAT".to_string())
-        .limit(CHAT_PAGE_LIMIT as i32);
-    let (rows, _) = FactFoldChatMessage::query(cli, pk, opts)
+    let rows = FactFoldChatMessage::list_by_round(&inner_round_id, CHAT_PAGE_LIMIT as i64)
         .await
         .map_err(|e| {
             crate::error!("list_chat_handler query failed: {e}");
@@ -143,7 +137,7 @@ pub async fn list_chat_handler(
     let items: Vec<ChatMessagePayload> = match since {
         Some(after) if !after.is_empty() => rows
             .into_iter()
-            .skip_while(|r| r.id().map(|id| id <= after).unwrap_or(true))
+            .skip_while(|r| r.msg_id <= after)
             .map(chat_payload_from)
             .collect(),
         _ => rows.into_iter().map(chat_payload_from).collect(),
@@ -170,12 +164,9 @@ pub async fn list_chat_handler(
 pub async fn delete_round_chat_handler(
     round_id: FactFoldRoundEntityType,
 ) -> Result<DeleteRoundChatResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let inner_round_id = round_id.0.clone();
 
-    let (pk, sk) = FactFoldRound::keys(&inner_round_id);
-    let round = FactFoldRound::get(cli, &pk, Some(sk))
+    let round = FactFoldRound::get_by_round_id(&inner_round_id)
         .await
         .map_err(|e| {
             crate::error!("delete_round_chat_handler round read failed: {e}");
@@ -183,7 +174,8 @@ pub async fn delete_round_chat_handler(
         })?
         .ok_or(FactOrFoldError::RoundNotFound)?;
 
-    if !round.participant_pks.iter().any(|p| p == &user.pk) {
+    let user_pk_str = user.pk().to_string();
+    if !round.participant_pks.iter().any(|p| p == &user_pk_str) {
         return Err(FactOrFoldError::NotRoundParticipant.into());
     }
 
@@ -191,15 +183,10 @@ pub async fn delete_round_chat_handler(
         return Err(FactOrFoldError::RoundNotSettled.into());
     }
 
-    // Single pk scan to enumerate the transcript, then delete each
-    // row individually. DDB's BatchWriteItem (25 per call) would be
-    // faster but v1 transcripts are bounded so the simple per-row
-    // delete keeps the code obvious — revisit when transcript bound
-    // is lifted.
-    let opts = FactFoldChatMessage::opt()
-        .sk("FACT_FOLD_CHAT".to_string())
-        .limit(CHAT_PAGE_LIMIT as i32);
-    let (rows, _) = FactFoldChatMessage::query(cli, pk.clone(), opts)
+    // Enumerate the transcript, then delete each row individually. v1
+    // transcripts are bounded so the simple per-row delete keeps the
+    // code obvious — revisit when the transcript bound is lifted.
+    let rows = FactFoldChatMessage::list_by_round(&inner_round_id, CHAT_PAGE_LIMIT as i64)
         .await
         .map_err(|e| {
             crate::error!("delete_round_chat_handler query failed: {e}");
@@ -208,7 +195,7 @@ pub async fn delete_round_chat_handler(
 
     let mut deleted = 0i64;
     for row in rows.iter() {
-        if let Err(e) = FactFoldChatMessage::delete(cli, &row.pk, Some(row.sk.clone())).await {
+        if let Err(e) = FactFoldChatMessage::delete_row(row.id).await {
             crate::error!("delete_round_chat_handler row delete failed: {e}");
             continue;
         }

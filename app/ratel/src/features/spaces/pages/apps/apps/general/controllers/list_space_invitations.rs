@@ -42,23 +42,34 @@ pub async fn list_space_invitations(
         return Err(Error::NoPermission);
     }
 
-    let common_config = crate::common::CommonConfig::default();
-    let dynamo = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
+    let page_size = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT) as i64;
 
-    let mut opt = SpaceInvitationMember::opt()
-        .sk(EntityType::SpaceInvitationMember(String::default()).to_string())
-        .limit(limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT));
+    // `bookmark` carries an opaque 1-based page number as a string, matching
+    // the ranking/activity pagination convention used elsewhere post-migration.
+    let page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
 
-    if let Some(bookmark) = bookmark {
-        opt = opt.bookmark(bookmark);
-    }
+    let result = SpaceInvitationMember::find_by_space(&space_pk, page, page_size).await?;
 
-    let (members, bookmark) = SpaceInvitationMember::query(dynamo, &space_pk, opt).await?;
-    let items = members
+    let has_more = page < result.total_pages;
+    let next_bookmark = if has_more {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
+
+    let items = result
+        .items
         .into_iter()
         .map(SpaceInvitationListItem::from)
         .collect();
 
-    Ok(ListResponse { items, bookmark })
+    Ok(ListResponse {
+        items,
+        bookmark: next_bookmark,
+    })
 }

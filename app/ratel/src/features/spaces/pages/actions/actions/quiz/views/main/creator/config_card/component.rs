@@ -16,9 +16,9 @@ pub fn ConfigCard() -> Element {
     let action_id_str = quiz_id().to_string();
 
     let initial_prerequisite = quiz.space_action.prerequisite;
-    let saved_credits = quiz.space_action.credits;
+    let saved_credits = quiz.space_action.credits as u64;
     let action_status = quiz.space_action.status.clone();
-    let initial_depends_on = quiz.space_action.depends_on.clone();
+    let initial_depends_on = quiz.space_action.depends_on.0.clone();
     let initial_status = quiz.space_action.status.clone();
 
     let action_id_for_signal = action_id_str.clone();

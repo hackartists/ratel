@@ -9,16 +9,12 @@ pub async fn delete_post_handler(post_id: FeedPartition, force: Option<bool>) ->
     let conf = crate::features::posts::config::get();
     let cli = conf.dynamodb();
 
-    let post_pk: Partition = post_id.into();
+    let post_uuid = uuid::Uuid::parse_str(&post_id.0)
+        .map_err(|_| Error::NotFound("Post not found".into()))?;
 
-    if !Post::has_permission(
-        cli,
-        &post_pk,
-        Some(&user.pk),
-        TeamGroupPermission::PostDelete,
-    )
-    .await?
-    .1
+    if !Post::has_permission(cli, post_uuid, Some(&user.pk()), TeamGroupPermission::PostDelete)
+        .await?
+        .1
     {
         return Err(PostError::NotAccessible.into());
     }
@@ -33,7 +29,7 @@ pub async fn delete_post_handler(post_id: FeedPartition, force: Option<bool>) ->
         return Err(PostError::HasDependencies.into());
     }
 
-    let post = Post::delete(cli, post_pk, Some(EntityType::Post)).await?;
+    let post = Post::delete_by_feed_id(post_uuid).await?;
 
     // Qdrant vector deletion is handled by DynamoStream → PostVectorDelete event
 

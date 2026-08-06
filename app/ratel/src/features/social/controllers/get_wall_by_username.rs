@@ -3,40 +3,36 @@ use crate::features::social::*;
 #[cfg(feature = "server")]
 use crate::features::sub_team::models::{SubTeamApplication, SubTeamApplicationStatus};
 use crate::social::pages::member::dto::TeamRole;
-use crate::{auth::User, posts::models::Team, *};
+use crate::{auth::User, *};
 
 /// Returns the **applicant team's** username if the viewer is admin/owner
 /// of some team that has an in-flight application (Pending / Returned)
 /// targeting `wall_team_id`. Returns `None` otherwise. The lookup walks
 /// the viewer's UserTeam rows (filtered for admin/owner role) and
-/// queries `SubTeamApplication`'s gsi1 (`find_by_applicant`) for each.
+/// queries `SubTeamApplication::find_by_applicant_all` for each.
 /// In practice the list is short — most users belong to 1–2 teams.
 #[cfg(feature = "server")]
-async fn viewer_has_independent_team(
-    cli: &aws_sdk_dynamodb::Client,
-    viewer_pk: &Partition,
-) -> bool {
-    let sk_prefix = EntityType::UserTeam(String::new()).to_string();
-    let opt = UserTeam::opt_all().sk(sk_prefix);
-    let Ok((user_teams, _)): std::result::Result<(Vec<UserTeam>, _), _> =
-        UserTeam::query(cli, viewer_pk, opt).await
-    else {
+async fn viewer_has_independent_team(viewer_pk: &Partition) -> bool {
+    let Ok(user_teams) = UserTeam::find_by_user(viewer_pk).await else {
         return false;
     };
 
     for ut in user_teams {
-        if !ut.role.is_admin_or_owner() {
+        if !ut.role.0.is_admin_or_owner() {
             continue;
         }
-        let team_pk_str = match &ut.sk {
-            EntityType::UserTeam(s) => s.clone(),
-            _ => continue,
-        };
-        let team_pk: Partition = match team_pk_str.parse() {
+        let team_pk: Partition = match ut.team_pk.parse() {
             Ok(p) => p,
             Err(_) => continue,
         };
-        let team = match Team::get(cli, &team_pk, Some(EntityType::Team)).await {
+        let team_uuid = match &team_pk {
+            Partition::Team(id) => match uuid::Uuid::parse_str(id) {
+                Ok(uuid) => uuid,
+                Err(_) => continue,
+            },
+            _ => continue,
+        };
+        let team = match crate::posts::models::Team::get_by_id(team_uuid).await {
             Ok(Some(t)) => t,
             _ => continue,
         };
@@ -49,33 +45,23 @@ async fn viewer_has_independent_team(
 
 #[cfg(feature = "server")]
 async fn find_viewer_pending_application_for(
-    cli: &aws_sdk_dynamodb::Client,
     viewer_pk: &Partition,
     wall_team_id: &TeamPartition,
 ) -> Option<String> {
     let wall_team_uuid = wall_team_id.0.clone();
 
-    let sk_prefix = EntityType::UserTeam(String::new()).to_string();
-    let opt = UserTeam::opt_all().sk(sk_prefix);
-    let (user_teams, _): (Vec<UserTeam>, _) = UserTeam::query(cli, viewer_pk, opt).await.ok()?;
+    let user_teams = UserTeam::find_by_user(viewer_pk).await.ok()?;
 
     for ut in user_teams {
-        if !ut.role.is_admin_or_owner() {
+        if !ut.role.0.is_admin_or_owner() {
             continue;
         }
-        let applicant_team_pk_str = match &ut.sk {
-            EntityType::UserTeam(s) => s.clone(),
-            _ => continue,
-        };
-        let applicant_pk: Partition = match applicant_team_pk_str.parse() {
+        let applicant_pk: Partition = match ut.team_pk.parse() {
             Ok(p) => p,
             Err(_) => continue,
         };
 
-        let opt = SubTeamApplication::opt_all().scan_index_forward(false);
-        let Ok((apps, _)) =
-            SubTeamApplication::find_by_applicant(cli, applicant_pk.clone(), opt).await
-        else {
+        let Ok(apps) = SubTeamApplication::find_by_applicant_all(&applicant_pk).await else {
             continue;
         };
 
@@ -106,8 +92,7 @@ async fn find_viewer_pending_application_for(
 pub async fn get_wall_by_username(username: String) -> Result<Wall> {
     use crate::auth::UserFollow;
 
-    let cli = config::get().dynamodb();
-    let users = WallUser::find_by_username(cli, username).await?;
+    let users = WallUser::find_by_username(username).await?;
 
     if users.is_empty() {
         Err(SocialError::InvalidUserName)?;
@@ -117,11 +102,10 @@ pub async fn get_wall_by_username(username: String) -> Result<Wall> {
 
     let is_following = if let Some(u) = &user {
         let target_pk = match &users[0] {
-            WallUser::User(u) => &u.pk,
-            WallUser::Team(t) => &t.pk,
+            WallUser::User(u) => u.pk(),
+            WallUser::Team(t) => t.partition(),
         };
-        let (follower_pk, follower_sk) = UserFollow::follower_keys(target_pk, &u.pk);
-        UserFollow::get(cli, follower_pk, Some(follower_sk))
+        UserFollow::find_follower(&target_pk, &u.pk())
             .await?
             .is_some()
     } else {
@@ -139,7 +123,7 @@ pub async fn get_wall_by_username(username: String) -> Result<Wall> {
         } => {
             *following = is_following;
             if let Some(u) = user {
-                let pk_id: UserPartition = u.pk.into();
+                let pk_id: UserPartition = u.pk().into();
                 if &pk_id == id {
                     *can_edit = true;
                 }
@@ -158,26 +142,24 @@ pub async fn get_wall_by_username(username: String) -> Result<Wall> {
                 let team_pk: Partition = id.clone().into();
 
                 // Member check
-                let member =
-                    UserTeam::get(cli, &u.pk, Some(EntityType::UserTeam(team_pk.to_string())))
-                        .await?;
+                let member = UserTeam::get_membership(&u.pk(), &team_pk).await?;
                 if let Some(m) = member {
-                    *role = Some(m.role);
+                    *role = Some(m.role.0);
                 }
 
                 // Pending application check — only fill if viewer is
                 // NOT yet a member; otherwise the HUD already routes
                 // to the management page and we can skip the query
                 // cost. Scans the viewer's admin/owner teams and asks
-                // each one's gsi1 (find_by_applicant) for a row whose
+                // each one's application history for a row whose
                 // parent matches this wall team and whose status is
                 // still in-flight (Pending / Returned).
                 if role.is_none() {
                     *viewer_pending_applicant_username =
-                        find_viewer_pending_application_for(cli, &u.pk, id).await;
+                        find_viewer_pending_application_for(&u.pk(), id).await;
                     if viewer_pending_applicant_username.is_none() {
                         *viewer_has_eligible_applicant_team =
-                            viewer_has_independent_team(cli, &u.pk).await;
+                            viewer_has_independent_team(&u.pk()).await;
                     }
                 }
             }
@@ -222,19 +204,45 @@ pub enum Wall {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, DynamoEntity)]
+/// Union of the two entity kinds a `/social/:username` wall can resolve to.
+///
+/// Postgres migration: `User` and `Team` are now independent Postgres
+/// entities (no shared DynamoDB `gsi2` "find_by_username" index spanning
+/// both), so the old `#[derive(DynamoEntity)]` single-query lookup is
+/// replaced by [`WallUser::find_by_username`] probing each entity's own
+/// `find_by_username`. `Team` is server-only, so this whole type is
+/// server-gated — it is never sent over the wire (`Wall` is the public DTO).
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-#[dynamo(pk_prefix = "USERNAME", index = "gsi2", name = "find_by_username")]
 pub enum WallUser {
     User(User),
-    Team(Team),
+    Team(crate::posts::models::Team),
 }
 
+#[cfg(feature = "server")]
+impl WallUser {
+    /// Probes `User::find_by_username` then `Team::find_by_username` for an
+    /// exact match, mirroring the old shared-GSI lookup (which could in
+    /// principle return either kind for a given username).
+    pub async fn find_by_username(username: String) -> Result<Vec<Self>> {
+        let mut results = Vec::new();
+        if let Some(user) = User::find_by_username(&username).await? {
+            results.push(WallUser::User(user));
+        }
+        if let Some(team) = crate::posts::models::Team::find_by_username(&username).await? {
+            results.push(WallUser::Team(team));
+        }
+        Ok(results)
+    }
+}
+
+#[cfg(feature = "server")]
 impl Into<Wall> for WallUser {
     fn into(self) -> Wall {
         match self {
             WallUser::User(u) => Wall::User {
-                id: u.pk.into(),
+                id: u.pk().into(),
                 display_name: u.display_name,
                 username: u.username,
                 profile_url: u.profile_url,
@@ -244,7 +252,7 @@ impl Into<Wall> for WallUser {
                 created_at: u.created_at,
             },
             WallUser::Team(t) => Wall::Team {
-                id: t.pk.into(),
+                id: t.partition().into(),
                 display_name: t.display_name,
                 username: t.username,
                 profile_url: t.profile_url,

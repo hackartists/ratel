@@ -473,7 +473,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         }
         "PopularSpaceUpdate" => {
             let space: crate::common::models::space::SpaceCommon = deserialize(new)?;
-            let space_pk = space.pk.clone();
+            let space_pk = space.partition();
             let r = crate::features::timeline::services::fan_out_popular_space(space).await;
             fanout_hot_space(&space_pk).await;
             r
@@ -511,7 +511,8 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         }
         "SpaceStatusChangeEvent" => {
             let event: crate::common::models::space::SpaceStatusChangeEvent = deserialize(new)?;
-            let space_pk = event.space_pk.clone();
+            let space_pk: crate::common::types::Partition =
+                event.space_pk.parse().unwrap_or_default();
             let r = crate::features::spaces::space_common::services::handle_space_status_change(
                 event,
             )
@@ -522,7 +523,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         "SpaceActionStatusChange" => {
             let action: crate::features::spaces::pages::actions::models::SpaceAction =
                 deserialize(new)?;
-            let space_pk = action.space_pk.clone();
+            let space_pk = crate::common::types::Partition::Space(action.space_id.clone());
             let r =
                 crate::features::spaces::pages::actions::services::notify_action_ongoing(action)
                     .await;
@@ -532,7 +533,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         "PollXpRecord" => {
             let answer: crate::features::spaces::pages::actions::actions::poll::SpacePollUserAnswer =
                 deserialize(new)?;
-            let space_pk = space_pk_from_id_str(answer.space_id.as_deref());
+            let space_pk = space_pk_from_id_str(Some(answer.space_id.as_str()));
             let r = crate::features::activity::services::handle_poll_xp(answer).await;
             fanout_if_some(space_pk.as_ref()).await;
             r
@@ -548,7 +549,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         "DiscussionXpRecord" => {
             let comment: crate::features::spaces::pages::actions::actions::discussion::SpacePostComment =
                 deserialize(new)?;
-            let space_pk = comment.space_pk.clone();
+            let space_pk = space_pk_from_id_str(comment.space_id.as_deref());
             let r = crate::features::activity::services::handle_discussion_xp(comment).await;
             fanout_if_some(space_pk.as_ref()).await;
             r
@@ -571,7 +572,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         "EssenceIndexDiscussionComment" => {
             let comment: crate::features::spaces::pages::actions::actions::discussion::SpacePostComment =
                 deserialize(new)?;
-            let space_pk = comment.space_pk.clone();
+            let space_pk = space_pk_from_id_str(comment.space_id.as_deref());
             let r =
                 crate::features::essence::services::index_discussion_comment(&comment).await;
             fanout_if_some(space_pk.as_ref()).await;
@@ -580,7 +581,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         "EssenceIndexPoll" => {
             let poll: crate::features::spaces::pages::actions::actions::poll::SpacePoll =
                 deserialize(new)?;
-            let space_pk = poll.pk.clone();
+            let space_pk = crate::common::types::Partition::Space(poll.space_id.clone());
             let cfg = crate::common::CommonConfig::default();
             let cli = cfg.dynamodb();
             let r = crate::features::essence::services::index_poll(cli, &poll).await;
@@ -590,7 +591,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         "EssenceIndexQuiz" => {
             let quiz: crate::features::spaces::pages::actions::actions::quiz::SpaceQuiz =
                 deserialize(new)?;
-            let space_pk = quiz.pk.clone();
+            let space_pk = crate::common::types::Partition::Space(quiz.space_id.clone());
             let cfg = crate::common::CommonConfig::default();
             let cli = cfg.dynamodb();
             let r = crate::features::essence::services::index_quiz(cli, &quiz).await;
@@ -602,12 +603,13 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
             use crate::features::spaces::pages::actions::models::SpaceAction;
             use crate::features::spaces::pages::actions::types::SpaceActionType;
             let action: SpaceAction = deserialize(new)?;
-            let space_pk: crate::common::types::Partition = action.pk.0.clone().into();
+            let space_pk = crate::common::types::Partition::Space(action.space_id.clone());
             let r = if matches!(action.space_action_type, SpaceActionType::Quiz) {
                 let cfg = crate::common::CommonConfig::default();
                 let cli = cfg.dynamodb();
-                let quiz_sk = crate::common::types::EntityType::SpaceQuiz(action.pk.1.clone());
-                match SpaceQuiz::get(cli, &space_pk, Some(quiz_sk)).await {
+                let space_id = crate::common::types::SpacePartition(action.space_id.clone());
+                let quiz_id = crate::common::types::SpaceQuizEntityType(action.action_id.clone());
+                match SpaceQuiz::get_one(&space_id, &quiz_id).await {
                     Ok(Some(quiz)) => {
                         crate::features::essence::services::index_quiz(cli, &quiz).await
                     }
@@ -631,7 +633,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         "EssenceDeleteDiscussionComment" => {
             let comment: crate::features::spaces::pages::actions::actions::discussion::SpacePostComment =
                 deserialize(old)?;
-            let space_pk = comment.space_pk.clone();
+            let space_pk = space_pk_from_id_str(comment.space_id.as_deref());
             let r =
                 crate::features::essence::services::detach_discussion_comment(&comment).await;
             fanout_if_some(space_pk.as_ref()).await;
@@ -640,7 +642,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         "EssenceDeletePoll" => {
             let poll: crate::features::spaces::pages::actions::actions::poll::SpacePoll =
                 deserialize(old)?;
-            let space_pk = poll.pk.clone();
+            let space_pk = crate::common::types::Partition::Space(poll.space_id.clone());
             let cfg = crate::common::CommonConfig::default();
             let cli = cfg.dynamodb();
             let r = crate::features::essence::services::detach_poll(cli, &poll).await;
@@ -650,7 +652,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         "EssenceDeleteQuiz" => {
             let quiz: crate::features::spaces::pages::actions::actions::quiz::SpaceQuiz =
                 deserialize(old)?;
-            let space_pk = quiz.pk.clone();
+            let space_pk = crate::common::types::Partition::Space(quiz.space_id.clone());
             let cfg = crate::common::CommonConfig::default();
             let cli = cfg.dynamodb();
             let r = crate::features::essence::services::detach_quiz(cli, &quiz).await;
@@ -756,12 +758,7 @@ async fn handle_fact_fold_chat_inserted(
     use crate::features::arcade::realtime::channel::ChannelId;
     use crate::features::arcade::realtime::hub::global_hub;
 
-    let round_id = row
-        .pk
-        .to_string()
-        .strip_prefix("FACT_FOLD#")
-        .unwrap_or(&row.pk.to_string())
-        .to_string();
+    let round_id = row.round_id.clone();
     let channel = ChannelId(format!("fof.chat:{round_id}"));
 
     let payload: ChatMessagePayload = chat_payload_from(row);

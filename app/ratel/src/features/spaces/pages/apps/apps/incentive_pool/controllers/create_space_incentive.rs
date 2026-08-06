@@ -25,11 +25,8 @@ pub async fn create_space_incentive(
         return Err(SpaceAppError::IncentiveChainRequired.into());
     }
 
-    let common_config = crate::common::CommonConfig::default();
-    let dynamo = common_config.dynamodb();
-
     let incentive = SpaceIncentive::new(space_pk, req.contract_address, req.deploy_block);
-    incentive.upsert(dynamo).await?;
+    let incentive = incentive.save().await?;
 
     Ok(incentive)
 }

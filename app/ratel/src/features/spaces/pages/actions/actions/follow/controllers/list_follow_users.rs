@@ -4,6 +4,7 @@ use crate::features::posts::models::Team;
 use crate::features::spaces::pages::actions::actions::follow::models::SpaceFollowUser;
 use crate::features::spaces::pages::actions::actions::follow::*;
 use std::collections::HashSet;
+use std::str::FromStr;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
@@ -29,24 +30,18 @@ pub async fn list_follow_users(
     space_id: SpacePartition,
     bookmark: Option<String>,
 ) -> Result<ListResponse<FollowUserItem>> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_pk: Partition = space_id.clone().into();
     let is_first_page = bookmark.is_none();
-    let mut opt = SpaceFollowUser::opt()
-        .sk(EntityType::SpaceSubscriptionUser(String::default()).to_string())
-        .limit(10);
-    if let Some(bookmark) = bookmark {
-        opt = opt.bookmark(bookmark);
-    }
 
-    let (users, bookmark) = SpaceFollowUser::query(cli, space_pk.clone(), opt).await?;
+    // Postgres: one page of follow-target rows for this space.
+    let (users, bookmark) = SpaceFollowUser::list_by_space(&space_id, bookmark, 10).await?;
+    let none_str = Partition::None.to_string();
     let users: Vec<SpaceFollowUser> = users
         .into_iter()
-        .filter(|u| u.user_pk != Partition::None)
+        .filter(|u| u.user_pk != none_str)
         .collect();
 
-    let space = SpaceCommon::get(cli, &space_pk, Some(EntityType::SpaceCommon))
+    let space = SpaceCommon::get_by_partition(&space_pk)
         .await?
         .ok_or(Error::SpaceNotFound)?;
     let (creator_pk, creator_profile) = {
@@ -56,43 +51,37 @@ pub async fn list_follow_users(
             space.author_username.clone(),
             String::new(),
         );
-        let mut creator_pk = space.user_pk.clone();
+        // Postgres migration: `SpaceCommon.user_pk` is now the bare serialized
+        // `Partition` string — parse it back the same way serde would.
+        let mut creator_pk: Partition =
+            Partition::from_str(&space.user_pk).unwrap_or(Partition::None);
 
         let mut resolved = false;
-        if let Ok((teams, _)) =
-            Team::find_by_username_prefix(cli, &space.author_username, Team::opt().limit(5)).await
-        {
-            if let Some(team) = teams
-                .into_iter()
-                .find(|team| team.username == space.author_username)
-            {
-                creator_pk = team.pk.clone();
-                creator_profile = (
-                    team.display_name,
-                    team.profile_url,
-                    team.username,
-                    team.description,
-                );
-                resolved = true;
-            }
+        if let Ok(Some(team)) = Team::find_by_username(&space.author_username).await {
+            creator_pk = team.partition();
+            creator_profile = (
+                team.display_name,
+                team.profile_url,
+                team.username,
+                team.description,
+            );
+            resolved = true;
         }
 
         if !resolved {
-            let users = match crate::features::auth::User::find_by_username(
-                cli,
+            let found_user = match crate::common::models::auth::User::find_by_username(
                 &space.author_username,
-                crate::features::auth::UserQueryOption::builder().limit(1),
             )
             .await
             {
-                Ok((users, _)) => users,
+                Ok(user) => user,
                 Err(err) => {
                     error!("Failed to query user by username: {:?}", err);
-                    vec![]
+                    None
                 }
             };
-            if let Some(user) = users.into_iter().next() {
-                creator_pk = user.pk.clone();
+            if let Some(user) = found_user {
+                creator_pk = user.pk();
                 creator_profile = (
                     user.display_name,
                     user.profile_url,
@@ -105,21 +94,14 @@ pub async fn list_follow_users(
         (creator_pk, creator_profile)
     };
 
-    let viewer_pk = user.0.as_ref().map(|u| u.pk.clone());
+    let viewer_pk = user.0.as_ref().map(|u| u.pk());
     let subscribed_targets = if let Some(viewer_pk) = viewer_pk.as_ref() {
-        let mut keys: Vec<(Partition, EntityType)> = users
-            .iter()
-            .map(|target| UserFollow::follower_keys(&target.user_pk, viewer_pk))
-            .collect();
-        if !users.iter().any(|u| u.user_pk == creator_pk) {
-            keys.push(UserFollow::follower_keys(&creator_pk, viewer_pk));
+        let mut targets: Vec<Partition> = users.iter().map(|target| target.user_partition()).collect();
+        if !targets.iter().any(|t| *t == creator_pk) {
+            targets.push(creator_pk.clone());
         }
 
-        let subs: Vec<UserFollow> = if keys.is_empty() {
-            vec![]
-        } else {
-            UserFollow::batch_get(cli, keys).await?
-        };
+        let subs: Vec<UserFollow> = UserFollow::following_targets_in(viewer_pk, &targets).await?;
 
         subs.into_iter()
             .map(|sub| sub.target_user_pk.to_string())
@@ -130,14 +112,18 @@ pub async fn list_follow_users(
 
     let mut items: Vec<FollowUserItem> = users
         .into_iter()
-        .map(|u| FollowUserItem {
-            user_pk: u.user_pk.clone(),
-            display_name: u.display_name,
-            profile_url: u.profile_url,
-            username: u.username,
-            description: u.description,
-            user_type: u.user_type,
-            subscribed: subscribed_targets.contains(&u.user_pk.to_string()),
+        .map(|u| {
+            let user_pk = u.user_partition();
+            let subscribed = subscribed_targets.contains(&user_pk.to_string());
+            FollowUserItem {
+                user_pk,
+                display_name: u.display_name,
+                profile_url: u.profile_url,
+                username: u.username,
+                description: u.description,
+                user_type: u.user_type.0,
+                subscribed,
+            }
         })
         .collect();
 
@@ -156,30 +142,25 @@ pub async fn list_follow_users(
         }
     } else {
         if is_first_page {
-            let creator_sk = EntityType::SpaceSubscriptionUser(creator_pk.to_string());
-            let creator = SpaceFollowUser::get(cli, &space_pk, Some(creator_sk))
+            let creator = SpaceFollowUser::get_one(&space_id, &creator_pk)
                 .await?
-                .map(|u| FollowUserItem {
-                    user_pk: u.user_pk.clone(),
-                    display_name: u.display_name,
-                    profile_url: u.profile_url,
-                    username: u.username,
-                    description: u.description,
-                    user_type: u.user_type,
-                    subscribed: subscribed_targets.contains(&u.user_pk.to_string()),
+                .map(|u| {
+                    let user_pk = u.user_partition();
+                    let subscribed = subscribed_targets.contains(&user_pk.to_string());
+                    FollowUserItem {
+                        user_pk,
+                        display_name: u.display_name,
+                        profile_url: u.profile_url,
+                        username: u.username,
+                        description: u.description,
+                        user_type: u.user_type.0,
+                        subscribed,
+                    }
                 });
             // Only hit the User table when creator_pk is actually a User
-            // partition. If it's a Team (team-owned space), calling
-            // `User::get(TEAM#..., "USER")` triggers the DynamoEntity macro's
-            // `begins_with` fallback, which then matches *any* sk starting
-            // with "USER" under that team's pk (USER_TEAM, USER_ESSENCE_STATS,
-            // USER_EVM_ADDRESS, etc.) and tries to deserialize that unrelated
-            // row as a User — which blows up with missing required fields
-            // (e.g. "missing field `created_at`"). For Teams we always fall
-            // through to the creator_profile fallback below.
+            // partition — Team creators fall through to creator_profile below.
             let user_lookup = if matches!(&creator_pk, Partition::User(_)) {
-                crate::features::auth::User::get(cli, creator_pk.clone(), Some(EntityType::User))
-                    .await?
+                crate::common::models::auth::User::find_by_pk(&creator_pk).await?
             } else {
                 None
             };
@@ -203,7 +184,7 @@ pub async fn list_follow_users(
                     profile_url: creator_profile.1,
                     username: creator_profile.2,
                     description: creator_profile.3,
-                    user_type: match creator_pk {
+                    user_type: match &creator_pk {
                         Partition::Team(_) => UserType::Team,
                         _ => UserType::Individual,
                     },

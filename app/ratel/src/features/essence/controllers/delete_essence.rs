@@ -14,7 +14,7 @@ use crate::features::auth::User;
 pub async fn delete_essence_handler(essence_id: String) -> Result<()> {
     // Confirm the row exists under the caller's pk before acting — guards
     // against a user deleting someone else's row via a guessed id.
-    match Essence::get_for_user(&user.pk, &essence_id).await {
+    match Essence::get_for_user(&user.pk(), &essence_id).await {
         Ok(Some(_)) => {}
         Ok(None) => return Err(EssenceError::NotFound.into()),
         Err(e) => {
@@ -23,5 +23,5 @@ pub async fn delete_essence_handler(essence_id: String) -> Result<()> {
         }
     }
 
-    Essence::detach_by_source_id(&user.pk, essence_id).await
+    Essence::detach_by_source_id(&user.pk(), essence_id).await
 }

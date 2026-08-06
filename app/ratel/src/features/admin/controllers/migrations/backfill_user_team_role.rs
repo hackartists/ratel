@@ -1,6 +1,6 @@
 use crate::common::models::auth::AdminUser;
 use crate::features::admin::*;
-use crate::features::auth::{UserTeam, UserTeamGroup};
+use crate::features::auth::{TeamRoleJson, UserTeam, UserTeamGroup};
 use crate::features::posts::models::TeamOwner;
 use crate::features::posts::types::TeamGroupPermissions;
 use crate::features::social::pages::member::dto::TeamRole;
@@ -31,87 +31,73 @@ pub async fn backfill_user_team_role(
     overwrite: Option<bool>,
 ) -> Result<BackfillUserTeamRoleResponse> {
     use crate::features::posts::types::TeamGroupPermission;
+    use postgres::PostgresEntity;
+    use postgres::ops::StringOp;
 
     let overwrite = overwrite.unwrap_or(false);
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
-    let table_name = format!(
-        "{}-main",
-        std::env::var("DYNAMO_TABLE_PREFIX").unwrap_or_else(|_| "ratel-dev".to_string())
-    );
 
     let mut response = BackfillUserTeamRoleResponse::default();
 
-    // Scan the entire table for UserTeam records (sk begins_with USER_TEAM#).
-    // We use the raw DynamoDB scan because DynamoEntity query helpers assume a
-    // known pk, but here we need to sweep every row.
-    let mut last_key: Option<std::collections::HashMap<String, aws_sdk_dynamodb::types::AttributeValue>> = None;
+    // Sweep every UserTeam row, page by page. Postgres migration replaces the
+    // old raw DynamoDB `sk begins_with USER_TEAM#` scan with a plain
+    // unfiltered paginated query — `UserTeam` is its own table now, so no
+    // prefix filter is needed.
+    const PAGE_SIZE: i64 = 100;
+    let mut page_num: i64 = 1;
     loop {
-        let mut scan = cli
-            .scan()
-            .table_name(&table_name)
-            .filter_expression("begins_with(sk, :prefix)")
-            .expression_attribute_values(
-                ":prefix",
-                aws_sdk_dynamodb::types::AttributeValue::S("USER_TEAM#".to_string()),
-            )
-            .limit(100);
-        if let Some(key) = last_key.take() {
-            scan = scan.set_exclusive_start_key(Some(key));
+        let page = UserTeam::repository()
+            .find(UserTeam::query().page(page_num).page_size(PAGE_SIZE))
+            .await
+            .map_err(|e| {
+                crate::error!("scan failed: {e}");
+                crate::common::Error::NotFound(format!("scan failed: {e}"))
+            })?;
+
+        if page.items.is_empty() {
+            break;
         }
-        let page = scan.send().await.map_err(|e| {
-            crate::error!("scan failed: {e}");
-            crate::common::Error::NotFound(format!("scan failed: {e}"))
-        })?;
 
-        let items = page.items.clone().unwrap_or_default();
-
-        for item in items {
-            // Deserialize into UserTeam via the DynamoEntity helper — if the
-            // record was written before `role` existed, serde will default to
-            // Member.
-            let user_team: UserTeam = match serde_dynamo::from_item(item.clone()) {
-                Ok(ut) => ut,
-                Err(e) => {
-                    crate::error!("failed to deserialize UserTeam: {e}");
-                    continue;
-                }
-            };
+        for user_team in page.items {
             response.scanned += 1;
 
-            if !overwrite && !matches!(user_team.role, TeamRole::Member) {
+            if !overwrite && !matches!(user_team.role.0, TeamRole::Member) {
                 // Already has a non-default role; skip.
                 response.skipped_already_set += 1;
                 continue;
             }
 
-            // Extract team_pk from sk (EntityType::UserTeam(team_pk_str)).
-            let team_pk_str = match &user_team.sk {
-                crate::common::types::EntityType::UserTeam(s) => s.clone(),
-                _ => continue,
-            };
+            let team_pk_str = user_team.team_pk.clone();
             let team_pk: Partition = team_pk_str.parse().unwrap_or_default();
 
             // Owner check.
             let mut role = TeamRole::Member;
-            if let Ok(Some(owner)) =
-                TeamOwner::get(cli, &team_pk, Some(&EntityType::TeamOwner)).await
-            {
-                if owner.user_pk == user_team.pk {
-                    role = TeamRole::Owner;
+            let team_uuid = match &team_pk {
+                Partition::Team(id) => uuid::Uuid::parse_str(id).ok(),
+                _ => None,
+            };
+            if let Some(team_uuid) = team_uuid {
+                if let Ok(Some(owner)) = TeamOwner::find_by_team(team_uuid).await {
+                    if owner.user_pk == user_team.user_pk {
+                        role = TeamRole::Owner;
+                    }
                 }
             }
 
-            // If not owner, combine UserTeamGroup permissions to derive role.
-            // Owner is authoritative only via the TeamOwner record — the
-            // TeamAdmin permission bit was granted to every member of the
-            // legacy `admin_group`, so treating that bit as Owner would
-            // incorrectly promote every admin_group member.
+            // If not owner, combine this user's UserTeamGroup permissions for
+            // this team to derive role. Owner is authoritative only via the
+            // TeamOwner record — the TeamAdmin permission bit was granted to
+            // every member of the legacy `admin_group`, so treating that bit
+            // as Owner would incorrectly promote every admin_group member.
             if matches!(role, TeamRole::Member) {
-                let opt = UserTeamGroup::opt().sk(user_team.pk.to_string()).limit(50);
-                if let Ok((groups, _)) =
-                    UserTeamGroup::find_by_team_pk(cli, team_pk.clone(), opt).await
+                if let Ok(groups) = UserTeamGroup::repository()
+                    .find(
+                        UserTeamGroup::query()
+                            .user_pk(StringOp::Eq(user_team.user_pk.clone()))
+                            .team_pk(StringOp::Eq(team_pk_str.clone()))
+                            .page_size(50),
+                    )
+                    .await
+                    .map(|p| p.items)
                 {
                     let mut mask = 0i64;
                     for g in groups {
@@ -127,14 +113,13 @@ pub async fn backfill_user_team_role(
                 }
             }
 
-            if matches!(role, TeamRole::Member) && matches!(user_team.role, TeamRole::Member) {
+            if matches!(role, TeamRole::Member) && matches!(user_team.role.0, TeamRole::Member) {
                 // Nothing to change.
                 continue;
             }
 
-            UserTeam::updater(&user_team.pk, &user_team.sk)
-                .with_role(role)
-                .execute(cli)
+            UserTeam::repository()
+                .update(user_team.id, UserTeam::update().role(TeamRoleJson(role)))
                 .await
                 .map_err(|e| {
                     crate::error!("failed to update UserTeam.role: {e}");
@@ -149,10 +134,10 @@ pub async fn backfill_user_team_role(
             }
         }
 
-        match page.last_evaluated_key {
-            Some(key) if !key.is_empty() => last_key = Some(key),
-            _ => break,
+        if page_num >= page.total_pages {
+            break;
         }
+        page_num += 1;
     }
 
     Ok(response)

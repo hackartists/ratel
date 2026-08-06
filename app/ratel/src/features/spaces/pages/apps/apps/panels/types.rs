@@ -59,16 +59,30 @@ pub struct SpacePanelQuotaResponse {
 
 impl From<SpacePanelQuota> for SpacePanelQuotaResponse {
     fn from(panel: SpacePanelQuota) -> Self {
-        let attributes_vec = if panel.attributes_vec.is_empty()
+        let attributes_vec = if panel.attributes_vec.0.is_empty()
             && !matches!(panel.attributes, PanelAttribute::None)
         {
             vec![panel.attributes]
         } else {
-            panel.attributes_vec
+            // `PanelAttributes` is a jsonb newtype wrapper — unwrap to the
+            // plain `Vec<PanelAttribute>` the response DTO carries.
+            panel.attributes_vec.0
+        };
+
+        // Reconstruct the former `sk` string (`SpacePanelAttribute(label, value)`)
+        // from the natural-key columns: bare label when there's no value,
+        // `label#value` otherwise — matches `From<EntityType>` above.
+        let panel_id = if panel.attribute_value.is_empty() {
+            SpacePanelAttributeEntityType(panel.attribute_label.clone())
+        } else {
+            SpacePanelAttributeEntityType(format!(
+                "{}#{}",
+                panel.attribute_label, panel.attribute_value
+            ))
         };
 
         Self {
-            panel_id: panel.sk.into(),
+            panel_id,
             quotas: panel.quotas,
             remains: panel.remains,
             attributes_vec,

@@ -5,6 +5,10 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerializeDisplay, Default, DynamoEnum, Translate)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+// Postgres migration: stored as a JSONB scalar (serde string form, e.g.
+// `"Published"`). Round-trips through the existing `SerializeDisplay` /
+// custom `Deserialize`. Additive — DynamoEntity/serde behavior is untouched.
+#[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 pub enum PostStatus {
     #[default]
     #[translate(en = "Draft", ko = "초안")]

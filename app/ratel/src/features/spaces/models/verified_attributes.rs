@@ -4,18 +4,11 @@ pub use crate::common::models::did::VerifiedAttributes;
 use crate::common::models::User;
 
 #[cfg(feature = "server")]
-pub async fn get_attributesss(
-    dynamo: &crate::common::server_lib::DynamoClient,
-    user_pk: Partition,
-) -> Result<Option<RespondentAttr>> {
-    let res = VerifiedAttributes::get(
-        &dynamo,
-        CompositePartition(user_pk, Partition::Attributes),
-        None::<String>,
-    )
-    .await
-    .unwrap_or_default()
-    .unwrap_or(VerifiedAttributes::default());
+pub async fn get_attributesss(user_pk: Partition) -> Result<Option<RespondentAttr>> {
+    let res = VerifiedAttributes::get_by_user(&user_pk)
+        .await
+        .unwrap_or_default()
+        .unwrap_or_default();
 
     let age = if res.age().is_none() {
         None
@@ -53,7 +46,14 @@ pub async fn get_attributesss(
             }),
         }
     };
-    let gender = res.gender;
+    // Postgres migration: `VerifiedAttributes.gender` is now the bare
+    // snake_case string ("male" / "female") rather than the typed `Gender`
+    // enum — parse it back the same way serde would.
+    let gender = match res.gender.as_deref() {
+        Some("male") => Some(crate::common::attribute::Gender::Male),
+        Some("female") => Some(crate::common::attribute::Gender::Female),
+        _ => None,
+    };
 
     let school = res.university;
 
@@ -67,15 +67,14 @@ pub async fn get_attributesss(
 #[cfg(feature = "server")]
 #[async_trait::async_trait]
 pub trait UserAttributesExt {
-    async fn get_attributes(&self, cli: &aws_sdk_dynamodb::Client) -> Result<VerifiedAttributes>;
+    async fn get_attributes(&self) -> Result<VerifiedAttributes>;
 }
 
 #[cfg(feature = "server")]
 #[async_trait::async_trait]
 impl UserAttributesExt for User {
-    async fn get_attributes(&self, cli: &aws_sdk_dynamodb::Client) -> Result<VerifiedAttributes> {
-        let (pk, sk) = VerifiedAttributes::keys(&self.pk);
-        Ok(VerifiedAttributes::get(cli, pk, Some(sk))
+    async fn get_attributes(&self) -> Result<VerifiedAttributes> {
+        Ok(VerifiedAttributes::get_by_user(&self.pk())
             .await?
             .unwrap_or_default())
     }

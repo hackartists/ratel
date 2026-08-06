@@ -39,7 +39,7 @@ fn default_deps_met() -> bool {
 
 impl From<crate::features::spaces::pages::actions::models::SpaceAction> for SpaceActionSummary {
     fn from(action: crate::features::spaces::pages::actions::models::SpaceAction) -> Self {
-        let action_id = action.pk.1;
+        let action_id = action.action_id;
         Self {
             action_id,
             action_type: action.space_action_type,
@@ -53,11 +53,11 @@ impl From<crate::features::spaces::pages::actions::models::SpaceAction> for Spac
             quiz_total_score: None,
             quiz_passed: None,
             user_participated: false,
-            credits: action.credits,
+            credits: action.credits as u64,
             prerequisite: action.prerequisite,
             comment_count: None,
             status: action.status,
-            depends_on: action.depends_on,
+            depends_on: action.depends_on.0,
             dependencies_met: true,
         }
     }

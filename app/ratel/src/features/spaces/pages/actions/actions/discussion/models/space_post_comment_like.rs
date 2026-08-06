@@ -1,20 +1,40 @@
 use crate::features::spaces::pages::actions::actions::discussion::*;
-
-use crate::features::spaces::pages::actions::actions::discussion::macros::DynamoEntity;
-use crate::features::spaces::pages::actions::actions::discussion::models::SpacePostComment;
+#[cfg(feature = "server")]
+use crate::features::spaces::pages::actions::actions::discussion::models::comment_key_of;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use postgres::ops::StringOp;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+#[cfg(feature = "server")]
+use std::collections::HashSet;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, DynamoEntity)]
+/// One like row per (comment, user).
+///
+/// Postgres migration: the DynamoDB identity was `pk = SpacePostLike(post_id)`
+/// + `sk = SpacePostCommentLike#{user}#{comment_key}`. It becomes a surrogate
+/// `id` PK plus `(post_id, comment_key, user_pk)` natural key, where
+/// `comment_key` is the composite like-key (`id` or `{parent}#{reply}`).
+/// Server-only.
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PostgresEntity)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[postgres(table = "space_post_comment_likes", unique(post_id, comment_key, user_pk))]
 pub struct SpacePostCommentLike {
-    pub pk: Partition,
-    pub sk: EntityType,
+    pub id: Uuid,
 
-    #[dynamo(prefix = "LIKE", name = "find_by_user", index = "gsi1", pk)]
-    pub user_pk: Partition,
-    #[dynamo(index = "gsi1", sk)]
+    #[postgres(index)]
+    pub post_id: String,
+    #[postgres(index)]
+    pub comment_key: String,
+    #[postgres(index)]
+    pub user_pk: String,
+
+    #[postgres(order)]
     pub created_at: i64,
 }
 
@@ -26,97 +46,51 @@ impl SpacePostCommentLike {
         user_pk: UserPartition,
     ) -> Self {
         let now = crate::common::utils::time::get_now_timestamp_millis();
-
-        let (pk, sk) = Self::keys(space_post_pk, comment_sk, &user_pk);
-
+        let user_partition: Partition = user_pk.into();
         Self {
-            pk,
-            sk,
+            id: Uuid::now_v7(),
+            post_id: space_post_pk.0,
+            comment_key: comment_key_of(&comment_sk).unwrap_or_default(),
+            user_pk: user_partition.to_string(),
             created_at: now,
-            user_pk: user_pk.into(),
         }
     }
 
-    pub fn keys(
-        space_post_pk: SpacePostPartition,
-        comment_sk: EntityType,
-        user_pk: &UserPartition,
-    ) -> (Partition, EntityType) {
-        let pk = Partition::SpacePostLike(space_post_pk.to_string());
-
-        let comment_id = match &comment_sk {
-            EntityType::SpacePostComment(id) => id.clone(),
-            EntityType::SpacePostCommentReply(parent_id, reply_id) => {
-                format!("{}#{}", parent_id, reply_id)
-            }
-            _ => panic!("comment_sk must be SpacePostComment or SpacePostCommentReply"),
-        };
-
-        let user_id = user_pk.to_string();
-
-        let sk = EntityType::SpacePostCommentLike(user_id, comment_id);
-        (pk, sk)
+    /// Fetch the like row matching this like's natural key, if present.
+    pub async fn find_like(
+        like: &Self,
+    ) -> crate::features::spaces::pages::actions::actions::discussion::Result<Option<Self>> {
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .post_id(StringOp::Eq(like.post_id.clone()))
+                    .comment_key(StringOp::Eq(like.comment_key.clone()))
+                    .user_pk(StringOp::Eq(like.user_pk.clone())),
+            )
+            .await
+            .map_err(crate::common::Error::from)
+            .map_err(Into::into)
     }
 
-    /// Helper for cases where we have raw Partition values (e.g., from loaded entities)
-    pub fn keys_from_partition(
-        space_post_pk: Partition,
-        comment_sk: EntityType,
+    /// The set of `comment_key`s among `comment_keys` that `user_pk` has liked
+    /// under `post_id`.
+    pub async fn liked_keys(
+        post_id: &str,
         user_pk: &Partition,
-    ) -> (Partition, EntityType) {
-        let pk = match space_post_pk {
-            Partition::SpacePost(s) if !s.is_empty() => Partition::SpacePostLike(s),
-            _ => panic!("post_pk must be Partition::SpacePost with non-empty inner value"),
-        };
-
-        let comment_id = match &comment_sk {
-            EntityType::SpacePostComment(id) => id.clone(),
-            EntityType::SpacePostCommentReply(parent_id, reply_id) => {
-                format!("{}#{}", parent_id, reply_id)
-            }
-            _ => panic!("comment_sk must be SpacePostComment or SpacePostCommentReply"),
-        };
-
-        let user_id = match user_pk {
-            Partition::User(id) => id.clone(),
-            _ => panic!("user_pk must be Partition::User"),
-        };
-
-        let sk = EntityType::SpacePostCommentLike(user_id, comment_id);
-        (pk, sk)
-    }
-}
-
-impl PartialEq<SpacePostComment> for SpacePostCommentLike {
-    fn eq(&self, post: &SpacePostComment) -> bool {
-        let cid = match &post.sk {
-            EntityType::SpacePostComment(id) => id.clone(),
-            EntityType::SpacePostCommentReply(parent_id, reply_id) => {
-                format!("{}#{}", parent_id, reply_id)
-            }
-            _ => return false,
-        };
-
-        match &self.sk {
-            EntityType::SpacePostCommentLike(_, comment_id) if comment_id == &cid => {}
-            _ => return false,
+        comment_keys: Vec<String>,
+    ) -> crate::common::Result<HashSet<String>> {
+        if comment_keys.is_empty() {
+            return Ok(HashSet::new());
         }
-
-        let post_id = match &self.pk {
-            Partition::SpacePostLike(id) => id,
-            _ => return false,
-        };
-        let op_post_id = match &post.pk {
-            Partition::SpacePost(id) => id,
-            _ => return false,
-        };
-
-        post_id == op_post_id
-    }
-}
-
-impl PartialEq<SpacePostComment> for &SpacePostCommentLike {
-    fn eq(&self, post: &SpacePostComment) -> bool {
-        (**self).eq(post)
+        let page = Self::repository()
+            .find(
+                Self::query()
+                    .post_id(StringOp::Eq(post_id.to_string()))
+                    .user_pk(StringOp::Eq(user_pk.to_string()))
+                    .comment_key(StringOp::In(comment_keys)),
+            )
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(page.items.into_iter().map(|l| l.comment_key).collect())
     }
 }

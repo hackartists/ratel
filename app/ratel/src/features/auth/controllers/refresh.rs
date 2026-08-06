@@ -37,8 +37,6 @@ pub struct RefreshSessionResponse {
 pub async fn refresh_session_handler(
     req: RefreshSessionRequest,
 ) -> Result<RefreshSessionResponse> {
-    let conf = crate::features::auth::config::get();
-    let cli = conf.dynamodb();
     let Extension(session) = session;
 
     let RefreshSessionRequest {
@@ -46,19 +44,15 @@ pub async fn refresh_session_handler(
         device_id,
     } = req;
 
-    // Look up by device_id (gsi1) — there should be at most one active row.
-    let (rows, _) = UserRefreshToken::find_by_device_id(
-        cli,
-        &device_id,
-        UserRefreshTokenQueryOption::builder().limit(1),
-    )
-    .await
-    .map_err(|e| {
-        crate::error!("refresh: device_id lookup failed: {e}");
-        Error::NoSessionFound
-    })?;
+    // Look up by device_id — there should be at most one active row.
+    let rows = UserRefreshToken::find_by_device_id(&device_id, 1, 1)
+        .await
+        .map_err(|e| {
+            crate::error!("refresh: device_id lookup failed: {e}");
+            Error::NoSessionFound
+        })?;
 
-    let row = rows.into_iter().next().ok_or(Error::NoSessionFound)?;
+    let row = rows.items.into_iter().next().ok_or(Error::NoSessionFound)?;
 
     if row.revoked {
         return Err(Error::NoSessionFound);
@@ -75,7 +69,8 @@ pub async fn refresh_session_handler(
         return Err(Error::NoSessionFound);
     }
 
-    let user = User::get(cli, row.pk.clone(), Some(EntityType::User))
+    let user_pk: Partition = row.user_pk.parse().map_err(|_| Error::NoSessionFound)?;
+    let user = User::find_by_pk(&user_pk)
         .await
         .map_err(|e| {
             crate::error!("refresh: user lookup failed: {e}");
@@ -90,13 +85,13 @@ pub async fn refresh_session_handler(
 
     // Mint a fresh session cookie for this client.
     session
-        .insert(SESSION_KEY_USER_ID, user.pk.to_string())
+        .insert(SESSION_KEY_USER_ID, user.pk().to_string())
         .await?;
 
     // Rotate the refresh token — the previous hash is overwritten in place
     // because `device_id` keys the row.
     let (rotated, plain) = UserRefreshToken::new(&user, device_id);
-    rotated.upsert(cli).await?;
+    rotated.save().await?;
 
     Ok(RefreshSessionResponse {
         user,

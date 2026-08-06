@@ -80,8 +80,8 @@ pub struct UpdateSpaceResponse {
 impl From<SpaceCommon> for UpdateSpaceResponse {
     fn from(s: SpaceCommon) -> Self {
         Self {
-            pk: s.pk,
-            sk: s.sk,
+            pk: s.partition(),
+            sk: EntityType::SpaceCommon,
             created_at: s.created_at,
             updated_at: s.updated_at,
             status: s.status,
@@ -116,10 +116,9 @@ pub async fn update_space(
     let space_pk: Partition = space_id.into();
 
     let now = chrono::Utc::now().timestamp_millis();
-    let mut su = SpaceCommon::updater(&space.pk, &space.sk).with_updated_at(now);
-    let mut pu: Option<_> = None;
     let mut should_send_invitation = false;
     let mut updated_space = space.clone();
+    updated_space.updated_at = now;
     let mut status_transition: Option<(Option<SpaceStatus>, SpaceStatus)> = None;
 
     match req {
@@ -133,54 +132,45 @@ pub async fn update_space(
                 return Err(SpaceError::StartNowNotSupported.into());
             }
 
-            su = su
-                .with_publish_state(SpacePublishState::Published)
-                .with_status(SpaceStatus::Open)
-                .with_visibility(visibility.clone());
+            let mut post = load_post(&post_pk).await?;
+            post.updated_at = now;
+            post.space_visibility = Some(visibility.clone().into());
+            post.visibility = Some(visibility.clone().into());
+            post.status = PostStatus::Published;
+            post.save().await?;
 
-            let mut post_updater = Post::updater(post_pk, EntityType::Post).with_updated_at(now);
-
-            post_updater = post_updater
-                .with_space_visibility(visibility.clone())
-                .with_visibility(visibility.clone().into())
-                .with_status(PostStatus::Published);
-
-            pu = Some(post_updater);
             should_send_invitation = true;
 
             updated_space.publish_state = SpacePublishState::Published;
+            updated_space.status = Some(SpaceStatus::Open);
             updated_space.visibility = visibility;
             status_transition = Some((space.status.clone(), SpaceStatus::Open));
         }
         UpdateSpaceRequest::Visibility { visibility } => {
-            su = su.with_visibility(visibility.clone());
-
             let post_pk = space_pk.clone().to_post_key()?;
-            let post_updater = Post::updater(post_pk, EntityType::Post)
-                .with_updated_at(now)
-                .with_space_visibility(visibility.clone())
-                .with_visibility(visibility.clone().into());
-            pu = Some(post_updater);
+            let mut post = load_post(&post_pk).await?;
+            post.updated_at = now;
+            post.space_visibility = Some(visibility.clone().into());
+            post.visibility = Some(visibility.clone().into());
+            post.save().await?;
 
             updated_space.visibility = visibility;
         }
         UpdateSpaceRequest::Content { content } => {
-            su = su.with_content(content.clone());
-
             let post_pk = space_pk.clone().to_post_key()?;
-            let post_updater = Post::updater(post_pk, EntityType::Post)
-                .with_updated_at(now)
-                .with_body(ContentBody::html(content.clone()));
-            pu = Some(post_updater);
+            let mut post = load_post(&post_pk).await?;
+            post.updated_at = now;
+            post.body = ContentBody::html(content.clone()).into();
+            post.save().await?;
 
             updated_space.content = content;
         }
         UpdateSpaceRequest::Title { title } => {
             let post_pk = space_pk.clone().to_post_key()?;
-            let mut post_updater = Post::updater(post_pk, EntityType::Post).with_updated_at(now);
-
-            post_updater = post_updater.with_title(title);
-            pu = Some(post_updater);
+            let mut post = load_post(&post_pk).await?;
+            post.updated_at = now;
+            post.title = title;
+            post.save().await?;
         }
         UpdateSpaceRequest::Start { start } => {
             use crate::features::spaces::space_common::models::SpaceEmailVerification;
@@ -193,11 +183,9 @@ pub async fn update_space(
                 return Err(SpaceError::StartNowNotSupported.into());
             }
 
-            su = su.with_status(SpaceStatus::Ongoing);
-
             updated_space.status = Some(SpaceStatus::Ongoing);
 
-            let _ = SpaceEmailVerification::expire_verifications(dynamo, space_pk.clone()).await?;
+            let _ = SpaceEmailVerification::expire_verifications(space_pk.clone()).await?;
             status_transition = Some((Some(SpaceStatus::Open), SpaceStatus::Ongoing));
         }
         UpdateSpaceRequest::Finish { finished } => {
@@ -209,21 +197,15 @@ pub async fn update_space(
                 return Err(SpaceError::FinishNowNotSupported.into());
             }
 
-            su = su.with_status(SpaceStatus::Finished);
-
             updated_space.status = Some(SpaceStatus::Finished);
             status_transition = Some((Some(SpaceStatus::Ongoing), SpaceStatus::Finished));
         }
         UpdateSpaceRequest::Anonymous {
             anonymous_participation,
         } => {
-            su = su.with_anonymous_participation(anonymous_participation);
-
             updated_space.anonymous_participation = anonymous_participation;
         }
         UpdateSpaceRequest::JoinAnytime { join_anytime } => {
-            su = su.with_join_anytime(join_anytime);
-
             updated_space.join_anytime = join_anytime;
         }
         UpdateSpaceRequest::ChangeVisibility { .. } => {
@@ -231,16 +213,15 @@ pub async fn update_space(
             return Err(SpaceError::UpdateFailed.into());
         }
         UpdateSpaceRequest::Logo { logo } => {
-            su = su.with_logo(logo.clone());
-
             updated_space.logo = logo;
         }
         UpdateSpaceRequest::StartTime { started_at } => {
+            // Mirrors the pre-migration `su.with_started_at(ts)` guard: a
+            // `None` payload leaves the persisted `started_at` untouched
+            // rather than clearing it.
             if let Some(ts) = started_at {
-                su = su.with_started_at(ts);
+                updated_space.started_at = Some(ts);
             }
-
-            updated_space.started_at = started_at;
         }
         UpdateSpaceRequest::Quota { quotas } => {
             let remains = updated_space.remains + (quotas - updated_space.quota);
@@ -249,35 +230,24 @@ pub async fn update_space(
                 return Err(SpaceError::InvalidPanelQuota.into());
             }
 
-            su = su.with_quota(quotas).with_remains(remains);
-
             updated_space.quota = quotas;
             updated_space.remains = remains;
         }
     }
 
-    if let Some(pu) = pu {
-        crate::transact_write!(dynamo, su.transact_write_item(), pu.transact_write_item())?;
-    } else {
-        su.execute(dynamo).await?;
-    }
+    updated_space = updated_space.save().await?;
 
     if should_send_invitation {
         let post_pk = space_pk.clone().to_post_key()?;
-        let post = Post::get(dynamo, &post_pk, Some(&EntityType::Post))
-            .await?
-            .ok_or_else(|| {
-                crate::error!("Failed to get post after publish");
-                SpaceError::UpdateFailed
-            })?;
+        let post = load_post(&post_pk).await?;
 
-        SpaceInvitationMember::send_email(dynamo, &updated_space, post.title).await?;
+        SpaceInvitationMember::send_email(&updated_space, post.title).await?;
     }
 
     if let Some((old_status, new_status)) = status_transition {
         use crate::common::models::space::SpaceStatusChangeEvent;
         let event = SpaceStatusChangeEvent::new(space_pk.clone(), old_status, new_status);
-        if let Err(e) = event.create(dynamo).await {
+        if let Err(e) = event.save().await {
             tracing::error!(
                 "update_space: failed to persist SpaceStatusChangeEvent: {e}"
             );
@@ -288,4 +258,19 @@ pub async fn update_space(
     crate::features::spaces::space_common::services::upsert_hot_space(dynamo, &space_pk).await;
 
     Ok(UpdateSpaceResponse::from(updated_space))
+}
+
+/// Fetch the `Post` backing a space by its (relabeled) `Partition::Feed`
+/// key. Replaces the old DynamoDB point-read — `Post` is Postgres-backed now
+/// and keyed by its feed UUID.
+#[cfg(feature = "server")]
+async fn load_post(post_pk: &Partition) -> Result<Post> {
+    let id = match post_pk {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).map_err(|_| SpaceError::UpdateFailed)?,
+        _ => return Err(SpaceError::UpdateFailed.into()),
+    };
+    Post::get_by_feed_id(id).await?.ok_or_else(|| {
+        crate::error!("update_space: failed to load backing post");
+        SpaceError::UpdateFailed.into()
+    })
 }

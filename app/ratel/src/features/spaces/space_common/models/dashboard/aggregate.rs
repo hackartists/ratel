@@ -1,12 +1,31 @@
-use crate::common::{DynamoEntity, EntityType, Partition};
+use crate::common::Partition;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
 /// Single aggregate row per space storing all dashboard counters.
-/// Each action only does `increase_X(1)` or `decrease_X(1)` — one atomic DynamoDB update.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, DynamoEntity)]
+///
+/// Postgres migration: the DynamoDB identity was `pk = Space(space_id)` +
+/// `sk = SpaceDashboardExtension("aggregate")` (one row per space). It becomes
+/// a surrogate `id` PK with a plain `space_id` column, unique so the per-space
+/// singleton survives. Each counter bump is a single atomic
+/// `INSERT … ON CONFLICT (space_id) DO UPDATE SET c = c + $delta` — the
+/// Postgres equivalent of the original atomic DynamoDB `ADD` update (no
+/// read-modify-write).
+///
+/// `space_id` is a cross-feature reference (spaces feature) — plain column,
+/// **no FK** for now.
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, postgres::PostgresEntity)]
+#[postgres(table = "space_dashboard_aggregates", unique(space_id))]
 pub struct DashboardAggregate {
-    pub pk: Partition,
-    pub sk: EntityType,
+    pub id: Uuid,
+
+    /// Cross-feature reference to the space (bare id).
+    #[postgres(index)]
+    pub space_id: String,
 
     pub poll_count: i64,
     pub post_count: i64,
@@ -19,121 +38,128 @@ pub struct DashboardAggregate {
     pub meets: i64,
 }
 
-impl DashboardAggregate {
-    pub fn keys(space_pk: &Partition) -> (Partition, EntityType) {
-        (
-            space_pk.clone(),
-            EntityType::SpaceDashboardExtension("aggregate".to_string()),
-        )
-    }
-}
-
 #[cfg(feature = "server")]
 impl DashboardAggregate {
-    pub async fn get_or_create(
-        cli: &aws_sdk_dynamodb::Client,
-        space_pk: &Partition,
-    ) -> crate::common::Result<Self> {
-        let aggregate = Self::get_or_default(cli, space_pk).await?;
-        let (agg_pk, agg_sk) = Self::keys(space_pk);
-
-        if Self::get(cli, &agg_pk, Some(agg_sk)).await?.is_none() {
-            cli.transact_write_items()
-                .set_transact_items(Some(vec![aggregate.create_transact_write_item()]))
-                .send()
-                .await
-                .map_err(|e| {
-                    crate::error!("Failed to create dashboard aggregate: {e}");
-                    crate::features::spaces::types::SpaceError::UpdateFailed
-                })?;
+    fn space_id_of(space_pk: &Partition) -> String {
+        match space_pk {
+            Partition::Space(id) => id.clone(),
+            other => other.to_string(),
         }
-
-        Ok(aggregate)
     }
 
-    pub async fn get_or_default(
-        cli: &aws_sdk_dynamodb::Client,
-        space_pk: &Partition,
-    ) -> crate::common::Result<Self> {
-        let (pk, sk) = Self::keys(space_pk);
-        match Self::get(cli, &pk, Some(sk)).await? {
-            Some(agg) => Ok(agg),
+    /// The aggregate row for a space, or a zeroed (unsaved, `id == nil`)
+    /// instance when the space has no counters yet.
+    pub async fn get_or_default(space_pk: &Partition) -> crate::common::Result<Self> {
+        use postgres::ops::StringOp;
+        let space_id = Self::space_id_of(space_pk);
+        match Self::repository()
+            .find_one(Self::query().space_id(StringOp::Eq(space_id.clone())))
+            .await
+            .map_err(|e| {
+                crate::error!("dashboard aggregate read failed: {e}");
+                crate::features::spaces::types::SpaceError::UpdateFailed
+            })? {
+            Some(a) => Ok(a),
             None => Ok(Self {
-                pk: space_pk.clone(),
-                sk: EntityType::SpaceDashboardExtension("aggregate".to_string()),
+                space_id,
                 ..Default::default()
             }),
         }
     }
 
-    /// Atomic increment helpers — return a TransactWriteItem for use in existing transactions.
-    pub fn inc_polls(
-        space_pk: &Partition,
-        delta: i64,
-    ) -> aws_sdk_dynamodb::types::TransactWriteItem {
-        let (pk, sk) = Self::keys(space_pk);
-        Self::updater(&pk, sk)
-            .increase_poll_count(delta)
-            .transact_write_item()
+    /// Ensure a persisted aggregate row exists, returning it. Idempotent: a
+    /// concurrent insert (unique(space_id) violation) is resolved by re-reading.
+    pub async fn get_or_create(space_pk: &Partition) -> crate::common::Result<Self> {
+        use postgres::ops::StringOp;
+        let space_id = Self::space_id_of(space_pk);
+
+        if let Some(a) = Self::repository()
+            .find_one(Self::query().space_id(StringOp::Eq(space_id.clone())))
+            .await
+            .map_err(|e| {
+                crate::error!("dashboard aggregate read failed: {e}");
+                crate::features::spaces::types::SpaceError::UpdateFailed
+            })?
+        {
+            return Ok(a);
+        }
+
+        let row = Self {
+            id: Uuid::now_v7(),
+            space_id: space_id.clone(),
+            ..Default::default()
+        };
+        match Self::repository().insert(&row).await {
+            Ok(saved) => Ok(saved),
+            // Lost an insert race — the row now exists; re-read it.
+            Err(_) => Self::repository()
+                .find_one(Self::query().space_id(StringOp::Eq(space_id)))
+                .await
+                .map_err(|e| {
+                    crate::error!("dashboard aggregate read failed: {e}");
+                    crate::features::spaces::types::SpaceError::UpdateFailed
+                })?
+                .ok_or_else(|| crate::features::spaces::types::SpaceError::UpdateFailed.into()),
+        }
     }
 
-    pub fn inc_meets(
-        space_pk: &Partition,
-        delta: i64,
-    ) -> aws_sdk_dynamodb::types::TransactWriteItem {
-        let (pk, sk) = Self::keys(space_pk);
-        Self::updater(&pk, sk)
-            .increase_meets(delta)
-            .transact_write_item()
+    /// Atomic single-column increment: `INSERT … ON CONFLICT (space_id) DO
+    /// UPDATE SET {column} = table.{column} + $delta`. `column` is a
+    /// compile-time-constant identifier (never user input), so the inline
+    /// formatting is injection-safe. Other counters fall back to their
+    /// `DEFAULT 0` on the insert path.
+    async fn bump(space_pk: &Partition, column: &'static str, delta: i64) -> crate::common::Result<()> {
+        use postgres::Value;
+        use postgres::sqlx::{Postgres, QueryBuilder};
+
+        let space_id = Self::space_id_of(space_pk);
+        let table = Self::table_name();
+
+        let mut qb = QueryBuilder::<Postgres>::new(format!(
+            "INSERT INTO \"{table}\" (id, space_id, {column}) VALUES ("
+        ));
+        Value::from(Uuid::now_v7()).push_bind(&mut qb);
+        qb.push(", ");
+        Value::from(space_id).push_bind(&mut qb);
+        qb.push(", ");
+        Value::from(delta).push_bind(&mut qb);
+        qb.push(format!(
+            ") ON CONFLICT (space_id) DO UPDATE SET {column} = \"{table}\".{column} + "
+        ));
+        Value::from(delta).push_bind(&mut qb);
+
+        Self::repository().db().execute(qb).await.map_err(|e| {
+            crate::error!("dashboard aggregate bump({column}) failed: {e}");
+            crate::features::spaces::types::SpaceError::UpdateFailed
+        })?;
+        Ok(())
     }
 
-    pub fn inc_posts(
-        space_pk: &Partition,
-        delta: i64,
-    ) -> aws_sdk_dynamodb::types::TransactWriteItem {
-        let (pk, sk) = Self::keys(space_pk);
-        Self::updater(&pk, sk)
-            .increase_post_count(delta)
-            .transact_write_item()
+    pub async fn inc_polls(space_pk: &Partition, delta: i64) -> crate::common::Result<()> {
+        Self::bump(space_pk, "poll_count", delta).await
     }
 
-    pub fn inc_poll_responses(
-        space_pk: &Partition,
-        delta: i64,
-    ) -> aws_sdk_dynamodb::types::TransactWriteItem {
-        let (pk, sk) = Self::keys(space_pk);
-        Self::updater(&pk, sk)
-            .increase_poll_response_count(delta)
-            .transact_write_item()
+    pub async fn inc_meets(space_pk: &Partition, delta: i64) -> crate::common::Result<()> {
+        Self::bump(space_pk, "meets", delta).await
     }
 
-    pub fn inc_comments(
-        space_pk: &Partition,
-        delta: i64,
-    ) -> aws_sdk_dynamodb::types::TransactWriteItem {
-        let (pk, sk) = Self::keys(space_pk);
-        Self::updater(&pk, sk)
-            .increase_comment_count(delta)
-            .transact_write_item()
+    pub async fn inc_posts(space_pk: &Partition, delta: i64) -> crate::common::Result<()> {
+        Self::bump(space_pk, "post_count", delta).await
     }
 
-    pub fn inc_likes(
-        space_pk: &Partition,
-        delta: i64,
-    ) -> aws_sdk_dynamodb::types::TransactWriteItem {
-        let (pk, sk) = Self::keys(space_pk);
-        Self::updater(&pk, sk)
-            .increase_like_count(delta)
-            .transact_write_item()
+    pub async fn inc_poll_responses(space_pk: &Partition, delta: i64) -> crate::common::Result<()> {
+        Self::bump(space_pk, "poll_response_count", delta).await
     }
 
-    pub fn inc_points(
-        space_pk: &Partition,
-        delta: i64,
-    ) -> aws_sdk_dynamodb::types::TransactWriteItem {
-        let (pk, sk) = Self::keys(space_pk);
-        Self::updater(&pk, sk)
-            .increase_total_points(delta)
-            .transact_write_item()
+    pub async fn inc_comments(space_pk: &Partition, delta: i64) -> crate::common::Result<()> {
+        Self::bump(space_pk, "comment_count", delta).await
+    }
+
+    pub async fn inc_likes(space_pk: &Partition, delta: i64) -> crate::common::Result<()> {
+        Self::bump(space_pk, "like_count", delta).await
+    }
+
+    pub async fn inc_points(space_pk: &Partition, delta: i64) -> crate::common::Result<()> {
+        Self::bump(space_pk, "total_points", delta).await
     }
 }

@@ -19,7 +19,6 @@ use crate::common::utils::time;
 use crate::features::cross_posting::models::{
     ConnectionStatus, JobState, PostSyndicationDirective, SocialConnection, SyndicationJob,
 };
-use crate::features::cross_posting::services::feed_id_of;
 use crate::features::cross_posting::types::SocialPlatform;
 use crate::features::posts::models::Post;
 use std::collections::HashMap;
@@ -30,7 +29,7 @@ use uuid::Uuid;
 pub async fn handle_post_published_for_syndication(post: Post) -> Result<()> {
     // `post` still arrives as the (cross-feature) posts `Post` entity; only
     // its bare feed id is needed to key the cross-posting rows.
-    let post_id = feed_id_of(&post.pk);
+    let post_id = post.feed_id();
 
     // 1. Look up the directive sidecar. Absence = "this post is Ratel-only"
     //    (per PR D, the directive is only written when enabled_platforms

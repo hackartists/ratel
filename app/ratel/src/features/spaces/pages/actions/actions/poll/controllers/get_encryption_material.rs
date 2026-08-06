@@ -18,14 +18,10 @@ pub async fn get_encryption_material(
     space_pk: SpacePartition,
     poll_sk: SpacePollEntityType,
 ) -> Result<VoteEncryptionMaterialResponse> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_pk.into();
-    let poll_sk_entity: EntityType = poll_sk.into();
-
-    let poll = SpacePoll::get(cli, &space_pk, Some(poll_sk_entity.clone()))
+    let poll = SpacePoll::get_one(&space_pk, &poll_sk)
         .await?
         .ok_or(Error::NotFound("Poll not found".into()))?;
+    let poll_sk_entity: EntityType = poll_sk.into();
     if !poll.canister_upload_enabled {
         return Err(Error::NotFound(
             "Encrypted voting is not enabled for this poll".into(),

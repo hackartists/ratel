@@ -153,7 +153,7 @@ impl EventBridgeEnvelope {
             DetailType::PopularSpaceUpdate => {
                 let space: crate::common::models::space::SpaceCommon =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = space.pk.clone();
+                let space_pk = space.partition();
                 let r = crate::features::timeline::services::fan_out_popular_space(space).await;
                 fanout_hot_space(&space_pk).await;
                 r
@@ -189,7 +189,7 @@ impl EventBridgeEnvelope {
             DetailType::ActivityScoreAggregate => {
                 let activity: crate::features::activity::models::SpaceActivity =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = activity.space_pk.clone();
+                let space_pk = crate::common::types::Partition::Space(activity.space_id.clone());
                 let r = crate::features::activity::services::aggregate_score(activity).await;
                 fanout_hot_space(&space_pk).await;
                 r
@@ -197,7 +197,8 @@ impl EventBridgeEnvelope {
             DetailType::SpaceStatusChangeEvent => {
                 let event: crate::common::models::space::SpaceStatusChangeEvent =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = event.space_pk.clone();
+                let space_pk: crate::common::types::Partition =
+                    event.space_pk.parse().unwrap_or_default();
                 let r =
                     crate::features::spaces::space_common::services::handle_space_status_change(
                         event,
@@ -209,7 +210,7 @@ impl EventBridgeEnvelope {
             DetailType::SpaceActionStatusChange => {
                 let action: crate::features::spaces::pages::actions::models::SpaceAction =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = action.space_pk.clone();
+                let space_pk = crate::common::types::Partition::Space(action.space_id.clone());
                 let r = crate::features::spaces::pages::actions::services::notify_action_ongoing(
                     action,
                 )
@@ -236,7 +237,7 @@ impl EventBridgeEnvelope {
             DetailType::DiscussionXpRecord => {
                 let comment: crate::features::spaces::pages::actions::actions::discussion::SpacePostComment =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = comment.space_pk.clone();
+                let space_pk = space_pk_from_id_str(comment.space_id.as_deref());
                 let r = crate::features::activity::services::handle_discussion_xp(comment).await;
                 fanout_if_some(space_pk.as_ref()).await;
                 r
@@ -266,7 +267,7 @@ impl EventBridgeEnvelope {
             DetailType::EssenceIndexDiscussionComment => {
                 let comment: crate::features::spaces::pages::actions::actions::discussion::SpacePostComment =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = comment.space_pk.clone();
+                let space_pk = space_pk_from_id_str(comment.space_id.as_deref());
                 let cfg = crate::common::CommonConfig::default();
                 let cli = cfg.dynamodb();
                 let r =
@@ -278,7 +279,7 @@ impl EventBridgeEnvelope {
             DetailType::EssenceIndexPoll => {
                 let poll: crate::features::spaces::pages::actions::actions::poll::SpacePoll =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = poll.pk.clone();
+                let space_pk = crate::common::types::Partition::Space(poll.space_id.clone());
                 let cfg = crate::common::CommonConfig::default();
                 let cli = cfg.dynamodb();
                 let r = crate::features::essence::services::index_poll(cli, &poll).await;
@@ -288,7 +289,7 @@ impl EventBridgeEnvelope {
             DetailType::EssenceIndexQuiz => {
                 let quiz: crate::features::spaces::pages::actions::actions::quiz::SpaceQuiz =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = quiz.pk.clone();
+                let space_pk = crate::common::types::Partition::Space(quiz.space_id.clone());
                 let cfg = crate::common::CommonConfig::default();
                 let cli = cfg.dynamodb();
                 let r = crate::features::essence::services::index_quiz(cli, &quiz).await;
@@ -300,13 +301,14 @@ impl EventBridgeEnvelope {
                 use crate::features::spaces::pages::actions::models::SpaceAction;
                 use crate::features::spaces::pages::actions::types::SpaceActionType;
                 let action: SpaceAction = DetailType::parse_detail(&self.detail)?;
-                let space_pk: crate::common::types::Partition = action.pk.0.clone().into();
+                let space_pk = crate::common::types::Partition::Space(action.space_id.clone());
                 let r = if matches!(action.space_action_type, SpaceActionType::Quiz) {
                     let cfg = crate::common::CommonConfig::default();
                     let cli = cfg.dynamodb();
-                    let quiz_sk =
-                        crate::common::types::EntityType::SpaceQuiz(action.pk.1.clone());
-                    match SpaceQuiz::get(cli, &space_pk, Some(quiz_sk)).await {
+                    let space_id = crate::common::types::SpacePartition(action.space_id.clone());
+                    let quiz_id =
+                        crate::common::types::SpaceQuizEntityType(action.action_id.clone());
+                    match SpaceQuiz::get_one(&space_id, &quiz_id).await {
                         Ok(Some(quiz)) => {
                             crate::features::essence::services::index_quiz(cli, &quiz).await
                         }
@@ -336,7 +338,7 @@ impl EventBridgeEnvelope {
             DetailType::EssenceDeleteDiscussionComment => {
                 let comment: crate::features::spaces::pages::actions::actions::discussion::SpacePostComment =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = comment.space_pk.clone();
+                let space_pk = space_pk_from_id_str(comment.space_id.as_deref());
                 let cfg = crate::common::CommonConfig::default();
                 let cli = cfg.dynamodb();
                 let r =
@@ -348,7 +350,7 @@ impl EventBridgeEnvelope {
             DetailType::EssenceDeletePoll => {
                 let poll: crate::features::spaces::pages::actions::actions::poll::SpacePoll =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = poll.pk.clone();
+                let space_pk = crate::common::types::Partition::Space(poll.space_id.clone());
                 let cfg = crate::common::CommonConfig::default();
                 let cli = cfg.dynamodb();
                 let r = crate::features::essence::services::detach_poll(cli, &poll).await;
@@ -358,7 +360,7 @@ impl EventBridgeEnvelope {
             DetailType::EssenceDeleteQuiz => {
                 let quiz: crate::features::spaces::pages::actions::actions::quiz::SpaceQuiz =
                     DetailType::parse_detail(&self.detail)?;
-                let space_pk = quiz.pk.clone();
+                let space_pk = crate::common::types::Partition::Space(quiz.space_id.clone());
                 let cfg = crate::common::CommonConfig::default();
                 let cli = cfg.dynamodb();
                 let r = crate::features::essence::services::detach_quiz(cli, &quiz).await;

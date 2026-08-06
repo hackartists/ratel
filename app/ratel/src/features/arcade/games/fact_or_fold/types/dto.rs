@@ -13,6 +13,7 @@ use rmcp::schemars;
 /// Verdict assigned by the operator at subject-creation time. Hidden
 /// from participants until settlement.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Verdict {
     #[default]
@@ -27,6 +28,7 @@ pub enum Verdict {
 /// (subject becomes mostly immutable — see §FR-43), `Settled` is
 /// post-round and only Reveal sources may grow.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[derive(
     Debug,
     Clone,
@@ -146,6 +148,7 @@ pub struct SubjectResponse {
 /// Round lifecycle. PR3 only orchestrates Waiting → NewsReveal;
 /// downstream stages land in PR4 with bets and PR5 with chat.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RoundStatus {
     /// Lobby is filling up. Joins still accepted.
@@ -227,6 +230,7 @@ pub struct LobbyResponse {
 /// separate so future "side options" extensions (e.g. abstain) can
 /// land here without mutating the verdict enum used by subjects.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BetSide {
     #[default]
@@ -632,19 +636,25 @@ use crate::features::arcade::games::fact_or_fold::models::{
     FactFoldBet, FactFoldRound,
 };
 
+/// Build a `UserPartition` from a stored rendered `Partition` string
+/// (`"USER#<id>"`). The arcade actors are always users, so we strip the
+/// `USER#` prefix to recover the bare id.
+#[cfg(feature = "server")]
+pub(crate) fn user_partition_from_pk(pk: &str) -> UserPartition {
+    UserPartition(pk.strip_prefix("USER#").unwrap_or(pk).to_string())
+}
+
 #[cfg(feature = "server")]
 impl From<&FactFoldRound> for RoundResponse {
     fn from(row: &FactFoldRound) -> Self {
-        let id = row.id().unwrap_or_default();
         RoundResponse {
-            id: FactFoldRoundEntityType(id),
+            id: FactFoldRoundEntityType(row.round_id.clone()),
             subject_id: FactFoldSubjectEntityType(row.subject_id.clone()),
             status: row.status,
             participant_pks: row
                 .participant_pks
                 .iter()
-                .cloned()
-                .map(UserPartition::from)
+                .map(|p| user_partition_from_pk(p))
                 .collect(),
             started_at: row.started_at,
             settled_at: row.settled_at,
@@ -660,12 +670,15 @@ impl From<&FactFoldRound> for RoundResponse {
 impl From<&FactFoldBet> for BetResponse {
     fn from(row: &FactFoldBet) -> Self {
         BetResponse {
-            user_pk: UserPartition::from(row.user_pk.clone()),
+            user_pk: user_partition_from_pk(&row.user_pk),
             side: row.side,
             amount_rp: row.amount_rp,
             locked_at: row.locked_at,
             flipped_to: row.flipped_to,
-            flip_cite_user_pk: row.flip_cite_user_pk.clone().map(UserPartition::from),
+            flip_cite_user_pk: row
+                .flip_cite_user_pk
+                .as_deref()
+                .map(user_partition_from_pk),
             created_at: row.created_at,
             updated_at: row.updated_at,
         }

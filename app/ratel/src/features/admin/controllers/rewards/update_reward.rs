@@ -11,22 +11,18 @@ pub struct UpdateGlobalRewardRequest {
 
 #[put("/api/admin/rewards", _user: AdminUser)]
 pub async fn update_reward(req: UpdateGlobalRewardRequest) -> Result<Reward> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
+    use crate::common::models::reward::RewardConditionValue;
 
-    if Reward::get(cli, Partition::Reward, Some(req.behavior.clone()))
-        .await?
-        .is_none()
-    {
+    let Some(mut reward) = Reward::get_by_behavior(&req.behavior).await? else {
         return Err(SpaceRewardError::RewardNotFound.into());
-    }
+    };
 
-    let reward = Reward::updater(&Partition::Reward, &req.behavior)
-        .with_point(req.point)
-        .with_period(req.period)
-        .with_condition(req.condition)
-        .execute(cli)
-        .await?;
+    reward.point = req.point;
+    reward.period = req.period.to_string();
+    reward.condition = RewardConditionValue(req.condition);
+    reward.updated_at = crate::common::utils::time::get_now_timestamp_millis();
+
+    let reward = reward.save().await?;
 
     Ok(reward)
 }

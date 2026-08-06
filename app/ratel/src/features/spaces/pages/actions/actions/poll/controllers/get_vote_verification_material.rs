@@ -21,11 +21,8 @@ pub async fn get_vote_verification_material(
     poll_sk: SpacePollEntityType,
 ) -> Result<VoteVerificationMaterialResponse> {
     let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_pk.into();
-    let poll_sk_entity: EntityType = poll_sk.into();
 
-    let poll = SpacePoll::get(cli, &space_pk, Some(poll_sk_entity.clone()))
+    let poll = SpacePoll::get_one(&space_pk, &poll_sk)
         .await?
         .ok_or(Error::NotFound("Poll not found".into()))?;
     if !poll.canister_upload_enabled {
@@ -34,7 +31,10 @@ pub async fn get_vote_verification_material(
         ));
     }
 
-    SpacePollUserAnswer::find_one(cli, &space_pk, &poll_sk_entity, &member.pk)
+    let space_pk: Partition = space_pk.into();
+    let poll_sk_entity: EntityType = poll_sk.into();
+
+    SpacePollUserAnswer::find_one(&space_pk, &poll_sk_entity, &member.pk)
         .await?
         .ok_or(Error::NotFound("No vote found for this user".into()))?;
 

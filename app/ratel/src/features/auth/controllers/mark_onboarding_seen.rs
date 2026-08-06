@@ -1,4 +1,6 @@
 use crate::features::auth::*;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 /// Mark the cross-posting onboarding interstitial as seen for the current user.
 ///
@@ -8,18 +10,9 @@ use crate::features::auth::*;
 /// caller can refresh `UserContext` without a separate `get_me` round-trip.
 #[post("/api/auth/onboarding-seen", user: User)]
 pub async fn mark_onboarding_seen_handler() -> Result<User> {
-    let conf = crate::features::auth::config::get();
-    let cli = conf.dynamodb();
-
-    User::updater(user.pk.clone(), user.sk.clone())
-        .with_interstitial_seen(true)
-        .execute(cli)
+    // `update()` returns the row post-write, so no separate re-read is needed.
+    let updated = User::repository()
+        .update(user.id, User::update().interstitial_seen(true))
         .await?;
-
-    // The updater above succeeded against `user.pk`, so the row must exist;
-    // a `None` re-read here is a should-never-happen DB inconsistency.
-    let updated = User::get(cli, user.pk.clone(), Some(EntityType::User))
-        .await?
-        .ok_or(Error::Internal)?;
     Ok(updated)
 }

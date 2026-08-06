@@ -14,11 +14,7 @@ pub async fn get_team_billing_info_handler(username: String) -> Result<BillingIn
             return Err(Error::NotFound("Permission denied".to_string()));
         }
 
-        let conf = crate::features::membership::config::get();
-        let cli = conf.common.dynamodb();
-
-        let pk = CompositePartition::team_payment_pk(team.pk.into());
-        let payment: Option<TeamPayment> = TeamPayment::get(cli, &pk, None::<String>).await?;
+        let payment = TeamPayment::find_by_team_pk(&team.partition().to_string()).await?;
 
         match payment {
             Some(p) => Ok(BillingInfoResponse {

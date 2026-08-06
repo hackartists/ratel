@@ -1,12 +1,19 @@
-use crate::common::macros::DynamoEntity;
-use crate::common::utils::time::get_now_timestamp_millis;
 use crate::features::spaces::pages::actions::*;
+#[cfg(feature = "server")]
+use crate::common::utils::time::get_now_timestamp_millis;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use postgres::ops::StringOp;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Translate)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 pub enum MeetMode {
     #[default]
     #[translate(ko = "예약", en = "Scheduled")]
@@ -15,12 +22,26 @@ pub enum MeetMode {
     Instant,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, DynamoEntity)]
-#[dynamo(prefix = "SM")]
+/// A meet action inside a space.
+///
+/// Postgres migration: the DynamoDB identity was `pk = SpacePartition` +
+/// `sk = SpaceMeet#{uuid}`. It becomes a surrogate `id` PK plus:
+/// - `space_id` — cross-feature reference (spaces), bare id, indexed, **no FK**.
+/// - `meet_id` — the former sk uuid (bare, no prefix). `(space_id, meet_id)` is
+///   the natural key.
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, PostgresEntity)]
+#[postgres(table = "space_meets", unique(space_id, meet_id))]
 pub struct SpaceMeet {
-    pub pk: Partition,
-    pub sk: EntityType,
+    pub id: Uuid,
 
+    /// Cross-feature reference to the space (bare id).
+    #[postgres(index)]
+    pub space_id: String,
+    /// The former sk uuid (bare).
+    pub meet_id: String,
+
+    #[postgres(order)]
     pub created_at: i64,
     pub updated_at: i64,
 
@@ -33,11 +54,11 @@ pub struct SpaceMeet {
 impl SpaceMeet {
     pub fn new(space_pk: SpacePartition) -> Result<Self> {
         let now = get_now_timestamp_millis();
-        let pk: Partition = space_pk.into();
-        let sk = EntityType::SpaceMeet(uuid::Uuid::new_v4().to_string());
+        let meet_id = uuid::Uuid::new_v4().to_string();
         Ok(Self {
-            pk,
-            sk,
+            id: Uuid::now_v7(),
+            space_id: space_pk.0,
+            meet_id,
             created_at: now,
             updated_at: now,
             mode: MeetMode::Scheduled,
@@ -52,5 +73,25 @@ impl SpaceMeet {
         } else {
             Err(crate::common::Error::NoPermission)
         }
+    }
+
+    /// The former sk value as a `SpaceMeetEntityType` (bare id).
+    pub fn meet_entity_type(&self) -> SpaceMeetEntityType {
+        SpaceMeetEntityType(self.meet_id.clone())
+    }
+
+    /// Fetch the single meet row for `(space_id, meet_id)`.
+    pub async fn get_one(
+        space_id: &SpacePartition,
+        meet_id: &SpaceMeetEntityType,
+    ) -> Result<Option<Self>> {
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .space_id(StringOp::Eq(space_id.0.clone()))
+                    .meet_id(StringOp::Eq(meet_id.0.clone())),
+            )
+            .await
+            .map_err(crate::common::Error::from)
     }
 }

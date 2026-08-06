@@ -1,23 +1,56 @@
-use crate::common::utils::time::get_now_timestamp_millis;
-
 use crate::features::spaces::pages::actions::actions::follow::*;
-
-use crate::features::spaces::pages::actions::actions::follow::macros::DynamoEntity;
+#[cfg(feature = "server")]
+use crate::common::utils::time::get_now_timestamp_millis;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, DynamoEntity)]
+/// Opaque jsonb wrapper for a `UserType` column. `UserType` is a shared
+/// `common` enum we must not modify, so it cannot derive `PostgresEnum` here;
+/// instead we store it as jsonb (serde_repr int — the same wire form the
+/// client already saw). Stays cross-platform because `SpaceFollowAction`
+/// embeds it and is returned to the web client.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
-pub struct SpaceFollowAction {
-    pub pk: Partition,
-    pub sk: EntityType,
+#[serde(transparent)]
+pub struct FollowUserType(pub UserType);
 
+impl From<UserType> for FollowUserType {
+    fn from(v: UserType) -> Self {
+        Self(v)
+    }
+}
+
+/// A space follow action (singleton-ish per space).
+///
+/// Postgres migration: the DynamoDB identity was `pk = SpacePartition` +
+/// `sk = SpaceActionFollow#{uuid}`. It becomes a surrogate `id` PK plus
+/// `space_id` + `follow_id` (the former sk uuid). Stays cross-platform: the
+/// `create_follow` endpoint returns it to the web client, which reads
+/// `follow_id`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
+#[cfg_attr(feature = "server", postgres(table = "space_follow_actions", unique(space_id, follow_id)))]
+pub struct SpaceFollowAction {
+    #[serde(default)]
+    pub id: uuid::Uuid,
+
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub space_id: String,
+    pub follow_id: String,
+
+    #[cfg_attr(feature = "server", postgres(order))]
     pub created_at: i64,
     pub updated_at: i64,
 
     #[serde(default)]
-    pub user_pk: Partition,
+    pub user_pk: String,
     #[serde(default)]
     pub display_name: String,
     #[serde(default)]
@@ -25,7 +58,7 @@ pub struct SpaceFollowAction {
     #[serde(default)]
     pub username: String,
     #[serde(default)]
-    pub user_type: UserType,
+    pub user_type: FollowUserType,
 }
 
 impl From<SpaceFollowAction>
@@ -33,7 +66,7 @@ impl From<SpaceFollowAction>
 {
     fn from(follow: SpaceFollowAction) -> Self {
         use crate::features::spaces::pages::actions::types::SpaceActionType;
-        let action_id = follow.sk.to_string();
+        let action_id = follow.follow_id;
         Self {
             action_id,
             action_type: SpaceActionType::Follow,
@@ -60,52 +93,35 @@ impl From<SpaceFollowAction>
 #[cfg(feature = "server")]
 impl SpaceFollowAction {
     pub fn new(space_pk: SpacePartition) -> Self {
-        let pk: Partition = space_pk.into();
-        let sk = EntityType::SpaceActionFollow(uuid::Uuid::now_v7().to_string());
+        let follow_id = uuid::Uuid::now_v7().to_string();
         let now = get_now_timestamp_millis();
 
         Self {
-            pk,
-            sk,
+            id: Uuid::now_v7(),
+            space_id: space_pk.0,
+            follow_id,
             created_at: now,
             updated_at: now,
-            user_pk: Partition::default(),
+            user_pk: String::new(),
             display_name: String::new(),
             profile_url: String::new(),
             username: String::new(),
-            user_type: UserType::default(),
+            user_type: FollowUserType::default(),
         }
     }
 
-    pub fn new_user(
-        space_pk: SpacePartition,
-        user_pk: Partition,
-        display_name: String,
-        profile_url: String,
-        username: String,
-        user_type: UserType,
-    ) -> Self {
-        let now = get_now_timestamp_millis();
-        let pk: Partition = space_pk.into();
-        let sk = EntityType::SpaceActionFollow(user_pk.to_string());
-
-        Self {
-            pk,
-            sk,
-            created_at: now,
-            updated_at: now,
-            user_pk,
-            display_name,
-            profile_url,
-            username,
-            user_type,
-        }
+    /// The follow action for a space, if one exists (singleton per space).
+    pub async fn find_for_space(space_pk: &SpacePartition) -> Result<Option<Self>> {
+        use postgres::ops::StringOp;
+        Self::repository()
+            .find_one(Self::query().space_id(StringOp::Eq(space_pk.0.clone())))
+            .await
+            .map_err(crate::common::Error::from)
     }
 
-    pub fn user_keys(space_pk: &SpacePartition, user_pk: &Partition) -> (Partition, EntityType) {
-        let pk: Partition = space_pk.clone().into();
-        let sk = EntityType::SpaceActionFollow(user_pk.to_string());
-        (pk, sk)
+    /// The former sk value as a `SpaceActionFollowEntityType` (bare id).
+    pub fn follow_entity_type(&self) -> SpaceActionFollowEntityType {
+        SpaceActionFollowEntityType(self.follow_id.clone())
     }
 
     pub fn can_edit(

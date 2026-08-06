@@ -12,8 +12,7 @@ use crate::features::sub_team::types::{
 };
 
 // ── PUT /api/teams/:team_pk/sub-teams/application-draft ─────────
-// `team_pk` is the **applicant** team. Admins of that team can write
-// a draft for any parent.
+// `team_pk` is the **applicant** team.
 #[post("/api/teams/:team_pk/sub-teams/application-draft", user: crate::features::auth::User, team: Team, role: TeamRole)]
 pub async fn save_sub_team_application_draft_handler(
     team_pk: TeamPartition,
@@ -24,8 +23,6 @@ pub async fn save_sub_team_application_draft_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
 
     let agreements: Vec<DocAgreementSnapshot> = body
         .doc_agreements
@@ -37,23 +34,21 @@ pub async fn save_sub_team_application_draft_handler(
         .collect();
 
     let draft = SubTeamApplicationDraft::new(
-        team.pk.clone(),
+        team.partition(),
         body.parent_team_id.clone(),
         body.form_values.clone(),
         agreements.clone(),
     );
 
-    // Upsert — `DynamoEntity::create` puts a conditional `attribute_not_exists`
-    // guard on pk/sk so it rejects repeats. Draft saves intentionally overwrite
-    // every autosave tick, so use `upsert` (unconditional put).
-    draft.upsert(cli).await.map_err(|e| {
+    // Idempotent autosave — overwrites every tick (was DynamoEntity::upsert).
+    draft.save().await.map_err(|e| {
         crate::error!("save_sub_team_application_draft upsert failed: {e}");
         SubTeamError::DraftOperationFailed
     })?;
 
     Ok(ApplicationDraftResponse {
         parent_team_id: draft.parent_team_id,
-        form_values: draft.form_values,
+        form_values: draft.form_values.0,
         doc_agreements: agreements
             .into_iter()
             .map(|a| DocAgreementInput {
@@ -66,12 +61,6 @@ pub async fn save_sub_team_application_draft_handler(
 }
 
 // ── GET /api/teams/:team_pk/sub-teams/application-draft/:parent_team_id ──
-//
-// Returns `Some(draft)` if one exists, `None` otherwise so the
-// frontend can branch on resume-vs-start-fresh without a 404 round
-// trip. The applicant team membership (via `team` extractor) is the
-// only auth required — we don't gate on parent team eligibility
-// because we're just returning the applicant's own scratchpad.
 #[get("/api/teams/:team_pk/sub-teams/application-draft/:parent_team_id", user: crate::features::auth::User, team: Team)]
 pub async fn get_sub_team_application_draft_handler(
     team_pk: TeamPartition,
@@ -79,11 +68,8 @@ pub async fn get_sub_team_application_draft_handler(
 ) -> Result<Option<ApplicationDraftResponse>> {
     let _ = team_pk;
     let _ = user;
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let sk = EntityType::SubTeamApplicationDraft(parent_team_id.clone());
 
-    let row = SubTeamApplicationDraft::get(cli, &team.pk, Some(sk))
+    let row = SubTeamApplicationDraft::find_draft(&team.partition(), &parent_team_id)
         .await
         .map_err(|e| {
             crate::error!("get_sub_team_application_draft get failed: {e}");
@@ -92,9 +78,10 @@ pub async fn get_sub_team_application_draft_handler(
 
     Ok(row.map(|d| ApplicationDraftResponse {
         parent_team_id: d.parent_team_id,
-        form_values: d.form_values,
+        form_values: d.form_values.0,
         doc_agreements: d
             .doc_agreements
+            .0
             .into_iter()
             .map(|a| DocAgreementInput {
                 doc_id: a.doc_id,
@@ -106,9 +93,6 @@ pub async fn get_sub_team_application_draft_handler(
 }
 
 // ── DELETE /api/teams/:team_pk/sub-teams/application-draft/:parent_team_id
-//
-// Used by the submit handler after a successful POST so the draft
-// doesn't linger after the application is sent.
 #[delete("/api/teams/:team_pk/sub-teams/application-draft/:parent_team_id", user: crate::features::auth::User, team: Team)]
 pub async fn delete_sub_team_application_draft_handler(
     team_pk: TeamPartition,
@@ -116,11 +100,8 @@ pub async fn delete_sub_team_application_draft_handler(
 ) -> Result<String> {
     let _ = team_pk;
     let _ = user;
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let sk = EntityType::SubTeamApplicationDraft(parent_team_id);
 
-    SubTeamApplicationDraft::delete(cli, &team.pk, Some(sk))
+    SubTeamApplicationDraft::delete_draft(&team.partition(), &parent_team_id)
         .await
         .map_err(|e| {
             crate::error!("delete_sub_team_application_draft execute failed: {e}");

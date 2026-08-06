@@ -16,11 +16,7 @@ use crate::features::sub_team::services::application_lifecycle::{
 };
 
 #[cfg(feature = "server")]
-const APPLICATION_SK_PREFIX: &str = "SUB_TEAM_APPLICATION";
-#[cfg(feature = "server")]
-const DOC_AGREEMENT_SK_PREFIX: &str = "SUB_TEAM_DOC_AGREEMENT";
-#[cfg(feature = "server")]
-const PAGE_LIMIT: i32 = 50;
+const PAGE_LIMIT: i64 = 50;
 
 // ── GET /api/teams/:team_pk/sub-teams/applications ─────────────────
 #[get("/api/teams/:team_pk/sub-teams/applications?bookmark&status", user: crate::features::auth::User, team: Team, role: TeamRole)]
@@ -34,41 +30,43 @@ pub async fn list_parent_applications_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
+    // `cli` remains needed for the external applicant `Team` joins.
     let cfg = crate::common::CommonConfig::default();
     let cli = cfg.dynamodb();
 
     let filter = status.unwrap_or(SubTeamApplicationStatus::Pending);
 
-    let opts = SubTeamApplication::opt_with_bookmark(bookmark)
-        .sk(APPLICATION_SK_PREFIX.to_string())
-        .limit(PAGE_LIMIT);
-    let (items, next) = SubTeamApplication::query(cli, team.pk.clone(), opts)
+    let page = crate::features::sub_team::services::bookmark_to_page(&bookmark);
+    let result = SubTeamApplication::page_by_parent(&team.partition(), page, PAGE_LIMIT)
         .await
         .map_err(|e| {
             crate::error!("list_parent_applications query failed: {e}");
             SubTeamError::ApplicationNotFound
         })?;
+    let next = crate::features::sub_team::services::next_bookmark(result.page, result.total_pages);
 
-    // Join each application to its applicant team for display
-    // metadata (name, username, member_count). N joins, but pages are
-    // capped to PAGE_LIMIT and most queues stay small. Failures
-    // (missing team row, transient ddb error) fall back to empty
-    // strings / 0 so the queue still renders.
+    // Join each application to its applicant team for display metadata.
     let mut response: Vec<SubTeamApplicationResponse> = Vec::new();
-    for app in items.into_iter().filter(|a| a.status == filter) {
-        let mut dto: SubTeamApplicationResponse = app.clone().into();
-        if let Ok(Some(applicant)) = crate::features::posts::models::Team::get(
-            cli,
-            &app.applicant_team_pk,
-            Some(crate::common::types::EntityType::Team),
-        )
-        .await
-        {
+    for app in result.items.into_iter().filter(|a| a.status == filter) {
+        let applicant_partition = app.applicant_partition();
+        let mut dto: SubTeamApplicationResponse = app.into();
+        let applicant_uuid = match &applicant_partition {
+            Partition::Team(id) => uuid::Uuid::parse_str(id).ok(),
+            _ => None,
+        };
+        let applicant = match applicant_uuid {
+            Some(id) => crate::features::posts::models::Team::get_by_id(id)
+                .await
+                .ok()
+                .flatten(),
+            None => None,
+        };
+        if let Some(applicant) = applicant {
             dto.applicant_team_display_name = applicant.display_name.clone();
             dto.applicant_team_username = applicant.username.clone();
         }
         dto.applicant_member_count =
-            crate::features::sub_team::services::count_team_members(cli, &app.applicant_team_pk)
+            crate::features::sub_team::services::count_team_members(cli, &applicant_partition)
                 .await
                 .unwrap_or(0);
         // Parent is the caller's `team` extractor — no extra ddb read needed.
@@ -93,8 +91,8 @@ pub async fn get_parent_application_handler(
     let cfg = crate::common::CommonConfig::default();
     let cli = cfg.dynamodb();
 
-    let app = get_application(cli, &team.pk, &application_id).await?;
-    let agreements = list_agreements(cli, &team.pk, &application_id)
+    let app = get_application(cli, &team.partition(), &application_id).await?;
+    let agreements = list_agreements(&team.partition(), &application_id)
         .await
         .unwrap_or_default();
     let application: SubTeamApplicationResponse = app.into();
@@ -107,11 +105,6 @@ pub async fn get_parent_application_handler(
 }
 
 // ── POST /.../applications/:application_id/approve ─────────────────
-//
-// Body carries an optional welcome message — empty string is fine
-// when the admin skipped the note. The message is persisted on
-// the application's `decision_reason` so the applicant's status
-// page surfaces it under "환영 메시지".
 #[post("/api/teams/:team_pk/sub-teams/applications/:application_id/approve", user: crate::features::auth::User, team: Team, role: TeamRole)]
 pub async fn approve_application_handler(
     team_pk: TeamPartition,
@@ -126,8 +119,8 @@ pub async fn approve_application_handler(
     let cfg = crate::common::CommonConfig::default();
     let cli = cfg.dynamodb();
 
-    let app = get_application(cli, &team.pk, &application_id).await?;
-    let updated = approve_application(cli, &team, app, &user.pk, body.reason).await?;
+    let app = get_application(cli, &team.partition(), &application_id).await?;
+    let updated = approve_application(cli, &team, app, &user.pk(), body.reason).await?;
     Ok(updated.into())
 }
 
@@ -146,7 +139,7 @@ pub async fn reject_application_handler(
     let cfg = crate::common::CommonConfig::default();
     let cli = cfg.dynamodb();
 
-    let app = get_application(cli, &team.pk, &application_id).await?;
+    let app = get_application(cli, &team.partition(), &application_id).await?;
     let updated = reject_application(cli, &team, app, body.reason).await?;
     Ok(updated.into())
 }
@@ -166,19 +159,15 @@ pub async fn return_application_handler(
     let cfg = crate::common::CommonConfig::default();
     let cli = cfg.dynamodb();
 
-    let app = get_application(cli, &team.pk, &application_id).await?;
+    let app = get_application(cli, &team.partition(), &application_id).await?;
     let updated = return_application(cli, &team, app, body.comment).await?;
     Ok(updated.into())
 }
 
 #[cfg(feature = "server")]
 async fn list_agreements(
-    cli: &aws_sdk_dynamodb::Client,
     parent_pk: &Partition,
     application_id: &str,
 ) -> Result<Vec<SubTeamDocAgreement>> {
-    let prefix = format!("{DOC_AGREEMENT_SK_PREFIX}#{application_id}#");
-    let opts = SubTeamDocAgreement::opt().sk(prefix).limit(PAGE_LIMIT);
-    let (items, _) = SubTeamDocAgreement::query(cli, parent_pk.clone(), opts).await?;
-    Ok(items)
+    SubTeamDocAgreement::list_by_application(parent_pk, application_id).await
 }

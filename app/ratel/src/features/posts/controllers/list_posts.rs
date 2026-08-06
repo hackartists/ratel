@@ -93,52 +93,43 @@ pub async fn list_posts_handler(
         bookmark
     );
 
+    let _ = cli;
     let (bookmark_source, bookmark) = parse_post_feed_bookmark(bookmark);
 
     let (feed_source, posts, bookmark) = if let Some(ref user) = user {
         match bookmark_source {
-            PostFeedSource::Timeline => fetch_timeline_posts(cli, user, bookmark)
+            PostFeedSource::Timeline => fetch_timeline_posts(user, bookmark)
                 .await
                 .map_err(|err| serializable_post_error("Failed to load personalized feed", err))?,
             PostFeedSource::Global => {
-                let (posts, bookmark) = fetch_global_posts(cli, bookmark)
+                let (posts, bookmark) = fetch_global_posts(bookmark)
                     .await
                     .map_err(|err| serializable_post_error("Failed to load public feed", err))?;
                 (PostFeedSource::Global, posts, bookmark)
             }
         }
     } else {
-        let (posts, bookmark) = fetch_global_posts(cli, bookmark)
+        let (posts, bookmark) = fetch_global_posts(bookmark)
             .await
             .map_err(|err| serializable_post_error("Failed to load public feed", err))?;
         (PostFeedSource::Global, posts, bookmark)
     };
 
-    let likes = match (&user, posts.is_empty()) {
+    let liked_ids = match (&user, posts.is_empty()) {
         (Some(user), false) => {
-            let mut seen_likes = std::collections::HashSet::new();
-            let like_keys: Vec<_> = posts
-                .iter()
-                .filter(|post| seen_likes.insert(post.pk.to_string()))
-                .map(|post| PostLike::keys(&post.pk, &user.pk))
-                .collect();
-            PostLike::batch_get(cli, like_keys)
+            let post_ids: Vec<uuid::Uuid> = posts.iter().map(|p| p.id).collect();
+            PostLike::liked_post_ids(&user.pk(), post_ids)
                 .await
                 .map_err(|err| serializable_post_error("Failed to load post likes", err))?
         }
-        _ => vec![],
+        _ => Default::default(),
     };
 
     tracing::debug!("list_posts_handler: returning {} items", posts.len());
     let items: Vec<PostResponse> = posts
         .into_iter()
         .map(|post| {
-            let post_like_pk = post
-                .pk
-                .clone()
-                .to_post_like_key()
-                .expect("to_post_like_key");
-            let liked = likes.iter().any(|like| like.pk == post_like_pk);
+            let liked = liked_ids.contains(&post.id);
             PostResponse::from(post).with_like(liked)
         })
         .collect();
@@ -153,14 +144,14 @@ pub async fn list_posts_handler(
 /// Falls back to global feed if the timeline is empty.
 #[cfg(feature = "server")]
 async fn fetch_timeline_posts(
-    cli: &aws_sdk_dynamodb::Client,
     user: &crate::features::auth::User,
     bookmark: Option<String>,
 ) -> Result<(PostFeedSource, Vec<Post>, Option<String>)> {
-    let user_id = match &user.pk {
+    let user_pk = user.pk();
+    let user_id = match &user_pk {
         Partition::User(id) => id.clone(),
         _ => {
-            let (posts, bookmark) = fetch_global_posts(cli, bookmark).await?;
+            let (posts, bookmark) = fetch_global_posts(bookmark).await?;
             return Ok((PostFeedSource::Global, posts, bookmark));
         }
     };
@@ -201,7 +192,7 @@ async fn fetch_timeline_posts(
 
     if entries.is_empty() && next_bookmark.is_none() {
         // No timeline entries yet — fall back to global feed
-        let (posts, bookmark) = fetch_global_posts(cli, None).await?;
+        let (posts, bookmark) = fetch_global_posts(None).await?;
         return Ok((PostFeedSource::Global, posts, bookmark));
     }
 
@@ -209,49 +200,43 @@ async fn fetch_timeline_posts(
         return Ok((PostFeedSource::Timeline, vec![], next_bookmark));
     }
 
-    // Batch get the actual posts (deduplicate keys for BatchGetItem)
+    // Batch get the actual posts (dedup + parse feed ids to UUID).
     let mut seen = std::collections::HashSet::new();
-    let post_keys: Vec<(Partition, EntityType)> = entries
+    let post_ids: Vec<uuid::Uuid> = entries
         .iter()
         .filter(|entry| seen.insert(entry.post_id.clone()))
-        .map(|entry| (Partition::Feed(entry.post_id.clone()), EntityType::Post))
+        .filter_map(|entry| uuid::Uuid::parse_str(&entry.post_id).ok())
         .collect();
 
-    let posts = Post::batch_get(cli, post_keys).await?;
+    let posts = Post::get_many(post_ids).await?;
 
-    // Maintain timeline ordering by mapping posts by pk
+    // Maintain timeline ordering by mapping posts by feed id (id.to_string()).
     let post_map: std::collections::HashMap<String, Post> =
-        posts.into_iter().map(|p| (p.pk.to_string(), p)).collect();
+        posts.into_iter().map(|p| (p.id.to_string(), p)).collect();
 
     let mut seen_posts = std::collections::HashSet::new();
     let ordered_posts: Vec<Post> = entries
         .iter()
         .filter(|entry| seen_posts.insert(entry.post_id.clone()))
-        .filter_map(|entry| {
-            let post_pk = Partition::Feed(entry.post_id.clone());
-            post_map.get(&post_pk.to_string()).cloned()
-        })
+        .filter_map(|entry| post_map.get(&entry.post_id).cloned())
         .collect();
 
     Ok((PostFeedSource::Timeline, ordered_posts, next_bookmark))
 }
 
-/// Fetch posts from the global public feed (GSI6).
+/// Fetch posts from the global public feed (Published + Public).
 #[cfg(feature = "server")]
-async fn fetch_global_posts(
-    cli: &aws_sdk_dynamodb::Client,
-    bookmark: Option<String>,
-) -> Result<(Vec<Post>, Option<String>)> {
-    let mut query_options = Post::opt().limit(10);
-
-    if let Some(bk) = bookmark {
-        query_options = query_options.bookmark(bk);
-    }
-
-    Post::find_by_visibility(
-        cli,
-        format!("{}#{}", Visibility::Public, PostStatus::Published),
-        query_options,
-    )
-    .await
+async fn fetch_global_posts(bookmark: Option<String>) -> Result<(Vec<Post>, Option<String>)> {
+    let page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
+    let result = Post::find_public_feed(page, 10).await?;
+    let next_bookmark = if page < result.total_pages {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
+    Ok((result.items, next_bookmark))
 }

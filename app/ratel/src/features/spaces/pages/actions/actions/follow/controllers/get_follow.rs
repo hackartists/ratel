@@ -9,16 +9,9 @@ pub async fn get_follow(
     #[mcp(description = "Follow action sort key (e.g. 'SpaceActionFollow#<uuid>')")]
     follow_id: SpaceActionFollowEntityType,
 ) -> Result<SpaceAction> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
-    let space_action = SpaceAction::get(
-        cli,
-        &CompositePartition::<SpacePartition, String>(space_pk.into(), follow_id.to_string()),
-        Some(EntityType::SpaceAction),
-    )
-    .await?
-    .ok_or(Error::NotFound("Follow action not found".into()))?;
+    let space_action = SpaceAction::get_one(&space_pk, &follow_id.0)
+        .await?
+        .ok_or(Error::NotFound("Follow action not found".into()))?;
 
     Ok(space_action)
 }

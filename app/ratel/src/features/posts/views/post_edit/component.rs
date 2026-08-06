@@ -53,14 +53,21 @@ pub fn PostEdit(post_id: ReadSignal<FeedPartition>) -> Element {
     })?();
 
     let post = res.post.unwrap_or_default();
-    let existing_space_id = post.space_pk.clone().and_then(|pk| match pk {
-        Partition::Space(id) => Some(id),
-        _ => None,
-    });
+    let existing_space_id = post
+        .space_pk
+        .as_deref()
+        .and_then(|pk| pk.parse::<Partition>().ok())
+        .and_then(|pk| match pk {
+            Partition::Space(id) => Some(id),
+            _ => None,
+        });
     let has_existing_space = existing_space_id.is_some();
-    let initial_categories = post.categories.clone();
-    let initial_author_pk = post.user_pk.clone();
-    let initial_author_type = post.author_type.clone();
+    let initial_categories = post.categories.0.clone();
+    let initial_author_pk = post
+        .user_pk
+        .parse::<Partition>()
+        .unwrap_or_else(|_| Partition::User(post.user_pk.clone()));
+    let initial_author_type = post.author_type.0;
     let initial_visibility = post.visibility.unwrap_or(Visibility::Public);
     // Was this post already publicly published before the user opened the
     // editor? If so and the user toggles to Private, AC-20 says we must
@@ -72,7 +79,7 @@ pub fn PostEdit(post_id: ReadSignal<FeedPartition>) -> Element {
         body: init_body,
         ..
     } = post;
-    let html_contents = init_body.to_html();
+    let html_contents = init_body.0.to_html();
 
     let user_ctx = use_user_context();
     let (user_name, user_handle, user_avatar) = user_ctx()
@@ -173,7 +180,7 @@ pub fn PostEdit(post_id: ReadSignal<FeedPartition>) -> Element {
                     body,
                     ..
                 }) => {
-                    last_saved.set((title, body.to_html(), current_cats));
+                    last_saved.set((title, body.0.to_html(), current_cats));
                     status.set(EditorStatus::Saved);
                 }
                 Err(e) => {
@@ -365,7 +372,7 @@ pub fn PostEdit(post_id: ReadSignal<FeedPartition>) -> Element {
                     body,
                     ..
                 }) => {
-                    last_saved.set((saved_title, body.to_html(), current_cats));
+                    last_saved.set((saved_title, body.0.to_html(), current_cats));
                     status.set(EditorStatus::Saved);
                 }
                 Err(e) => {

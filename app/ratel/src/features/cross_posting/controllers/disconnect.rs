@@ -16,7 +16,7 @@ use postgres::PostgresEntity;
 /// `enabled_platforms ∩ connected` check filters out non-Connected rows.
 #[delete("/api/cross-posting/connections/{platform}", user: User)]
 pub async fn disconnect_handler(platform: SocialPlatform) -> Result<()> {
-    let user_id = user_id_of(&user.pk);
+    let user_id = user_id_of(&user.pk());
     let now = crate::common::utils::time::now();
 
     // Load to confirm existence; idempotent — second DELETE on an

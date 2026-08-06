@@ -1,20 +1,48 @@
 use crate::common::{types::*, utils::time::get_now_timestamp_millis, *};
+use postgres::PostgresEntity;
+use postgres::ops::StringOp;
+use uuid::Uuid;
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, DynamoEntity)]
+/// Per-event reward ledger row (one row per credited award).
+///
+/// Was DynamoDB `pk = {target_pk}##REWARD` (a `CompositePartition`) + `sk =
+/// {reward_key}###{time_key}`, with a `gsi1` (`find_reward_by_user`) keyed
+/// `pk = URH_BY_TARGET#{target_pk}##REWARD`, `sk = created_at`. The constant
+/// `##REWARD` suffix is dropped and the `sk` splits into its two logical
+/// parts: `reward_key` + `time_key`. The natural key is `(target_pk,
+/// reward_key, time_key)` (composite UNIQUE) on a surrogate uuid PK.
+///
+/// The old `attribute_not_exists(pk)` conditional-put idempotency (a re-claim
+/// in the same period must fail) is now the composite UNIQUE constraint: an
+/// `insert` of a duplicate `(target_pk, reward_key, time_key)` fails with a
+/// unique violation. Callers that relied on the conditional-put (the owner /
+/// actor branches in `SpaceReward::award`) map that failure to
+/// `AlreadyClaimedInPeriod`.
+///
+/// `target_pk` is a **cross-feature** actor reference (`User` or `Team`),
+/// stored as the full `Partition` string; indexed for the former GSI query.
+/// `reward_key` / `time_key` are the string halves of the old sort key —
+/// plain columns, no FK (rule 5).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "user_reward_histories", unique(target_pk, reward_key, time_key))]
 pub struct UserRewardHistory {
-    #[dynamo(
-        prefix = "URH_BY_TARGET",
-        name = "find_reward_by_user",
-        index = "gsi1",
-        pk
-    )]
-    pub pk: CompositePartition,
+    pub id: Uuid,
 
-    pub sk: UserRewardHistoryKey,
+    /// Actor partition string (`"USER#<id>"` / `"TEAM#<id>"`). Indexed for the
+    /// former `find_reward_by_user` GSI (list a target's reward history).
+    #[postgres(index)]
+    pub target_pk: String,
+
+    /// `RewardKey` Display form.
+    pub reward_key: String,
+
+    /// Period bucket (`"ONCE"`, `"20260806"`, `"OWNER#<uid>#<period>"`, …).
+    pub time_key: String,
 
     pub point: i64,
 
-    #[dynamo(name = "find_reward_by_user", index = "gsi1", sk)]
+    /// Event time — the former GSI sort key; ordered `Desc` in list queries.
+    #[postgres(order)]
     pub created_at: i64,
 
     pub transaction_id: Option<String>,
@@ -27,7 +55,6 @@ pub struct UserRewardHistory {
     pub action_name: Option<String>,
 }
 
-#[cfg(feature = "server")]
 impl UserRewardHistory {
     pub fn from_params(
         target_pk: Partition,
@@ -46,8 +73,7 @@ impl UserRewardHistory {
     /// per-actor (`OWNER#{actor_user_id}`) so the team accumulates one
     /// history row per distinct actor — every claim by a new user adds a
     /// row, while a re-claim by the same user is correctly deduped by
-    /// the `attribute_not_exists(pk)` guard on
-    /// `create_transact_write_item`.
+    /// the composite UNIQUE `(target_pk, reward_key, time_key)` on `insert`.
     pub fn from_params_with_time_key(
         target_pk: Partition,
         reward_key: RewardKey,
@@ -55,12 +81,12 @@ impl UserRewardHistory {
         amount: i64,
     ) -> Self {
         let now = get_now_timestamp_millis();
-        let pk = CompositePartition(target_pk, Partition::Reward);
-        let sk = UserRewardHistoryKey(reward_key, time_key);
 
         Self {
-            pk,
-            sk,
+            id: Uuid::now_v7(),
+            target_pk: target_pk.to_string(),
+            reward_key: reward_key.to_string(),
+            time_key,
             point: amount,
             created_at: now,
             ..Default::default()
@@ -72,6 +98,25 @@ impl UserRewardHistory {
         self.month = Some(month);
         self
     }
+
+    /// List a target's reward history newest-first (was the
+    /// `find_reward_by_user` GSI query, `created_at` descending). One page.
+    pub async fn find_by_target(
+        target_pk: &Partition,
+        page: i64,
+        page_size: i64,
+    ) -> crate::common::Result<postgres::Page<Self>> {
+        Self::repository()
+            .find(
+                Self::query()
+                    .target_pk(StringOp::Eq(target_pk.to_string()))
+                    .order_by(UserRewardHistoryColumn::CreatedAt, postgres::Order::Desc)
+                    .page(page)
+                    .page_size(page_size),
+            )
+            .await
+            .map_err(crate::common::Error::from)
+    }
 }
 
 /// Resolves `"{space_pk}#{space_title}"` for a UserRewardHistory row.
@@ -81,13 +126,11 @@ impl UserRewardHistory {
 /// Failures degrade gracefully: a missing space_pk segment in the reward
 /// key, a deleted SpaceCommon, or a deleted Post all fall back to
 /// `"{space_pk}"` alone so the row still identifies its source space.
-/// Used by `SpaceReward::award` at write time and by the GSI/description
-/// backfill migration.
-#[cfg(feature = "server")]
-pub async fn resolve_reward_description(
-    cli: &aws_sdk_dynamodb::Client,
-    reward_key: &RewardKey,
-) -> String {
+/// Used by `SpaceReward::award` at write time.
+///
+/// `SpaceCommon` (this crate) and `Post` (posts feature) are now Postgres-backed
+/// behind the global connection pool, so no DynamoDB client is threaded through.
+pub async fn resolve_reward_description(reward_key: &RewardKey) -> String {
     use crate::common::models::space::SpaceCommon;
     use crate::features::posts::models::Post;
 
@@ -98,12 +141,19 @@ pub async fn resolve_reward_description(
     let space_pk_str = space_partition.to_string();
     let space_pk: Partition = space_partition.into();
 
-    let Ok(Some(common)) = SpaceCommon::get(cli, &space_pk, Some(&EntityType::SpaceCommon)).await
-    else {
+    let Ok(Some(common)) = SpaceCommon::get_by_partition(&space_pk).await else {
         return space_pk_str;
     };
 
-    let Ok(Some(post)) = Post::get(cli, &common.post_pk, Some(&EntityType::Post)).await else {
+    // `common.post_pk` is the originating post's `Partition` string
+    // (`"FEED#<uuid>"`); extract the uuid to point-read the Post row.
+    let Ok(Partition::Feed(post_uuid_str)) = common.post_pk.parse::<Partition>() else {
+        return space_pk_str;
+    };
+    let Ok(post_uuid) = uuid::Uuid::parse_str(&post_uuid_str) else {
+        return space_pk_str;
+    };
+    let Ok(Some(post)) = Post::get_by_feed_id(post_uuid).await else {
         return space_pk_str;
     };
 
@@ -119,10 +169,7 @@ pub async fn resolve_reward_description(
 ///
 /// Reads `reward_key.behavior` directly — no DB hit. The label set is
 /// the one declared via `#[translate(...)]` on `RewardUserBehavior`,
-/// rendered in Korean. The list/detail UIs that need a different
-/// locale can still re-render from `sk.0.behavior`; storing the KO
-/// label here is a convenience for callers that want a ready-to-show
-/// string without re-translating.
+/// rendered in Korean.
 pub fn resolve_action_name(reward_key: &RewardKey) -> String {
     use dioxus_translate::{Language, Translate};
     reward_key.behavior.translate(&Language::Ko).to_string()

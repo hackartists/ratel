@@ -1,6 +1,6 @@
 use crate::features::activity::*;
 use postgres::PostgresEntity;
-use postgres::ops::{NumOp, StringOp};
+use postgres::ops::StringOp;
 use uuid::Uuid;
 
 /// Aggregated per-(space, author) score. One row per participant per space.
@@ -85,6 +85,12 @@ impl SpaceScore {
     /// Every score row for a space, highest `total_score` first. `page` is
     /// 1-based; `page_size` bounds the result. Returns the `postgres::Page`
     /// so callers can derive the next bookmark from `total_pages`.
+    ///
+    /// Ordering mirrors the original DynamoDB GSI2 composite sort key under
+    /// `scan_index_forward(false)`: `total_score DESC`, then `updated_at DESC`,
+    /// then `author_pk DESC` (the `user_pk` tie-breaker). Restoring the
+    /// secondary keys keeps ties in the exact same order the DynamoDB index
+    /// returned them.
     pub async fn find_by_space_rank(
         space_id: &SpacePartition,
         page: i64,
@@ -96,6 +102,8 @@ impl SpaceScore {
                 Self::query()
                     .space_id(StringOp::Eq(space_id.0.clone()))
                     .order_by(SpaceScoreColumn::TotalScore, Order::Desc)
+                    .order_by(SpaceScoreColumn::UpdatedAt, Order::Desc)
+                    .order_by(SpaceScoreColumn::AuthorPk, Order::Desc)
                     .page_size(page_size)
                     .page(page),
             )
@@ -103,23 +111,26 @@ impl SpaceScore {
             .map_err(super::map_db_err)
     }
 
-    /// Count how many participants outrank `total_score` in a space
-    /// (strictly higher). The caller's 1-based rank is `count + 1`.
-    pub async fn count_higher(
+    /// Every score row for a space, unpaginated, in the same
+    /// `total_score DESC, updated_at DESC, author_pk DESC` order as the
+    /// DynamoDB GSI2 index (`scan_index_forward(false)`). Mirrors the
+    /// original `find_by_space_rank(cli, pk, opt_all())` scan used to derive a
+    /// participant's absolute rank by list position.
+    pub async fn find_all_by_space_ranked(
         space_id: &SpacePartition,
-        total_score: i64,
-    ) -> crate::common::Result<i64> {
-        let page = Self::repository()
+    ) -> crate::common::Result<Vec<Self>> {
+        use postgres::Order;
+        Self::repository()
             .find(
                 Self::query()
                     .space_id(StringOp::Eq(space_id.0.clone()))
-                    .total_score(NumOp::Gt(total_score))
-                    .page_size(1)
-                    .page(1),
+                    .order_by(SpaceScoreColumn::TotalScore, Order::Desc)
+                    .order_by(SpaceScoreColumn::UpdatedAt, Order::Desc)
+                    .order_by(SpaceScoreColumn::AuthorPk, Order::Desc),
             )
             .await
-            .map_err(super::map_db_err)?;
-        Ok(page.total_count)
+            .map(|p| p.items)
+            .map_err(super::map_db_err)
     }
 
     /// Natural-key upsert on `(space_id, author_pk)`, preserving the surrogate

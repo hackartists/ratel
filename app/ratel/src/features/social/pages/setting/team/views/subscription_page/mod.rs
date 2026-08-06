@@ -254,7 +254,7 @@ pub fn SubscriptionPage(username: ReadSignal<String>) -> Element {
                     let prefix = user_ctx()
                         .user
                         .as_ref()
-                        .map(|u| u.pk.to_string())
+                        .map(|u| u.pk().to_string())
                         .unwrap_or_default();
                     #[cfg(feature = "server")]
                     {

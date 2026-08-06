@@ -229,11 +229,7 @@ pub fn MembershipPlan() -> Element {
                                         enterprise_contact();
                                     }
                                     MembershipTier::Pro | MembershipTier::Max | MembershipTier::Vip => {
-                                        let prefix = user_ctx()
-                                            .user
-                                            .as_ref()
-                                            .map(|u| u.pk.to_string())
-                                            .unwrap_or_default();
+                                        let prefix = user_ctx().user_pk().unwrap_or_default();
                                         let tier = membership_for_action.tier;
                                         let store_id = portone_store_id.clone();
                                         let channel_key = portone_channel_key.clone();

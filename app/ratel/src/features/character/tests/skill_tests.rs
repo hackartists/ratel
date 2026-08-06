@@ -68,7 +68,7 @@ async fn test_level_up_v2_skill_rejected() {
 #[tokio::test]
 async fn test_level_up_max_level_rejected() {
     let ctx = TestContext::setup().await;
-    let user_pk = ctx.test_user.0.pk.clone();
+    let user_pk = ctx.test_user.0.pk();
     // Pump in enough XP to easily afford max-out: 230 SP needs char L46, so 7M XP is plenty.
     award_xp(&ctx, &user_pk, 8_000_000).await;
     for _ in 0..10 {
@@ -103,7 +103,7 @@ async fn test_level_up_unauthenticated_rejected() {
 #[tokio::test]
 async fn test_money_tree_boosts_user_reward_amount() {
     let ctx = TestContext::setup().await;
-    let user_pk = ctx.test_user.0.pk.clone();
+    let user_pk = ctx.test_user.0.pk();
 
     // Buy MoneyTree L1.
     let _ = crate::test_post! {
@@ -115,9 +115,10 @@ async fn test_money_tree_boosts_user_reward_amount() {
 
     // Fabricate a SpaceReward and call award directly. Generate
     // unique space + action ids so this test stays orthogonal to other
-    // tests in the suite that share the table — `create()` uses
-    // `attribute_not_exists`, so a deterministic (pk, sk) collision with
-    // any earlier-run test would fail with `ConditionalCheckFailedException`.
+    // tests in the suite that share the table — `save()` upserts on the
+    // natural key `(space_id, action_id, behavior)`, so a deterministic
+    // collision with any earlier-run test would silently overwrite instead
+    // of erroring; unique nonce-based ids keep tests independent regardless.
     use crate::features::spaces::space_common::models::space_reward::SpaceReward;
 
     let nonce = crate::common::utils::time::get_now_timestamp_millis();
@@ -133,9 +134,9 @@ async fn test_money_tree_boosts_user_reward_amount() {
         RewardPeriod::Once,
         RewardCondition::None,
     );
-    reward.create(&ctx.ddb).await.unwrap();
+    reward.save().await.unwrap();
 
-    let user_reward = SpaceReward::award(&ctx.ddb, &reward, user_pk.clone(), None)
+    let user_reward = SpaceReward::award(&reward, user_pk.clone(), None)
         .await
         .unwrap();
 
@@ -146,7 +147,7 @@ async fn test_money_tree_boosts_user_reward_amount() {
 #[tokio::test]
 async fn test_ranker_boosts_additional_score() {
     let ctx = TestContext::setup().await;
-    let user_pk = ctx.test_user.0.pk.clone();
+    let user_pk = ctx.test_user.0.pk();
 
     let _ = crate::test_post! {
         app: ctx.app.clone(),
@@ -162,7 +163,6 @@ async fn test_ranker_boosts_additional_score() {
     let author: AuthorPartition = AuthorPartition::from(user_pk);
 
     let activity = SpaceActivity::new_with_dedup(
-        &ctx.ddb,
         SpacePartition("space-fixture".into()),
         author,
         "action-1".into(),

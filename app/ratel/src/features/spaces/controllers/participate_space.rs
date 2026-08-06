@@ -10,6 +10,8 @@ use crate::features::spaces::models::{
 };
 use crate::features::spaces::*;
 use crate::spaces::{InvitationStatus, SpaceInvitationMember};
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ParticipateSpaceResponse {
@@ -38,26 +40,27 @@ pub async fn participate_space(
     let now = get_now_timestamp_millis();
 
     let space_pk_partition: Partition = space_id.clone().into();
-    let space =
-        SpaceCommon::get(dynamo, &space_pk_partition, Some(&EntityType::SpaceCommon)).await?;
+    let space = SpaceCommon::get_by_partition(&space_pk_partition).await?;
     let space = space.ok_or_else(|| Error::NotFound("Space Not Found".to_string()))?;
+    let space_pk = space.partition();
     if !space.is_participation_open() {
         return Err(Error::ParticipationNotOpen);
     }
 
-    let post_pk = space.pk.clone().to_post_key()?;
-    let post = Post::get(dynamo, &post_pk, Some(EntityType::Post)).await?;
+    let post_pk = space_pk.clone().to_post_key()?;
+    let post = load_post(&post_pk).await?;
     let post = post.ok_or_else(|| Error::NotFound("Post Not Found".to_string()))?;
 
     let user: Option<User> = user.into();
     let user = user.ok_or(Error::NoSessionFound)?;
+    let user_pk = user.pk();
 
     // Sub-team broadcast audience members (parent + recognized
     // sub-teams) are auto-invited — same bypass used by `get_space` and
     // the `SpaceUserRole` extractor so all three gates agree.
     let is_broadcast_audience =
         crate::features::sub_team::services::broadcast_access::is_broadcast_audience(
-            dynamo, &post, &user.pk,
+            dynamo, &post, &user_pk,
         )
         .await;
 
@@ -65,8 +68,7 @@ pub async fn participate_space(
         if is_broadcast_audience {
             true
         } else {
-            let (pk, sk) = SpaceInvitationMember::keys(&space.pk, &user.pk);
-            let member = SpaceInvitationMember::get(dynamo, &pk, Some(&sk)).await?;
+            let member = SpaceInvitationMember::get_for(&space_pk, &user_pk).await?;
             matches!(
                 member.as_ref().map(|member| member.status),
                 Some(InvitationStatus::Invited) | Some(InvitationStatus::Accepted)
@@ -84,15 +86,13 @@ pub async fn participate_space(
     #[cfg(feature = "server")]
     check_if_satisfying_panel_attribute(&space, dynamo, &user).await?;
 
-    let (participant_pk, participant_sk) =
-        SpaceParticipant::keys(space.pk.clone(), user.pk.clone());
-    let participant = SpaceParticipant::get(dynamo, &participant_pk, Some(&participant_sk)).await?;
+    let participant = SpaceParticipant::get_participant(&space_pk, &user_pk).await?;
     if participant.is_some() {
         return Err(Error::AlreadyParticipating);
     }
 
-    let author = AuthorPartition::from(user.pk.clone());
-    // SpaceScore is now Postgres-backed — fetch the existing row by natural key.
+    let author = AuthorPartition::from(user_pk.clone());
+    // SpaceScore is Postgres-backed — fetch the existing row by natural key.
     let existing_score = SpaceScore::get_for(&space_id, &author).await?;
 
     // Broadcast audience members fall through to the fresh-participate
@@ -100,8 +100,7 @@ pub async fn participate_space(
     // `SpaceInvitationMember` row in one transaction — same effect as
     // an explicit invitation, no extra branch needed here.
     if space.visibility != SpaceVisibility::Public && !is_broadcast_audience {
-        let (pk, sk) = SpaceInvitationMember::keys(&space.pk, &user.pk);
-        let member = SpaceInvitationMember::get(dynamo, &pk, Some(&sk)).await?;
+        let member = SpaceInvitationMember::get_for(&space_pk, &user_pk).await?;
         let Some(member) = member else {
             return Err(Error::NoPermission);
         };
@@ -109,28 +108,20 @@ pub async fn participate_space(
             InvitationStatus::Invited => {}
             InvitationStatus::Pending => return Err(Error::NoPermission),
             InvitationStatus::Accepted | InvitationStatus::Declined => {
-                let (pk, sk) = SpaceParticipant::keys(space.pk.clone(), user.pk.clone());
-
-                let participant = SpaceParticipant::get(dynamo, &pk, Some(&sk)).await?;
+                let participant = SpaceParticipant::get_participant(&space_pk, &user_pk).await?;
                 if participant.is_none() {
                     let mut sp = if space.anonymous_participation {
-                        SpaceParticipant::new(space.pk.clone(), user.pk.clone())
+                        SpaceParticipant::new(space_pk.clone(), user_pk.clone())
                     } else {
-                        SpaceParticipant::new_non_anonymous(space.pk.clone(), user.clone())
+                        SpaceParticipant::new_non_anonymous(space_pk.clone(), user.clone())
                     };
                     sp.informed_agreed = agreed;
-                    let new_space = SpaceCommon::updater(&space.pk, &space.sk)
-                        .increase_participants(1)
-                        .with_updated_at(now);
-                    let txs = vec![
-                        sp.create_transact_write_item(),
-                        new_space.transact_write_item(),
-                    ];
 
-                    crate::transact_write_items!(dynamo, txs)?;
+                    create_participant_tx(&sp, &space_pk, now, None).await?;
 
                     // SpaceScore lives in Postgres now — persist it separately
-                    // (outside the DynamoDB transaction) on first participation.
+                    // (outside the participant transaction) on first
+                    // participation.
                     if existing_score.is_none() {
                         SpaceScore::new(
                             space_id.clone(),
@@ -155,27 +146,19 @@ pub async fn participate_space(
     }
 
     let mut sp = if space.anonymous_participation {
-        SpaceParticipant::new(space.pk.clone(), user.pk.clone())
+        SpaceParticipant::new(space_pk.clone(), user_pk.clone())
     } else {
-        SpaceParticipant::new_non_anonymous(space.pk.clone(), user.clone())
+        SpaceParticipant::new_non_anonymous(space_pk.clone(), user.clone())
     };
     sp.informed_agreed = agreed;
 
-    let space_update = SpaceCommon::updater(&space.pk, &space.sk)
-        .increase_participants(1)
-        .with_updated_at(now);
-    let invitation = SpaceInvitationMember::new(space.pk.clone(), user.clone())
-        .with_status(InvitationStatus::Accepted);
-    let txs = vec![
-        sp.create_transact_write_item(),
-        space_update.transact_write_item(),
-        invitation.upsert_transact_write_item(),
-    ];
+    let mut invitation = SpaceInvitationMember::new(space_pk.clone(), user.clone());
+    invitation.status = InvitationStatus::Accepted;
 
-    crate::transact_write_items!(dynamo, txs)?;
+    create_participant_tx(&sp, &space_pk, now, Some(&invitation)).await?;
 
     // SpaceScore lives in Postgres now — persist it separately (outside the
-    // DynamoDB transaction) on first participation.
+    // participant transaction) on first participation.
     if existing_score.is_none() {
         SpaceScore::new(
             space_id,
@@ -194,6 +177,91 @@ pub async fn participate_space(
     })
 }
 
+/// Fetch the `Post` backing a space by its (relabeled) `Partition::Feed`
+/// key. `Post` is Postgres-backed now and keyed by its feed UUID.
+#[cfg(feature = "server")]
+async fn load_post(post_pk: &Partition) -> Result<Option<Post>> {
+    let id = match post_pk {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).ok(),
+        _ => None,
+    };
+    match id {
+        Some(id) => Ok(Post::get_by_feed_id(id).await?),
+        None => Ok(None),
+    }
+}
+
+/// Atomically create a `SpaceParticipant` row, bump `SpaceCommon.participants`,
+/// and (when `invitation` is `Some`) upsert the invitation row to `Accepted` —
+/// all inside one Postgres transaction. Replaces the original DynamoDB
+/// `transact_write_items!` call.
+#[cfg(feature = "server")]
+async fn create_participant_tx(
+    sp: &SpaceParticipant,
+    space_pk: &Partition,
+    now: i64,
+    invitation: Option<&SpaceInvitationMember>,
+) -> Result<()> {
+    let tx = postgres::Tx::begin()
+        .await
+        .map_err(crate::common::Error::from)?;
+
+    if let Err(e) = SpaceParticipant::repository().with_tx(&tx).insert(sp).await {
+        let _ = tx.rollback().await;
+        return Err(crate::common::Error::from(e));
+    }
+
+    if let Err(e) = increase_space_participants_tx(&tx, space_pk, 1, now).await {
+        let _ = tx.rollback().await;
+        return Err(e);
+    }
+
+    if let Some(invitation) = invitation {
+        if let Err(e) = SpaceInvitationMember::repository()
+            .with_tx(&tx)
+            .upsert_on(&["space_pk", "user_pk"], invitation)
+            .await
+        {
+            let _ = tx.rollback().await;
+            return Err(crate::common::Error::from(e));
+        }
+    }
+
+    tx.commit().await.map_err(crate::common::Error::from)?;
+    Ok(())
+}
+
+/// Atomic `participants += delta`, `updated_at = now` for one space, bound to
+/// `tx`. Mirrors the original in-transaction DynamoDB `ADD participants`.
+#[cfg(feature = "server")]
+async fn increase_space_participants_tx(
+    tx: &postgres::Tx,
+    space_pk: &Partition,
+    delta: i64,
+    now: i64,
+) -> Result<()> {
+    use postgres::Value;
+    use postgres::sqlx::{Postgres, QueryBuilder};
+
+    let repo = SpaceCommon::repository().with_tx(tx);
+    let table = SpaceCommon::table_name();
+
+    let mut qb = QueryBuilder::<Postgres>::new(format!(
+        "UPDATE \"{table}\" SET participants = participants + "
+    ));
+    Value::from(delta).push_bind(&mut qb);
+    qb.push(", updated_at = ");
+    Value::from(now).push_bind(&mut qb);
+    qb.push(" WHERE space_pk = ");
+    Value::from(space_pk.to_string()).push_bind(&mut qb);
+
+    repo.db().execute(qb).await.map_err(|e| {
+        crate::error!("participate_space: failed to increase space participants: {e}");
+        crate::common::Error::from(e)
+    })?;
+    Ok(())
+}
+
 #[cfg(feature = "server")]
 fn is_collective_panel(panel: &SpacePanelQuota) -> bool {
     let attrs = crate::features::spaces::controllers::panel_requirements::panel_attributes(panel);
@@ -210,17 +278,27 @@ async fn check_if_satisfying_panel_attribute(
 ) -> Result<()> {
     use crate::features::spaces::models::UserAttributesExt;
 
+    let space_pk = space.partition();
+    let user_pk = user.pk();
+
     let panel_quota =
-        crate::features::spaces::controllers::panel_requirements::list_panel_quotas(cli, &space.pk)
+        crate::features::spaces::controllers::panel_requirements::list_panel_quotas(cli, &space_pk)
             .await?;
 
     if panel_quota.is_empty() {
         return Ok(());
     }
 
-    let user_attributes = user.get_attributes(cli).await?;
+    let user_attributes = user.get_attributes().await?;
     let age: Option<u8> = user_attributes.age().and_then(|v| u8::try_from(v).ok());
-    let gender = user_attributes.gender;
+    // `VerifiedAttributes.gender` is the bare snake_case string ("male" /
+    // "female") on Postgres — parse it back to the typed enum
+    // `panel_matches_user` expects, same as serde would.
+    let gender = match user_attributes.gender.as_deref() {
+        Some("male") => Some(crate::common::attribute::Gender::Male),
+        Some("female") => Some(crate::common::attribute::Gender::Female),
+        _ => None,
+    };
     let has_university = user_attributes
         .university
         .as_ref()
@@ -239,20 +317,11 @@ async fn check_if_satisfying_panel_attribute(
             if space.remains <= 0 {
                 return Err(Error::FullQuota);
             }
-            let space_updater =
-                SpaceCommon::updater(space.pk.clone(), EntityType::SpaceCommon).decrease_remains(1);
 
-            let (panel_pk, panel_sk) =
-                SpacePanelParticipant::keys(&space.pk.clone(), &user.pk.clone());
-            let participant =
-                SpacePanelParticipant::get(cli, panel_pk, Some(panel_sk.clone())).await?;
+            let participant = SpacePanelParticipant::get_for(&space_pk, &user_pk).await?;
             if participant.is_none() {
-                let participants = SpacePanelParticipant::new(space.pk.clone(), user.clone());
-                crate::transact_write!(
-                    cli,
-                    participants.create_transact_write_item(),
-                    space_updater.transact_write_item(),
-                )?;
+                let participants = SpacePanelParticipant::new(space_pk.clone(), user.clone());
+                create_panel_participant_tx(&participants, &space_pk, None).await?;
             }
         }
         return Ok(());
@@ -273,30 +342,11 @@ async fn check_if_satisfying_panel_attribute(
             has_university,
             &q,
         ) {
-            let pk = q.pk;
-            let sk = q.sk;
-
-            let (panel_pk, panel_sk) =
-                SpacePanelParticipant::keys(&space.pk.clone(), &user.pk.clone());
-
-            let participant =
-                SpacePanelParticipant::get(cli, panel_pk, Some(panel_sk.clone())).await?;
+            let participant = SpacePanelParticipant::get_for(&space_pk, &user_pk).await?;
 
             if participant.is_none() {
-                let participants = SpacePanelParticipant::new(space.pk.clone(), user.clone());
-
-                let space_updater = SpaceCommon::updater(space.pk.clone(), EntityType::SpaceCommon)
-                    .decrease_remains(1);
-
-                let quota_updater =
-                    SpacePanelQuota::updater(pk.clone(), sk.clone()).decrease_remains(1);
-
-                crate::transact_write!(
-                    cli,
-                    participants.create_transact_write_item(),
-                    space_updater.transact_write_item(),
-                    quota_updater.transact_write_item(),
-                )?;
+                let participants = SpacePanelParticipant::new(space_pk.clone(), user.clone());
+                create_panel_participant_tx(&participants, &space_pk, Some(&q)).await?;
             }
 
             return Ok(());
@@ -304,4 +354,99 @@ async fn check_if_satisfying_panel_attribute(
     }
 
     Err(Error::LackOfVerifiedAttributes)
+}
+
+/// Atomically create a `SpacePanelParticipant` row, decrement
+/// `SpaceCommon.remains`, and (when `quota` is `Some`) decrement that panel
+/// bucket's `remains` too — all inside one Postgres transaction. Replaces the
+/// original DynamoDB `transact_write!` call.
+#[cfg(feature = "server")]
+async fn create_panel_participant_tx(
+    participant: &SpacePanelParticipant,
+    space_pk: &Partition,
+    quota: Option<&SpacePanelQuota>,
+) -> Result<()> {
+    let tx = postgres::Tx::begin()
+        .await
+        .map_err(crate::common::Error::from)?;
+
+    if let Err(e) = SpacePanelParticipant::repository()
+        .with_tx(&tx)
+        .insert(participant)
+        .await
+    {
+        let _ = tx.rollback().await;
+        return Err(crate::common::Error::from(e));
+    }
+
+    if let Err(e) = decrease_space_remains_tx(&tx, space_pk, 1).await {
+        let _ = tx.rollback().await;
+        return Err(e);
+    }
+
+    if let Some(quota) = quota {
+        if let Err(e) = decrease_panel_quota_remains_tx(&tx, quota, 1).await {
+            let _ = tx.rollback().await;
+            return Err(e);
+        }
+    }
+
+    tx.commit().await.map_err(crate::common::Error::from)?;
+    Ok(())
+}
+
+/// Atomic `remains -= delta` on `SpaceCommon`, bound to `tx`.
+#[cfg(feature = "server")]
+async fn decrease_space_remains_tx(
+    tx: &postgres::Tx,
+    space_pk: &Partition,
+    delta: i64,
+) -> Result<()> {
+    use postgres::Value;
+    use postgres::sqlx::{Postgres, QueryBuilder};
+
+    let repo = SpaceCommon::repository().with_tx(tx);
+    let table = SpaceCommon::table_name();
+
+    let mut qb =
+        QueryBuilder::<Postgres>::new(format!("UPDATE \"{table}\" SET remains = remains - "));
+    Value::from(delta).push_bind(&mut qb);
+    qb.push(" WHERE space_pk = ");
+    Value::from(space_pk.to_string()).push_bind(&mut qb);
+
+    repo.db().execute(qb).await.map_err(|e| {
+        crate::error!("participate_space: failed to decrease space remains: {e}");
+        crate::common::Error::from(e)
+    })?;
+    Ok(())
+}
+
+/// Atomic `remains -= delta` on one `SpacePanelQuota` bucket, bound to `tx`.
+#[cfg(feature = "server")]
+async fn decrease_panel_quota_remains_tx(
+    tx: &postgres::Tx,
+    quota: &SpacePanelQuota,
+    delta: i64,
+) -> Result<()> {
+    use postgres::Value;
+    use postgres::sqlx::{Postgres, QueryBuilder};
+
+    let repo = SpacePanelQuota::repository().with_tx(tx);
+    let table = SpacePanelQuota::table_name();
+
+    let mut qb =
+        QueryBuilder::<Postgres>::new(format!("UPDATE \"{table}\" SET remains = remains - "));
+    Value::from(delta).push_bind(&mut qb);
+    qb.push(" WHERE space_id = ");
+    Value::from(quota.space_id.clone()).push_bind(&mut qb);
+    qb.push(" AND attribute_label = ");
+    Value::from(quota.attribute_label.clone()).push_bind(&mut qb);
+    qb.push(" AND attribute_value = ");
+    Value::from(quota.attribute_value.clone()).push_bind(&mut qb);
+
+    repo.db().execute(qb).await.map_err(|e| {
+        crate::error!("participate_space: failed to decrease panel quota remains: {e}");
+        crate::common::Error::from(e)
+    })?;
+    Ok(())
 }

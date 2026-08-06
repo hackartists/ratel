@@ -46,8 +46,9 @@ use uuid::Uuid;
 /// Stage 2 entry point. Called from `EventBridgeEnvelope::proc` on
 /// `DetailType::SyndicationJobReady`.
 pub async fn handle_syndication_job_ready(job: SyndicationJob) -> Result<()> {
-    // DynamoDB client is still needed for the cross-feature `Post` read and
-    // the `UserInboxNotification` write (both owned by other features).
+    // DynamoDB client is still needed for the `UserInboxNotification` write
+    // (owned by another, not-yet-migrated feature). The `Post` read below is
+    // Postgres-backed now and no longer needs it.
     let cfg = crate::common::CommonConfig::default();
     let cli = cfg.dynamodb();
     let now = time::now();
@@ -75,8 +76,11 @@ pub async fn handle_syndication_job_ready(job: SyndicationJob) -> Result<()> {
     }
 
     // ── (3-prep) Read Post for privacy guard + body formatting ────────
-    let post_pk = Partition::Feed(job.post_id.clone());
-    let post = match Post::get(cli, &post_pk, Some(EntityType::Post)).await {
+    let post = match uuid::Uuid::parse_str(&job.post_id) {
+        Ok(post_uuid) => Post::get_by_feed_id(post_uuid).await,
+        Err(_) => Ok(None),
+    };
+    let post = match post {
         Ok(Some(p)) => p,
         Ok(None) => {
             tracing::error!(post_id = %job.post_id, "dispatcher: Post not found — marking Skipped");
@@ -218,6 +222,7 @@ pub async fn handle_syndication_job_ready(job: SyndicationJob) -> Result<()> {
     // ── (4) Resolve images + body ──────────────────────────────────────
     let images: Vec<ImageRef> = post
         .urls
+        .0
         .iter()
         .take(adapter.max_images())
         .map(|url| ImageRef::from_s3(url))
@@ -514,7 +519,7 @@ async fn commit_failed(
 /// block dispatch — the row state is already correct, the worst case is the
 /// user not seeing the bell ring.
 async fn notify_failure(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     job: &SyndicationJob,
     category: ErrorCategory,
     error_message: Option<String>,
@@ -533,7 +538,7 @@ async fn notify_failure(
     // `author_user_id` is the bare user id; the inbox entity keys on the full
     // `Partition::User(..)` (cross-feature auth entity).
     let inbox = UserInboxNotification::new(Partition::User(job.author_user_id.clone()), payload);
-    if let Err(e) = inbox.create(cli).await {
+    if let Err(e) = inbox.create().await {
         tracing::warn!(
             post_id = %job.post_id,
             error = %e,
@@ -547,13 +552,13 @@ async fn notify_failure(
 // ─────────────────────────────────────────────────────────────────────────
 
 fn build_link_card(post: &Post, job: &SyndicationJob) -> LinkCard {
-    let stripped = post.body.to_plain_text();
+    let stripped = post.body.0.to_plain_text();
     let description: String = stripped.chars().take(200).collect();
     LinkCard {
         backlink_url: job.backlink_url.clone(),
         fallback_title: post.title.clone(),
         fallback_description: description,
-        fallback_thumb_url: post.urls.first().cloned(),
+        fallback_thumb_url: post.urls.0.first().cloned(),
     }
 }
 

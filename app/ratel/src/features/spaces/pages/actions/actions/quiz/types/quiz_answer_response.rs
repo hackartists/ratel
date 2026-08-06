@@ -12,21 +12,12 @@ pub struct QuizAnswerResponse {
 #[cfg(feature = "server")]
 impl From<SpaceQuizAnswer> for QuizAnswerResponse {
     fn from(answer: SpaceQuizAnswer) -> Self {
-        let quiz_id: SpaceQuizEntityType = match answer.sk {
-            EntityType::SpaceQuizAnswer(id) => id.into(),
-            _ => SpaceQuizEntityType::default(),
-        };
-        let space_id: SpacePartition = match answer.space_pk {
-            Partition::Space(id) => id.into(),
-            _ => SpacePartition::default(),
-        };
-
         Self {
-            quiz_id,
-            space_id,
+            quiz_id: SpaceQuizEntityType(answer.quiz_id),
+            space_id: SpacePartition(answer.space_id),
             created_at: answer.created_at,
             updated_at: answer.updated_at,
-            answers: answer.answers,
+            answers: answer.answers.0,
         }
     }
 }

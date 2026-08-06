@@ -17,6 +17,7 @@ use components::*;
 use config::*;
 use constants::*;
 use controllers::*;
+#[cfg(feature = "server")]
 use services::*;
 use utils::*;
 

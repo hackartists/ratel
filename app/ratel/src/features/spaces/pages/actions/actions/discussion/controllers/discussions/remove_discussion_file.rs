@@ -15,26 +15,24 @@ pub async fn remove_discussion_file(
     req: RemoveDiscussionFileRequest,
 ) -> Result<()> {
     SpacePost::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_id.clone().into();
     let link_target = FileLinkTarget::Board(discussion_id.to_string());
-    let discussion_sk: EntityType = discussion_id.into();
 
-    let post = SpacePost::get(cli, &space_pk, Some(discussion_sk.clone()))
+    let mut post = SpacePost::get_one(&space_id, &SpacePostPartition(discussion_id.0.clone()))
         .await?
         .ok_or(SpaceActionDiscussionError::NotFound)?;
 
     let updated_files: Vec<File> = post
         .files
-        .into_iter()
+        .iter()
         .filter(|f| f.url.as_ref() != Some(&req.file_url))
+        .cloned()
         .collect();
 
-    SpacePost::updater(&space_pk, &discussion_sk)
-        .with_files(updated_files)
-        .execute(cli)
-        .await?;
+    post.files = PostFiles(updated_files);
+    SpacePost::repository()
+        .upsert(&post)
+        .await
+        .map_err(crate::common::Error::from)?;
 
     delete_file_link(
         space_id,

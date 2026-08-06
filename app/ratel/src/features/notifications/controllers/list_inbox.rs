@@ -4,12 +4,12 @@ use crate::features::auth::User;
 use crate::features::notifications::types::{InboxNotificationResponse, NotificationsError};
 
 /// Target number of items to accumulate per response when `space_id`
-/// filtering is active, and the hard cap on how many raw DynamoDB pages we
+/// filtering is active, and the hard cap on how many raw Postgres pages we
 /// scan to reach it (so a user whose space-related notifications are sparse
 /// among many global ones doesn't trigger an unbounded scan).
 const SPACE_PAGE_TARGET: usize = 30;
-const SPACE_MAX_PAGES: usize = 5;
-const PAGE_LIMIT: i32 = 30;
+const SPACE_MAX_PAGES: i64 = 5;
+const PAGE_SIZE: i64 = 30;
 
 #[mcp_tool(
     name = "list_inbox",
@@ -25,39 +25,54 @@ pub async fn list_inbox_handler(
     #[mcp(description = "Opaque pagination bookmark from a previous response. Omit for first page.")]
     bookmark: Option<String>,
 ) -> Result<ListResponse<InboxNotificationResponse>> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
+    let user_id = user.id.to_string();
     let unread = unread_only.unwrap_or(false);
+    // `bookmark` carries the next 1-based page number as an opaque string —
+    // the client treats it as an opaque cursor, so this is a transparent
+    // swap of the DynamoDB cursor for a Postgres page number.
+    let start_page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
 
     // Unfiltered path: preserve the original single-page behavior exactly.
     if space_id.is_none() {
-        let (items, next) = fetch_inbox_page(cli, &user.pk, unread, bookmark).await?;
-        let items: Vec<InboxNotificationResponse> = items.into_iter().map(Into::into).collect();
-        return Ok((items, next).into());
+        let page_result = fetch_inbox_page(&user_id, unread, start_page).await?;
+        let next_bookmark = if start_page < page_result.total_pages {
+            Some((start_page + 1).to_string())
+        } else {
+            None
+        };
+        let items: Vec<InboxNotificationResponse> =
+            page_result.items.into_iter().map(Into::into).collect();
+        return Ok((items, next_bookmark).into());
     }
 
     // Space-scoped path: notifications carry their space only inside the
     // payload, so we filter post-fetch. A single raw page may yield few (or
-    // zero) matches, so keep paging on the bookmark until we've collected
-    // enough or run out — capped at SPACE_MAX_PAGES. The returned bookmark is
-    // the last raw page's cursor, letting the client's infinite query resume.
+    // zero) matches, so keep paging until we've collected enough or run out —
+    // capped at SPACE_MAX_PAGES. The returned bookmark is the next raw page
+    // number, letting the client's infinite query resume.
     let space_id = space_id.unwrap();
     let mut acc: Vec<InboxNotificationResponse> = Vec::new();
-    let mut cursor = bookmark;
+    let mut page = start_page;
     let mut next_out: Option<String> = None;
 
     for _ in 0..SPACE_MAX_PAGES {
-        let (items, next) = fetch_inbox_page(cli, &user.pk, unread, cursor.clone()).await?;
-        for it in items {
+        let page_result = fetch_inbox_page(&user_id, unread, page).await?;
+        for it in page_result.items {
             let resp: InboxNotificationResponse = it.into();
             if resp.payload.space_id().as_ref() == Some(&space_id) {
                 acc.push(resp);
             }
         }
-        next_out = next.clone();
-        match next {
-            Some(b) => cursor = Some(b),
-            None => break,
+        if page < page_result.total_pages {
+            page += 1;
+            next_out = Some(page.to_string());
+        } else {
+            next_out = None;
+            break;
         }
         if acc.len() >= SPACE_PAGE_TARGET {
             break;
@@ -67,37 +82,18 @@ pub async fn list_inbox_handler(
     Ok((acc, next_out).into())
 }
 
-/// Fetch one raw page of the user's inbox newest-first. `unread` selects the
-/// sparse unread GSI ("U#…" keys) vs the full partition scan (filtered to the
-/// notification sk prefix so the User record isn't picked up).
+/// Fetch one raw page of the user's inbox newest-first. `unread` selects
+/// `is_read = false` rows.
 #[cfg(feature = "server")]
 async fn fetch_inbox_page(
-    cli: &aws_sdk_dynamodb::Client,
-    user_pk: &Partition,
+    user_id: &str,
     unread: bool,
-    bookmark: Option<String>,
-) -> Result<(Vec<UserInboxNotification>, Option<String>)> {
-    if unread {
-        let opts = UserInboxNotification::opt_with_bookmark(bookmark)
-            .sk("U".to_string())
-            .scan_index_forward(false)
-            .limit(PAGE_LIMIT);
-        UserInboxNotification::find_inbox_unread_by_user(cli, user_pk.clone(), opts)
-            .await
-            .map_err(|e| {
-                crate::error!("list_inbox unread GSI failed: {e}");
-                NotificationsError::ListFailed.into()
-            })
-    } else {
-        let opts = UserInboxNotification::opt_with_bookmark(bookmark)
-            .sk("USER_INBOX_NOTIFICATION".to_string())
-            .scan_index_forward(false)
-            .limit(PAGE_LIMIT);
-        UserInboxNotification::query(cli, user_pk.clone(), opts)
-            .await
-            .map_err(|e| {
-                crate::error!("list_inbox pk scan failed: {e}");
-                NotificationsError::ListFailed.into()
-            })
-    }
+    page: i64,
+) -> Result<postgres::Page<UserInboxNotification>> {
+    UserInboxNotification::find_for_user(user_id, unread, page, PAGE_SIZE)
+        .await
+        .map_err(|e| {
+            crate::error!("list_inbox query failed: {e}");
+            NotificationsError::ListFailed.into()
+        })
 }

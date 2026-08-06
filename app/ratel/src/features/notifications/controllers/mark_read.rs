@@ -1,15 +1,16 @@
 use crate::common::*;
-use crate::common::models::notification::{UNREAD_SENTINEL, UserInboxNotification};
+use crate::common::models::notification::UserInboxNotification;
 use crate::features::auth::User;
 use crate::features::notifications::types::NotificationsError;
 
 #[post("/api/inbox/{inbox_id}/read", user: User)]
 pub async fn mark_read_handler(inbox_id: UserInboxNotificationEntityType) -> Result<()> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
+    let user_id = user.id.to_string();
 
-    let sk: EntityType = inbox_id.into();
-    let existing = UserInboxNotification::get(cli, user.pk.clone(), Some(sk.clone()))
+    let id = uuid::Uuid::parse_str(&inbox_id.0)
+        .map_err(|_| NotificationsError::InboxEntryNotFound)?;
+
+    let existing = UserInboxNotification::get_owned(&user_id, id)
         .await
         .map_err(|e| {
             crate::error!("mark_read get failed: {e}");
@@ -17,22 +18,11 @@ pub async fn mark_read_handler(inbox_id: UserInboxNotificationEntityType) -> Res
         })?
         .ok_or(NotificationsError::InboxEntryNotFound)?;
 
-    if existing.is_read {
-        return Ok(());
-    }
-
-    // Flip is_read and rewrite the GSI sort key to the read sentinel so the
-    // row is excluded from `begins_with("U")` unread-list / unread-count
-    // queries, without removing the attribute (the entity requires it).
-    UserInboxNotification::updater(user.pk.clone(), sk)
-        .with_is_read(true)
-        .with_unread_created_at(UNREAD_SENTINEL.to_string())
-        .execute(cli)
-        .await
-        .map_err(|e| {
-            crate::error!("mark_read update failed: {e}");
-            NotificationsError::MarkReadFailed
-        })?;
+    // `mark_read` is itself a no-op if the row is already read.
+    existing.mark_read().await.map_err(|e| {
+        crate::error!("mark_read update failed: {e}");
+        NotificationsError::MarkReadFailed
+    })?;
 
     Ok(())
 }

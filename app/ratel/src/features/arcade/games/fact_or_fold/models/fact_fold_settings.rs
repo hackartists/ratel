@@ -4,69 +4,67 @@ use crate::features::arcade::games::fact_or_fold::types::FactOrFoldSettingsRespo
 #[allow(unused_imports)]
 use rmcp::schemars;
 
+use postgres::PostgresEntity;
+use postgres::ops::StringOp;
+use uuid::Uuid;
+
 /// Singleton row carrying admin-tunable parameters for the
-/// *Fact or Fold* game. Pairs with `EntityType::FactFoldSettings` at
-/// the `Partition::FactFoldSettings` singleton key, mirroring the
-/// `AnalyzeQuotaConfig` pattern.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(
-    feature = "server",
-    derive(DynamoEntity, rmcp::schemars::JsonSchema)
-)]
+/// *Fact or Fold* game.
+///
+/// Postgres migration: the DynamoDB `(FactFoldSettings,
+/// FactFoldSettings)` singleton pair becomes a surrogate `id` PK plus
+/// a fixed `singleton` natural key (UNIQUE).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "fact_fold_settings")]
 pub struct FactFoldSettings {
-    pub pk: Partition,
-    pub sk: EntityType,
+    pub id: Uuid,
+
+    #[postgres(unique)]
+    pub singleton: String,
 
     pub created_at: i64,
     pub updated_at: i64,
 
-    #[serde(default)]
     pub round_capacity: i32,
-    #[serde(default)]
     pub stage_news_reveal_sec: i32,
-    #[serde(default)]
     pub stage_bet_sec: i32,
-    #[serde(default)]
     pub stage_rationale_sec: i32,
-    #[serde(default)]
     pub stage_reveal_sec: i32,
-    #[serde(default)]
     pub stage_debate_sec: i32,
-    #[serde(default)]
     pub min_bet_rp: i64,
-    #[serde(default)]
     pub max_bet_rp: i64,
-    #[serde(default)]
     pub correct_side_multiplier_bps: i32,
-    #[serde(default)]
     pub insider_correct_bonus_bps: i32,
-    #[serde(default)]
     pub influence_bonus_bps: i32,
-    #[serde(default)]
     pub new_user_signup_rp: i64,
-    #[serde(default)]
     pub reconnect_grace_sec: i32,
-    #[serde(default)]
     pub queue_low_alert_days: i32,
 }
 
-#[cfg(feature = "server")]
-impl FactFoldSettings {
-    pub fn keys() -> (Partition, EntityType) {
-        (Partition::FactFoldSettings, EntityType::FactFoldSettings)
-    }
+/// Fixed value of the `singleton` natural key column.
+pub const FACT_FOLD_SETTINGS_SINGLETON: &str = "fact_fold_settings";
 
+impl FactFoldSettings {
     /// Load the singleton row, returning `FactOrFoldSettingsResponse::default()`
-    /// when the row has not been initialised yet. This lets the rest
-    /// of the codebase rely on a populated value out of the box.
-    pub async fn get_or_default(
-        cli: &aws_sdk_dynamodb::Client,
-    ) -> crate::common::Result<FactOrFoldSettingsResponse> {
-        let (pk, sk) = Self::keys();
-        let row = FactFoldSettings::get(cli, &pk, Some(sk)).await?;
+    /// when the row has not been initialised yet.
+    pub async fn get_or_default() -> crate::common::Result<FactOrFoldSettingsResponse> {
+        let row = Self::repository()
+            .find_one(
+                Self::query().singleton(StringOp::Eq(FACT_FOLD_SETTINGS_SINGLETON.to_string())),
+            )
+            .await
+            .map_err(crate::common::Error::from)?;
         Ok(row
             .map(FactOrFoldSettingsResponse::from)
             .unwrap_or_default())
+    }
+
+    /// Natural-key upsert on the fixed singleton key.
+    pub async fn save(&self) -> crate::common::Result<Self> {
+        Self::repository()
+            .upsert_on(&["singleton"], self)
+            .await
+            .map_err(crate::common::Error::from)
     }
 
     pub fn merge_response(mut self, r: FactOrFoldSettingsResponse) -> Self {
@@ -85,13 +83,14 @@ impl FactFoldSettings {
         self.new_user_signup_rp = r.new_user_signup_rp;
         self.reconnect_grace_sec = r.reconnect_grace_sec;
         self.queue_low_alert_days = r.queue_low_alert_days;
+        if self.id.is_nil() {
+            self.id = Uuid::now_v7();
+        }
         if self.created_at == 0 {
             self.created_at = now;
         }
         self.updated_at = now;
-        let (pk, sk) = Self::keys();
-        self.pk = pk;
-        self.sk = sk;
+        self.singleton = FACT_FOLD_SETTINGS_SINGLETON.to_string();
         self
     }
 }

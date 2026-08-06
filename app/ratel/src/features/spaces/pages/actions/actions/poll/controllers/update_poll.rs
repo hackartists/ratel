@@ -1,4 +1,3 @@
-use crate::common::models::space::SpaceCommon;
 use crate::features::spaces::pages::actions::actions::poll::*;
 use crate::features::spaces::pages::actions::models::SpaceAction;
 #[cfg(feature = "server")]
@@ -29,62 +28,57 @@ pub async fn update_poll(
     req: UpdatePollRequest,
 ) -> Result<String> {
     SpacePoll::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_pk.into();
-    let poll_sk_entity: EntityType = poll_sk.clone().into();
+    let space_id = space_pk;
 
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut poll_updater = SpacePoll::updater(&space_pk, &poll_sk_entity).with_updated_at(now);
 
-    let action_pk =
-        CompositePartition::<SpacePartition, String>(space_pk.clone().into(), poll_sk.to_string());
-    let mut action_updater =
-        SpaceAction::updater(&action_pk, &EntityType::SpaceAction).with_updated_at(now);
-    let mut update_action = false;
+    let mut poll = SpacePoll::get_one(&space_id, &poll_sk)
+        .await?
+        .ok_or(Error::NotFound("Poll not found".into()))?;
+    poll.updated_at = now;
+
+    let mut action_title: Option<String> = None;
 
     match req {
         UpdatePollRequest::Title { title } => {
-            poll_updater = poll_updater.with_title(title.clone());
-            action_updater = action_updater.with_title(title);
-            update_action = true;
+            poll.title = title.clone();
+            action_title = Some(title);
         }
         UpdatePollRequest::Question { questions } => {
             if questions.is_empty() {
                 return Err(SpacePollError::QuestionsEmpty.into());
             }
-            poll_updater = poll_updater.with_questions(questions);
+            poll.questions = PollQuestions(questions);
         }
         UpdatePollRequest::ResponseEditable { response_editable } => {
-            poll_updater = poll_updater.with_response_editable(response_editable);
+            poll.response_editable = response_editable;
         }
         UpdatePollRequest::CanisterUploadEnabled {
             canister_upload_enabled,
         } => {
-            poll_updater = poll_updater.with_canister_upload_enabled(canister_upload_enabled);
+            poll.canister_upload_enabled = canister_upload_enabled;
             // When enabling encrypted upload, force response_editable to false
             // because encrypted votes cannot be edited after submission.
             if canister_upload_enabled {
-                poll_updater = poll_updater.with_response_editable(false);
+                poll.response_editable = false;
             }
         }
     }
 
-    poll_updater.execute(cli).await?;
-    if update_action {
-        action_updater.execute(cli).await?;
+    SpacePoll::repository()
+        .upsert(&poll)
+        .await
+        .map_err(crate::common::Error::from)?;
+
+    if let Some(title) = action_title {
+        if let Some(mut action) = SpaceAction::get_one(&space_id, &poll_sk.0).await? {
+            action.title = title;
+            action.updated_at = now;
+            action.save().await?;
+        }
     }
 
-    if let Ok(Some(poll)) = SpacePoll::get(cli, &space_pk, Some(poll_sk_entity.clone())).await {
-        let creator_pk = SpaceCommon::get(cli, &space_pk, Some(EntityType::SpaceCommon))
-            .await
-            .ok()
-            .flatten()
-            .map(|s| s.user_pk)
-            .unwrap_or(space_pk.clone());
-        let _ = creator_pk;
-        // Essence re-indexing happens via the DynamoDB Stream pipeline.
-    }
+    // Essence re-indexing happens via the DynamoDB Stream pipeline.
 
     Ok("success".to_string())
 }

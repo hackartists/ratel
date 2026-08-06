@@ -37,14 +37,15 @@ pub async fn get_ranking_handler(
         None
     };
 
-    // Rank is the absolute position across pages (page-relative offset + 1).
-    let base = (page - 1) * PAGE_SIZE;
+    // Rank resets to 1 at the top of every page (per-page rank, 1-based),
+    // matching the original DynamoDB handler which mapped `(i as u32) + 1`
+    // over each page's rows independently.
     let items: Vec<RankingEntryResponse> = result
         .items
         .iter()
         .enumerate()
         .map(|(i, score)| RankingEntryResponse {
-            rank: (base as u32) + (i as u32) + 1,
+            rank: (i as u32) + 1,
             user_pk: score.author_pk.clone(),
             name: score.user_name.clone(),
             avatar: score.user_avatar.clone(),

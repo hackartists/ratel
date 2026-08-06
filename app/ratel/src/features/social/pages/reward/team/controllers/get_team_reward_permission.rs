@@ -8,13 +8,13 @@ pub async fn get_team_reward_permission_handler(username: String) -> Result<Team
     let cli = conf.common.dynamodb();
     let user: Option<crate::features::auth::User> = user.into();
     let role = match user {
-        Some(u) => Team::get_user_role(cli, &team.pk, &u.pk)
+        Some(u) => Team::get_user_role(cli, &team.partition(), &u.pk())
             .await?
             .unwrap_or_default(),
         None => crate::features::social::pages::member::dto::TeamRole::default(),
     };
     Ok(TeamRewardPermission {
-        team_pk: team.pk.into(),
+        team_pk: team.partition().into(),
         permissions: role.to_legacy_permissions(),
         team_name: team.display_name,
         role,

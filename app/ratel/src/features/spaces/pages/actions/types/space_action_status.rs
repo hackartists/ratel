@@ -5,6 +5,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Default, DynamoEnum, Translate, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 pub enum SpaceActionStatus {
     #[default]
     #[translate(en = "Designing", ko = "설계중")]

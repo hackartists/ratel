@@ -1,6 +1,6 @@
 use crate::features::spaces::pages::apps::apps::file::*;
 #[cfg(feature = "server")]
-use crate::features::spaces::pages::apps::apps::file::models::SpaceFile;
+use crate::features::spaces::pages::apps::apps::file::models::{SpaceFile, SpaceFileList};
 #[cfg(feature = "server")]
 use crate::common::SpaceUserRole;
 
@@ -18,10 +18,7 @@ pub async fn update_space_files(
         return Err(Error::NoPermission);
     }
 
-    let cli = crate::features::spaces::pages::apps::apps::file::config::get().common.dynamodb();
-
     let space_pk: Partition = space_pk.into();
-    let (pk, sk) = SpaceFile::keys(&space_pk);
 
     // Ensure all files have IDs
     let mut files_with_ids = req.files;
@@ -31,16 +28,11 @@ pub async fn update_space_files(
         }
     }
 
-    let existing = SpaceFile::get(cli, &pk, Some(sk.clone())).await?;
-
-    if existing.is_some() {
-        SpaceFile::updater(&pk, sk)
-            .with_files(files_with_ids.clone())
-            .execute(cli)
-            .await?;
+    if let Some(mut existing) = SpaceFile::get_by_space(&space_pk).await? {
+        existing.files = SpaceFileList(files_with_ids.clone());
+        existing.save().await?;
     } else {
-        let space_file = SpaceFile::new(space_pk, files_with_ids.clone());
-        space_file.create(cli).await?;
+        SpaceFile::new(space_pk, files_with_ids.clone()).save().await?;
     }
 
     Ok(files_with_ids)

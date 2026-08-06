@@ -1,6 +1,4 @@
 use crate::common::ListResponse;
-use crate::features::spaces::pages::report::models::SpaceReport;
-use crate::features::spaces::pages::report::types::SpaceReportError;
 use crate::features::spaces::pages::report::*;
 
 #[get("/v3/spaces/{space_pk}/reports?bookmark&status", role: SpaceUserRole)]
@@ -9,6 +7,11 @@ pub async fn list_reports(
     bookmark: Option<String>,
     status: Option<ReportStatus>,
 ) -> Result<ListResponse<ReportListItem>> {
+    use crate::features::spaces::pages::report::models::{SpaceReport, SpaceReportColumn};
+    use crate::features::spaces::pages::report::types::SpaceReportError;
+    use postgres::PostgresEntity;
+    use postgres::ops::{EnumOp, StringOp};
+
     SpaceReport::can_view(role)?;
 
     // Members can only ever see Published reports — any other request
@@ -22,47 +25,34 @@ pub async fn list_reports(
         Some(ReportStatus::Published)
     };
 
-    let space_partition: Partition = space_pk.into();
-    let conf = ServerConfig::default();
-    let dynamo = conf.dynamodb();
+    // `bookmark` carries the 1-based page number (opaque string to the client).
+    let page = bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
+    let page_size = 20i64;
 
-    let (reports, next_bookmark) = match effective_status {
-        Some(s) => {
-            let mut opt = SpaceReport::opt()
-                .sk(s.to_string())
-                .scan_index_forward(false)
-                .limit(20);
-            if let Some(bm) = bookmark {
-                opt = opt.bookmark(bm);
-            }
-            SpaceReport::find_by_status(dynamo, &space_partition, opt)
-                .await
-                .map_err(|e| {
-                    crate::error!("failed to list reports by status {s}: {e:?}");
-                    SpaceReportError::ReportListFailed
-                })?
-        }
-        None => {
-            let mut opt = SpaceReport::opt()
-                .sk(EntityType::SpaceReport(String::default()).to_string())
-                .scan_index_forward(false)
-                .limit(20);
-            if let Some(bm) = bookmark {
-                opt = opt.bookmark(bm);
-            }
-            SpaceReport::query(dynamo, space_partition, opt)
-                .await
-                .map_err(|e| {
-                    crate::error!("failed to list reports: {e:?}");
-                    SpaceReportError::ReportListFailed
-                })?
-        }
-    };
+    let mut query = SpaceReport::query()
+        .space_id(StringOp::Eq(space_pk.0.clone()))
+        .order_by(SpaceReportColumn::CreatedAt, postgres::Order::Desc)
+        .page(page)
+        .page_size(page_size);
+    if let Some(s) = effective_status {
+        query = query.status(EnumOp::Eq(s));
+    }
 
-    let items: Vec<ReportListItem> = reports
+    let result = SpaceReport::repository().find(query).await.map_err(|e| {
+        crate::error!("failed to list reports: {e:?}");
+        SpaceReportError::ReportListFailed
+    })?;
+
+    let has_next = result.page < result.total_pages;
+    let items: Vec<ReportListItem> = result
+        .items
         .into_iter()
         .map(|r| ReportListItem {
-            id: report_id_from_sk(&r.sk),
+            id: r.report_id(),
             status: r.status,
             title: r.title,
             description: r.description,
@@ -70,15 +60,11 @@ pub async fn list_reports(
         })
         .collect();
 
-    Ok(ListResponse {
-        items,
-        bookmark: next_bookmark,
-    })
-}
+    let next = if has_next {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
 
-fn report_id_from_sk(sk: &EntityType) -> String {
-    match sk {
-        EntityType::SpaceReport(id) => id.clone(),
-        _ => String::new(),
-    }
+    Ok((items, next).into())
 }
