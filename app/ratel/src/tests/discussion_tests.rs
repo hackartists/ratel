@@ -1,11 +1,7 @@
 use super::*;
 use crate::common::models::space::{SpaceCommon, SpaceUser};
-use crate::common::types::{
-    EntityType, Partition, SpacePublishState, SpaceStatus, SpaceVisibility,
-};
-use crate::features::spaces::pages::actions::actions::discussion::{
-    SpacePost, SpacePostComment, ROOT_PARENT,
-};
+use crate::common::types::{FeedPartition, SpacePublishState, SpaceStatus, SpaceVisibility};
+use crate::features::spaces::pages::actions::actions::discussion::{SpacePost, SpacePostComment};
 
 /// Helper: seed a public individual-owned space, a discussion post, and a
 /// set of comments with controllable `created_at`. Returns the ids needed
@@ -18,72 +14,64 @@ async fn seed_discussion_with_comments(
     let post_id = space_id.clone();
     let now = crate::common::utils::time::get_now_timestamp_millis();
 
-    let space_pk = Partition::Space(space_id.clone());
-    let post_pk = Partition::Feed(post_id.clone());
-
     // SpaceCommon owned by the test user (→ Creator role).
-    let mut space = SpaceCommon::default();
-    space.pk = space_pk.clone();
-    space.sk = EntityType::SpaceCommon;
+    let mut space = SpaceCommon::new(
+        FeedPartition(post_id.clone()),
+        ctx.test_user.0.pk(),
+        ctx.test_user.0.display_name.clone(),
+        ctx.test_user.0.profile_url.clone(),
+        ctx.test_user.0.username.clone(),
+    );
     space.created_at = now;
     space.updated_at = now;
     space.status = Some(SpaceStatus::Ongoing);
     space.publish_state = SpacePublishState::Published;
     space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk.clone();
-    space.user_pk = ctx.test_user.0.pk.clone();
-    space.author_display_name = ctx.test_user.0.display_name.clone();
-    space.author_profile_url = ctx.test_user.0.profile_url.clone();
-    space.author_username = ctx.test_user.0.username.clone();
-    space.create(&ctx.ddb).await.expect("create space");
+    space.create().await.expect("create space");
 
     // Minimal Post required by SpaceCommon extractor.
     let post = crate::features::posts::models::Post {
-        pk: post_pk.clone(),
-        sk: EntityType::Post,
+        id: uuid::Uuid::parse_str(&post_id).expect("valid post id"),
         title: "Discussion Test".to_string(),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.expect("create post");
+    post.create().await.expect("create post");
 
     // SpacePost (the discussion) sits under the space partition.
     let discussion_id = uuid::Uuid::now_v7().to_string();
-    let discussion_sk = EntityType::SpacePost(discussion_id.clone());
     let mut discussion = SpacePost::default();
-    discussion.pk = space_pk.clone();
-    discussion.sk = discussion_sk.clone();
+    discussion.id = uuid::Uuid::now_v7();
+    discussion.space_id = space_id.clone();
+    discussion.post_id = discussion_id.clone();
     discussion.created_at = now;
     discussion.updated_at = now;
     discussion.title = "Test Discussion".to_string();
-    discussion.user_pk = ctx.test_user.0.pk.clone();
+    discussion.user_pk = ctx.test_user.0.pk().to_string();
     discussion.author_display_name = ctx.test_user.0.display_name.clone();
     discussion.author_username = ctx.test_user.0.username.clone();
     discussion.author_profile_url = ctx.test_user.0.profile_url.clone();
-    discussion.create(&ctx.ddb).await.expect("create discussion");
+    discussion.create().await.expect("create discussion");
 
-    // SpacePostComment rows live in the partition keyed by the discussion SK
-    // converted into Partition::SpacePost. Each comment gets its caller-specified
-    // `created_at` so we can exercise the `since` filter.
+    // SpacePostComment rows live in the partition keyed by the discussion's
+    // post_id. Each comment gets its caller-specified `created_at` so we can
+    // exercise the `since` filter.
     let author = SpaceUser::from(ctx.test_user.0.clone());
-    let comment_pk = Partition::SpacePost(discussion_id.clone());
     let mut comment_ids = Vec::with_capacity(comment_timestamps.len());
     for ts in comment_timestamps {
         let comment_uuid = uuid::Uuid::now_v7().to_string();
         let mut comment = SpacePostComment::default();
-        comment.pk = comment_pk.clone();
-        comment.sk = EntityType::SpacePostComment(comment_uuid.clone());
-        comment.space_pk = Some(space_pk.clone());
+        comment.id = uuid::Uuid::now_v7();
+        comment.post_id = discussion_id.clone();
+        comment.comment_id = comment_uuid.clone();
+        comment.space_id = Some(space_id.clone());
         comment.created_at = *ts;
         comment.updated_at = *ts;
         comment.content = format!("comment-{}", ts);
-        comment.likes_align = format!("{:020}", 0);
-        comment.updated_at_align = format!("{:020}", *ts);
-        comment.parent_id_for_likes = ROOT_PARENT.to_string();
-        comment.author_pk = ctx.test_user.0.pk.clone();
+        comment.author_pk = ctx.test_user.0.pk().to_string();
         comment.author_display_name = author.display_name.clone();
         comment.author_username = author.username.clone();
         comment.author_profile_url = author.profile_url.clone();
-        comment.create(&ctx.ddb).await.expect("create comment");
+        comment.create().await.expect("create comment");
         comment_ids.push(comment_uuid);
     }
 

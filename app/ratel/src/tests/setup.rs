@@ -100,7 +100,7 @@ pub fn create_nick_name() -> String {
     format!("nickname{}", short_uuid)
 }
 
-pub async fn create_test_user(cli: &aws_sdk_dynamodb::Client) -> User {
+pub async fn create_test_user(_cli: &aws_sdk_dynamodb::Client) -> User {
     let profile = "https://ratel.foundation/images/default-profile.png".to_string();
     let username = create_user_name();
     let nickname = create_nick_name();
@@ -116,7 +116,7 @@ pub async fn create_test_user(cli: &aws_sdk_dynamodb::Client) -> User {
         username,
         Some("password".to_string()),
     );
-    user.create(cli).await.unwrap();
+    user.create().await.unwrap();
 
     user
 }
@@ -137,7 +137,7 @@ pub async fn create_admin_user_session(
 
 async fn create_session_with_user_type(
     app: Router,
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     user_type: UserType,
 ) -> (User, axum::http::HeaderMap) {
     let uid = uuid::Uuid::new_v4().to_string();
@@ -154,7 +154,7 @@ async fn create_session_with_user_type(
         Some(password),
     );
 
-    user.create(cli).await.expect("Failed to create user");
+    user.create().await.expect("Failed to create user");
 
     // Email-code login (passwordless). Sending only {email, code} matches the
     // `Email` variant; including a `password` would now match the restored

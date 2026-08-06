@@ -1,6 +1,6 @@
 use super::*;
 use crate::common::models::space::{SpaceCommon, SpaceParticipant};
-use crate::common::types::{EntityType, Partition, SpacePublishState, SpaceStatus, SpaceVisibility};
+use crate::common::types::{Partition, SpacePublishState, SpaceStatus, SpaceVisibility};
 
 // Seed a public space owned by the test user (→ Creator role) plus `count`
 // SpaceParticipant rows whose display_name and username are injected by the
@@ -17,35 +17,35 @@ async fn seed_space_with_participants(
     let space_pk = Partition::Space(space_id.clone());
     let post_pk = Partition::Feed(space_id.clone());
 
-    let mut space = SpaceCommon::default();
-    space.pk = space_pk.clone();
-    space.sk = EntityType::SpaceCommon;
-    space.created_at = now;
-    space.updated_at = now;
-    space.status = Some(SpaceStatus::Ongoing);
-    space.publish_state = SpacePublishState::Published;
-    space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk.clone();
-    space.user_pk = ctx.test_user.0.pk.clone();
-    space.author_display_name = ctx.test_user.0.display_name.clone();
-    space.author_profile_url = ctx.test_user.0.profile_url.clone();
-    space.author_username = ctx.test_user.0.username.clone();
-    space.create(&ctx.ddb).await.expect("create space");
+    let space = SpaceCommon {
+        id: uuid::Uuid::now_v7(),
+        space_pk: space_pk.to_string(),
+        created_at: now,
+        updated_at: now,
+        status: Some(SpaceStatus::Ongoing),
+        publish_state: SpacePublishState::Published,
+        visibility: SpaceVisibility::Public,
+        post_pk: post_pk.to_string(),
+        user_pk: ctx.test_user.0.pk().to_string(),
+        author_display_name: ctx.test_user.0.display_name.clone(),
+        author_profile_url: ctx.test_user.0.profile_url.clone(),
+        author_username: ctx.test_user.0.username.clone(),
+        ..Default::default()
+    };
+    space.create().await.expect("create space");
 
     let post = crate::features::posts::models::Post {
-        pk: post_pk.clone(),
-        sk: EntityType::Post,
+        id: uuid::Uuid::parse_str(&space_id).unwrap(),
         title: "Member Test".to_string(),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.expect("create post");
+    post.create().await.expect("create post");
 
     for (i, (display_name, username)) in participants.into_iter().enumerate() {
-        let user_pk = Partition::User(format!("member-{}-{}", space_id, i));
         let mut p = SpaceParticipant::new_non_anonymous(
             space_pk.clone(),
             crate::common::models::auth::User {
-                pk: user_pk,
+                id: uuid::Uuid::now_v7(),
                 display_name,
                 username,
                 profile_url: String::new(),
@@ -56,7 +56,7 @@ async fn seed_space_with_participants(
         // Make sure the created_at ordering is deterministic across the batch
         // so tests that assert "first 50" behave predictably.
         p.created_at = now + i as i64;
-        p.create(&ctx.ddb).await.expect("create participant");
+        p.create().await.expect("create participant");
     }
 
     space_id

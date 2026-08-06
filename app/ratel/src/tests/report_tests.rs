@@ -10,7 +10,7 @@
 use super::*;
 use crate::common::models::space::SpaceCommon;
 use crate::common::types::{
-    EntityType, ListResponse, Partition, SpacePublishState, SpaceStatus, SpaceVisibility,
+    ListResponse, Partition, SpacePublishState, SpaceStatus, SpaceVisibility,
 };
 use crate::features::spaces::pages::report::controllers::{
     CreateReportResponse, DeleteReportResponse, GetReportResponse, UpdateReportResponse,
@@ -28,20 +28,21 @@ async fn seed_space(ctx: &TestContext) -> String {
     let space_pk = Partition::Space(space_id.clone());
     let post_pk = Partition::Feed(space_id.clone());
 
-    let mut space = SpaceCommon::default();
-    space.pk = space_pk;
-    space.sk = EntityType::SpaceCommon;
-    space.created_at = now;
-    space.updated_at = now;
-    space.status = Some(SpaceStatus::Ongoing);
-    space.publish_state = SpacePublishState::Published;
-    space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk;
-    space.user_pk = ctx.test_user.0.pk.clone();
-    space.author_display_name = ctx.test_user.0.display_name.clone();
-    space.author_profile_url = ctx.test_user.0.profile_url.clone();
-    space.author_username = ctx.test_user.0.username.clone();
-    space.create(&ctx.ddb).await.expect("seed space");
+    let space = SpaceCommon {
+        space_pk: space_pk.to_string(),
+        created_at: now,
+        updated_at: now,
+        status: Some(SpaceStatus::Ongoing),
+        publish_state: SpacePublishState::Published,
+        visibility: SpaceVisibility::Public,
+        post_pk: post_pk.to_string(),
+        user_pk: ctx.test_user.0.pk().to_string(),
+        author_display_name: ctx.test_user.0.display_name.clone(),
+        author_profile_url: ctx.test_user.0.profile_url.clone(),
+        author_username: ctx.test_user.0.username.clone(),
+        ..Default::default()
+    };
+    space.create().await.expect("seed space");
 
     space_id
 }
@@ -254,7 +255,7 @@ async fn test_list_reports_allowed_for_non_creator_on_public_space() {
 /// query path without going through the create endpoint (which only
 /// creates Drafts).
 async fn seed_report_with_status(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     space_id: &str,
     title: &str,
     status: crate::features::spaces::pages::report::types::ReportStatus,
@@ -264,21 +265,18 @@ async fn seed_report_with_status(
 
     let now = get_now_timestamp_millis();
     let report = SpaceReport {
-        pk: Partition::Space(space_id.to_string()),
-        sk: EntityType::SpaceReport(uuid::Uuid::now_v7().to_string()),
+        id: uuid::Uuid::now_v7(),
+        space_id: space_id.to_string(),
         created_at: now,
         updated_at: now,
         status,
         title: title.to_string(),
         description: String::new(),
         html_contents: None,
-        blocks: Vec::new(),
+        blocks: Default::default(),
     };
-    let id = match &report.sk {
-        EntityType::SpaceReport(id) => id.clone(),
-        _ => String::new(),
-    };
-    report.create(&ctx.ddb).await.expect("seed report");
+    let id = report.id.to_string();
+    report.create().await.expect("seed report");
     // Ensure later uuid_v7 ids sort after earlier ones.
     tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     id

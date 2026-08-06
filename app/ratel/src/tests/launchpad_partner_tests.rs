@@ -1,24 +1,19 @@
 use super::*;
-use crate::common::types::{EntityType, Partition};
 use crate::features::launchpad_partner::models::LaunchpadDeduction;
 
 #[tokio::test]
 async fn deduction_row_round_trips() {
-    let ctx = TestContext::setup().await;
+    let _ctx = TestContext::setup().await;
     let user = format!("u-{}", uuid::Uuid::new_v4());
     let key = format!("lp_{}", uuid::Uuid::new_v4());
 
     let row = LaunchpadDeduction::new(&user, &key, 500, "tx_demo", 740);
-    row.create(&ctx.ddb).await.expect("create");
+    row.create().await.expect("create");
 
-    let fetched = LaunchpadDeduction::get(
-        &ctx.ddb,
-        Partition::User(user.clone()),
-        Some(EntityType::LaunchpadDeduction(key.clone())),
-    )
-    .await
-    .expect("get")
-    .expect("row present");
+    let fetched = LaunchpadDeduction::find_by_keys(&user, &key)
+        .await
+        .expect("get")
+        .expect("row present");
 
     assert_eq!(fetched.point_amount, 500);
     assert_eq!(fetched.brand_tx_id, "tx_demo");
@@ -104,7 +99,7 @@ async fn deduct_is_idempotent_without_console() {
     let user = format!("u-{}", uuid::Uuid::new_v4());
     let key = format!("lp_{}", uuid::Uuid::new_v4());
     LaunchpadDeduction::new(&user, &key, 500, "tx_seed", 740)
-        .create(&ctx.ddb)
+        .create()
         .await
         .expect("seed");
 

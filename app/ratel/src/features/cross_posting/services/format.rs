@@ -163,9 +163,14 @@ mod tests {
     use super::*;
     use crate::common::types::ContentBody;
     use crate::features::posts::models::Post;
+    use crate::features::posts::models::pg_json::BodyJson;
 
     fn make_post(title: &str, html: &str) -> Post {
-        Post { title: title.to_string(), body: ContentBody::html(html), ..Default::default() }
+        Post {
+            title: title.to_string(),
+            body: BodyJson(ContentBody::html(html)),
+            ..Default::default()
+        }
     }
 
     // ── strip_html ──────────────────────────────────────────────────────

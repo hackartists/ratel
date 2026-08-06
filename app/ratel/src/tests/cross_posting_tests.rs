@@ -20,7 +20,7 @@
 use super::*;
 use crate::common::types::*;
 use crate::features::cross_posting::models::{
-    ConnectionStatus, JobState, SocialConnection, SyndicationJob,
+    ConnectionStatus, CredentialCiphertext, JobState, SocialConnection, SyndicationJob,
 };
 use crate::features::cross_posting::types::SocialPlatform;
 
@@ -352,11 +352,11 @@ async fn seed_bluesky_connection(
     status: ConnectionStatus,
     auto_post: bool,
 ) {
-    let user_pk = ctx.test_user.0.pk.clone();
+    let user_id = ctx.test_user.0.id();
     let now = crate::common::utils::time::now();
     let conn = SocialConnection {
-        pk: user_pk,
-        sk: EntityType::SocialConnection(SocialPlatform::Bluesky.to_string()),
+        id: uuid::Uuid::now_v7(),
+        user_id,
         platform_status: format!("bluesky#{}", status),
         platform: SocialPlatform::Bluesky,
         status,
@@ -365,7 +365,7 @@ async fn seed_bluesky_connection(
         // Sentinel ciphertext — these tests never decrypt; if you add a
         // decrypt path, replace with `aead::seal(...)` against
         // `CROSS_POSTING_DATA_KEY`.
-        credential_ciphertext: vec![1, 2, 3, 4],
+        credential_ciphertext: CredentialCiphertext(vec![1, 2, 3, 4]),
         token_expires_at: None,
         auto_post_enabled: auto_post,
         posts_syndicated_count: 0,
@@ -373,7 +373,7 @@ async fn seed_bluesky_connection(
         created_at: now,
         updated_at: now,
     };
-    conn.create(&ctx.ddb).await.expect("seed connection");
+    conn.create().await.expect("seed connection");
 }
 
 /// Seed a `SyndicationJob` row directly in DynamoDB for panel / retry
@@ -386,13 +386,13 @@ async fn seed_syndication_job(
 ) {
     let now = crate::common::utils::time::now();
     let job = SyndicationJob {
-        pk: Partition::Feed(post_id.to_string()),
-        sk: EntityType::SyndicationJob(platform.to_string()),
+        id: uuid::Uuid::now_v7(),
+        post_id: post_id.to_string(),
         dispatch_shard: None,
         engagement_shard: None,
         next_attempt_at: 0,
         engagement_next_at: 0,
-        author_user_id: ctx.test_user.0.pk.clone(),
+        author_user_id: ctx.test_user.0.id(),
         platform,
         state,
         attempts: 0,
@@ -407,7 +407,7 @@ async fn seed_syndication_job(
         created_at: now,
         updated_at: now,
     };
-    job.create(&ctx.ddb).await.expect("seed job");
+    job.create().await.expect("seed job");
 }
 
 /// POST `/api/posts` (creates an empty draft owned by `headers`'s user)

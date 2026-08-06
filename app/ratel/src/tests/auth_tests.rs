@@ -117,7 +117,7 @@ async fn test_legacy_password_user_logs_in_with_email_code() {
         username,
         Some("legacy-sha3-hash".to_string()),
     );
-    legacy.create(&ctx.ddb).await.expect("create legacy user");
+    legacy.create().await.expect("create legacy user");
 
     // Request a fresh code (no pre-existing verification record needed) ...
     let (s, _, _) = crate::test_post! {

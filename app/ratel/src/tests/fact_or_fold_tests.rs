@@ -44,62 +44,57 @@ fn valid_body() -> String {
 /// Tests that assert default behaviour (no subjects queued, default
 /// stage timings, fresh lobby) must call this at the top — otherwise
 /// the assertion drifts based on test execution order.
-async fn reset_fact_fold_state(ctx: &TestContext) {
-    use crate::common::types::EntityType;
+async fn reset_fact_fold_state(_ctx: &TestContext) {
     use crate::features::arcade::games::fact_or_fold::models::{
+        FACT_FOLD_LOBBY_SINGLETON, FACT_FOLD_SETTINGS_SINGLETON, FactFoldLeaderboardEntry,
         FactFoldLobby, FactFoldSettings, FactFoldSubject,
     };
-    use crate::features::arcade::models::ArcadeSettings;
+    use crate::features::arcade::models::{ARCADE_SETTINGS_SINGLETON, ArcadeSettings};
+    use postgres::PostgresEntity;
+    use postgres::ops::StringOp;
 
     // Settings singletons (delete returns NotFound when row absent —
     // we don't care).
-    let _ = ArcadeSettings::delete(
-        &ctx.ddb,
-        &Partition::ArcadeSettings,
-        Some(EntityType::ArcadeSettings),
-    )
-    .await;
-    let _ = FactFoldSettings::delete(
-        &ctx.ddb,
-        &Partition::FactFoldSettings,
-        Some(EntityType::FactFoldSettings),
-    )
-    .await;
+    if let Ok(Some(row)) = ArcadeSettings::repository()
+        .find_one(ArcadeSettings::query().singleton(StringOp::Eq(ARCADE_SETTINGS_SINGLETON.to_string())))
+        .await
+    {
+        let _ = ArcadeSettings::delete_by_id(row.id).await;
+    }
+    if let Ok(Some(row)) = FactFoldSettings::repository()
+        .find_one(
+            FactFoldSettings::query().singleton(StringOp::Eq(FACT_FOLD_SETTINGS_SINGLETON.to_string())),
+        )
+        .await
+    {
+        let _ = FactFoldSettings::delete_by_id(row.id).await;
+    }
 
     // Lobby pointer singleton.
-    let _ = FactFoldLobby::delete(
-        &ctx.ddb,
-        &Partition::FactFoldLobbySingleton,
-        Some(EntityType::FactFoldLobby),
-    )
-    .await;
-
-    // Subjects accumulated by prior tests under the shared anchor pk.
-    let opts = FactFoldSubject::opt()
-        .sk("FACT_FOLD_SUBJECT".to_string())
-        .limit(200);
-    if let Ok((subjects, _)) =
-        FactFoldSubject::query(&ctx.ddb, FactFoldSubject::anchor_pk(), opts).await
+    if let Ok(Some(row)) = FactFoldLobby::repository()
+        .find_one(FactFoldLobby::query().singleton(StringOp::Eq(FACT_FOLD_LOBBY_SINGLETON.to_string())))
+        .await
     {
-        for s in subjects {
-            let _ = FactFoldSubject::delete(&ctx.ddb, &s.pk, Some(s.sk)).await;
+        let _ = FactFoldLobby::delete_by_id(row.id).await;
+    }
+
+    // Subjects accumulated by prior tests.
+    if let Ok(page) = FactFoldSubject::repository()
+        .find(FactFoldSubject::query().limit(200))
+        .await
+    {
+        for s in page.items {
+            let _ = FactFoldSubject::delete_by_id(s.id).await;
         }
     }
 
-    // Leaderboard entries — written by settlement, shared anchor pk.
-    use crate::features::arcade::games::fact_or_fold::models::FactFoldLeaderboardEntry;
-    let lb_opts = FactFoldLeaderboardEntry::opt()
-        .sk("FACT_FOLD_LEADERBOARD_ENTRY".to_string())
-        .limit(200);
-    if let Ok((entries, _)) = FactFoldLeaderboardEntry::query(
-        &ctx.ddb,
-        FactFoldLeaderboardEntry::anchor_pk(),
-        lb_opts,
-    )
-    .await
+    // Leaderboard entries — written by settlement.
+    if let Ok(page) = FactFoldLeaderboardEntry::repository()
+        .find(FactFoldLeaderboardEntry::query().limit(200))
+        .await
     {
-        for e in entries {
-            let _ = FactFoldLeaderboardEntry::delete(&ctx.ddb, &e.pk, Some(e.sk)).await;
+        for e in page.items {
+            let _ = FactFoldLeaderboardEntry::delete_by_id(e.id).await;
         }
     }
 }
@@ -635,22 +630,17 @@ async fn test_update_settings_rejects_out_of_range() {
 /// Top up a user's chip balance directly via DDB so the lobby's
 /// chip gate + buy_in pass without needing an RP→chip convert
 /// round-trip. Use this for any test that exercises `join_lobby`.
-async fn grant_chips_for_test(ctx: &TestContext, user_pk: &Partition, chips: i64) {
+async fn grant_chips_for_test(_ctx: &TestContext, user_pk: &Partition, chips: i64) {
     let user_id = user_pk
         .to_string()
         .strip_prefix("USER#")
         .unwrap_or(&user_pk.to_string())
         .to_string();
-    let (pk, sk) = ArcadeWalletBalance::keys(&user_id);
-    let now = crate::common::utils::time::get_now_timestamp_millis();
-    let row = ArcadeWalletBalance {
-        pk,
-        sk,
-        created_at: now,
-        updated_at: now,
-        chip_balance: chips,
-    };
-    row.upsert(&ctx.ddb).await.expect("grant chips upsert");
+    let mut row = ArcadeWalletBalance::get_or_default(&user_id)
+        .await
+        .expect("get_or_default");
+    row.chip_balance = chips;
+    row.save().await.expect("grant chips save");
 }
 
 /// Drop the join balance gate for tests so we can exercise the
@@ -748,7 +738,7 @@ async fn test_join_creates_round_and_lobby_state_reflects_it() {
     let (_, admin) = ctx.create_admin_user().await;
     relax_balance_gate(&ctx, &admin).await;
     let _ = create_live_subject(&ctx, &admin).await;
-    grant_chips_for_test(&ctx, &ctx.test_user.0.pk, 1_000).await;
+    grant_chips_for_test(&ctx, &ctx.test_user.0.pk(), 1_000).await;
 
     let (status, _, body) = crate::test_post! {
         app: ctx.app.clone(),
@@ -780,7 +770,7 @@ async fn test_join_again_rejected() {
     let (_, admin) = ctx.create_admin_user().await;
     relax_balance_gate(&ctx, &admin).await;
     let _ = create_live_subject(&ctx, &admin).await;
-    grant_chips_for_test(&ctx, &ctx.test_user.0.pk, 1_000).await;
+    grant_chips_for_test(&ctx, &ctx.test_user.0.pk(), 1_000).await;
 
     let (status, _, _) = crate::test_post! {
         app: ctx.app.clone(),
@@ -804,7 +794,7 @@ async fn test_get_round_after_join() {
     let (_, admin) = ctx.create_admin_user().await;
     relax_balance_gate(&ctx, &admin).await;
     let _ = create_live_subject(&ctx, &admin).await;
-    grant_chips_for_test(&ctx, &ctx.test_user.0.pk, 1_000).await;
+    grant_chips_for_test(&ctx, &ctx.test_user.0.pk(), 1_000).await;
 
     let (_, _, body) = crate::test_post! {
         app: ctx.app.clone(),
@@ -832,7 +822,7 @@ async fn test_leave_after_join_clears_participant() {
     let (_, admin) = ctx.create_admin_user().await;
     relax_balance_gate(&ctx, &admin).await;
     let _ = create_live_subject(&ctx, &admin).await;
-    grant_chips_for_test(&ctx, &ctx.test_user.0.pk, 1_000).await;
+    grant_chips_for_test(&ctx, &ctx.test_user.0.pk(), 1_000).await;
 
     let (_, _, _) = crate::test_post! {
         app: ctx.app.clone(),
@@ -877,7 +867,7 @@ async fn fill_round_to_capacity(
     let _ = create_live_subject(ctx, admin).await;
 
     // First joiner = ctx.test_user
-    grant_chips_for_test(ctx, &ctx.test_user.0.pk, 1_000).await;
+    grant_chips_for_test(ctx, &ctx.test_user.0.pk(), 1_000).await;
     let (status, _, body) = crate::test_post! {
         app: ctx.app.clone(),
         path: "/api/fact-or-fold/lobby/join",
@@ -890,7 +880,7 @@ async fn fill_round_to_capacity(
     // Three more fresh users to hit capacity=4
     for _ in 0..3 {
         let (user, headers) = ctx.create_another_user().await;
-        grant_chips_for_test(ctx, &user.pk, 1_000).await;
+        grant_chips_for_test(ctx, &user.pk(), 1_000).await;
         let (status, _, _) = crate::test_post! {
             app: ctx.app.clone(),
             path: "/api/fact-or-fold/lobby/join",
@@ -963,7 +953,7 @@ async fn test_insider_statement_returns_some_for_one_returns_none_for_others() {
     let (_, admin) = ctx.create_admin_user().await;
     relax_balance_gate(&ctx, &admin).await;
     let _ = create_live_subject(&ctx, &admin).await;
-    grant_chips_for_test(&ctx, &ctx.test_user.0.pk, 1_000).await;
+    grant_chips_for_test(&ctx, &ctx.test_user.0.pk(), 1_000).await;
 
     let mut all_user_headers: Vec<axum::http::HeaderMap> =
         vec![ctx.test_user.1.clone()];
@@ -976,7 +966,7 @@ async fn test_insider_statement_returns_some_for_one_returns_none_for_others() {
     let round_id = body.id.0;
     for _ in 0..3 {
         let (user, headers) = ctx.create_another_user().await;
-        grant_chips_for_test(&ctx, &user.pk, 1_000).await;
+        grant_chips_for_test(&ctx, &user.pk(), 1_000).await;
         let (_, _, _) = crate::test_post! {
             app: ctx.app.clone(),
             path: "/api/fact-or-fold/lobby/join",
@@ -1034,19 +1024,18 @@ async fn test_non_participant_cannot_bet_or_heartbeat() {
 /// the next read/write triggers the lazy-advance ratchet without
 /// having to wait wall-clock seconds.
 async fn backdate_stage_deadline(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     round_id: &str,
     millis_in_past: i64,
 ) -> FactFoldRound {
-    let (pk, sk) = FactFoldRound::keys(round_id);
-    let mut row = FactFoldRound::get(&ctx.ddb, &pk, Some(sk))
+    let mut row = FactFoldRound::get_by_round_id(round_id)
         .await
-        .expect("ddb read")
+        .expect("pg read")
         .expect("round must exist");
     let now = crate::common::utils::time::get_now_timestamp_millis();
     row.stage_started_at = Some(now - millis_in_past - 1);
     row.stage_deadline_at = Some(now - millis_in_past);
-    row.upsert(&ctx.ddb).await.expect("backdate upsert");
+    row.upsert().await.expect("backdate upsert");
     row
 }
 
@@ -1273,22 +1262,21 @@ async fn test_post_chat_rejects_empty_or_overlong() {
 /// Force the round into `Debate` stage with `remaining_ms` left on
 /// the clock. Used to exercise both flip-slot-open and
 /// flip-slot-closed branches without depending on real elapsed time.
-async fn force_round_to_debate(ctx: &TestContext, round_id: &str, remaining_ms: i64) {
-    let (pk, sk) = FactFoldRound::keys(round_id);
-    let mut row = FactFoldRound::get(&ctx.ddb, &pk, Some(sk))
+async fn force_round_to_debate(_ctx: &TestContext, round_id: &str, remaining_ms: i64) {
+    let mut row = FactFoldRound::get_by_round_id(round_id)
         .await
-        .expect("ddb read")
+        .expect("pg read")
         .expect("round must exist");
     let now = crate::common::utils::time::get_now_timestamp_millis();
     row.status = crate::features::arcade::games::fact_or_fold::types::RoundStatus::Debate;
     row.stage_started_at = Some(now - 1_000);
     row.stage_deadline_at = Some(now + remaining_ms);
-    row.upsert(&ctx.ddb).await.expect("debate stage upsert");
+    row.upsert().await.expect("debate stage upsert");
 }
 
 /// Drop a `FactFoldBet` row directly into DDB so flip tests don't
 /// have to walk the round through NewsReveal → Bet → place a bet.
-async fn seed_bet(ctx: &TestContext, round_id: &str, user_pk: &Partition, side: &str) {
+async fn seed_bet(_ctx: &TestContext, round_id: &str, user_pk: &Partition, side: &str) {
     use crate::features::arcade::games::fact_or_fold::models::FactFoldBet;
     use crate::features::arcade::games::fact_or_fold::types::BetSide;
     let bet_side = match side {
@@ -1297,15 +1285,15 @@ async fn seed_bet(ctx: &TestContext, round_id: &str, user_pk: &Partition, side: 
         _ => BetSide::Real,
     };
     let row = FactFoldBet::new(round_id, user_pk.clone(), bet_side, 100);
-    row.upsert(&ctx.ddb).await.expect("seed bet");
+    row.save().await.expect("seed bet");
 }
 
 /// Drop a rationale row so flip tests can cite it without going
 /// through the rationale stage.
-async fn seed_rationale(ctx: &TestContext, round_id: &str, user_pk: &Partition) {
+async fn seed_rationale(_ctx: &TestContext, round_id: &str, user_pk: &Partition) {
     use crate::features::arcade::games::fact_or_fold::models::FactFoldRationale;
     let row = FactFoldRationale::new(round_id, user_pk.clone(), "valid rationale text".into(), true);
-    row.upsert(&ctx.ddb).await.expect("seed rationale");
+    row.save().await.expect("seed rationale");
 }
 
 #[tokio::test]
@@ -1332,7 +1320,7 @@ async fn test_flip_rejected_when_slot_closed_too_early() {
     reset_fact_fold_state(&ctx).await;
     let (_, admin) = ctx.create_admin_user().await;
     let (round_id, headers) = fill_round_to_capacity(&ctx, &admin).await;
-    seed_bet(&ctx, &round_id, &ctx.test_user.0.pk, "REAL").await;
+    seed_bet(&ctx, &round_id, &ctx.test_user.0.pk(), "REAL").await;
     force_round_to_debate(&ctx, &round_id, 30_000).await; // 30s remaining
 
     let cite = format!("USER#{}", uuid::Uuid::new_v4());
@@ -1354,10 +1342,10 @@ async fn test_flip_rejected_self_cite() {
     reset_fact_fold_state(&ctx).await;
     let (_, admin) = ctx.create_admin_user().await;
     let (round_id, headers) = fill_round_to_capacity(&ctx, &admin).await;
-    seed_bet(&ctx, &round_id, &ctx.test_user.0.pk, "REAL").await;
+    seed_bet(&ctx, &round_id, &ctx.test_user.0.pk(), "REAL").await;
     force_round_to_debate(&ctx, &round_id, 5_000).await;
 
-    let self_pk = ctx.test_user.0.pk.to_string();
+    let self_pk = ctx.test_user.0.pk().to_string();
     let (status, _, _) = crate::test_post! {
         app: ctx.app,
         path: &format!("/api/fact-or-fold/rounds/{}/bets/flip", round_id),
@@ -1373,19 +1361,18 @@ async fn test_flip_rejected_when_cite_has_no_rationale() {
     reset_fact_fold_state(&ctx).await;
     let (_, admin) = ctx.create_admin_user().await;
     let (round_id, headers) = fill_round_to_capacity(&ctx, &admin).await;
-    seed_bet(&ctx, &round_id, &ctx.test_user.0.pk, "REAL").await;
+    seed_bet(&ctx, &round_id, &ctx.test_user.0.pk(), "REAL").await;
     force_round_to_debate(&ctx, &round_id, 5_000).await;
 
     // Pick a real participant (the 2nd joiner) but don't seed their
     // rationale — flip must be rejected.
-    let (pk, _) = FactFoldRound::keys(&round_id);
-    let round = FactFoldRound::get(&ctx.ddb, &pk, Some(crate::common::types::EntityType::FactFoldRound(round_id.clone())))
+    let round = FactFoldRound::get_by_round_id(&round_id)
         .await
-        .expect("ddb read")
+        .expect("pg read")
         .expect("round must exist");
     let other_pk = round.participant_pks
         .iter()
-        .find(|p| p.to_string() != ctx.test_user.0.pk.to_string())
+        .find(|p| p.to_string() != ctx.test_user.0.pk().to_string())
         .expect("must have another participant")
         .to_string();
 
@@ -1404,19 +1391,19 @@ async fn test_flip_succeeds_in_last_10s_with_valid_cite() {
     reset_fact_fold_state(&ctx).await;
     let (_, admin) = ctx.create_admin_user().await;
     let (round_id, headers) = fill_round_to_capacity(&ctx, &admin).await;
-    seed_bet(&ctx, &round_id, &ctx.test_user.0.pk, "REAL").await;
+    seed_bet(&ctx, &round_id, &ctx.test_user.0.pk(), "REAL").await;
     force_round_to_debate(&ctx, &round_id, 5_000).await;
 
-    let (pk, _) = FactFoldRound::keys(&round_id);
-    let round = FactFoldRound::get(&ctx.ddb, &pk, Some(crate::common::types::EntityType::FactFoldRound(round_id.clone())))
+    let round = FactFoldRound::get_by_round_id(&round_id)
         .await
-        .expect("ddb read")
+        .expect("pg read")
         .expect("round must exist");
-    let other_pk = round.participant_pks
+    let other_pk: Partition = round.participant_pks
         .iter()
-        .find(|p| p.to_string() != ctx.test_user.0.pk.to_string())
+        .find(|p| p.to_string() != ctx.test_user.0.pk().to_string())
         .expect("must have another participant")
-        .clone();
+        .parse()
+        .expect("valid partition string");
     seed_rationale(&ctx, &round_id, &other_pk).await;
 
     let (status, _, body) = crate::test_post! {
@@ -1437,19 +1424,19 @@ async fn test_flip_rejected_when_already_used() {
     reset_fact_fold_state(&ctx).await;
     let (_, admin) = ctx.create_admin_user().await;
     let (round_id, headers) = fill_round_to_capacity(&ctx, &admin).await;
-    seed_bet(&ctx, &round_id, &ctx.test_user.0.pk, "REAL").await;
+    seed_bet(&ctx, &round_id, &ctx.test_user.0.pk(), "REAL").await;
     force_round_to_debate(&ctx, &round_id, 5_000).await;
 
-    let (pk, _) = FactFoldRound::keys(&round_id);
-    let round = FactFoldRound::get(&ctx.ddb, &pk, Some(crate::common::types::EntityType::FactFoldRound(round_id.clone())))
+    let round = FactFoldRound::get_by_round_id(&round_id)
         .await
-        .expect("ddb read")
+        .expect("pg read")
         .expect("round must exist");
-    let other_pk = round.participant_pks
+    let other_pk: Partition = round.participant_pks
         .iter()
-        .find(|p| p.to_string() != ctx.test_user.0.pk.to_string())
+        .find(|p| p.to_string() != ctx.test_user.0.pk().to_string())
         .expect("must have another participant")
-        .clone();
+        .parse()
+        .expect("valid partition string");
     seed_rationale(&ctx, &round_id, &other_pk).await;
 
     // First flip — succeeds.
@@ -1521,11 +1508,11 @@ async fn test_essence_register_rejects_short_rationale() {
     use crate::features::arcade::games::fact_or_fold::models::FactFoldRationale;
     let row = FactFoldRationale::new(
         &round_id,
-        ctx.test_user.0.pk.clone(),
+        ctx.test_user.0.pk(),
         "too short".into(),
         false, // essence_eligible: false (< 50 chars)
     );
-    row.upsert(&ctx.ddb).await.expect("seed short rationale");
+    row.save().await.expect("seed short rationale");
 
     let (status, _, _) = crate::test_post! {
         app: ctx.app,
@@ -1608,13 +1595,13 @@ async fn test_me_stats_after_settlement_reflects_round() {
 /// using a single side. Useful for setting up a clean
 /// winners/losers split before calling settle.
 async fn seed_bets_for_all(ctx: &TestContext, round_id: &str, side: &str) {
-    let (pk, sk) = FactFoldRound::keys(round_id);
-    let round = FactFoldRound::get(&ctx.ddb, &pk, Some(sk))
+    let round = FactFoldRound::get_by_round_id(round_id)
         .await
-        .expect("ddb read")
+        .expect("pg read")
         .expect("round must exist");
     for p in round.participant_pks.iter() {
-        seed_bet(ctx, round_id, p, side).await;
+        let user_pk: Partition = p.parse().expect("valid partition string");
+        seed_bet(ctx, round_id, &user_pk, side).await;
     }
 }
 
@@ -1893,7 +1880,7 @@ async fn test_round_bets_only_returns_own_during_bet_stage() {
     };
     assert_eq!(status, 200);
     assert_eq!(body.items.len(), 1, "pre-reveal must only contain caller's bet");
-    assert_eq!(body.items[0].user_pk, UserPartition::from(ctx.test_user.0.pk.clone()));
+    assert_eq!(body.items[0].user_pk, UserPartition::from(ctx.test_user.0.pk()));
 }
 
 #[tokio::test]
@@ -1941,13 +1928,13 @@ async fn test_round_rationales_redacts_text_until_reveal() {
     // Seed rationales for every player directly. Round is still in
     // NewsReveal — other players' text must be redacted, caller's
     // own text stays.
-    let (round_pk, round_sk) = FactFoldRound::keys(&round_id);
-    let round = FactFoldRound::get(&ctx.ddb, &round_pk, Some(round_sk))
+    let round = FactFoldRound::get_by_round_id(&round_id)
         .await
-        .expect("ddb read")
+        .expect("pg read")
         .expect("round must exist");
     for p in round.participant_pks.iter() {
-        seed_rationale(&ctx, &round_id, p).await;
+        let user_pk: Partition = p.parse().expect("valid partition string");
+        seed_rationale(&ctx, &round_id, &user_pk).await;
     }
 
     let (status, _, body) = crate::test_get! {
@@ -1958,7 +1945,7 @@ async fn test_round_rationales_redacts_text_until_reveal() {
     };
     assert_eq!(status, 200);
     assert_eq!(body.items.len(), 4, "all 4 rationale rows present");
-    let me = UserPartition::from(ctx.test_user.0.pk.clone());
+    let me = UserPartition::from(ctx.test_user.0.pk());
     let own = body
         .items
         .iter()
@@ -2094,65 +2081,64 @@ fn ms_now() -> i64 {
 /// pick logic queries both `Live` and `Scheduled`.
 #[cfg(test)]
 async fn put_subject_with_window(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     creator_pk: &Partition,
     status: SubjectStatus,
     scheduled_at: Option<i64>,
     expires_at: i64,
 ) -> String {
-    use crate::common::types::EntityType;
-    use crate::features::arcade::games::fact_or_fold::models::FactFoldSubject;
-    use crate::features::arcade::games::fact_or_fold::types::{RevealSource, Verdict};
+    use crate::features::arcade::games::fact_or_fold::models::{
+        CategoryTagList, FactFoldSubject, RevealSourceList,
+    };
 
     let now = ms_now();
-    let id = uuid::Uuid::now_v7().to_string();
+    let subject_id = uuid::Uuid::now_v7().to_string();
     let pick_at = scheduled_at.unwrap_or(now);
     let row = FactFoldSubject {
-        pk: Partition::FactFoldSubjects,
-        sk: EntityType::FactFoldSubject(id.clone()),
+        id: uuid::Uuid::now_v7(),
+        subject_id: subject_id.clone(),
         created_at: now,
         updated_at: now,
-        creator_pk: creator_pk.clone(),
+        creator_pk: creator_pk.to_string(),
         status,
         verdict: Verdict::Real,
-        headline_text: format!("Subject {}", &id[..8]),
+        headline_text: format!("Subject {}", &subject_id[..8]),
         body_excerpt: valid_body(),
         difficulty: 3,
-        category_tags: vec!["test".into()],
+        category_tags: CategoryTagList(vec!["test".into()]),
         source_label: "Source".into(),
         insider_statement: "insider".into(),
         reveal_summary: "summary".into(),
-        reveal_sources: Vec::<RevealSource>::new(),
+        reveal_sources: RevealSourceList(Vec::new()),
         scheduled_at,
         pick_at,
         expires_at,
     };
-    row.upsert(&ctx.ddb).await.expect("subject seed upsert");
-    id
+    row.create().await.expect("subject seed create");
+    subject_id
 }
 
 /// Force `round_capacity` to an arbitrary value by writing the
 /// settings row directly — the PUT endpoint's `>= 2` validator
 /// rejects single-user rounds that some tests need.
 #[cfg(test)]
-async fn force_round_capacity(ctx: &TestContext, capacity: i32) {
-    use crate::common::types::EntityType;
+async fn force_round_capacity(_ctx: &TestContext, capacity: i32) {
     use crate::features::arcade::games::fact_or_fold::models::FactFoldSettings;
-    use crate::features::arcade::models::ArcadeSettings;
+    use crate::features::arcade::models::{ARCADE_SETTINGS_SINGLETON, ArcadeSettings};
 
-    let mut response = FactFoldSettings::get_or_default(&ctx.ddb)
+    let mut response = FactFoldSettings::get_or_default()
         .await
         .expect("settings get_or_default");
     response.round_capacity = capacity;
     let row = FactFoldSettings::default().merge_response(response);
-    row.upsert(&ctx.ddb).await.expect("settings upsert");
+    row.save().await.expect("settings save");
 
     // Also relax the chip gate so single-user joins don't require
     // ArcadeSettings round-trips per test.
     let now = ms_now();
     let arcade_row = ArcadeSettings {
-        pk: Partition::ArcadeSettings,
-        sk: EntityType::ArcadeSettings,
+        id: uuid::Uuid::now_v7(),
+        singleton: ARCADE_SETTINGS_SINGLETON.to_string(),
         created_at: now,
         updated_at: now,
         rp_to_chip_ratio_bps: 10_000,
@@ -2160,7 +2146,7 @@ async fn force_round_capacity(ctx: &TestContext, capacity: i32) {
         min_convert_rp: 0,
         redeem_enabled: true,
     };
-    let _ = arcade_row.upsert(&ctx.ddb).await;
+    let _ = arcade_row.save().await;
 }
 
 // ── Group 1: Subject DTO + expires_at validation ─────────────────
@@ -2321,7 +2307,7 @@ async fn test_pick_skips_subject_past_expires_at() {
     let now = ms_now();
     let _ = put_subject_with_window(
         &ctx,
-        &admin_user.pk,
+        &admin_user.pk(),
         SubjectStatus::Live,
         None,
         now - 60_000, // expired
@@ -2350,7 +2336,7 @@ async fn test_pick_picks_subject_within_window() {
     let now = ms_now();
     let _ = put_subject_with_window(
         &ctx,
-        &admin_user.pk,
+        &admin_user.pk(),
         SubjectStatus::Live,
         None,
         now + 3_600_000,
@@ -2375,14 +2361,14 @@ async fn test_pick_prefers_latest_pick_at_among_active() {
     reset_fact_fold_state(&ctx).await;
     let (admin_user, admin) = ctx.create_admin_user().await;
     relax_balance_gate(&ctx, &admin).await;
-    grant_chips_for_test(&ctx, &ctx.test_user.0.pk, 1_000).await;
+    grant_chips_for_test(&ctx, &ctx.test_user.0.pk(), 1_000).await;
 
     let now = ms_now();
     // Older subject (smaller pick_at) — would win FIFO; should lose
     // under the new "newest active wins" rule.
     let _older = put_subject_with_window(
         &ctx,
-        &admin_user.pk,
+        &admin_user.pk(),
         SubjectStatus::Live,
         Some(now - 60_000),
         now + 3_600_000,
@@ -2390,7 +2376,7 @@ async fn test_pick_prefers_latest_pick_at_among_active() {
     .await;
     let newer = put_subject_with_window(
         &ctx,
-        &admin_user.pk,
+        &admin_user.pk(),
         SubjectStatus::Live,
         Some(now - 1_000),
         now + 3_600_000,
@@ -2421,14 +2407,14 @@ async fn test_pick_picks_scheduled_when_time_due() {
     reset_fact_fold_state(&ctx).await;
     let (admin_user, admin) = ctx.create_admin_user().await;
     relax_balance_gate(&ctx, &admin).await;
-    grant_chips_for_test(&ctx, &ctx.test_user.0.pk, 1_000).await;
+    grant_chips_for_test(&ctx, &ctx.test_user.0.pk(), 1_000).await;
 
     let now = ms_now();
     // Scheduled subject whose scheduled_at is already in the past
     // — should be pickable WITHOUT admin promoting to Live.
     let id = put_subject_with_window(
         &ctx,
-        &admin_user.pk,
+        &admin_user.pk(),
         SubjectStatus::Scheduled,
         Some(now - 60_000),
         now + 3_600_000,
@@ -2476,7 +2462,7 @@ async fn test_leave_during_waiting_clears_in_flight_allows_rejoin() {
     let (_, admin) = ctx.create_admin_user().await;
     relax_balance_gate(&ctx, &admin).await;
     let _ = create_live_subject(&ctx, &admin).await;
-    grant_chips_for_test(&ctx, &ctx.test_user.0.pk, 1_000).await;
+    grant_chips_for_test(&ctx, &ctx.test_user.0.pk(), 1_000).await;
 
     // First join — default capacity=4, so round stays in Waiting.
     let (status, _, _) = crate::test_post! {
@@ -2550,13 +2536,13 @@ async fn test_user_can_play_different_subjects_in_series() {
     // we can settle without staging 4 distinct users.
     relax_balance_gate(&ctx, &admin).await;
     force_round_capacity(&ctx, 1).await;
-    grant_chips_for_test(&ctx, &ctx.test_user.0.pk, 10_000).await;
+    grant_chips_for_test(&ctx, &ctx.test_user.0.pk(), 10_000).await;
 
     let now = ms_now();
     // Subject A: window already ending so we can rotate to B quickly.
     let subject_a = put_subject_with_window(
         &ctx,
-        &admin_user.pk,
+        &admin_user.pk(),
         SubjectStatus::Live,
         Some(now - 1_000),
         now + 3_600_000,
@@ -2584,20 +2570,20 @@ async fn test_user_can_play_different_subjects_in_series() {
 
     // Subject A is now blocked for ctx.test_user. Retire it from the
     // window so the lobby moves on to B.
-    use crate::common::types::EntityType;
     use crate::features::arcade::games::fact_or_fold::models::FactFoldSubject;
-    let (pk, sk) = (
-        Partition::FactFoldSubjects,
-        EntityType::FactFoldSubject(subject_a.clone()),
-    );
-    let _ = FactFoldSubject::updater(&pk, &sk)
-        .with_expires_at(now - 1)
-        .execute(&ctx.ddb)
-        .await;
+    use postgres::PostgresEntity;
+    if let Ok(Some(subject_a_row)) = FactFoldSubject::get_by_subject_id(&subject_a).await {
+        let _ = FactFoldSubject::repository()
+            .update(
+                subject_a_row.id,
+                FactFoldSubject::update().expires_at(now - 1),
+            )
+            .await;
+    }
 
     let subject_b = put_subject_with_window(
         &ctx,
-        &admin_user.pk,
+        &admin_user.pk(),
         SubjectStatus::Live,
         Some(now),
         now + 3_600_000,
