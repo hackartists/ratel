@@ -31,7 +31,7 @@ fn team_uuid(team_pk: &Partition) -> Option<Uuid> {
 /// leave-parent's orphan-clear path) but no dangling link.
 #[cfg(feature = "server")]
 pub async fn detach_sub_team_link(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     parent_pk: &Partition,
     child_pk: &Partition,
     child_id: &str,

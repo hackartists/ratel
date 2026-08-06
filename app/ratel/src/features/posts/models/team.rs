@@ -125,7 +125,7 @@ impl Team {
     /// auth migrates. `cli` is retained solely for the `UserTeam` write.
     pub async fn create_new_team(
         user: &User,
-        cli: &aws_sdk_dynamodb::Client,
+        _cli: &aws_sdk_dynamodb::Client,
         display_name: String,
         profile_url: String,
         username: String,
@@ -209,7 +209,7 @@ impl Team {
     /// precedence, then the (DynamoDB) `UserTeam.role`. `None` when the user is
     /// not a member.
     pub async fn get_user_role(
-        cli: &aws_sdk_dynamodb::Client,
+        _cli: &aws_sdk_dynamodb::Client,
         team_pk: &Partition,
         user_pk: &Partition,
     ) -> Result<Option<crate::features::social::pages::member::dto::TeamRole>> {

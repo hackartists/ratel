@@ -37,7 +37,7 @@ pub async fn list_user_posts_handler(
     bookmark: Option<String>,
 ) -> Result<ListItemsResponse<PostResponse>> {
     let conf = crate::features::posts::config::get();
-    let cli = conf.dynamodb();
+    let _cli = conf.dynamodb();
 
     let user: Option<crate::features::auth::User> = user.into();
 

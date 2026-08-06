@@ -419,7 +419,7 @@ impl Post {
     }
 
     pub async fn unlike_comment(
-        post_id: Uuid,
+        _post_id: Uuid,
         comment_id: Uuid,
         user_pk: Partition,
     ) -> Result<()> {

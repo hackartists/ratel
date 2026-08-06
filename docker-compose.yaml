@@ -5,6 +5,19 @@ services:
     environment:
       IP: "0.0.0.0"
       PORT: "8080"
+      # Postgres migration: the app resolves the global pool from DATABASE_URL
+      # and migrates the inventory schema on startup (see common/run.rs). The
+      # AWS_*/DYNAMO_* vars remain only so the still-present (vestigial) DynamoDB
+      # client can be constructed at boot — no live DynamoDB reads/writes happen.
+      DATABASE_URL: "postgres://ratel:ratel@postgres:5432/ratel"
+      AWS_REGION: "ap-northeast-2"
+      AWS_DEFAULT_REGION: "ap-northeast-2"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      AWS_ACCOUNT_ID: "test"
+      DYNAMO_ENDPOINT: "http://localstack:4566"
+      DYNAMO_TABLE_PREFIX: "ratel-local"
+      RUST_LOG: "error"
     ports:
       - "8080:8080"
     healthcheck:
@@ -17,6 +30,8 @@ services:
       timeout: 10s
       retries: 100
     depends_on:
+      postgres:
+        condition: service_healthy
       localstack:
         condition: service_healthy
       localstack-init:
@@ -25,6 +40,29 @@ services:
       - ratel-network
     profiles:
       - testing
+
+  # Postgres backing store for the migrated app (replaces the DynamoDB data
+  # layer). The app creates every table from its PostgresEntity inventory on
+  # startup, so no init container is needed.
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ratel
+      POSTGRES_PASSWORD: ratel
+      POSTGRES_DB: ratel
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ratel -d ratel"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - ratel-network
+    profiles:
+      - testing
+      - infra
 
   app-shell:
     image: rust
