@@ -131,7 +131,6 @@ pub async fn handle_poll_xp(
     let user_avatar = answer.profile_url.unwrap_or_default();
 
     crate::features::activity::controllers::record_activity(
-        cli,
         space_partition.clone(),
         author,
         poll_action_id.clone(),
@@ -206,7 +205,6 @@ pub async fn handle_quiz_xp(
     let user_avatar = attempt.profile_url.unwrap_or_default();
 
     crate::features::activity::controllers::record_activity(
-        cli,
         space_partition.clone(),
         author,
         quiz_action_id.clone(),
@@ -273,7 +271,6 @@ pub async fn handle_discussion_xp(
     let is_first_contribution = comment.parent_comment_sk.is_none();
 
     crate::features::activity::controllers::record_activity(
-        cli,
         space_partition.clone(),
         author,
         discussion_action_id.clone(),
@@ -349,7 +346,6 @@ pub async fn handle_follow_xp(
     let user_avatar = follow.profile_url.unwrap_or_default();
 
     crate::features::activity::controllers::record_activity(
-        cli,
         space_partition.clone(),
         author,
         action_id.clone(),

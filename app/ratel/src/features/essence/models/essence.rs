@@ -1,94 +1,85 @@
-use crate::features::essence::types::*;
-#[cfg(feature = "server")]
-#[allow(unused_imports)]
-use rmcp::schemars;
-#[cfg(feature = "server")]
 use crate::features::essence::models::UserEssenceStats;
+use crate::features::essence::types::*;
 use crate::*;
+use postgres::PostgresEntity;
+use postgres::ops::{EnumOp, StringOp};
+use uuid::Uuid;
 
-/// Row stored under `USER#{user_id}` for every source the user has
-/// contributed to their Essence House.
+/// One row per source a user has contributed to their Essence House.
 ///
-/// Indexes (all sharing `pk = USER#{uid}` — each GSI just re-sorts the
-/// user's rows on a different dimension, so listing can paginate
-/// correctly regardless of the chosen sort column):
-/// - **Primary** — `sk = ESSENCE#{encoded}`. Deterministic sk from the
-///   source's pk+sk, so writes are idempotent (upsert == put).
-/// - **GSI1 (`find_by_user_recent`)** — `sk = updated_at` for "last
-///   edited" pagination (DynamoEntity encodes the i64 lexicographically).
-/// - **GSI2 (`find_by_user_by_words`)** — `sk = word_count` for
-///   "word count desc" pagination.
-/// - **GSI3 (`find_by_user_by_title`)** — `sk = title` for "title A–Z"
-///   pagination. Raw string sort, same convention as `Team.display_name`.
-#[derive(Debug, Clone, Serialize, Deserialize, DynamoEntity, Default)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+/// The DynamoDB `(pk = USER#{uid}, sk = ESSENCE#{encoded})` layout is
+/// collapsed onto a surrogate `id` PK plus a natural key
+/// `unique(owner_pk, source_id)`:
+/// - `owner_pk` holds the raw attribution partition string (`"USER#..."`
+///   or `"TEAM#..."`) — team-authored content stays attributed to the team.
+///   Kept as a plain `String` (cross-feature reference — no FK yet).
+/// - `source_id` is the deterministic encoded id derived from the referenced
+///   source's pk+sk, so re-indexing the same source upserts in place
+///   (`upsert_on(["owner_pk","source_id"])`).
+///
+/// The three former GSIs (updated_at / word_count / title) become plain
+/// indexed columns; ordering is done with `ORDER BY` in `list_for_user`.
+#[cfg(feature = "server")]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, postgres::PostgresEntity)]
+#[postgres(table = "essences", unique(owner_pk, source_id))]
 pub struct Essence {
-    /// Primary pk AND every GSI's pk — the same `USER#{user_id}` serves all
-    /// indexes, they just differ in their sort key.
-    #[dynamo(name = "find_by_user_recent", index = "gsi1", pk)]
-    #[dynamo(name = "find_by_user_by_words", index = "gsi2", pk)]
-    #[dynamo(name = "find_by_user_by_title", index = "gsi3", pk)]
-    pub pk: Partition,
+    /// Surrogate primary key (minted `now_v7` on insert when nil).
+    pub id: Uuid,
 
-    /// `ESSENCE#{deterministic_id}` where `deterministic_id` encodes the
-    /// referenced source's pk+sk.
-    pub sk: EntityType,
+    /// Attribution partition string (`"USER#..."` / `"TEAM#..."`). Cross-
+    /// feature reference — plain column, no `references=` FK.
+    #[postgres(index)]
+    pub owner_pk: String,
+
+    /// Deterministic id encoding the referenced source's pk+sk. Together with
+    /// `owner_pk` forms the natural upsert key and the wire `id`.
+    pub source_id: String,
 
     pub source_kind: EssenceSourceKind,
 
-    #[dynamo(index = "gsi3", sk)]
+    #[postgres(index)]
     pub title: String,
 
     pub source_path: String,
 
-    /// Raw pk/sk strings of the referenced entity — stored as `String` (not
-    /// `Partition`/`EntityType`) so we can reference arbitrary source
-    /// systems (Notion, future integrations) without forcing every foreign
-    /// id into the Partition enum.
+    /// Raw pk/sk strings of the referenced entity — stored as `String` so we
+    /// can reference arbitrary source systems (Notion, future integrations)
+    /// without forcing every foreign id into the Partition enum.
     pub source_pk: String,
     pub source_sk: String,
 
-    /// Space this essence belongs to, if any. Stored as a raw partition
-    /// string (`SPACE#{uuid}`) so the client can navigate to the space for
-    /// poll/quiz/discussion-comment rows whose `source_pk` doesn't contain
-    /// the space id directly (e.g. a DiscussionComment's source_pk is the
-    /// parent SpacePost, not the space).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Space this essence belongs to, if any (raw `SPACE#{uuid}` string).
+    /// Nullable column.
     pub space_pk: Option<String>,
 
-    /// `i64` (not `u32`) so DynamoEntity's numeric lexicographic encoder
-    /// accepts it as the GSI2 sort key — same pattern as
-    /// `common/models/auth/user.rs` using `updated_at: i64` as a gsi sk.
-    #[dynamo(index = "gsi2", sk)]
-    #[serde(default)]
+    #[postgres(index)]
     pub word_count: i64,
 
     pub created_at: i64,
 
-    #[dynamo(index = "gsi1", sk)]
+    #[postgres(order, index)]
     pub updated_at: i64,
 }
 
 #[cfg(feature = "server")]
 impl Essence {
     /// Build a deterministic Essence id from the referenced source's pk+sk.
-    /// We replace `#` with `_` (the delimiter DynamoEntity itself uses) so
-    /// the encoded id has a single top-level `~` separator and survives a
-    /// round-trip through key parsing.
+    /// Replaces `#` with `_` so the encoded id has a single top-level `~`
+    /// separator.
     fn encode_source_id(source_pk: &str, source_sk: &str) -> String {
         let pk = source_pk.replace('#', "_");
         let sk = source_sk.replace('#', "_");
         format!("{pk}~{sk}")
     }
 
-    pub fn essence_sk_for(source_pk: &Partition, source_sk: &EntityType) -> EntityType {
-        let id = Self::encode_source_id(&source_pk.to_string(), &source_sk.to_string());
-        EntityType::Essence(id)
+    /// The deterministic `source_id` (natural key + wire id) for a source.
+    pub fn source_id_for(source_pk: &Partition, source_sk: &EntityType) -> String {
+        Self::encode_source_id(&source_pk.to_string(), &source_sk.to_string())
     }
 
     /// Construct (without persisting) an Essence row for the given source.
     pub fn new(
-        user_pk: Partition,
+        owner_pk: Partition,
         source_pk: Partition,
         source_sk: EntityType,
         source_kind: EssenceSourceKind,
@@ -102,8 +93,9 @@ impl Essence {
         let source_sk_str = source_sk.to_string();
 
         Self {
-            pk: user_pk,
-            sk: Self::essence_sk_for(&source_pk, &source_sk),
+            id: Uuid::nil(),
+            owner_pk: owner_pk.to_string(),
+            source_id: Self::source_id_for(&source_pk, &source_sk),
             source_kind,
             title,
             source_path,
@@ -116,23 +108,41 @@ impl Essence {
         }
     }
 
-    /// Idempotent write — deterministic sk means calling this twice for the
-    /// same source overwrites the existing row rather than duplicating it.
-    /// Preserves `created_at` from the existing row if one is present.
-    /// Atomically updates the per-user counter row so hero stats stay in
-    /// sync with the table.
+    /// Fetch the row mirroring `source_id` under `owner_pk`, if any.
+    pub async fn get_for_user(owner_pk: &Partition, source_id: &str) -> Result<Option<Self>> {
+        Self::get_row(&owner_pk.to_string(), source_id).await
+    }
+
+    async fn get_row(owner_pk: &str, source_id: &str) -> Result<Option<Self>> {
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .owner_pk(StringOp::Eq(owner_pk.to_string()))
+                    .source_id(StringOp::Eq(source_id.to_string())),
+            )
+            .await
+            .map_err(|e| {
+                crate::error!("essence get_row failed: {e}");
+                EssenceError::ReadFailed.into()
+            })
+    }
+
+    /// Idempotent write — the `(owner_pk, source_id)` natural key means calling
+    /// this twice for the same source updates the existing row rather than
+    /// duplicating it. Preserves `created_at` from the existing row. Keeps the
+    /// per-user counter row in sync via `bump_stats`.
     ///
-    /// Named `put` rather than `upsert` because DynamoEntity's derive
-    /// already generates an `upsert` method on every entity.
-    pub async fn put(&self, cli: &aws_sdk_dynamodb::Client) -> Result<()> {
+    /// Named `put` rather than `upsert` because `PostgresEntity` already
+    /// generates repository `upsert`/`upsert_on` methods.
+    pub async fn put(&self) -> Result<()> {
         let mut row = self.clone();
-        let existing = Self::get(cli, row.pk.clone(), Some(row.sk.clone()))
+        let existing = Self::get_row(&self.owner_pk, &self.source_id)
             .await
             .ok()
             .flatten();
         // When the row exists, only bump the word delta and skip source
-        // counters (it's the same source being overwritten). On first insert
-        // bump the global `+1` and the matching per-kind `+1`.
+        // counters. On first insert bump the global `+1` and the matching
+        // per-kind `+1`.
         let (source_delta, words_delta, kind_delta_kind) = match &existing {
             Some(old) => {
                 row.created_at = old.created_at;
@@ -140,27 +150,26 @@ impl Essence {
             }
             None => (1i64, row.word_count, Some(row.source_kind)),
         };
-        row.upsert(cli).await.map_err(|e| {
-            crate::error!("essence upsert failed: {e}");
-            EssenceError::UpsertFailed
-        })?;
-        Self::bump_stats(cli, &row.pk, source_delta, words_delta, kind_delta_kind).await;
+        Self::repository()
+            .upsert_on(&["owner_pk", "source_id"], &row)
+            .await
+            .map_err(|e| {
+                crate::error!("essence upsert failed: {e}");
+                EssenceError::UpsertFailed
+            })?;
+        Self::bump_stats(&row.owner_pk, source_delta, words_delta, kind_delta_kind).await;
         Ok(())
     }
 
-    /// Atomic counter update via DynamoDB `ADD` — creates the stats row if
-    /// it doesn't exist, else increments in place. Intentionally swallows
-    /// failures (logged only) so an Essence write never fails because the
-    /// counter is behind; counters can be re-computed offline if they
-    /// drift.
+    /// Read-modify-write counter update. The DynamoDB atomic `ADD` is replaced
+    /// with a get-default-then-`upsert_on(owner_pk)`; per the original design
+    /// counter drift is tolerated (logged, never fails a write) and can be
+    /// reconciled by the migrate endpoint.
     ///
     /// `kind_delta` is `Some(kind)` when the per-kind counter for that kind
-    /// should be bumped by the same `source_delta` (either +1 on insert or
-    /// -1 on delete). Pass `None` when the row is only being updated (word
-    /// count change, no source delta).
+    /// should be bumped by the same `source_delta`.
     async fn bump_stats(
-        cli: &aws_sdk_dynamodb::Client,
-        user_pk: &Partition,
+        owner_pk: &str,
         source_delta: i64,
         words_delta: i64,
         kind_delta: Option<EssenceSourceKind>,
@@ -168,50 +177,56 @@ impl Essence {
         if source_delta == 0 && words_delta == 0 && kind_delta.is_none() {
             return;
         }
-        let mut updater = UserEssenceStats::updater(user_pk, EntityType::UserEssenceStats)
-            .increase_total_sources(source_delta)
-            .increase_total_words(words_delta);
+        let mut stats = match UserEssenceStats::get_or_default(owner_pk).await {
+            Ok(s) => s,
+            Err(e) => {
+                crate::error!("essence stats bump read failed: {e}");
+                return;
+            }
+        };
+        stats.total_sources += source_delta;
+        stats.total_words += words_delta;
         if let Some(kind) = kind_delta {
-            updater = match kind {
-                EssenceSourceKind::Notion => updater.increase_total_notion(source_delta),
-                EssenceSourceKind::Post => updater.increase_total_post(source_delta),
+            match kind {
+                EssenceSourceKind::Notion => stats.total_notion += source_delta,
+                EssenceSourceKind::Post => stats.total_post += source_delta,
                 EssenceSourceKind::PostComment | EssenceSourceKind::DiscussionComment => {
-                    updater.increase_total_comment(source_delta)
+                    stats.total_comment += source_delta
                 }
-                EssenceSourceKind::Poll => updater.increase_total_poll(source_delta),
-                EssenceSourceKind::Quiz => updater.increase_total_quiz(source_delta),
+                EssenceSourceKind::Poll => stats.total_poll += source_delta,
+                EssenceSourceKind::Quiz => stats.total_quiz += source_delta,
                 EssenceSourceKind::FactFoldRationale => {
-                    updater.increase_total_fact_fold_rationale(source_delta)
+                    stats.total_fact_fold_rationale += source_delta
                 }
-            };
+            }
         }
-        if let Err(e) = updater.execute(cli).await {
-            crate::error!("essence stats bump failed: {e}");
+        if let Err(e) = UserEssenceStats::repository()
+            .upsert_on(&["owner_pk"], &stats)
+            .await
+        {
+            crate::error!("essence stats bump write failed: {e}");
         }
     }
 
     /// Overwrite the stats row with an exact snapshot. Used by the migrate
-    /// endpoint to reconcile drift that can accumulate when per-row stat
-    /// bumps silently failed during earlier writes.
-    pub async fn replace_stats(
-        cli: &aws_sdk_dynamodb::Client,
-        user_pk: &Partition,
-        totals: UserEssenceStats,
-    ) -> Result<()> {
+    /// endpoint to reconcile drift.
+    pub async fn replace_stats(owner_pk: &str, totals: UserEssenceStats) -> Result<()> {
         let mut row = totals;
-        row.pk = user_pk.clone();
-        row.sk = EntityType::UserEssenceStats;
-        row.upsert(cli).await.map_err(|e| {
-            crate::error!("essence stats replace failed: {e}");
-            EssenceError::UpsertFailed.into()
-        })
+        row.owner_pk = owner_pk.to_string();
+        UserEssenceStats::repository()
+            .upsert_on(&["owner_pk"], &row)
+            .await
+            .map_err(|e| {
+                crate::error!("essence stats replace failed: {e}");
+                EssenceError::UpsertFailed
+            })?;
+        Ok(())
     }
 
-    /// Convenience wrapper: construct + upsert in one call so call sites in
-    /// Post/Poll/Quiz/Comment handlers stay a single line.
+    /// Convenience wrapper: construct + upsert in one call.
+    #[allow(clippy::too_many_arguments)]
     pub async fn upsert_for_source(
-        cli: &aws_sdk_dynamodb::Client,
-        user_pk: Partition,
+        owner_pk: Partition,
         source_pk: Partition,
         source_sk: EntityType,
         source_kind: EssenceSourceKind,
@@ -221,7 +236,7 @@ impl Essence {
         space_pk: Option<Partition>,
     ) -> Result<()> {
         let row = Self::new(
-            user_pk,
+            owner_pk,
             source_pk,
             source_sk,
             source_kind,
@@ -230,97 +245,95 @@ impl Essence {
             word_count,
             space_pk,
         );
-        row.put(cli).await
+        row.put().await
     }
 
     /// Remove the Essence row mirroring the given source, if any. Silently
-    /// succeeds when no row exists — useful for cascade deletes where the
-    /// source may never have been indexed (e.g. legacy pre-migration rows).
-    /// Decrements the per-user counter row by the removed row's `chunks`
-    /// and one source.
+    /// succeeds when no row exists.
     pub async fn delete_for_source(
-        cli: &aws_sdk_dynamodb::Client,
-        user_pk: Partition,
+        owner_pk: Partition,
         source_pk: &Partition,
         source_sk: &EntityType,
     ) -> Result<()> {
-        let sk = Self::essence_sk_for(source_pk, source_sk);
-        Self::detach_by_sk(cli, user_pk, sk).await
+        let source_id = Self::source_id_for(source_pk, source_sk);
+        Self::detach_by_source_id(&owner_pk, source_id).await
     }
 
-    /// Shared delete path for both cascade (delete_for_source) and the
-    /// user-facing `DELETE /api/essences/:id` endpoint. Looks up the row
-    /// to capture its `chunks` value before deleting so the counter
-    /// decrement is accurate.
-    pub async fn detach_by_sk(
-        cli: &aws_sdk_dynamodb::Client,
-        user_pk: Partition,
-        sk: EntityType,
-    ) -> Result<()> {
-        let row = Self::get(cli, user_pk.clone(), Some(sk.clone()))
-            .await
-            .ok()
-            .flatten();
-        let Some(row) = row else {
+    /// Shared delete path for both cascade and the user-facing
+    /// `DELETE /api/essences/:id` endpoint. Captures the row's word count and
+    /// kind before deleting so the counter decrement is accurate.
+    pub async fn detach_by_source_id(owner_pk: &Partition, source_id: String) -> Result<()> {
+        let Some(row) = Self::get_for_user(owner_pk, &source_id).await? else {
             return Ok(());
         };
         let words = row.word_count;
         let kind = row.source_kind;
-        Self::delete(cli, user_pk.clone(), Some(sk))
-            .await
-            .map_err(|e| {
-                crate::error!("essence cascade delete failed: {e}");
-                EssenceError::DeleteFailed
-            })?;
-        Self::bump_stats(cli, &user_pk, -1, -words, Some(kind)).await;
+        Self::repository().delete(row.id).await.map_err(|e| {
+            crate::error!("essence cascade delete failed: {e}");
+            EssenceError::DeleteFailed
+        })?;
+        Self::bump_stats(&owner_pk.to_string(), -1, -words, Some(kind)).await;
         Ok(())
     }
 
-    /// List Essence rows for a user, paginated through the GSI matching
-    /// `sort`. DynamoDB returns rows already in sorted order — no
-    /// in-memory re-sort, so pagination is correct at any data size.
-    ///
-    /// All three GSIs share `pk = USER#{uid}`, which other entity types
-    /// (UserPoint, UserActivity, UserFollow, …) also write. Without a
-    /// base-sk filter the raw GSI query returns non-Essence rows that fail
-    /// to deserialize with `missing field source_kind`, so we attach
-    /// `.filter_sk_prefix("ESSENCE#")` to restrict results server-side.
+    /// Paginated, sorted, kind-filtered list of a user's Essence rows.
+    /// `page` is 1-based. Kind filtering is done in SQL (no in-memory scan),
+    /// so pagination stays correct at any data size.
     pub async fn list_for_user(
-        cli: &aws_sdk_dynamodb::Client,
-        user_pk: Partition,
+        owner_pk: &Partition,
         sort: EssenceSort,
-        bookmark: Option<String>,
-        limit: i32,
-    ) -> Result<(Vec<Self>, Option<String>)> {
-        let opts = Self::opt_with_bookmark(bookmark)
-            .limit(limit)
-            .filter_sk_prefix(EntityType::Essence(String::new()).to_string());
-        let result = match sort {
+        kind: KindFilter,
+        page: i64,
+        page_size: i64,
+    ) -> Result<postgres::Page<Self>> {
+        let mut q = Self::query().owner_pk(StringOp::Eq(owner_pk.to_string()));
+        q = match kind {
+            KindFilter::All => q,
+            KindFilter::Notion => q.source_kind(EnumOp::Eq(EssenceSourceKind::Notion)),
+            KindFilter::Post => q.source_kind(EnumOp::Eq(EssenceSourceKind::Post)),
+            KindFilter::Poll => q.source_kind(EnumOp::Eq(EssenceSourceKind::Poll)),
+            KindFilter::Quiz => q.source_kind(EnumOp::Eq(EssenceSourceKind::Quiz)),
+            KindFilter::Comment => q.source_kind(EnumOp::In(vec![
+                EssenceSourceKind::PostComment,
+                EssenceSourceKind::DiscussionComment,
+            ])),
+        };
+        q = match sort {
             EssenceSort::LastEditedDesc => {
-                Self::find_by_user_recent(cli, user_pk, opts.scan_index_forward(false)).await
+                q.order_by(EssenceColumn::UpdatedAt, postgres::Order::Desc)
             }
             EssenceSort::WordCountDesc => {
-                Self::find_by_user_by_words(cli, user_pk, opts.scan_index_forward(false)).await
+                q.order_by(EssenceColumn::WordCount, postgres::Order::Desc)
             }
-            EssenceSort::TitleAsc => {
-                Self::find_by_user_by_title(cli, user_pk, opts.scan_index_forward(true)).await
-            }
+            EssenceSort::TitleAsc => q.order_by(EssenceColumn::Title, postgres::Order::Asc),
         };
-        result.map_err(|e| {
-            crate::error!("essence list failed: {e}");
-            EssenceError::ReadFailed.into()
-        })
+        Self::repository()
+            .find(q.page(page).page_size(page_size))
+            .await
+            .map_err(|e| {
+                crate::error!("essence list failed: {e}");
+                EssenceError::ReadFailed.into()
+            })
+    }
+
+    /// Every Essence row, unpaginated — used only by the admin stats rebuild.
+    pub async fn find_all_rows() -> Result<Vec<Self>> {
+        Self::repository()
+            .find(Self::query())
+            .await
+            .map(|p| p.items)
+            .map_err(|e| {
+                crate::error!("essence scan-all failed: {e}");
+                EssenceError::ReadFailed.into()
+            })
     }
 }
 
+#[cfg(feature = "server")]
 impl From<Essence> for EssenceResponse {
     fn from(e: Essence) -> Self {
-        let id = match &e.sk {
-            EntityType::Essence(id) => id.clone(),
-            other => other.to_string(),
-        };
         Self {
-            id,
+            id: e.source_id,
             source_kind: e.source_kind,
             title: e.title,
             source_path: e.source_path,

@@ -1,16 +1,30 @@
+#[cfg(feature = "server")]
 use crate::features::ai_moderator::*;
 #[cfg(feature = "server")]
-#[allow(unused_imports)]
-use rmcp::schemars;
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, DynamoEntity, PartialEq)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+/// Per-discussion AI moderator configuration.
+///
+/// Postgres migration: the DynamoDB single-table key
+/// `pk = CompositePartition(SpacePartition, discussion_sk)` +
+/// `sk = EntityType::AiModeratorConfig` (a singleton per discussion) becomes a
+/// surrogate `id` PK with the `unique(space_id, discussion_id)` natural key.
+/// `space_id` / `discussion_id` are cross-feature references (owned by the
+/// spaces feature) stored as plain strings — **no** FK for now.
+#[cfg(feature = "server")]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "ai_moderator_configs", unique(space_id, discussion_id))]
 pub struct AiModeratorConfig {
-    pub pk: CompositePartition<SpacePartition, String>,
-    pub sk: EntityType,
+    pub id: Uuid,
+    #[postgres(index)]
+    pub space_id: String,
+    pub discussion_id: String,
     pub enabled: bool,
     pub reply_interval: i64,
     pub guidelines: String,
+    #[postgres(order)]
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -20,8 +34,9 @@ impl AiModeratorConfig {
     pub fn new(space_id: SpacePartition, discussion_sk: String) -> Self {
         let now = crate::common::utils::time::get_now_timestamp_millis();
         Self {
-            pk: CompositePartition(space_id, discussion_sk),
-            sk: EntityType::AiModeratorConfig,
+            id: Uuid::now_v7(),
+            space_id: space_id.to_string(),
+            discussion_id: discussion_sk,
             enabled: false,
             reply_interval: 5,
             guidelines: String::new(),

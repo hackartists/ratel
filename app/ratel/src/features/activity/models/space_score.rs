@@ -1,23 +1,33 @@
-use crate::common::macros::DynamoEntity;
 use crate::features::activity::*;
+use postgres::PostgresEntity;
+use postgres::ops::{NumOp, StringOp};
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, DynamoEntity)]
+/// Aggregated per-(space, author) score. One row per participant per space.
+///
+/// Postgres migration: the DynamoDB identity was
+/// `pk = (SpacePartition, AuthorPartition)` + `sk = SPACE_SCORE`. That collapses
+/// to the natural key `(space_id, author_pk)` (composite UNIQUE) on a surrogate
+/// `id` PK. The `find_by_space` / `find_by_space_rank` GSIs become an ordered
+/// query on the `space_id` index (`ORDER BY total_score DESC`).
+///
+/// `space_id` (spaces) and `author_pk` (users/teams) are cross-feature
+/// references — plain columns, **no FK** for now.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, PostgresEntity)]
+#[postgres(table = "space_scores", unique(space_id, author_pk))]
 pub struct SpaceScore {
-    pub pk: CompositePartition<SpacePartition, AuthorPartition>,
-    pub sk: EntityType,
+    pub id: Uuid,
 
-    // FIXME: remove gsi1 field when space score table is migrated, currently it is used for querying scores by space, but it is redundant since we can query by space_pk
-    #[dynamo(prefix = "SCSP", name = "find_by_space", index = "gsi1", pk)]
-    #[dynamo(prefix = "SCSP", name = "find_by_space_rank", index = "gsi2", pk)]
-    pub space_pk: Partition,
-    #[dynamo(prefix = "SCR", index = "gsi1", sk)]
-    #[dynamo(prefix = "SCR", index = "gsi2", order = 1, sk)]
+    /// Cross-feature reference to the space (bare id).
+    #[postgres(index)]
+    pub space_id: String,
+    /// Actor as full `Partition` string (`USER#…` / `TEAM#…`).
+    pub author_pk: String,
+
     pub total_score: i64,
     #[serde(default)]
     pub rank_total_score: i64,
 
-    #[dynamo(index = "gsi2", order = 3, sk)]
-    pub user_pk: AuthorPartition,
     pub user_name: String,
     pub user_avatar: String,
 
@@ -26,7 +36,7 @@ pub struct SpaceScore {
     pub follow_score: i64,
     pub discussion_score: i64,
 
-    #[dynamo(index = "gsi2", order = 2, sk)]
+    #[postgres(order)]
     pub updated_at: i64,
 }
 
@@ -39,15 +49,13 @@ impl SpaceScore {
         user_avatar: String,
     ) -> Self {
         let now = crate::common::utils::time::get_now_timestamp_millis();
-        let space_pk: Partition = space_id.clone().into();
 
         Self {
-            pk: CompositePartition(space_id, author.clone()),
-            sk: EntityType::SpaceScore,
-            space_pk,
+            id: Uuid::now_v7(),
+            space_id: space_id.0,
+            author_pk: author.to_string(),
             total_score: 0,
             rank_total_score: 0,
-            user_pk: author,
             user_name,
             user_avatar,
             poll_score: 0,
@@ -58,16 +66,68 @@ impl SpaceScore {
         }
     }
 
-    pub fn keys(
+    /// The single score row for `(space, author)`, if the participant has any
+    /// recorded activity yet.
+    pub async fn get_for(
         space_id: &SpacePartition,
         author: &AuthorPartition,
-    ) -> (
-        CompositePartition<SpacePartition, AuthorPartition>,
-        EntityType,
-    ) {
-        (
-            CompositePartition(space_id.clone(), author.clone()),
-            EntityType::SpaceScore,
-        )
+    ) -> crate::common::Result<Option<Self>> {
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .space_id(StringOp::Eq(space_id.0.clone()))
+                    .author_pk(StringOp::Eq(author.to_string())),
+            )
+            .await
+            .map_err(super::map_db_err)
+    }
+
+    /// Every score row for a space, highest `total_score` first. `page` is
+    /// 1-based; `page_size` bounds the result. Returns the `postgres::Page`
+    /// so callers can derive the next bookmark from `total_pages`.
+    pub async fn find_by_space_rank(
+        space_id: &SpacePartition,
+        page: i64,
+        page_size: i64,
+    ) -> crate::common::Result<postgres::Page<Self>> {
+        use postgres::Order;
+        Self::repository()
+            .find(
+                Self::query()
+                    .space_id(StringOp::Eq(space_id.0.clone()))
+                    .order_by(SpaceScoreColumn::TotalScore, Order::Desc)
+                    .page_size(page_size)
+                    .page(page),
+            )
+            .await
+            .map_err(super::map_db_err)
+    }
+
+    /// Count how many participants outrank `total_score` in a space
+    /// (strictly higher). The caller's 1-based rank is `count + 1`.
+    pub async fn count_higher(
+        space_id: &SpacePartition,
+        total_score: i64,
+    ) -> crate::common::Result<i64> {
+        let page = Self::repository()
+            .find(
+                Self::query()
+                    .space_id(StringOp::Eq(space_id.0.clone()))
+                    .total_score(NumOp::Gt(total_score))
+                    .page_size(1)
+                    .page(1),
+            )
+            .await
+            .map_err(super::map_db_err)?;
+        Ok(page.total_count)
+    }
+
+    /// Natural-key upsert on `(space_id, author_pk)`, preserving the surrogate
+    /// `id`. Used by score aggregation (read-modify-write).
+    pub async fn save(&self) -> crate::common::Result<Self> {
+        Self::repository()
+            .upsert_on(&["space_id", "author_pk"], self)
+            .await
+            .map_err(super::map_db_err)
     }
 }

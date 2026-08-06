@@ -21,6 +21,13 @@ impl TestContext {
             .with_env_filter("error")
             .try_init();
 
+        // Postgres test harness: init the global pool + migrate the schema for
+        // every migrated PostgresEntity model, once per test process. Runs
+        // alongside the still-DynamoDB entities during the migration. Uses
+        // DATABASE_URL if set, else the local asset-postgres container.
+        #[cfg(feature = "server")]
+        init_test_postgres().await;
+
         let config = crate::config::get();
         let cli = config.common.dynamodb();
 
@@ -59,6 +66,29 @@ impl TestContext {
     pub async fn create_admin_user(&self) -> (User, axum::http::HeaderMap) {
         create_admin_user_session(self.app.clone(), &self.ddb).await
     }
+}
+
+/// One-time Postgres init for the test process: connect the pool, install it
+/// as the global pool the migrated models resolve through, and apply the
+/// inventory schema (creates every migrated table). Idempotent across the many
+/// `setup()` calls in a run (tests run `--test-threads=1`).
+#[cfg(feature = "server")]
+async fn init_test_postgres() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static DONE: AtomicBool = AtomicBool::new(false);
+    if DONE.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://asset:asset@127.0.0.1:5433/ratel_test".to_string());
+    let pool = postgres::sqlx::PgPool::connect(&url)
+        .await
+        .expect("test postgres: connect (is the postgres container up?)");
+    postgres::set_global_pool(pool.clone());
+    postgres::Schema::from_inventory()
+        .migrate(&pool)
+        .await
+        .expect("test postgres: schema migrate");
 }
 
 pub fn create_user_name() -> String {

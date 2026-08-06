@@ -504,7 +504,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         }
         "ActivityScoreAggregate" => {
             let activity: crate::features::activity::models::SpaceActivity = deserialize(new)?;
-            let space_pk = activity.space_pk.clone();
+            let space_pk = crate::common::types::Partition::Space(activity.space_id.clone());
             let r = crate::features::activity::services::aggregate_score(activity).await;
             fanout_hot_space(&space_pk).await;
             r
@@ -562,24 +562,18 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         }
         "EssenceIndexPost" => {
             let post: crate::features::posts::models::Post = deserialize(new)?;
-            let cfg = crate::common::CommonConfig::default();
-            let cli = cfg.dynamodb();
-            crate::features::essence::services::index_post(cli, &post).await
+            crate::features::essence::services::index_post(&post).await
         }
         "EssenceIndexPostComment" => {
             let comment: crate::features::posts::models::PostComment = deserialize(new)?;
-            let cfg = crate::common::CommonConfig::default();
-            let cli = cfg.dynamodb();
-            crate::features::essence::services::index_post_comment(cli, &comment).await
+            crate::features::essence::services::index_post_comment(&comment).await
         }
         "EssenceIndexDiscussionComment" => {
             let comment: crate::features::spaces::pages::actions::actions::discussion::SpacePostComment =
                 deserialize(new)?;
             let space_pk = comment.space_pk.clone();
-            let cfg = crate::common::CommonConfig::default();
-            let cli = cfg.dynamodb();
             let r =
-                crate::features::essence::services::index_discussion_comment(cli, &comment).await;
+                crate::features::essence::services::index_discussion_comment(&comment).await;
             fanout_if_some(space_pk.as_ref()).await;
             r
         }
@@ -628,24 +622,18 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         }
         "EssenceDeletePost" => {
             let post: crate::features::posts::models::Post = deserialize(old)?;
-            let cfg = crate::common::CommonConfig::default();
-            let cli = cfg.dynamodb();
-            crate::features::essence::services::detach_post(cli, &post).await
+            crate::features::essence::services::detach_post(&post).await
         }
         "EssenceDeletePostComment" => {
             let comment: crate::features::posts::models::PostComment = deserialize(old)?;
-            let cfg = crate::common::CommonConfig::default();
-            let cli = cfg.dynamodb();
-            crate::features::essence::services::detach_post_comment(cli, &comment).await
+            crate::features::essence::services::detach_post_comment(&comment).await
         }
         "EssenceDeleteDiscussionComment" => {
             let comment: crate::features::spaces::pages::actions::actions::discussion::SpacePostComment =
                 deserialize(old)?;
             let space_pk = comment.space_pk.clone();
-            let cfg = crate::common::CommonConfig::default();
-            let cli = cfg.dynamodb();
             let r =
-                crate::features::essence::services::detach_discussion_comment(cli, &comment).await;
+                crate::features::essence::services::detach_discussion_comment(&comment).await;
             fanout_if_some(space_pk.as_ref()).await;
             r
         }

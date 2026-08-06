@@ -51,7 +51,7 @@ pub async fn migrate_essences_handler() -> Result<MigrateEssencesResponse> {
 
     migrate_posts_and_comments(cli, &mut out).await;
     migrate_spaces_content(cli, &mut out).await;
-    rebuild_user_essence_stats(cli, &mut out).await;
+    rebuild_user_essence_stats(&mut out).await;
 
     Ok(out)
 }
@@ -63,18 +63,9 @@ pub async fn migrate_essences_handler() -> Result<MigrateEssencesResponse> {
 /// write). It also populates the new `total_{kind}` fields for users who
 /// predate them.
 #[cfg(feature = "server")]
-async fn rebuild_user_essence_stats(
-    cli: &aws_sdk_dynamodb::Client,
-    out: &mut MigrateEssencesResponse,
-) {
-    let essences = match Essence::find_all(
-        cli,
-        EntityType::Essence(String::new()),
-        Essence::opt_all(),
-    )
-    .await
-    {
-        Ok((v, _)) => v,
+async fn rebuild_user_essence_stats(out: &mut MigrateEssencesResponse) {
+    let essences = match Essence::find_all_rows().await {
+        Ok(v) => v,
         Err(e) => {
             crate::error!("migrate: scan essences for stats rebuild failed: {e}");
             out.errors += 1;
@@ -84,7 +75,7 @@ async fn rebuild_user_essence_stats(
 
     let mut totals_by_user: HashMap<String, UserEssenceStats> = HashMap::new();
     for row in essences {
-        let key = row.pk.to_string();
+        let key = row.owner_pk.clone();
         let entry = totals_by_user
             .entry(key)
             .or_insert_with(UserEssenceStats::default);
@@ -103,15 +94,7 @@ async fn rebuild_user_essence_stats(
     }
 
     for (user_pk_str, totals) in totals_by_user {
-        let user_pk: Partition = match user_pk_str.parse() {
-            Ok(p) => p,
-            Err(e) => {
-                crate::error!("migrate: skip stats rebuild — bad user pk {user_pk_str}: {e}");
-                out.errors += 1;
-                continue;
-            }
-        };
-        if let Err(e) = Essence::replace_stats(cli, &user_pk, totals).await {
+        if let Err(e) = Essence::replace_stats(&user_pk_str, totals).await {
             crate::error!("migrate: replace stats failed for {user_pk_str}: {e}");
             out.errors += 1;
             continue;
@@ -140,7 +123,7 @@ async fn migrate_posts_and_comments(
     let comment_sk_prefix = EntityType::PostComment(String::new()).to_string();
 
     for post in posts {
-        if let Err(e) = essence_services::index_post(cli, &post).await {
+        if let Err(e) = essence_services::index_post(&post).await {
             crate::error!("migrate: upsert post essence failed: {e}");
             out.errors += 1;
         } else {
@@ -158,7 +141,7 @@ async fn migrate_posts_and_comments(
         };
 
         for c in comments {
-            if let Err(e) = essence_services::index_post_comment(cli, &c).await {
+            if let Err(e) = essence_services::index_post_comment(&c).await {
                 crate::error!("migrate: upsert post comment essence failed: {e}");
                 out.errors += 1;
                 continue;
@@ -262,9 +245,7 @@ async fn migrate_spaces_content(
                         if c.space_pk.is_none() {
                             c.space_pk = Some(space_pk.clone());
                         }
-                        if let Err(e) =
-                            essence_services::index_discussion_comment(cli, &c).await
-                        {
+                        if let Err(e) = essence_services::index_discussion_comment(&c).await {
                             crate::error!(
                                 "migrate: upsert discussion comment essence failed: {e}"
                             );

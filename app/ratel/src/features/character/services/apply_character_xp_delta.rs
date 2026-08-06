@@ -9,28 +9,25 @@ use crate::features::character::models::{CharacterXp, CharacterXpSource};
 ///
 /// `score`: the *new* SpaceScore (post-MODIFY image, or post-INSERT image).
 pub async fn apply_character_xp_delta(score: SpaceScore) -> crate::common::Result<()> {
-    let user_pk: Partition = match score.user_pk.clone() {
-        crate::features::activity::types::AuthorPartition::User(id) => Partition::User(id),
-        crate::features::activity::types::AuthorPartition::Team(id) => Partition::Team(id),
-        crate::features::activity::types::AuthorPartition::Unknown => {
-            tracing::warn!(
-                space_pk = %score.space_pk,
-                "apply_character_xp_delta: unknown author partition; skipping"
-            );
-            return Ok(());
-        }
-    };
-    let space_pk_str = match &score.space_pk {
-        Partition::Space(s) => s.clone(),
+    use std::str::FromStr;
+    // `author_pk` is now stored as the full `Partition` string
+    // (`USER#…` / `TEAM#…`). Parse it back and map to the user/team partition.
+    let user_pk: Partition = match crate::features::activity::types::AuthorPartition::from_str(
+        &score.author_pk,
+    ) {
+        Ok(crate::features::activity::types::AuthorPartition::User(id)) => Partition::User(id),
+        Ok(crate::features::activity::types::AuthorPartition::Team(id)) => Partition::Team(id),
         _ => {
             tracing::warn!(
-                user_pk = %user_pk,
-                space_pk = %score.space_pk,
-                "apply_character_xp_delta: unexpected space_pk variant; skipping"
+                space_id = %score.space_id,
+                author_pk = %score.author_pk,
+                "apply_character_xp_delta: unknown/invalid author partition; skipping"
             );
             return Ok(());
         }
     };
+    // `space_id` is the bare space id (cross-feature reference column).
+    let space_pk_str = score.space_id.clone();
 
     let last_seen = CharacterXpSource::get_for(&user_pk, &space_pk_str)
         .await?

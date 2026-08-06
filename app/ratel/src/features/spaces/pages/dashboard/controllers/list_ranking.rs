@@ -11,16 +11,17 @@ pub async fn list_ranking_handler(
 
     use crate::features::activity::models::SpaceScore;
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let space_pk: crate::common::Partition = space_id.into();
+    // Bookmark is now a 1-based page number (Postgres offset pagination
+    // replaces the DynamoDB opaque last-evaluated-key bookmark).
+    let page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
 
-    let mut opts = SpaceScore::opt().limit(50).scan_index_forward(true);
-    if let Some(bm) = bookmark {
-        opts = opts.bookmark(bm);
-    }
-
-    let (scores, _) = SpaceScore::find_by_space_rank(cli, &space_pk, opts).await?;
+    let scores = SpaceScore::find_by_space_rank(&space_id, page, 50)
+        .await?
+        .items;
 
     let entries: Vec<RankingEntry> = scores
         .iter()

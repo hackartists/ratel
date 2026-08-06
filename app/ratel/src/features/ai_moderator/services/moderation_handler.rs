@@ -20,14 +20,21 @@ fn model_id() -> String {
 }
 
 pub async fn should_moderate(
-    cli: &aws_sdk_dynamodb::Client,
     space_id: &SpacePartition,
     discussion_sk: &str,
     reply_count: i64,
 ) -> Result<Option<AiModeratorConfig>> {
-    let pk = CompositePartition(space_id.clone(), discussion_sk.to_string());
-    let config =
-        AiModeratorConfig::get(cli, &pk, Some(EntityType::AiModeratorConfig)).await?;
+    use postgres::PostgresEntity;
+    use postgres::ops::StringOp;
+
+    let config = AiModeratorConfig::repository()
+        .find_one(
+            AiModeratorConfig::query()
+                .space_id(StringOp::Eq(space_id.to_string()))
+                .discussion_id(StringOp::Eq(discussion_sk.to_string())),
+        )
+        .await
+        .map_err(crate::common::Error::from)?;
 
     match config {
         Some(config) if config.enabled && config.reply_interval > 0 => {

@@ -14,7 +14,9 @@
       "Bash(pkill -f \"dx serve\")",
       "Bash(lsof -ti:8100)",
       "Bash(xargs kill -9)",
-      "Bash(echo \"stopped. 8100: $\\(lsof -ti:8100 2>&1 && echo busy || echo free\\)\")"
+      "Bash(echo \"stopped. 8100: $\\(lsof -ti:8100 2>&1 && echo busy || echo free\\)\")",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
     ]
   },
   "hooks": {

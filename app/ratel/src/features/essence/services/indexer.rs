@@ -23,7 +23,6 @@ use crate::features::spaces::pages::actions::actions::quiz::SpaceQuiz;
 /// the rationale's (pk, sk) so the user's Essence House surfaces it
 /// alongside posts/comments/etc.
 pub async fn index_fact_fold_rationale(
-    cli: &aws_sdk_dynamodb::Client,
     rationale: &crate::features::arcade::games::fact_or_fold::models::FactFoldRationale,
 ) -> Result<()> {
     let title = summarize(&rationale.text, 80);
@@ -34,7 +33,6 @@ pub async fn index_fact_fold_rationale(
     );
     let word_count = rationale.text.split_whitespace().count() as i64;
     Essence::upsert_for_source(
-        cli,
         rationale.user_pk.clone(),
         rationale.pk.clone(),
         rationale.sk.clone(),
@@ -47,7 +45,7 @@ pub async fn index_fact_fold_rationale(
     .await
 }
 
-pub async fn index_post(cli: &aws_sdk_dynamodb::Client, post: &Post) -> Result<()> {
+pub async fn index_post(post: &Post) -> Result<()> {
     let title = if post.title.is_empty() {
         "(Untitled post)".to_string()
     } else {
@@ -58,7 +56,6 @@ pub async fn index_post(cli: &aws_sdk_dynamodb::Client, post: &Post) -> Result<(
         + post.title.split_whitespace().count() as u32) as i64;
 
     Essence::upsert_for_source(
-        cli,
         post.user_pk.clone(),
         post.pk.clone(),
         EntityType::Post,
@@ -71,14 +68,11 @@ pub async fn index_post(cli: &aws_sdk_dynamodb::Client, post: &Post) -> Result<(
     .await
 }
 
-pub async fn detach_post(cli: &aws_sdk_dynamodb::Client, post: &Post) -> Result<()> {
-    Essence::delete_for_source(cli, post.user_pk.clone(), &post.pk, &EntityType::Post).await
+pub async fn detach_post(post: &Post) -> Result<()> {
+    Essence::delete_for_source(post.user_pk.clone(), &post.pk, &EntityType::Post).await
 }
 
-pub async fn index_post_comment(
-    cli: &aws_sdk_dynamodb::Client,
-    comment: &PostComment,
-) -> Result<()> {
+pub async fn index_post_comment(comment: &PostComment) -> Result<()> {
     let title = summarize(&comment.content, 80);
     let source_path = format!(
         "Ratel comment · {} / {}",
@@ -88,7 +82,6 @@ pub async fn index_post_comment(
     let word_count = comment.content.split_whitespace().count() as i64;
 
     Essence::upsert_for_source(
-        cli,
         comment.author_pk.clone(),
         comment.pk.clone(),
         comment.sk.clone(),
@@ -101,11 +94,8 @@ pub async fn index_post_comment(
     .await
 }
 
-pub async fn detach_post_comment(
-    cli: &aws_sdk_dynamodb::Client,
-    comment: &PostComment,
-) -> Result<()> {
-    Essence::delete_for_source(cli, comment.author_pk.clone(), &comment.pk, &comment.sk).await
+pub async fn detach_post_comment(comment: &PostComment) -> Result<()> {
+    Essence::delete_for_source(comment.author_pk.clone(), &comment.pk, &comment.sk).await
 }
 
 /// Looks up the parent space's `user_pk` to attribute the essence row to the
@@ -127,7 +117,6 @@ pub async fn index_poll(cli: &aws_sdk_dynamodb::Client, poll: &SpacePoll) -> Res
         + poll.description.split_whitespace().count()) as i64;
 
     Essence::upsert_for_source(
-        cli,
         creator_pk,
         poll.pk.clone(),
         poll.sk.clone(),
@@ -142,7 +131,7 @@ pub async fn index_poll(cli: &aws_sdk_dynamodb::Client, poll: &SpacePoll) -> Res
 
 pub async fn detach_poll(cli: &aws_sdk_dynamodb::Client, poll: &SpacePoll) -> Result<()> {
     let creator_pk = lookup_space_creator(cli, &poll.pk).await?;
-    Essence::delete_for_source(cli, creator_pk, &poll.pk, &poll.sk).await
+    Essence::delete_for_source(creator_pk, &poll.pk, &poll.sk).await
 }
 
 /// Quizzes carry their displayable title/description on the `SpaceAction`
@@ -191,7 +180,6 @@ pub async fn index_quiz(cli: &aws_sdk_dynamodb::Client, quiz: &SpaceQuiz) -> Res
         + action_description.split_whitespace().count()) as i64;
 
     Essence::upsert_for_source(
-        cli,
         creator_pk,
         quiz.pk.clone(),
         quiz.sk.clone(),
@@ -206,17 +194,14 @@ pub async fn index_quiz(cli: &aws_sdk_dynamodb::Client, quiz: &SpaceQuiz) -> Res
 
 pub async fn detach_quiz(cli: &aws_sdk_dynamodb::Client, quiz: &SpaceQuiz) -> Result<()> {
     let creator_pk = lookup_space_creator(cli, &quiz.pk).await?;
-    Essence::delete_for_source(cli, creator_pk, &quiz.pk, &quiz.sk).await
+    Essence::delete_for_source(creator_pk, &quiz.pk, &quiz.sk).await
 }
 
 /// `space_pk` for the essence row comes from the comment's denormalized
 /// `space_pk` field (set by `SpacePostComment::new`). Older rows missing the
 /// field index without `space_pk`, which only degrades the "open in space"
 /// shortcut and not list/search.
-pub async fn index_discussion_comment(
-    cli: &aws_sdk_dynamodb::Client,
-    comment: &SpacePostComment,
-) -> Result<()> {
+pub async fn index_discussion_comment(comment: &SpacePostComment) -> Result<()> {
     let title = summarize(&comment.content, 80);
     let source_path = format!(
         "Discussion · {} / {}",
@@ -226,7 +211,6 @@ pub async fn index_discussion_comment(
     let word_count = comment.content.split_whitespace().count() as i64;
 
     Essence::upsert_for_source(
-        cli,
         comment.author_pk.clone(),
         comment.pk.clone(),
         comment.sk.clone(),
@@ -239,11 +223,8 @@ pub async fn index_discussion_comment(
     .await
 }
 
-pub async fn detach_discussion_comment(
-    cli: &aws_sdk_dynamodb::Client,
-    comment: &SpacePostComment,
-) -> Result<()> {
-    Essence::delete_for_source(cli, comment.author_pk.clone(), &comment.pk, &comment.sk).await
+pub async fn detach_discussion_comment(comment: &SpacePostComment) -> Result<()> {
+    Essence::delete_for_source(comment.author_pk.clone(), &comment.pk, &comment.sk).await
 }
 
 /// Resolve `space.user_pk` from a `Space` partition. Used to attribute

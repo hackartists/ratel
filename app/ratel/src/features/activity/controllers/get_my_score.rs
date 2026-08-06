@@ -24,35 +24,31 @@ pub async fn get_my_score_handler(space_id: SpacePartition) -> Result<MyScoreRes
         return Ok(MyScoreResponse::default());
     };
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
     let author = AuthorPartition::from(user.pk.clone());
-    let (pk, sk) = SpaceScore::keys(&space_id, &author);
 
-    let score = SpaceScore::get(cli, &pk, Some(sk))
+    let score_opt = SpaceScore::get_for(&space_id, &author)
         .await
         .map_err(|e| {
             crate::error!("score: {e:?}");
             ActivityError::ScoreLoadFailed
-        })?
-        .unwrap_or_default();
-
-    // Calculate rank by counting entries with higher score
-    let space_pk: Partition = space_id.into();
-    let opts = SpaceScore::opt_all().scan_index_forward(false);
-
-    let (all_scores, _) = SpaceScore::find_by_space_rank(cli, &space_pk, opts)
-        .await
-        .map_err(|e| {
-            crate::error!("ranking: {e:?}");
-            ActivityError::RankingLoadFailed
         })?;
-    let rank = all_scores
-        .iter()
-        .position(|s| s.user_pk == author)
-        .map(|pos| (pos as u32) + 1)
-        .unwrap_or(0);
+
+    // Rank = number of participants with a strictly higher total_score, + 1.
+    // No score row yet (never participated) → rank 0, mirroring the old
+    // "user not found in the ranking list" behaviour.
+    let rank = match &score_opt {
+        Some(score) => {
+            let higher = SpaceScore::count_higher(&space_id, score.total_score)
+                .await
+                .map_err(|e| {
+                    crate::error!("ranking: {e:?}");
+                    ActivityError::RankingLoadFailed
+                })?;
+            (higher as u32) + 1
+        }
+        None => 0,
+    };
+    let score = score_opt.unwrap_or_default();
 
     Ok(MyScoreResponse {
         total_score: score.total_score,

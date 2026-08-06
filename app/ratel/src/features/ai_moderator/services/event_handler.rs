@@ -32,7 +32,6 @@ pub async fn handle_ai_moderator_event(post: SpacePost) -> Result<()> {
 
     // Check if AI moderation should trigger for this reply count
     let config = match moderation_handler::should_moderate(
-        cli,
         &space_id,
         &discussion_sk_str,
         post.comments,

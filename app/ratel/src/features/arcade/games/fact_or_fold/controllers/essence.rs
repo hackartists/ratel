@@ -94,7 +94,7 @@ pub async fn register_essence_handler(
         return Err(FactOrFoldError::RationaleInvalid.into());
     }
 
-    crate::features::essence::services::indexer::index_fact_fold_rationale(cli, &rationale)
+    crate::features::essence::services::indexer::index_fact_fold_rationale(&rationale)
         .await
         .map_err(|e| {
             crate::error!("register_essence_handler index failed: {e}");

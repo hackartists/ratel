@@ -8,18 +8,13 @@ use crate::features::auth::User;
 /// Post / Poll / Quiz / Comment is untouched. If the user later updates
 /// the same source, a new Essence row will be recreated.
 ///
-/// Routes through `Essence::detach_by_sk` so the per-user counter row is
-/// decremented in the same call.
+/// Routes through `Essence::detach_by_source_id` so the per-user counter row
+/// is decremented in the same call.
 #[delete("/api/essences/:essence_id", user: User)]
 pub async fn delete_essence_handler(essence_id: String) -> Result<()> {
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
-
-    let sk = EntityType::Essence(essence_id);
-
     // Confirm the row exists under the caller's pk before acting — guards
     // against a user deleting someone else's row via a guessed id.
-    match Essence::get(cli, user.pk.clone(), Some(sk.clone())).await {
+    match Essence::get_for_user(&user.pk, &essence_id).await {
         Ok(Some(_)) => {}
         Ok(None) => return Err(EssenceError::NotFound.into()),
         Err(e) => {
@@ -28,5 +23,5 @@ pub async fn delete_essence_handler(essence_id: String) -> Result<()> {
         }
     }
 
-    Essence::detach_by_sk(cli, user.pk.clone(), sk).await
+    Essence::detach_by_source_id(&user.pk, essence_id).await
 }

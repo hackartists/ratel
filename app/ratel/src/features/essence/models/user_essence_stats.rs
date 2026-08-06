@@ -1,26 +1,27 @@
+use crate::features::essence::types::*;
 use crate::*;
-#[cfg(feature = "server")]
-#[allow(unused_imports)]
-use rmcp::schemars;
+use postgres::PostgresEntity;
+use postgres::ops::StringOp;
+use uuid::Uuid;
 
-/// Per-user aggregate counters for the Essence list. Maintained by atomic
-/// DynamoDB `ADD` operations from `Essence::put` and the delete paths, so
-/// the hero card can show accurate totals in one roundtrip instead of
-/// paginating the entire index.
+/// Per-user aggregate counters for the Essence list. Maintained by
+/// read-modify-write from `Essence::put` and the delete paths, so the hero
+/// card can show accurate totals in one roundtrip.
 ///
-/// Singleton — there's exactly one row per user under
-/// `pk = USER#{uid}`, `sk = UserEssenceStats`.
+/// Singleton per user — `unique(owner_pk)`. `owner_pk` is the raw attribution
+/// partition string (`"USER#..."` / `"TEAM#..."`), a cross-feature reference
+/// stored as a plain column (no FK yet).
 ///
-/// Per-kind fields (`total_notion`/`total_post`/`total_comment`/`total_poll`
-/// /`total_quiz`) mirror the client `KindFilter` chips. `total_comment` is
-/// the aggregate of `PostComment` + `DiscussionComment` so the client can
-/// use a single counter per chip and the server-side kind-filter query
-/// returns a consistent total.
-#[derive(Debug, Clone, Serialize, Deserialize, DynamoEntity, Default)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+/// Per-kind fields mirror the client `KindFilter` chips. `total_comment` is
+/// the aggregate of `PostComment` + `DiscussionComment`.
+#[cfg(feature = "server")]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, postgres::PostgresEntity)]
+#[postgres(table = "user_essence_stats", unique(owner_pk))]
 pub struct UserEssenceStats {
-    pub pk: Partition,
-    pub sk: EntityType,
+    pub id: Uuid,
+
+    #[postgres(index)]
+    pub owner_pk: String,
 
     #[serde(default)]
     pub total_sources: i64,
@@ -37,31 +38,28 @@ pub struct UserEssenceStats {
     pub total_poll: i64,
     #[serde(default)]
     pub total_quiz: i64,
-    /// Count of Fact-or-Fold rationales registered to Essence
-    /// (PR6 step 4). Mirrors `total_post` / `total_comment` etc.
+    /// Count of Fact-or-Fold rationales registered to Essence.
     #[serde(default)]
     pub total_fact_fold_rationale: i64,
 }
 
 #[cfg(feature = "server")]
 impl UserEssenceStats {
-    /// Fetch the counter row, returning zeros when the user has never had
-    /// any Essence rows (the first `put` will create it via atomic ADD).
-    pub async fn get_or_default(
-        cli: &aws_sdk_dynamodb::Client,
-        user_pk: Partition,
-    ) -> Result<Self> {
-        let sk = EntityType::UserEssenceStats;
-        match Self::get(cli, user_pk.clone(), Some(sk.clone())).await {
+    /// Fetch the counter row, returning zeros (with `owner_pk` set) when the
+    /// user has never had any Essence rows.
+    pub async fn get_or_default(owner_pk: &str) -> Result<Self> {
+        match Self::repository()
+            .find_one(Self::query().owner_pk(StringOp::Eq(owner_pk.to_string())))
+            .await
+        {
             Ok(Some(row)) => Ok(row),
             Ok(None) => Ok(Self {
-                pk: user_pk,
-                sk,
+                owner_pk: owner_pk.to_string(),
                 ..Default::default()
             }),
             Err(e) => {
                 crate::error!("essence stats read failed: {e}");
-                Err(crate::features::essence::types::EssenceError::ReadFailed.into())
+                Err(EssenceError::ReadFailed.into())
             }
         }
     }

@@ -92,8 +92,8 @@ pub async fn participate_space(
     }
 
     let author = AuthorPartition::from(user.pk.clone());
-    let (score_pk, score_sk) = SpaceScore::keys(&space_id, &author);
-    let existing_score = SpaceScore::get(dynamo, &score_pk, Some(score_sk.clone())).await?;
+    // SpaceScore is now Postgres-backed — fetch the existing row by natural key.
+    let existing_score = SpaceScore::get_for(&space_id, &author).await?;
 
     // Broadcast audience members fall through to the fresh-participate
     // path below, which creates both `SpaceParticipant` and an `Accepted`
@@ -122,23 +122,25 @@ pub async fn participate_space(
                     let new_space = SpaceCommon::updater(&space.pk, &space.sk)
                         .increase_participants(1)
                         .with_updated_at(now);
-                    let mut txs = vec![
+                    let txs = vec![
                         sp.create_transact_write_item(),
                         new_space.transact_write_item(),
                     ];
-                    if existing_score.is_none() {
-                        txs.push(
-                            SpaceScore::new(
-                                space_id.clone(),
-                                author.clone(),
-                                sp.display_name.clone(),
-                                sp.profile_url.clone(),
-                            )
-                            .create_transact_write_item(),
-                        );
-                    }
 
                     crate::transact_write_items!(dynamo, txs)?;
+
+                    // SpaceScore lives in Postgres now — persist it separately
+                    // (outside the DynamoDB transaction) on first participation.
+                    if existing_score.is_none() {
+                        SpaceScore::new(
+                            space_id.clone(),
+                            author.clone(),
+                            sp.display_name.clone(),
+                            sp.profile_url.clone(),
+                        )
+                        .save()
+                        .await?;
+                    }
 
                     return Ok(ParticipateSpaceResponse {
                         username: sp.username,
@@ -164,24 +166,26 @@ pub async fn participate_space(
         .with_updated_at(now);
     let invitation = SpaceInvitationMember::new(space.pk.clone(), user.clone())
         .with_status(InvitationStatus::Accepted);
-    let mut txs = vec![
+    let txs = vec![
         sp.create_transact_write_item(),
         space_update.transact_write_item(),
         invitation.upsert_transact_write_item(),
     ];
-    if existing_score.is_none() {
-        txs.push(
-            SpaceScore::new(
-                space_id,
-                author,
-                sp.display_name.clone(),
-                sp.profile_url.clone(),
-            )
-            .create_transact_write_item(),
-        );
-    }
 
     crate::transact_write_items!(dynamo, txs)?;
+
+    // SpaceScore lives in Postgres now — persist it separately (outside the
+    // DynamoDB transaction) on first participation.
+    if existing_score.is_none() {
+        SpaceScore::new(
+            space_id,
+            author,
+            sp.display_name.clone(),
+            sp.profile_url.clone(),
+        )
+        .save()
+        .await?;
+    }
 
     Ok(ParticipateSpaceResponse {
         username: sp.username,
