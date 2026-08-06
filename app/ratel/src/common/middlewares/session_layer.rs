@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use tower_sessions::{
     SessionManagerLayer, SessionStore,
     cookie::time::{Duration, OffsetDateTime},
@@ -6,16 +7,10 @@ use tower_sessions::{
     session_store,
 };
 
-use crate::common::{
-    models::session::Session,
-    types::{EntityType, Partition},
-};
+use crate::common::models::session::{Session as SessionEntity, SessionData};
 
-pub fn get_session_layer(
-    cli: &aws_sdk_dynamodb::Client,
-    env: String,
-) -> SessionManagerLayer<DynamoSessionStore> {
-    let session_store = DynamoSessionStore::new(cli);
+pub fn get_session_layer(env: String) -> SessionManagerLayer<PostgresSessionStore> {
+    let session_store = PostgresSessionStore;
 
     // Cookie config has to satisfy three contexts:
     //
@@ -55,77 +50,86 @@ pub fn get_session_layer(
     layer
 }
 
-#[derive(Debug, Clone)]
-pub struct DynamoSessionStore {
-    pub client: aws_sdk_dynamodb::Client,
-}
-impl DynamoSessionStore {
-    pub fn new(client: &aws_sdk_dynamodb::Client) -> Self {
-        Self {
-            client: client.clone(),
-        }
-    }
-}
-#[async_trait]
-impl SessionStore for DynamoSessionStore {
-    async fn create(&self, session_record: &mut Record) -> session_store::Result<()> {
-        let expired_at = session_record.expiry_date.unix_timestamp();
-        let data = serde_json::to_string(session_record).map_err(|e| {
-            session_store::Error::Encode(format!("Failed to serialize session data: {}", e))
-        })?;
-        Session::new(session_record.id.to_string(), expired_at, data)
-            .create(&self.client)
-            .await
-            .map_err(|e| session_store::Error::Backend(format!("Failed to create entry: {}", e)))?;
+/// Zero-sized `tower-sessions` store backed by the [`SessionEntity`] Postgres
+/// entity. Every call resolves the process-global pool through
+/// `Session::repository()`, so the store carries no state.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PostgresSessionStore;
 
-        Ok(())
+#[async_trait]
+impl SessionStore for PostgresSessionStore {
+    async fn create(&self, session_record: &mut Record) -> session_store::Result<()> {
+        // tower-sessions invokes `create` once when minting a new session and
+        // expects us to persist it. The 128-bit id space makes collisions
+        // effectively unreachable, so we don't probe.
+        self.save(session_record).await
     }
 
     async fn save(&self, session_record: &Record) -> session_store::Result<()> {
-        let pk = session_record.id.to_string();
-        Session::updater(Partition::Session(pk), &EntityType::Session)
-            .with_data(serde_json::to_string(session_record).map_err(|e| {
-                session_store::Error::Encode(format!("Failed to serialize session data: {}", e))
-            })?)
-            .with_expired_at(session_record.expiry_date.unix_timestamp())
-            .execute(&self.client)
-            .await
-            .map_err(|e| session_store::Error::Backend(format!("Failed to save entry: {}", e)))?;
+        let data = session_data_from_record(session_record)?;
+        SessionEntity::new(
+            session_record.id.to_string(),
+            session_record.expiry_date.unix_timestamp(),
+            data,
+        )
+        .upsert()
+        .await
+        .map_err(|e| session_store::Error::Backend(format!("pg put session: {e}")))?;
         Ok(())
     }
 
     async fn load(&self, session_id: &Id) -> session_store::Result<Option<Record>> {
-        let pk = session_id.to_string();
-        let session = Session::get(
-            &self.client,
-            Partition::Session(pk),
-            Some(EntityType::Session),
-        )
-        .await
-        .map_err(|e| session_store::Error::Backend(format!("Failed to load entry: {}", e)))?;
-        match session {
-            None => Ok(None),
-            Some(s) => {
-                let record: Record = serde_json::from_str(&s.data).map_err(|e| {
-                    session_store::Error::Decode(format!(
-                        "Failed to deserialize session data: {}",
-                        e
-                    ))
-                })?;
-                Ok(Some(record))
-            }
+        let Some(s) = SessionEntity::get_by_id(session_id.to_string())
+            .await
+            .map_err(|e| session_store::Error::Backend(format!("pg get session: {e}")))?
+        else {
+            return Ok(None);
+        };
+
+        // Defense in depth — even if the TTL sweeper is lagging behind, never
+        // hand back an expired record.
+        if s.expires_at <= Utc::now().timestamp() {
+            return Ok(None);
         }
+
+        // Only `record.data` is stored in the jsonb column; rebuild the full
+        // `Record` from the row's first-class `id` / `expires_at` columns.
+        let data = serde_json::from_value(s.data.0).map_err(|e| {
+            session_store::Error::Decode(format!("Failed to deserialize session data: {e}"))
+        })?;
+        let expiry_date = OffsetDateTime::from_unix_timestamp(s.expires_at).map_err(|e| {
+            session_store::Error::Decode(format!("Failed to deserialize session expiry: {e}"))
+        })?;
+        let record = Record {
+            id: *session_id,
+            data,
+            expiry_date,
+        };
+        Ok(Some(record))
     }
 
     async fn delete(&self, session_id: &Id) -> session_store::Result<()> {
-        let pk = session_id.to_string();
-        Session::delete(
-            &self.client,
-            Partition::Session(pk),
-            Some(EntityType::Session),
-        )
-        .await
-        .map_err(|e| session_store::Error::Backend(format!("Failed to delete entry: {}", e)))?;
-        Ok(())
+        // `delete_by_id` returns the deleted row or `Error::NotFound`. Logout
+        // should be idempotent, so swallow the "missing" case but propagate
+        // everything else.
+        match SessionEntity::delete_by_id(session_id.to_string()).await {
+            Ok(_) => Ok(()),
+            Err(postgres::Error::NotFound) => Ok(()),
+            Err(e) => Err(session_store::Error::Backend(format!(
+                "pg delete session: {e}"
+            ))),
+        }
     }
+}
+
+/// Serialize the tower-sessions `Record` payload into the opaque jsonb column.
+///
+/// The full `Record` cannot be round-tripped through JSON: `Record.id` is an
+/// i128 that falls outside JSON's safe integer range, and both `id` and
+/// `expiry_date` are already stored as first-class columns. We persist only
+/// `record.data` and rebuild the `Record` on load from the row's columns.
+fn session_data_from_record(record: &Record) -> session_store::Result<SessionData> {
+    serde_json::to_value(&record.data)
+        .map(SessionData)
+        .map_err(|e| session_store::Error::Encode(format!("Failed to serialize session data: {e}")))
 }

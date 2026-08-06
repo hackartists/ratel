@@ -705,9 +705,7 @@ async fn run_rule(name: &'static str, event: &CdcEvent) -> crate::common::Result
         }
         "CharacterXpDelta" => {
             let score: crate::features::activity::models::SpaceScore = deserialize(new)?;
-            let cfg = crate::common::CommonConfig::default();
-            let cli = cfg.dynamodb();
-            crate::features::character::services::apply_character_xp_delta(cli, score).await
+            crate::features::character::services::apply_character_xp_delta(score).await
         }
         "PostPublishedForSyndication" => {
             let post: crate::features::posts::models::Post = deserialize(new)?;

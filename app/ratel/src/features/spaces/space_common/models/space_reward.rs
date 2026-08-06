@@ -220,7 +220,7 @@ impl SpaceReward {
             use crate::features::character::leveling::multiplier_permille;
             use crate::features::character::models::CharacterSkill;
             use crate::features::character::types::SkillId;
-            CharacterSkill::level_or_zero(cli, &target_pk, SkillId::MoneyTree)
+            CharacterSkill::level_or_zero(&target_pk, SkillId::MoneyTree)
                 .await
                 .map(multiplier_permille)
                 .unwrap_or(1000)

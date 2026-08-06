@@ -69,7 +69,7 @@ pub async fn fan_out_popular_space(space: crate::common::models::space::SpaceCom
         post_pk
     );
 
-    write_timeline_entries(cli, post_pk, author_pk, created_at, &entries).await
+    write_timeline_entries(post_pk, author_pk, created_at, &entries).await
 }
 
 /// Returns true if a space meets the popularity threshold for broader distribution.

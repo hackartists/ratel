@@ -65,30 +65,27 @@ pub(super) async fn collect_follower_pks(
     Ok(())
 }
 
-/// Write timeline entries in transact_write_items batches of 25.
+/// Write timeline entries to Postgres.
+///
+/// The DynamoDB version batched these into `transact_write_items` chunks of 25
+/// purely for throughput — there was no cross-row atomicity requirement (each
+/// entry is independent, keyed by `(user_id, created_at, post_id)`). Here each
+/// entry is upserted on its natural key so a re-delivery of the same post to
+/// the same user overwrites in place (updating `reason`/category), matching the
+/// old pk/sk overwrite semantics exactly.
 pub(super) async fn write_timeline_entries(
-    cli: &aws_sdk_dynamodb::Client,
     post_pk: &Partition,
     author_pk: &Partition,
     created_at: i64,
     entries: &[(Partition, TimelineReason)],
 ) -> Result<()> {
-    for chunk in entries.chunks(25) {
-        let transacts: Vec<aws_sdk_dynamodb::types::TransactWriteItem> = chunk
-            .iter()
-            .map(|(user_pk, reason)| {
-                let entry =
-                    TimelineEntry::new(user_pk, post_pk, author_pk, created_at, reason.clone());
-                entry.create_transact_write_item()
-            })
-            .collect();
-
-        cli.transact_write_items()
-            .set_transact_items(Some(transacts))
-            .send()
+    let repo = TimelineEntry::repository();
+    for (user_pk, reason) in entries {
+        let entry = TimelineEntry::new(user_pk, post_pk, author_pk, created_at, *reason);
+        repo.upsert_on(&["user_id", "created_at", "post_id"], &entry)
             .await
             .map_err(|e| {
-                crate::error!("Failed to write timeline entries: {e}");
+                crate::error!("Failed to write timeline entry: {e}");
                 crate::features::timeline::types::TimelineError::FanOutFailed
             })?;
     }

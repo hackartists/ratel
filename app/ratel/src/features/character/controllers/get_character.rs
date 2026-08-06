@@ -5,16 +5,11 @@ use crate::features::character::dto::CharacterResponse;
 pub async fn get_character_handler() -> Result<CharacterResponse> {
     use crate::features::character::models::{CharacterSkill, CharacterXp};
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    let (xp_pk, xp_sk) = CharacterXp::user_keys(&user.pk);
-
-    // Fan out the two reads in parallel — one CharacterXp single-row + the
-    // entire CharacterSkill collection via begins_with(sk) Query. ~1 RTT total.
+    // Fan out the two reads — one CharacterXp single-row point read + the
+    // entire CharacterSkill collection for the user.
     let (xp_res, skill_rows) = tokio::try_join!(
-        CharacterXp::get(cli, &xp_pk, Some(&xp_sk)),
-        CharacterSkill::list_for_user(cli, &user.pk),
+        CharacterXp::get_by_user(&user.pk),
+        CharacterSkill::list_for_user(&user.pk),
     )?;
 
     let xp = xp_res.unwrap_or_else(|| CharacterXp::new(user.pk.clone()));

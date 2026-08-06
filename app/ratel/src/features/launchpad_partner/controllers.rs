@@ -45,12 +45,8 @@ pub async fn deduct(req: &DeductBody) -> Result<DeductResponse, PartnerError> {
     let pk = Partition::User(req.company_user_key.clone());
 
     // Idempotency: replay a stored result instead of double-debiting.
-    if let Ok(Some(existing)) = LaunchpadDeduction::get(
-        cli,
-        pk.clone(),
-        Some(EntityType::LaunchpadDeduction(req.idempotency_key.clone())),
-    )
-    .await
+    if let Ok(Some(existing)) =
+        LaunchpadDeduction::find_by_keys(&req.company_user_key, &req.idempotency_key).await
     {
         return Ok(DeductResponse {
             brand_tx_id: existing.brand_tx_id,
@@ -89,7 +85,7 @@ pub async fn deduct(req: &DeductBody) -> Result<DeductResponse, PartnerError> {
         &brand_tx_id,
         remaining,
     );
-    if let Err(e) = row.create(cli).await {
+    if let Err(e) = row.create().await {
         crate::error!("launchpad deduct: idempotency row write failed: {e}");
     }
 

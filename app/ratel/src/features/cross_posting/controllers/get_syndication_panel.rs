@@ -5,13 +5,14 @@ use crate::features::cross_posting::types::{
     CrossPostingError, EngagementCountsView, SyndicationJobView, SyndicationPanelResponse,
 };
 use crate::features::posts::models::Post;
+#[cfg(feature = "server")]
+use crate::features::cross_posting::services::feed_id_of;
 
 /// Author-only syndication panel (FR-7 #41–#45). Shows per-platform
 /// dispatch state, retry diagnostics, and engagement counts for one of
 /// the user's own posts. Returns `NotAuthorized` for posts whose
 /// `user_pk` does not match the session user (Phase 1 supports only
-/// user-owned cross-posting; team-owned posts have no
-/// `PostSyndicationDirective` written and therefore no jobs to show).
+/// user-owned cross-posting).
 #[get("/api/cross-posting/posts/{post_id}/syndication", user: User)]
 pub async fn get_syndication_panel_handler(
     post_id: FeedPartition,
@@ -33,29 +34,22 @@ pub async fn get_syndication_panel_handler(
         return Err(CrossPostingError::NotAuthorized.into());
     }
 
-    // Query SyndicationJob rows colocated under the post's pk.
-    let sk_prefix = EntityType::SyndicationJob(String::new()).to_string();
-    let opt = SyndicationJob::opt_with_bookmark(None).sk(sk_prefix).limit(10);
-    let (jobs, _next): (Vec<SyndicationJob>, _) =
-        SyndicationJob::query(cli, &post_pk, opt).await.map_err(|e| {
-            crate::error!("get_syndication_panel jobs query failed: {e}");
-            CrossPostingError::ListFailed
-        })?;
+    let post_id_str = feed_id_of(&post_pk);
+    let jobs = SyndicationJob::find_by_post(&post_id_str).await.map_err(|e| {
+        crate::error!("get_syndication_panel jobs query failed: {e}");
+        CrossPostingError::ListFailed
+    })?;
 
     // Hydrate engagement counts for Published jobs. At most 3 rows in
     // Phase 1 (Bluesky / LinkedIn / Threads) so sequential reads are fine.
     let mut views = Vec::with_capacity(jobs.len());
     for job in jobs {
         let engagement = if job.state == JobState::Published {
-            EngagementSnapshot::get(
-                cli,
-                &post_pk,
-                Some(EntityType::EngagementSnapshot(job.platform.to_string())),
-            )
-            .await
-            .ok()
-            .flatten()
-            .map(EngagementCountsView::from)
+            EngagementSnapshot::find_by_post_platform(&post_id_str, job.platform)
+                .await
+                .ok()
+                .flatten()
+                .map(EngagementCountsView::from)
         } else {
             None
         };

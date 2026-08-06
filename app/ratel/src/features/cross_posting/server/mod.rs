@@ -157,7 +157,7 @@ async fn linkedin_callback(
     // pass `None`. The dispatcher's `try_refresh_credentials` handles
     // expiry-driven refresh based on AuthExpired errors.
     let upsert = ConnectionUpsert {
-        user_pk,
+        user_id: crate::features::cross_posting::services::user_id_of(&user_pk),
         platform: SocialPlatform::LinkedIn,
         decrypted: DecryptedCredentials::LinkedIn {
             access_token: session_data.access_token.clone(),
@@ -178,7 +178,7 @@ async fn linkedin_callback(
         token_expires_at: None,
     };
 
-    if let Err(e) = seal_and_upsert_connection(cli, upsert).await {
+    if let Err(e) = seal_and_upsert_connection(upsert).await {
         tracing::error!(error = %e, "linkedin callback: seal+upsert failed");
         return Redirect::to(&connections_url("error")).into_response();
     }

@@ -22,12 +22,11 @@ pub async fn run_migrations(cli: &aws_sdk_dynamodb::Client) -> crate::common::Re
 
     tracing::info!(stored_version = stored, "migration runner starting");
 
-    if stored < 1 {
-        tracing::info!("running migration 001: backfill_character_xp");
-        super::m001_backfill_character_xp::run(cli).await?;
-        LastBackfillVersion::advance_to(cli, stored, 1).await?;
-        tracing::info!("migration 001 complete; version advanced to 1");
-    }
+    // m001 (character XP backfill from SpaceScore) was retired when the
+    // CharacterXp / CharacterXpSource models moved from DynamoDB to Postgres.
+    // Prod already ran it (version >= 1 stored) and there's nothing for new
+    // environments to back-fill against the old Dynamo table anymore.
+    let _ = stored;
 
     // m002 (Biyard PendingReward backfill) was deleted alongside the
     // BiyardService removal. Prod already ran it (version >= 2 stored),

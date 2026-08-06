@@ -78,8 +78,33 @@ fn serve(app: fn() -> Element) {
         }
     }
 
+    // Wire the Postgres pool: register it as the process-global pool and run
+    // schema migrations from the PostgresEntity inventory before serving. The
+    // session store (and future migrated slices) resolve the global pool.
+    {
+        let pool = cfg.postgres().clone();
+        ::postgres::set_global_pool(pool.clone());
+
+        let migrate = async move { ::postgres::Schema::from_inventory().migrate(&pool).await };
+
+        let res = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.block_on(migrate)
+        } else {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("tokio runtime build for postgres migrations");
+            rt.block_on(migrate)
+        };
+
+        if let Err(e) = res {
+            tracing::error!(error = %e, "postgres schema migration failed; aborting startup");
+            std::process::exit(1);
+        }
+    }
+
     let session_layer =
-        crate::common::middlewares::session_layer::get_session_layer(cli, cfg.env.to_string());
+        crate::common::middlewares::session_layer::get_session_layer(cfg.env.to_string());
 
     // Allow cross-origin requests from the Tauri Android/iOS WebView
     // (http://tauri.localhost / https://tauri.localhost) and from the

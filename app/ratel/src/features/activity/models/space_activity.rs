@@ -55,7 +55,9 @@ impl SpaceActivity {
     }
 
     pub async fn new_with_dedup(
-        cli: &aws_sdk_dynamodb::Client,
+        // Retained for call-site compatibility; the character-skill read that
+        // used it now goes through the global Postgres pool (no client arg).
+        _cli: &aws_sdk_dynamodb::Client,
         space_id: SpacePartition,
         author: AuthorPartition,
         action_id: String,
@@ -83,7 +85,7 @@ impl SpaceActivity {
                 AuthorPartition::Team(id) => Partition::Team(id),
                 AuthorPartition::Unknown => Partition::None,
             };
-            CharacterSkill::level_or_zero(cli, &user_pk, SkillId::Ranker)
+            CharacterSkill::level_or_zero(&user_pk, SkillId::Ranker)
                 .await
                 .map(multiplier_permille)
                 .unwrap_or(1000)

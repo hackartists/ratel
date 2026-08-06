@@ -5,9 +5,11 @@ use crate::features::posts::types::*;
 use crate::features::posts::*;
 
 #[cfg(feature = "server")]
-use crate::features::timeline::models::TimelineEntry;
+use crate::features::timeline::models::{TimelineEntry, TimelineEntryColumn};
 #[cfg(feature = "server")]
 use base64::Engine;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[cfg(feature = "server")]
 fn serializable_post_error(context: &str, err: Error) -> Error {
@@ -163,13 +165,39 @@ async fn fetch_timeline_posts(
         }
     };
 
-    let opt = TimelineEntry::opt_with_bookmark(bookmark)
-        .sk(EntityType::TimelineEntry(String::default()).to_string())
-        .limit(10)
-        .scan_index_forward(false);
+    use postgres::Order;
+    use postgres::ops::StringOp;
 
-    let (entries, next_bookmark) =
-        TimelineEntry::query(cli, Partition::Timeline(user_id), opt).await?;
+    // `bookmark` carries an opaque 1-based page number as a string (Postgres
+    // page pagination). All categories are queried together (no reason filter),
+    // newest first.
+    let page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
+
+    let result = TimelineEntry::repository()
+        .find(
+            TimelineEntry::query()
+                .user_id(StringOp::Eq(user_id.clone()))
+                .order_by(TimelineEntryColumn::CreatedAt, Order::Desc)
+                .page_size(10)
+                .page(page),
+        )
+        .await
+        .map_err(|e| {
+            crate::error!("timeline query failed: {e}");
+            crate::common::Error::Internal
+        })?;
+
+    let entries = result.items;
+    let has_more = page < result.total_pages;
+    let next_bookmark = if has_more {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
 
     if entries.is_empty() && next_bookmark.is_none() {
         // No timeline entries yet — fall back to global feed
@@ -185,8 +213,8 @@ async fn fetch_timeline_posts(
     let mut seen = std::collections::HashSet::new();
     let post_keys: Vec<(Partition, EntityType)> = entries
         .iter()
-        .filter(|entry| seen.insert(entry.post_pk.to_string()))
-        .map(|entry| (entry.post_pk.clone(), EntityType::Post))
+        .filter(|entry| seen.insert(entry.post_id.clone()))
+        .map(|entry| (Partition::Feed(entry.post_id.clone()), EntityType::Post))
         .collect();
 
     let posts = Post::batch_get(cli, post_keys).await?;
@@ -198,8 +226,11 @@ async fn fetch_timeline_posts(
     let mut seen_posts = std::collections::HashSet::new();
     let ordered_posts: Vec<Post> = entries
         .iter()
-        .filter(|entry| seen_posts.insert(entry.post_pk.to_string()))
-        .filter_map(|entry| post_map.get(&entry.post_pk.to_string()).cloned())
+        .filter(|entry| seen_posts.insert(entry.post_id.clone()))
+        .filter_map(|entry| {
+            let post_pk = Partition::Feed(entry.post_id.clone());
+            post_map.get(&post_pk.to_string()).cloned()
+        })
         .collect();
 
     Ok((PostFeedSource::Timeline, ordered_posts, next_bookmark))

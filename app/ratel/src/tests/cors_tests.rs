@@ -7,10 +7,8 @@ use axum::http::{header, Method, StatusCode};
 /// explicitly to exercise the CORS middleware in isolation.
 async fn build_cors_app() -> axum::Router {
     let config = crate::config::get();
-    let cli = config.common.dynamodb();
 
     let session_layer = crate::common::middlewares::session_layer::get_session_layer(
-        cli,
         config.common.env.to_string(),
     );
 

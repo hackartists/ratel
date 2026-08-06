@@ -25,15 +25,27 @@ pub enum CharacterError {
         ko = "이미 최대 레벨입니다"
     )]
     AlreadyMaxLevel,
+
+    #[error("internal character store error")]
+    #[translate(
+        en = "Something went wrong",
+        ko = "문제가 발생했습니다"
+    )]
+    Internal,
 }
 
 #[cfg(feature = "server")]
 impl CharacterError {
     pub fn status_code(&self) -> crate::axum::http::StatusCode {
-        // All variants are validation / preconditions on the request — they
-        // map cleanly to 400 Bad Request (vs. 500 Internal Server Error,
-        // which would be misleading for "v2 skill not yet released" or
-        // "you don't have enough SP").
-        crate::axum::http::StatusCode::BAD_REQUEST
+        // The validation / precondition variants map cleanly to 400 Bad
+        // Request (vs. 500, which would be misleading for "v2 skill not yet
+        // released" or "you don't have enough SP"). `Internal` is a store /
+        // infrastructure failure and is the only 500.
+        match self {
+            CharacterError::Internal => {
+                crate::axum::http::StatusCode::INTERNAL_SERVER_ERROR
+            }
+            _ => crate::axum::http::StatusCode::BAD_REQUEST,
+        }
     }
 }

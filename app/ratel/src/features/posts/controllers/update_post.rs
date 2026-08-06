@@ -4,7 +4,9 @@ use crate::features::posts::types::*;
 use crate::features::posts::*;
 use std::collections::HashMap;
 
-use crate::features::cross_posting::models::PostSyndicationDirective;
+use crate::features::cross_posting::models::{
+    EnabledPlatforms, PlatformOverrides, PostSyndicationDirective,
+};
 use crate::features::cross_posting::types::SocialPlatform;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
@@ -86,6 +88,11 @@ pub async fn update_post_handler(post_id: FeedPartition, req: UpdatePostRequest)
     let updater = Post::updater(&post.pk, &post.sk).with_updated_at(now);
     post.updated_at = now;
 
+    // Cross-posting Stage 1 directive is staged here and written to Postgres
+    // after the DynamoDB Post transaction commits (the two stores can no
+    // longer share a single transaction).
+    let mut pending_directive: Option<PostSyndicationDirective> = None;
+
     let transacts = match req {
         UpdatePostRequest::Writing {
             title,
@@ -155,7 +162,7 @@ pub async fn update_post_handler(post_id: FeedPartition, req: UpdatePostRequest)
             if let Some(cats) = categories {
                 updater = updater.with_categories(cats);
             }
-            let mut transacts = if let Some(image_urls) = image_urls {
+            let transacts = if let Some(image_urls) = image_urls {
                 post.urls = image_urls.clone();
                 vec![updater.with_urls(image_urls).transact_write_item()]
             } else {
@@ -170,15 +177,22 @@ pub async fn update_post_handler(post_id: FeedPartition, req: UpdatePostRequest)
             // this directive to bake SyndicationJob rows; absence of the
             // directive is the kill switch (no syndication).
             if is_public_publish && enabled_platforms.as_ref().is_some_and(|v| !v.is_empty()) {
-                let directive = PostSyndicationDirective {
-                    pk: post.pk.clone(),
-                    sk: EntityType::SyndicationDirective,
-                    enabled_platforms: enabled_platforms.unwrap_or_default(),
-                    platform_overrides: platform_overrides.unwrap_or_default(),
-                    author_user_id: user.pk.clone(),
-                    created_at: now,
+                let post_id = match &post.pk {
+                    Partition::Feed(id) => id.clone(),
+                    other => other.to_string(),
                 };
-                transacts.push(directive.create_transact_write_item());
+                let author_user_id = match &user.pk {
+                    Partition::User(id) => id.clone(),
+                    other => other.to_string(),
+                };
+                pending_directive = Some(PostSyndicationDirective {
+                    id: uuid::Uuid::now_v7(),
+                    post_id,
+                    enabled_platforms: EnabledPlatforms(enabled_platforms.unwrap_or_default()),
+                    platform_overrides: PlatformOverrides(platform_overrides.unwrap_or_default()),
+                    author_user_id,
+                    created_at: now,
+                });
             }
 
             transacts
@@ -251,6 +265,19 @@ pub async fn update_post_handler(post_id: FeedPartition, req: UpdatePostRequest)
     };
 
     crate::transact_write_items!(cli, transacts)?;
+
+    // Write the cross-posting directive to Postgres now that the Post publish
+    // has committed. Natural-key (`post_id`) upsert keeps re-publish idempotent.
+    // A directive failure must not fail the publish, so it is logged, not
+    // propagated (Stage 1 simply won't syndicate this post).
+    if let Some(directive) = pending_directive {
+        if let Err(e) = PostSyndicationDirective::repository()
+            .upsert_on(&["post_id"], &directive)
+            .await
+        {
+            crate::error!("update_post: failed to persist syndication directive: {e}");
+        }
+    }
 
     // Essence re-indexing happens via the DynamoDB Stream pipeline.
 

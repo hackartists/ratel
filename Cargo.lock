@@ -412,6 +412,7 @@ dependencies = [
  "names",
  "once_cell",
  "percent-encoding",
+ "postgres",
  "pulldown-cmark 0.12.2",
  "qdrant-client",
  "rand 0.10.0",
@@ -5859,6 +5860,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "event"
+version = "0.1.0"
+dependencies = [
+ "event-macros",
+ "futures",
+ "inventory",
+ "rdkafka",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "event-listener"
 version = "2.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5883,6 +5900,15 @@ checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
 dependencies = [
  "event-listener 5.4.1",
  "pin-project-lite",
+]
+
+[[package]]
+name = "event-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]

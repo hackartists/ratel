@@ -10,12 +10,16 @@ use std::str::FromStr;
 /// sort-key inners (e.g. `SocialConnection("bluesky")`); FromStr accepts
 /// the same lowercase form. Use `display_name()` for user-facing strings.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default, strum::Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum SocialPlatform {
     #[default]
     Bluesky,
+    // Native PG enum labels default to snake_case (`linked_in`); pin to the
+    // lowercase form the rest of the system uses (serde `rename_all`).
+    #[cfg_attr(feature = "server", postgres(rename = "linkedin"))]
     LinkedIn,
     Threads,
 }

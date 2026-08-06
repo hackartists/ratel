@@ -6,10 +6,11 @@ pub async fn get_public_character_handler(username: String) -> Result<PublicChar
     use crate::common::models::auth::User;
     use crate::features::character::models::CharacterXp;
 
+    // `User` still lives in DynamoDB (owned by the auth feature), so the
+    // username lookup keeps using the DynamoDB client.
     let cfg = crate::common::CommonConfig::default();
     let cli = cfg.dynamodb();
 
-    // Look up user by username.
     let opt = User::opt().limit(1);
     let (users, _) = User::find_by_username(cli, &username, opt).await?;
     let target = users
@@ -17,8 +18,7 @@ pub async fn get_public_character_handler(username: String) -> Result<PublicChar
         .next()
         .ok_or_else(|| Error::NotFound(format!("no user with username {username}")))?;
 
-    let (xp_pk, xp_sk) = CharacterXp::user_keys(&target.pk);
-    let xp = CharacterXp::get(cli, &xp_pk, Some(&xp_sk)).await?;
+    let xp = CharacterXp::get_by_user(&target.pk).await?;
     let level = xp.map(|x| x.level).unwrap_or(1);
 
     Ok(PublicCharacterResponse { level })

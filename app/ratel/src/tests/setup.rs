@@ -25,7 +25,6 @@ impl TestContext {
         let cli = config.common.dynamodb();
 
         let session_layer = crate::common::middlewares::session_layer::get_session_layer(
-            cli,
             config.common.env.to_string(),
         );
 

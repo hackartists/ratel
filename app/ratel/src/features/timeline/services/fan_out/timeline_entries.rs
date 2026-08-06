@@ -51,7 +51,7 @@ pub async fn fan_out_timeline_entries(post: Post) -> Result<()> {
         post_pk
     );
 
-    write_timeline_entries(cli, post_pk, author_pk, created_at, &entries).await
+    write_timeline_entries(post_pk, author_pk, created_at, &entries).await
 }
 
 /// Collect all follower user_pks of `target_pk`, adding them to `entries` with reason Following.
