@@ -80,7 +80,7 @@ fn space_id_str(pk: &Partition) -> String {
 
 // ----- My Spaces ---------------------------------------------------------
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_my_spaces_ranks_active_before_inactive() {
     let ctx = TestContext::setup().await;
     let user = ctx.test_user.0.clone();
@@ -133,7 +133,7 @@ async fn test_my_spaces_ranks_active_before_inactive() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_my_spaces_sorts_by_last_activity() {
     let ctx = TestContext::setup().await;
     let user = ctx.test_user.0.clone();
@@ -179,7 +179,7 @@ async fn test_my_spaces_sorts_by_last_activity() {
 // designing — `create_space_handler` writes a participant row for the
 // author but leaves `publish_state = Draft` until publish, and this list
 // is how the home carousel surfaces work-in-progress.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_my_spaces_includes_draft_owned_by_creator() {
     let ctx = TestContext::setup().await;
     let user = ctx.test_user.0.clone();
@@ -230,7 +230,7 @@ async fn test_my_spaces_includes_draft_owned_by_creator() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_my_spaces_requires_auth() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {
@@ -244,7 +244,7 @@ async fn test_my_spaces_requires_auth() {
 
 /// Anonymous viewers see the global Hot stream — every eligible space
 /// surfaces regardless of viewer identity.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_hot_spaces_anonymous_sees_global_stream() {
     let ctx = TestContext::setup().await;
     let author = ctx.test_user.0.clone();
@@ -269,7 +269,7 @@ async fn test_hot_spaces_anonymous_sees_global_stream() {
 /// Logged-in viewers see the same stream as anonymous ones — there is no
 /// per-viewer fanout. A viewer with no relationship to the author still
 /// sees the space because the Hot tab is global.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_hot_spaces_logged_in_sees_same_stream_as_anonymous() {
     let ctx = TestContext::setup().await;
     let author = ctx.test_user.0.clone();
@@ -295,7 +295,7 @@ async fn test_hot_spaces_logged_in_sees_same_stream_as_anonymous() {
 
 /// Spaces below the participant gate must NOT surface in the Hot tab —
 /// the gate is what prevents empty/test spaces from polluting the stream.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_hot_spaces_excludes_low_participant_space() {
     let ctx = TestContext::setup().await;
     let author = ctx.test_user.0.clone();

@@ -90,7 +90,7 @@ async fn subscription_exists(
         .is_some()
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_subscribe_creates_row() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -107,7 +107,7 @@ async fn test_subscribe_creates_row() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_subscribe_is_idempotent() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -127,7 +127,7 @@ async fn test_subscribe_is_idempotent() {
     assert!(subscription_exists(&ctx, &discussion_id, &ctx.test_user.0.pk()).await);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_participant_can_unsubscribe() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -156,7 +156,7 @@ async fn test_participant_can_unsubscribe() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_author_cannot_unsubscribe() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -180,7 +180,7 @@ async fn test_author_cannot_unsubscribe() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_discussion_auto_subscribes_author() {
     let ctx = TestContext::setup().await;
 
@@ -225,7 +225,7 @@ async fn test_create_discussion_auto_subscribes_author() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_detail_reports_subscribed_state() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -263,7 +263,7 @@ async fn test_detail_reports_subscribed_state() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_subscribe_requires_auth() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -275,7 +275,7 @@ async fn test_subscribe_requires_auth() {
     assert_ne!(status, 200, "unauthenticated subscribe must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_comment_notifies_subscriber_not_author() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -328,7 +328,7 @@ async fn test_comment_notifies_subscriber_not_author() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mentioned_subscriber_gets_only_mention_not_subscription() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -371,7 +371,7 @@ async fn test_mentioned_subscriber_gets_only_mention_not_subscription() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_reply_target_subscriber_gets_only_reply_row() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;

@@ -1,7 +1,7 @@
 use super::*;
 use crate::common::types::ContentBody;
 
-// #[tokio::test]
+// #[by_macros::pg_test]
 // async fn test_create_post_by_user() {
 //     let TestContext { app, test_user, .. } = TestContext::setup().await;
 
@@ -14,7 +14,7 @@ use crate::common::types::ContentBody;
 //     assert_eq!(status, 200, "create post response: {:?}", body);
 // }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_post_without_auth() {
     let TestContext { app, .. } = TestContext::setup().await;
 
@@ -35,7 +35,7 @@ async fn test_create_post_without_auth() {
 /// `html_contents: String` shape, before `ContentBody` became a tagged
 /// enum), then reads it back. Exercises `ContentBody`'s custom
 /// `Deserialize` (which accepts a bare JSON string as `HtmlContent`).
-#[tokio::test]
+#[by_macros::pg_test]
 async fn legacy_html_contents_string_loads_as_html_content_body() {
     use crate::features::posts::models::Post;
     use crate::features::posts::types::{Author, PostType};

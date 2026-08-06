@@ -58,7 +58,7 @@ fn user_id_of(pk: &Partition) -> String {
 
 // ── Settings ─────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_settings_toggles_parent_eligible() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -89,7 +89,7 @@ async fn test_update_settings_toggles_parent_eligible() {
     assert_eq!(team.min_sub_team_members, 3);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_settings_requires_admin() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -154,7 +154,7 @@ async fn test_update_settings_requires_admin() {
 
 // ── Form fields ──────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_list_update_delete_form_field_round_trip() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -227,7 +227,7 @@ async fn test_create_list_update_delete_form_field_round_trip() {
     assert!(after_unlocked.is_empty(), "after delete: {:?}", after);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_reorder_form_fields_updates_order() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -286,7 +286,7 @@ async fn test_reorder_form_fields_updates_order() {
     assert_eq!(ids_in_order, reversed, "order mismatch: {:?}", listed.items);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_form_field_update_requires_admin() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -340,7 +340,7 @@ async fn test_form_field_update_requires_admin() {
 
 // ── Docs ─────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_list_update_delete_doc_round_trip() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -404,7 +404,7 @@ async fn test_create_list_update_delete_doc_round_trip() {
     assert_eq!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_doc_create_rejects_oversized_body() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -428,7 +428,7 @@ async fn test_doc_create_rejects_oversized_body() {
     assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_doc_update_body_rehashes() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -469,7 +469,7 @@ async fn test_doc_update_body_rehashes() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_reorder_docs_updates_order() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -518,7 +518,7 @@ async fn test_reorder_docs_updates_order() {
     assert_eq!(got, reversed);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_doc_update_requires_admin() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -575,7 +575,7 @@ async fn test_doc_update_requires_admin() {
 
 // ── Apply context ────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_apply_context_returns_form_and_required_docs_for_unauthenticated_caller() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -666,7 +666,7 @@ async fn test_apply_context_returns_form_and_required_docs_for_unauthenticated_c
     assert_eq!(body.required_docs[0].body, "# Hi");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_apply_context_only_includes_required_docs() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -826,7 +826,7 @@ async fn add_n_members(ctx: &TestContext, team_pk: &Partition, n: usize) {
 
 // ── Tests: submit path ───────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_child_submits_application_creates_pending_with_doc_agreements() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -871,7 +871,7 @@ async fn test_child_submits_application_creates_pending_with_doc_agreements() {
     assert!(team.parent_team_id.is_none());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_when_parent_not_eligible() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -896,7 +896,7 @@ async fn test_submit_rejected_when_parent_not_eligible() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_below_min_members() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -921,7 +921,7 @@ async fn test_submit_rejected_below_min_members() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_without_required_doc_agreement() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -947,7 +947,7 @@ async fn test_submit_rejected_without_required_doc_agreement() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_with_stale_doc_body_hash() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -975,7 +975,7 @@ async fn test_submit_rejected_with_stale_doc_body_hash() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_missing_required_form_field() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1001,7 +1001,7 @@ async fn test_submit_rejected_missing_required_form_field() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_cycle_to_self() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1024,7 +1024,7 @@ async fn test_submit_rejected_cycle_to_self() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_when_in_flight_application_exists() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1067,7 +1067,7 @@ async fn test_submit_rejected_when_in_flight_application_exists() {
 
 // ── Tests: parent queue ───────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_queue_lists_only_pending_by_default() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1106,7 +1106,7 @@ async fn test_parent_queue_lists_only_pending_by_default() {
     assert!(!listed.items.is_empty());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_approve_flips_team_status_and_creates_link() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1159,7 +1159,7 @@ async fn test_parent_approve_flips_team_status_and_creates_link() {
     assert!(link.is_some(), "SubTeamLink must exist");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_reject_clears_pending_parent_and_records_reason() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1208,7 +1208,7 @@ async fn test_parent_reject_clears_pending_parent_and_records_reason() {
     assert!(team.parent_team_id.is_none());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_return_keeps_pending_status_and_allows_resubmit() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1277,7 +1277,7 @@ async fn test_parent_return_keeps_pending_status_and_allows_resubmit() {
     ));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_child_cancel_clears_pending_parent() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1322,7 +1322,7 @@ async fn test_child_cancel_clears_pending_parent() {
     assert!(team.pending_parent_team_id.is_none());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_relationship_endpoint_reports_status_correctly() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1376,7 +1376,7 @@ async fn test_parent_relationship_endpoint_reports_status_correctly() {
 
 // ── Announcement lifecycle ──────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_update_publish_announcement_lifecycle() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1432,7 +1432,7 @@ async fn test_create_update_publish_announcement_lifecycle() {
     assert!(published.published_at.is_some());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_announcement_edit_rejected_after_publish() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1468,7 +1468,7 @@ async fn test_announcement_edit_rejected_after_publish() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_publish_rejected_when_too_many_sub_teams() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1506,7 +1506,7 @@ async fn test_publish_rejected_when_too_many_sub_teams() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_announcement_creates_notification_per_member_of_each_sub_team() {
     use crate::common::models::notification::UserInboxNotification;
 
@@ -1598,7 +1598,7 @@ async fn test_announcement_creates_notification_per_member_of_each_sub_team() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_soft_delete_announcement_sets_status_deleted() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1632,7 +1632,7 @@ async fn test_soft_delete_announcement_sets_status_deleted() {
     ));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_announcements_excludes_deleted_by_default() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1673,7 +1673,7 @@ async fn test_list_announcements_excludes_deleted_by_default() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_announcement_list_supports_pagination() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1771,7 +1771,7 @@ async fn approve_child_for(ctx: &TestContext, parent_id: &str) -> (Partition, St
     (child_pk, child_id)
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_sub_teams_returns_recognized_from_link_rows() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1795,7 +1795,7 @@ async fn test_list_sub_teams_returns_recognized_from_link_rows() {
     assert!(ids.contains(&child_id_b.as_str()));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_sub_teams_truncates_at_50() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1844,7 +1844,7 @@ async fn test_list_sub_teams_truncates_at_50() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_activity_weekly_counts_posts_within_range_only() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1898,7 +1898,7 @@ async fn test_activity_weekly_counts_posts_within_range_only() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_activity_monthly_counts_posts_within_range_only() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1948,7 +1948,7 @@ async fn test_activity_monthly_counts_posts_within_range_only() {
     assert_eq!(body.post_count, 2);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_activity_excludes_private_posts() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1989,7 +1989,7 @@ async fn test_activity_excludes_private_posts() {
     assert_eq!(body.post_count, 1, "private post must be excluded (AC-15)");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_activity_returns_privacy_notice() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2026,7 +2026,7 @@ async fn test_activity_returns_privacy_notice() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_member_activity_drilldown_sorts_by_post_count_desc() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2105,7 +2105,7 @@ async fn test_member_activity_drilldown_sorts_by_post_count_desc() {
     assert_eq!(m1_row.post_count, 3);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_member_activity_returns_last_active_per_member() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2157,7 +2157,7 @@ async fn test_member_activity_returns_last_active_per_member() {
     assert!(row.post_count >= 1);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_activity_requires_admin_role() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2240,7 +2240,7 @@ where
 
 // ── AC-16: Deregister ────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_deregister_clears_parent_keeps_content() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2298,7 +2298,7 @@ async fn test_deregister_clears_parent_keeps_content() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_deregister_requires_parent_admin() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2331,7 +2331,7 @@ async fn test_deregister_requires_parent_admin() {
     assert_ne!(status, 200, "anon must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_deregister_rejects_when_not_linked() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2355,7 +2355,7 @@ async fn test_deregister_rejects_when_not_linked() {
     assert_ne!(status, 200, "deregister on missing link must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_deregister_notifies_former_sub_team_admins() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2395,7 +2395,7 @@ async fn test_deregister_notifies_former_sub_team_admins() {
 
 // ── AC-17: Leave parent ──────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_leave_parent_clears_parent_notifies_parent_admins() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2465,7 +2465,7 @@ async fn test_leave_parent_clears_parent_notifies_parent_admins() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_leave_parent_rejects_when_not_a_sub_team() {
     let ctx = TestContext::setup().await;
 
@@ -2482,7 +2482,7 @@ async fn test_leave_parent_rejects_when_not_a_sub_team() {
     assert_ne!(status, 200, "standalone team cannot leave — must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_leave_parent_requires_child_admin() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2534,7 +2534,7 @@ async fn test_leave_parent_requires_child_admin() {
     assert_ne!(status, 200, "anon must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_reapply_after_leaving_is_allowed() {
     // Reapply after leaving is allowed — the apply flow from PR #3 already
     // supports this; just verify there's no lingering `pending_parent_team_id`
@@ -2592,7 +2592,7 @@ async fn test_reapply_after_leaving_is_allowed() {
 
 // ── AC-18: Parent-delete cascade ─────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_delete_cascades_to_sub_teams() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2624,7 +2624,7 @@ async fn test_parent_delete_cascades_to_sub_teams() {
     }
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_delete_notifies_former_sub_teams() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2658,7 +2658,7 @@ async fn test_parent_delete_notifies_former_sub_teams() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_delete_does_not_touch_sub_team_content() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;

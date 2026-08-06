@@ -11,7 +11,7 @@ fn dummy_payload() -> InboxPayload {
     }
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_inbox_row_persists_row() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -28,7 +28,7 @@ async fn test_create_inbox_row_persists_row() {
     assert!(!rows[0].is_read);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_inbox_row_once_dedups_on_same_source() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -47,7 +47,7 @@ async fn test_create_inbox_row_once_dedups_on_same_source() {
     assert_eq!(rows.len(), 1, "second call should be deduped");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_inbox_row_once_distinct_sources_produce_rows() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();

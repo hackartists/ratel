@@ -78,7 +78,7 @@ async fn seed_discussion_with_comments(
     (space_id, discussion_id, comment_ids)
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_comments_without_since_returns_all_top_level() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id, _comment_ids) =
@@ -97,7 +97,7 @@ async fn test_list_comments_without_since_returns_all_top_level() {
     assert_eq!(items.len(), 3, "should return all 3 comments: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_comments_with_since_filters_older_comments() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id, _comment_ids) =
@@ -127,7 +127,7 @@ async fn test_list_comments_with_since_filters_older_comments() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_comments_with_future_since_returns_empty() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id, _) =

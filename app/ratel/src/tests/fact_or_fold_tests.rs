@@ -126,7 +126,7 @@ async fn create_subject(ctx: &TestContext, admin: &axum::http::HeaderMap) -> Sub
 
 // ── Auth gating (FR-39) ──────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_subject_rejects_non_admin() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -150,7 +150,7 @@ async fn test_create_subject_rejects_non_admin() {
     assert_ne!(status, 200, "non-admin must be rejected from create");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_subject_rejects_unauthenticated() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -172,7 +172,7 @@ async fn test_create_subject_rejects_unauthenticated() {
     assert_ne!(status, 200, "unauthenticated request must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_subjects_rejects_non_admin() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -184,7 +184,7 @@ async fn test_list_subjects_rejects_non_admin() {
     assert_ne!(status, 200, "non-admin must be rejected from list");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_settings_rejects_non_admin() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -198,7 +198,7 @@ async fn test_get_settings_rejects_non_admin() {
 
 // ── Subject CRUD ────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_and_get_subject() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -224,7 +224,7 @@ async fn test_create_and_get_subject() {
     assert_eq!(fetched.headline_text, "Subject");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_subjects_returns_created() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -246,7 +246,7 @@ async fn test_list_subjects_returns_created() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_subject_patches_fields() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -271,7 +271,7 @@ async fn test_update_subject_patches_fields() {
     assert_eq!(updated.body_excerpt.chars().count(), 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_delete_subject_soft_deletes() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -296,7 +296,7 @@ async fn test_delete_subject_soft_deletes() {
 
 // ── Validation invariants (FR-40, FR-42) ─────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_rejects_empty_body() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -320,7 +320,7 @@ async fn test_create_rejects_empty_body() {
     assert_ne!(status, 200, "empty body must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_rejects_invalid_difficulty() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -344,7 +344,7 @@ async fn test_create_rejects_invalid_difficulty() {
     assert_ne!(status, 200, "difficulty outside 1..=5 must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_rejects_empty_insider_statement() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -370,7 +370,7 @@ async fn test_create_rejects_empty_insider_statement() {
 
 // ── Publish + lock (FR-42, FR-43) ────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_publish_now_moves_to_live() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -395,7 +395,7 @@ async fn test_publish_now_moves_to_live() {
     assert!(live.scheduled_at.is_none(), "scheduled_at must be cleared");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_publish_in_the_past_rejected() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -412,7 +412,7 @@ async fn test_publish_in_the_past_rejected() {
     assert_ne!(status, 200, "past scheduled_at must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_locked_when_live() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -449,7 +449,7 @@ async fn test_update_locked_when_live() {
 
 // ── Settings ─────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_settings_returns_defaults() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -468,7 +468,7 @@ async fn test_get_settings_returns_defaults() {
     assert_eq!(settings.min_bet_rp, defaults.min_bet_rp);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_settings_persists_patch() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -501,7 +501,7 @@ async fn test_update_settings_persists_patch() {
 
 // ── Queue alarm (FR-45) ──────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_queue_alarm_rejects_non_admin() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -513,7 +513,7 @@ async fn test_queue_alarm_rejects_non_admin() {
     assert_ne!(status, 200, "non-admin must be rejected from queue alarm");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_queue_alarm_alerts_when_empty_or_near_threshold() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -547,7 +547,7 @@ async fn test_queue_alarm_alerts_when_empty_or_near_threshold() {
     assert_eq!(body.scheduled_future_count, 1);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_queue_alarm_clears_when_far_future_scheduled() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -599,7 +599,7 @@ async fn create_subject_scheduled(
     body
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_settings_rejects_out_of_range() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -688,7 +688,7 @@ async fn create_live_subject(ctx: &TestContext, admin: &axum::http::HeaderMap) -
     body
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_lobby_rejects_unauthenticated() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -699,7 +699,7 @@ async fn test_get_lobby_rejects_unauthenticated() {
     assert_ne!(status, 200, "unauth must be rejected from lobby read");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_lobby_no_subject_reports_unavailable() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -715,7 +715,7 @@ async fn test_lobby_no_subject_reports_unavailable() {
     assert!(!body.can_join, "can't join with nothing in the queue");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_join_no_subject_returns_unavailable() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -731,7 +731,7 @@ async fn test_join_no_subject_returns_unavailable() {
     assert_ne!(status, 200, "join without a subject must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_join_creates_round_and_lobby_state_reflects_it() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -763,7 +763,7 @@ async fn test_join_creates_round_and_lobby_state_reflects_it() {
     assert!(!body.can_join, "already joined → can't join again");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_join_again_rejected() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -787,7 +787,7 @@ async fn test_join_again_rejected() {
     assert_ne!(status, 200, "second join by same user must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_round_after_join() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -815,7 +815,7 @@ async fn test_get_round_after_join() {
     assert_eq!(body.participant_pks.len(), 1);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_leave_after_join_clears_participant() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -841,7 +841,7 @@ async fn test_leave_after_join_clears_participant() {
     assert!(body.participant_pks.is_empty());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_round_not_found() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -893,7 +893,7 @@ async fn fill_round_to_capacity(
     (round_id, ctx.test_user.1.clone())
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_starts_after_capacity_reached() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -912,7 +912,7 @@ async fn test_round_starts_after_capacity_reached() {
     assert!(body.started_at.is_some());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_bet_rejected_outside_bet_stage() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -929,7 +929,7 @@ async fn test_bet_rejected_outside_bet_stage() {
     assert_ne!(status, 200, "bet outside the Bet stage must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_heartbeat_updates_last_seen() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -946,7 +946,7 @@ async fn test_heartbeat_updates_last_seen() {
     assert!(body.last_seen_at > 0);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_insider_statement_returns_some_for_one_returns_none_for_others() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -993,7 +993,7 @@ async fn test_insider_statement_returns_some_for_one_returns_none_for_others() {
     assert_eq!(some_count, 1, "exactly one player should be the insider");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_non_participant_cannot_bet_or_heartbeat() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1039,7 +1039,7 @@ async fn backdate_stage_deadline(
     row
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_stage_clock_set_on_capacity_reached() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1061,7 +1061,7 @@ async fn test_round_stage_clock_set_on_capacity_reached() {
     assert!(deadline > started, "deadline must be after start");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_round_advances_news_reveal_when_deadline_passed() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1087,7 +1087,7 @@ async fn test_get_round_advances_news_reveal_when_deadline_passed() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_round_rolls_through_multiple_stages_at_once() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1113,7 +1113,7 @@ async fn test_get_round_rolls_through_multiple_stages_at_once() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_bet_succeeds_after_lazy_advance_into_bet_stage() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1136,7 +1136,7 @@ async fn test_bet_succeeds_after_lazy_advance_into_bet_stage() {
     assert_eq!(body.amount_rp, 100);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_rationale_succeeds_after_lazy_advance_into_rationale_stage() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1163,7 +1163,7 @@ async fn test_rationale_succeeds_after_lazy_advance_into_rationale_stage() {
 
 // ── Chat (PR4f) ─────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_post_chat_rejects_non_participant() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1180,7 +1180,7 @@ async fn test_post_chat_rejects_non_participant() {
     assert_ne!(status, 200, "outsider must not be able to post chat");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_post_chat_rejects_outside_debate_stage() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1198,7 +1198,7 @@ async fn test_post_chat_rejects_outside_debate_stage() {
     assert_ne!(status, 200, "chat outside Debate stage must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_chat_polling_returns_empty_for_fresh_round() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1216,7 +1216,7 @@ async fn test_chat_polling_returns_empty_for_fresh_round() {
     assert!(body.last_id.is_none());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_chat_polling_rejects_non_participant() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1232,7 +1232,7 @@ async fn test_chat_polling_rejects_non_participant() {
     assert_ne!(status, 200, "outsider must not be able to read chat");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_post_chat_rejects_empty_or_overlong() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1296,7 +1296,7 @@ async fn seed_rationale(_ctx: &TestContext, round_id: &str, user_pk: &Partition)
     row.save().await.expect("seed rationale");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_flip_rejected_outside_debate_stage() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1313,7 +1313,7 @@ async fn test_flip_rejected_outside_debate_stage() {
     assert_ne!(status, 200, "flip outside Debate must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_flip_rejected_when_slot_closed_too_early() {
     // Debate stage but >10s remaining → slot still closed.
     let ctx = TestContext::setup().await;
@@ -1336,7 +1336,7 @@ async fn test_flip_rejected_when_slot_closed_too_early() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_flip_rejected_self_cite() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1355,7 +1355,7 @@ async fn test_flip_rejected_self_cite() {
     assert_ne!(status, 200, "self-citation must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_flip_rejected_when_cite_has_no_rationale() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1385,7 +1385,7 @@ async fn test_flip_rejected_when_cite_has_no_rationale() {
     assert_ne!(status, 200, "cite without rationale must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_flip_succeeds_in_last_10s_with_valid_cite() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1418,7 +1418,7 @@ async fn test_flip_succeeds_in_last_10s_with_valid_cite() {
     assert!(matches!(body.flipped_to, BetSide::Fake));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_flip_rejected_when_already_used() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1460,7 +1460,7 @@ async fn test_flip_rejected_when_already_used() {
 
 // ── Essence opt-in (PR6 step 4) ─────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_essence_register_rejects_unregister_request() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1478,7 +1478,7 @@ async fn test_essence_register_rejects_unregister_request() {
     assert_ne!(status, 200, "register=false is not supported in v1");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_essence_register_rejects_no_rationale() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1497,7 +1497,7 @@ async fn test_essence_register_rejects_no_rationale() {
     assert_ne!(status, 200, "no rationale to register must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_essence_register_rejects_short_rationale() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1528,7 +1528,7 @@ async fn test_essence_register_rejects_short_rationale() {
 
 // ── Stats + leaderboard (PR7) ───────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_me_stats_returns_zero_for_new_user() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1544,7 +1544,7 @@ async fn test_me_stats_returns_zero_for_new_user() {
     assert_eq!(body.accuracy_bps, 0);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_leaderboard_returns_empty_when_no_settlements() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1560,7 +1560,7 @@ async fn test_leaderboard_returns_empty_when_no_settlements() {
     assert!(body.items.is_empty());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_me_stats_after_settlement_reflects_round() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1605,7 +1605,7 @@ async fn seed_bets_for_all(ctx: &TestContext, round_id: &str, side: &str) {
     }
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_settle_round_admin_only() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1630,7 +1630,7 @@ async fn test_settle_round_admin_only() {
     assert_eq!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_settle_round_marks_round_settled() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1664,7 +1664,7 @@ async fn test_settle_round_marks_round_settled() {
     assert!(body.settled_at.is_some());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_settle_round_idempotent() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1690,7 +1690,7 @@ async fn test_settle_round_idempotent() {
     assert_eq!(status, 200, "second settle on a Settled round must be a no-op");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_chat_post_succeeds_during_debate() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1709,7 +1709,7 @@ async fn test_chat_post_succeeds_during_debate() {
 
 // ── Client tick (PR4d) ──────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_tick_before_deadline_is_noop() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1731,7 +1731,7 @@ async fn test_tick_before_deadline_is_noop() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_tick_after_deadline_advances_stage() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1755,7 +1755,7 @@ async fn test_tick_after_deadline_advances_stage() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_tick_rolls_through_multiple_stages() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1783,7 +1783,7 @@ async fn test_tick_rolls_through_multiple_stages() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_tick_rejects_non_participant() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1801,7 +1801,7 @@ async fn test_tick_rejects_non_participant() {
 
 // ── Round-read endpoints (PR8 — game-room data feed) ────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_subject_redacts_verdict_until_settled() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1846,7 +1846,7 @@ async fn test_round_subject_redacts_verdict_until_settled() {
     assert_eq!(body.reveal_summary, "Confirmed by source.");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_subject_rejects_non_participant() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1862,7 +1862,7 @@ async fn test_round_subject_rejects_non_participant() {
     assert_ne!(status, 200, "non-participant must not see the round subject");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_bets_only_returns_own_during_bet_stage() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1883,7 +1883,7 @@ async fn test_round_bets_only_returns_own_during_bet_stage() {
     assert_eq!(body.items[0].user_pk, UserPartition::from(ctx.test_user.0.pk()));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_bets_returns_all_at_reveal_or_later() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1902,7 +1902,7 @@ async fn test_round_bets_returns_all_at_reveal_or_later() {
     assert_eq!(body.items.len(), 4, "Debate stage must expose all 4 bets");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_bets_rejects_non_participant() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1918,7 +1918,7 @@ async fn test_round_bets_rejects_non_participant() {
     assert_ne!(status, 200, "non-participant must not see bets");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_rationales_redacts_text_until_reveal() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -1977,7 +1977,7 @@ async fn test_round_rationales_redacts_text_until_reveal() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_participants_lists_with_display_metadata() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2002,7 +2002,7 @@ async fn test_round_participants_lists_with_display_metadata() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_participants_rejects_non_participant() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2018,7 +2018,7 @@ async fn test_round_participants_rejects_non_participant() {
     assert_ne!(status, 200, "non-participant must not see roster");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_settlement_rejects_when_not_settled() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2034,7 +2034,7 @@ async fn test_round_settlement_rejects_when_not_settled() {
     assert_ne!(status, 200, "settlement read must fail before round is Settled");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_round_settlement_returns_breakdown_after_settle() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2151,7 +2151,7 @@ async fn force_round_capacity(_ctx: &TestContext, capacity: i32) {
 
 // ── Group 1: Subject DTO + expires_at validation ─────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_subject_with_expires_at_persists_window() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2195,7 +2195,7 @@ async fn test_create_subject_with_expires_at_persists_window() {
     assert_eq!(fetched.expires_at, expires, "GET must echo expires_at");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_subject_rejects_expires_before_scheduled() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2226,7 +2226,7 @@ async fn test_create_subject_rejects_expires_before_scheduled() {
     assert_ne!(status, 200, "expires_at < scheduled_at must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_subject_rejects_expires_in_past() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2255,7 +2255,7 @@ async fn test_create_subject_rejects_expires_in_past() {
     assert_ne!(status, 200, "expires_at in the past must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_subject_can_change_expires_at() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2274,7 +2274,7 @@ async fn test_update_subject_can_change_expires_at() {
     assert_eq!(body.expires_at, new_expires);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_publish_subject_with_expires_at_override() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2296,7 +2296,7 @@ async fn test_publish_subject_with_expires_at_override() {
 
 // ── Group 2: pick_next_subject time-window behaviour ─────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_pick_skips_subject_past_expires_at() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2326,7 +2326,7 @@ async fn test_pick_skips_subject_past_expires_at() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_pick_picks_subject_within_window() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2355,7 +2355,7 @@ async fn test_pick_picks_subject_within_window() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_pick_prefers_latest_pick_at_among_active() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2401,7 +2401,7 @@ async fn test_pick_prefers_latest_pick_at_among_active() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_pick_picks_scheduled_when_time_due() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2433,7 +2433,7 @@ async fn test_pick_picks_scheduled_when_time_due() {
 
 // ── Group 3: in-flight + post-settle dedup ───────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_join_during_in_flight_returns_round_in_progress() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2455,7 +2455,7 @@ async fn test_join_during_in_flight_returns_round_in_progress() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_leave_during_waiting_clears_in_flight_allows_rejoin() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2495,7 +2495,7 @@ async fn test_leave_during_waiting_clears_in_flight_allows_rejoin() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_subject_already_played_only_after_settlement() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;
@@ -2527,7 +2527,7 @@ async fn test_subject_already_played_only_after_settlement() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_user_can_play_different_subjects_in_series() {
     let ctx = TestContext::setup().await;
     reset_fact_fold_state(&ctx).await;

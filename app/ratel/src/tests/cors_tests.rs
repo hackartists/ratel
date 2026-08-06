@@ -50,7 +50,7 @@ async fn build_cors_app() -> axum::Router {
     app
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn cors_preflight_allows_tauri_localhost() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter("error")
@@ -85,7 +85,7 @@ async fn cors_preflight_allows_tauri_localhost() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn cors_preflight_rejects_unknown_origin() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter("error")

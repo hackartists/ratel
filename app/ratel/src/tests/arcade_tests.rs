@@ -70,7 +70,7 @@ async fn enable_redeem(ctx: &TestContext, admin: &axum::http::HeaderMap) {
 
 // ── Wallet — read ─────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_wallet_zero_balance_for_new_user() {
     let ctx = TestContext::setup().await;
     reset_arcade_settings(&ctx).await;
@@ -87,7 +87,7 @@ async fn test_wallet_zero_balance_for_new_user() {
     assert!(!body.redeem_enabled);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_wallet_requires_auth() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {
@@ -99,7 +99,7 @@ async fn test_wallet_requires_auth() {
 
 // ── Wallet — convert ──────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_convert_rp_to_chip_debits_rp_and_credits_chip() {
     let ctx = TestContext::setup().await;
     // Reset settings so the 1:1 default ratio is in effect — sibling
@@ -129,7 +129,7 @@ async fn test_convert_rp_to_chip_debits_rp_and_credits_chip() {
     assert_eq!(w.chip_balance, 300);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_convert_rejects_insufficient_rp() {
     let ctx = TestContext::setup().await;
     // RP balance stays at 0
@@ -142,7 +142,7 @@ async fn test_convert_rejects_insufficient_rp() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_convert_rejects_below_minimum() {
     let ctx = TestContext::setup().await;
     // Reset so default min_convert_rp=100 is the gate (siblings can
@@ -161,7 +161,7 @@ async fn test_convert_rejects_below_minimum() {
 
 // ── Wallet — redeem (disabled v1) ─────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_redeem_disabled_in_v1() {
     let ctx = TestContext::setup().await;
     // Seed some chips directly so the chips themselves aren't the
@@ -190,7 +190,7 @@ async fn test_redeem_disabled_in_v1() {
 
 // ── Admin settings ────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_arcade_settings_get_returns_defaults() {
     let ctx = TestContext::setup().await;
     reset_arcade_settings(&ctx).await;
@@ -207,7 +207,7 @@ async fn test_arcade_settings_get_returns_defaults() {
     assert!(!body.redeem_enabled);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_arcade_settings_put_persists() {
     let ctx = TestContext::setup().await;
     let (_, admin) = ctx.create_admin_user().await;
@@ -234,7 +234,7 @@ async fn test_arcade_settings_put_persists() {
     assert_eq!(body.rp_to_chip_ratio_bps, 20_000);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_arcade_settings_rejects_non_admin() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {
@@ -245,7 +245,7 @@ async fn test_arcade_settings_rejects_non_admin() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_arcade_settings_rejects_invalid_values() {
     let ctx = TestContext::setup().await;
     let (_, admin) = ctx.create_admin_user().await;
@@ -260,7 +260,7 @@ async fn test_arcade_settings_rejects_invalid_values() {
 
 // ── SSE realtime ──────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_events_rejects_unknown_channel() {
     let ctx = TestContext::setup().await;
     // `unknown_kind` is not registered with the hub. PR4f registered
@@ -277,7 +277,7 @@ async fn test_events_rejects_unknown_channel() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_events_chat_rejects_non_participant() {
     // fof.chat is registered. authorize() loads the round and
     // checks the participant list — a round id that doesn't exist
@@ -296,7 +296,7 @@ async fn test_events_chat_rejects_non_participant() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_events_rejects_unauthenticated() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {
@@ -306,7 +306,7 @@ async fn test_events_rejects_unauthenticated() {
     assert_ne!(status, 200, "unauthenticated SSE subscription must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_redeem_flag_can_be_flipped() {
     // Demonstrates that the v2 path opens up by flipping the
     // operator-side `redeem_enabled` flag (the wallet impl still

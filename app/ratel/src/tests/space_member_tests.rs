@@ -69,7 +69,7 @@ fn url(space_id: &str, query: Option<&str>) -> String {
     }
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_empty_query_returns_first_page() {
     let ctx = TestContext::setup().await;
     let participants = (0..100)
@@ -92,7 +92,7 @@ async fn test_empty_query_returns_first_page() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_username_prefix_uses_gsi3_fast_path() {
     let ctx = TestContext::setup().await;
     // Mix of usernames: 3 "john*", 2 "jordan*", and 95 unrelated.
@@ -127,7 +127,7 @@ async fn test_username_prefix_uses_gsi3_fast_path() {
     }
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_display_name_prefix_via_scan_fallback() {
     let ctx = TestContext::setup().await;
     // display_name starts with "Alice" but username is transliterated/aliased,
@@ -154,7 +154,7 @@ async fn test_display_name_prefix_via_scan_fallback() {
     assert!(names.contains(&"Alice Johnson"));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_non_ascii_display_name_prefix() {
     let ctx = TestContext::setup().await;
     // Korean display_names paired with transliterated usernames — the
@@ -182,7 +182,7 @@ async fn test_non_ascii_display_name_prefix() {
     assert!(names.contains(&"김영희"));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_case_insensitive_prefix() {
     let ctx = TestContext::setup().await;
     let participants = vec![
@@ -201,7 +201,7 @@ async fn test_case_insensitive_prefix() {
     assert_eq!(items.len(), 2, "uppercase query should still match: {:?}", items);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_result_cap_at_20() {
     let ctx = TestContext::setup().await;
     // 30 usernames starting with "bob" should still get capped at 20.
@@ -225,7 +225,7 @@ async fn test_result_cap_at_20() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_no_match_returns_empty() {
     let ctx = TestContext::setup().await;
     let participants = vec![
@@ -244,7 +244,7 @@ async fn test_no_match_returns_empty() {
     assert!(items.is_empty(), "no match should yield empty list: {:?}", items);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_dedup_between_gsi_and_scan() {
     // If a participant matches BOTH username prefix (GSI3) and display_name
     // prefix (scan), they must not appear twice.

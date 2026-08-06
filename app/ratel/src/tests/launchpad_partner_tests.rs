@@ -1,7 +1,7 @@
 use super::*;
 use crate::features::launchpad_partner::models::LaunchpadDeduction;
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn deduction_row_round_trips() {
     let _ctx = TestContext::setup().await;
     let user = format!("u-{}", uuid::Uuid::new_v4());
@@ -63,7 +63,7 @@ async fn post_callback(
     resp.status().as_u16()
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn health_ok_with_valid_signature() {
     let ctx = TestContext::setup().await;
     let body = format!(
@@ -73,7 +73,7 @@ async fn health_ok_with_valid_signature() {
     assert_eq!(status, 200, "valid health should be 200");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn callback_rejects_bad_signature() {
     let ctx = TestContext::setup().await;
     let body = format!(
@@ -83,7 +83,7 @@ async fn callback_rejects_bad_signature() {
     assert_eq!(status, 401, "bad signature should be 401");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn callback_rejects_project_mismatch() {
     let ctx = TestContext::setup().await;
     let body = r#"{"project_id":"wrong-project","check":"launchpad_company_point_health"}"#;
@@ -91,7 +91,7 @@ async fn callback_rejects_project_mismatch() {
     assert_eq!(status, 403, "project mismatch should be 403");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn deduct_is_idempotent_without_console() {
     // Pre-seed the idempotency row; the second deduct must return the stored
     // result WITHOUT calling the console (which is unreachable in tests).

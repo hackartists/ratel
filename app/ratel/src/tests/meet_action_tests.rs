@@ -39,7 +39,7 @@ async fn seed_creator_space(ctx: &TestContext) -> String {
     space_id
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_meet_admin_success() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;
@@ -53,7 +53,7 @@ async fn test_create_meet_admin_success() {
     assert!(body["sk"].as_str().is_some(), "response must include sk");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_meet_unauthenticated() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;
@@ -65,7 +65,7 @@ async fn test_create_meet_unauthenticated() {
     assert_ne!(status, 200, "unauthenticated create_meet should fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_meet_returns_response_with_space_action() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;
@@ -87,7 +87,7 @@ async fn test_get_meet_returns_response_with_space_action() {
     assert!(body["space_action"].is_object(), "space_action must be populated");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_meet_mode() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;
@@ -115,7 +115,7 @@ async fn test_update_meet_mode() {
     assert_eq!(body["mode"], "Instant", "mode should be updated");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_meet_duration_invalid_zero() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;
@@ -136,7 +136,7 @@ async fn test_update_meet_duration_invalid_zero() {
     assert_ne!(status, 200, "duration 0 should fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_delete_meet_removes_row() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;

@@ -4,7 +4,7 @@ use postgres::ops::StringOp;
 
 /// Test: calling record_activity twice with the same (space, user, action_id)
 /// for a Poll should only create one SpaceActivity record.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_poll_xp_dedup() {
     let ctx = TestContext::setup().await;
 
@@ -62,7 +62,7 @@ async fn test_poll_xp_dedup() {
 
 /// Test: calling record_activity twice with the same (space, user, action_id)
 /// for Follow should only create one SpaceActivity record.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_follow_xp_dedup() {
     let ctx = TestContext::setup().await;
 
@@ -104,7 +104,7 @@ async fn test_follow_xp_dedup() {
 
 /// Test: two different comments on the same discussion should each create
 /// their own SpaceActivity (not deduplicated against each other).
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_discussion_different_comments_not_deduped() {
     let ctx = TestContext::setup().await;
 
@@ -156,7 +156,7 @@ async fn test_discussion_different_comments_not_deduped() {
 }
 
 /// Test: same discussion comment submitted twice should be deduplicated.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_discussion_same_comment_deduped() {
     let ctx = TestContext::setup().await;
 

@@ -99,7 +99,7 @@ async fn notifications_matching(
 }
 
 /// Happy path: ongoing space + one participant → inbox row + email Notification row.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_notify_action_ongoing_creates_inbox_and_email() {
     let ctx = TestContext::setup().await;
     let owner_pk = ctx.test_user.0.pk();
@@ -158,7 +158,7 @@ async fn test_notify_action_ongoing_creates_inbox_and_email() {
 }
 
 /// Dedup: the same action firing twice produces only one inbox row per participant.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_notify_action_ongoing_is_idempotent_per_action() {
     let ctx = TestContext::setup().await;
     let owner_pk = ctx.test_user.0.pk();
@@ -187,7 +187,7 @@ async fn test_notify_action_ongoing_is_idempotent_per_action() {
 }
 
 /// Guard: parent space not Ongoing → no inbox row created.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_notify_action_ongoing_skipped_when_space_not_ongoing() {
     let ctx = TestContext::setup().await;
     let owner_pk = ctx.test_user.0.pk();
@@ -212,7 +212,7 @@ async fn test_notify_action_ongoing_skipped_when_space_not_ongoing() {
 }
 
 /// Guard: zero participants → handler returns Ok and writes nothing.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_notify_action_ongoing_no_participants_is_noop() {
     let ctx = TestContext::setup().await;
     let owner_pk = ctx.test_user.0.pk();

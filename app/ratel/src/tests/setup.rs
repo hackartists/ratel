@@ -81,7 +81,14 @@ async fn init_test_postgres() {
     }
     let url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://asset:asset@127.0.0.1:5433/ratel_test".to_string());
-    let pool = postgres::sqlx::PgPool::connect(&url)
+    // A single controller request can check out several connections at once
+    // (an outer `Tx` plus nested repository reads), so the sqlx default of 10
+    // exhausts the pool and callers hit `PoolTimedOut`. The test DB allows 100
+    // connections; give the shared test pool generous headroom.
+    let pool = postgres::sqlx::postgres::PgPoolOptions::new()
+        .max_connections(50)
+        .acquire_timeout(std::time::Duration::from_secs(30))
+        .connect(&url)
         .await
         .expect("test postgres: connect (is the postgres container up?)");
     postgres::set_global_pool(pool.clone());

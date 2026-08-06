@@ -12,7 +12,7 @@ use crate::features::spaces::space_common::services::handle_space_status_change;
 use postgres::PostgresEntity;
 
 /// Smoke test: handler accepts an event for an unknown transition and returns Ok.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_unknown_transition_is_noop() {
     let ctx = TestContext::setup().await;
     let _ = ctx; // force setup so DynamoDB schema exists
@@ -128,7 +128,7 @@ async fn notifications_matching(
     rows.into_iter().filter(|n| filter(n)).collect()
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_publish_to_open_notifies_team_members() {
     let ctx = TestContext::setup().await;
 
@@ -218,7 +218,7 @@ async fn insert_user_space(
     space
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_publish_to_open_skips_user_authored() {
     let ctx = TestContext::setup().await;
     let space = insert_user_space(&ctx, ctx.test_user.0.pk(), None).await;
@@ -264,7 +264,7 @@ async fn insert_participant_for(
     sp.create().await.unwrap();
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_open_to_ongoing_notifies_participants() {
     let ctx = TestContext::setup().await;
     let space =
@@ -304,7 +304,7 @@ async fn test_handle_open_to_ongoing_notifies_participants() {
 
 // ── Task 12 ──────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_ongoing_to_finished_notifies_participants() {
     let ctx = TestContext::setup().await;
     let space =
@@ -348,7 +348,7 @@ async fn test_handle_ongoing_to_finished_notifies_participants() {
 
 // ── Task 13 ──────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_no_recipients_is_noop_participants() {
     let ctx = TestContext::setup().await;
     let space =
@@ -380,7 +380,7 @@ async fn test_handle_no_recipients_is_noop_participants() {
 
 // ── Task 13a ─────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_dedupes_duplicate_emails() {
     let ctx = TestContext::setup().await;
     let space =
@@ -485,7 +485,7 @@ async fn find_status_change_events_for(
         .expect("query status change events failed")
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_publish_creates_status_change_event() {
     let ctx = TestContext::setup().await;
     let (_post_pk_str, space_id) = create_draft_space(&ctx).await;
@@ -505,7 +505,7 @@ async fn test_publish_creates_status_change_event() {
     assert_eq!(events[0].new_status, SpaceStatus::Open);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_start_creates_status_change_event() {
     let ctx = TestContext::setup().await;
     let (_post_pk_str, space_id) = create_draft_space(&ctx).await;
@@ -535,7 +535,7 @@ async fn test_start_creates_status_change_event() {
         && e.new_status == SpaceStatus::Ongoing));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_finish_creates_status_change_event() {
     let ctx = TestContext::setup().await;
     let (_post_pk_str, space_id) = create_draft_space(&ctx).await;
@@ -577,7 +577,7 @@ async fn test_finish_creates_status_change_event() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_title_update_creates_no_status_change_event() {
     let ctx = TestContext::setup().await;
     let (_post_pk_str, space_id) = create_draft_space(&ctx).await;

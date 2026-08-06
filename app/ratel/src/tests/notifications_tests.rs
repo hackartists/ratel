@@ -17,7 +17,7 @@ fn reply_payload(content: &str) -> InboxPayload {
     }
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_inbox_returns_rows_for_current_user() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -40,7 +40,7 @@ async fn test_list_inbox_returns_rows_for_current_user() {
     assert!(body.items.iter().all(|i| !i.is_read));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_inbox_unauthenticated_fails() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {
@@ -50,7 +50,7 @@ async fn test_list_inbox_unauthenticated_fails() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_unread_count_reports_gsi_entries_capped_at_100() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -71,7 +71,7 @@ async fn test_unread_count_reports_gsi_entries_capped_at_100() {
     assert_eq!(body.count, 3);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mark_read_flips_unread_sentinel() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();
@@ -103,7 +103,7 @@ async fn test_mark_read_flips_unread_sentinel() {
     assert_eq!(body.count, 0);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_list_inbox_lists_authenticated_user_rows() {
     let (ctx, token) = setup_mcp_test().await;
     let user_pk = ctx.test_user.0.pk();
@@ -130,7 +130,7 @@ async fn test_mcp_list_inbox_lists_authenticated_user_rows() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_read_all_marks_all_unread_and_reports_affected() {
     let ctx = TestContext::setup().await;
     let user_pk = ctx.test_user.0.pk();

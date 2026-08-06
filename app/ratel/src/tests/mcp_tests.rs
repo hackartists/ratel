@@ -93,7 +93,7 @@ pub(super) fn extract_tool_content(body: &serde_json::Value) -> serde_json::Valu
     serde_json::from_str(text).unwrap_or_default()
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_get_me() {
     let (ctx, token) = setup_mcp_test().await;
     let (status, body) = mcp_tool_call(ctx.app, &token, "get_me", serde_json::json!({})).await;
@@ -101,7 +101,7 @@ async fn test_mcp_tool_get_me() {
     assert!(body.get("result").is_some(), "should have result: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_create_post() {
     let (ctx, token) = setup_mcp_test().await;
     let (status, body) =
@@ -111,7 +111,7 @@ async fn test_mcp_tool_create_post() {
     assert!(content.get("post_pk").is_some(), "should have post_pk: {:?}", content);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_list_teams() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -155,7 +155,7 @@ async fn test_mcp_tool_list_teams() {
     assert!(found, "created team '{}' not found in list_teams result: {:?}", team_username, teams);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_invalid_secret() {
     let ctx = TestContext::setup().await;
     let (status, body) =
@@ -168,7 +168,7 @@ async fn test_mcp_tool_invalid_secret() {
     assert!(has_error, "invalid secret should error: status={}, body={:?}", status, body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_create_and_get_post() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -182,7 +182,7 @@ async fn test_mcp_tool_create_and_get_post() {
     assert_eq!(status, 200, "get_post: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_create_publish_like() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -202,7 +202,7 @@ async fn test_mcp_tool_create_publish_like() {
     assert_eq!(status, 200, "like_post: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_delete_post() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -216,7 +216,7 @@ async fn test_mcp_tool_delete_post() {
     assert_eq!(status, 200, "delete_post: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_create_space() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -281,7 +281,7 @@ async fn get_team_id_by_username(
         .to_string()
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_team_create_post() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -316,7 +316,7 @@ async fn test_mcp_tool_team_create_post() {
     assert_eq!(status, 200, "get_post (team post): {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_team_post_and_space() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -403,7 +403,7 @@ async fn seed_creator_space(ctx: &TestContext) -> String {
     space_id
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_create_meet() {
     let (ctx, token) = setup_mcp_test().await;
     let space_id = seed_creator_space(&ctx).await;

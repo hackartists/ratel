@@ -93,7 +93,7 @@ async fn insert_team_owned_space(_ctx: &TestContext, team_pk: Partition) -> (Spa
     (space, post_id)
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_space_as_team_admin_without_participant_row_succeeds() {
     let ctx = TestContext::setup().await;
     let team_pk = create_team_owned_by_test_user(&ctx).await;
@@ -120,7 +120,7 @@ async fn test_get_space_as_team_admin_without_participant_row_succeeds() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_space_as_team_admin_survives_partial_participant_row() {
     let ctx = TestContext::setup().await;
     let team_pk = create_team_owned_by_test_user(&ctx).await;
@@ -155,7 +155,7 @@ async fn test_get_space_as_team_admin_survives_partial_participant_row() {
     assert_eq!(body["participated"], serde_json::json!(false));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_space_as_non_admin_still_loads_participant() {
     let ctx = TestContext::setup().await;
     let team_pk = create_team_owned_by_test_user(&ctx).await;
