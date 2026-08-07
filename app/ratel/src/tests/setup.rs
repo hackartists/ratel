@@ -106,21 +106,29 @@ async fn init_test_postgres() {
     // exhausts the pool and callers hit `PoolTimedOut`. The test DB allows 100
     // connections; give the shared test pool generous headroom.
     //
-    // `after_release` returns `false` so every connection is CLOSED when
-    // returned to the pool instead of being reused. This is the key to the
-    // shared, never-dropped process-global test pool surviving the whole
-    // suite: a controller future that gets cancelled mid-query (e.g. a
-    // `try_join!` aborting a sibling, or any dropped request future) leaves its
-    // sqlx connection in an inconsistent state, and sqlx's reuse path pings
-    // such a connection with no timeout — a single wedged ping permanently
-    // leaks that connection's pool permit, and a few of them across 498 tests
-    // exhaust the pool and make every later test hang for `acquire_timeout`
-    // ("pool timed out"). Closing on release means a possibly-wedged connection
-    // is dropped (fast) rather than pinged/reused, and the next acquire opens a
-    // fresh one. The per-acquire connect cost is negligible against a local PG.
+    // Connection hygiene for the shared, never-dropped process-global test pool.
+    // A controller future cancelled mid-query (e.g. a `try_join!` aborting a
+    // sibling, or any dropped request future) leaves its sqlx connection in an
+    // inconsistent protocol state. Two independent guards keep one such wedged
+    // connection from hanging the whole suite:
+    //
+    // * `test_before_acquire(false)` — sqlx's DEFAULT behaviour is to health-ping
+    //   every connection *before* handing it out, and that ping has NO timeout.
+    //   A ping issued against a protocol-wedged connection blocks forever,
+    //   permanently leaking that connection's pool permit; a few of these across
+    //   498 tests exhaust the pool and every later test hangs (the CI-only
+    //   "runs fine locally, hangs for hours in CI" symptom). Disabling the
+    //   pre-acquire ping removes that unbounded wait entirely — a wedged
+    //   connection is handed out and *fails its next query fast* (a surfaced
+    //   error) instead of hanging on the ping.
+    // * `after_release(false)` — every connection is CLOSED (not reused) when
+    //   returned to the pool, so a possibly-wedged connection is dropped rather
+    //   than lingering for a later acquire. The next acquire opens a fresh one;
+    //   the per-acquire connect cost is negligible against a local PG.
     let pool = postgres::sqlx::postgres::PgPoolOptions::new()
         .max_connections(50)
         .acquire_timeout(std::time::Duration::from_secs(30))
+        .test_before_acquire(false)
         .after_release(|_conn, _meta| Box::pin(async move { Ok(false) }))
         .connect(&url)
         .await

@@ -97,11 +97,95 @@ mod imp {
     const RATEL_NS: Uuid = Uuid::from_u128(0x1d2b_3a4c_5e6f_4a1b_9c0d_1e2f_3a4b_5c6d);
 
     fn key_to_uuid(k: &str) -> Uuid {
-        Uuid::new_v5(&RATEL_NS, k.as_bytes())
+        // A Space and its Post/Feed are ONE logical id in the app: `Partition`'s
+        // `to_post_key`/`to_space_key` just swap the `SPACE#`/`FEED#` prefix,
+        // keeping the id (`get_space` → `to_post_key(SPACE#id)` →
+        // `Post::get_by_feed_id(id)`; `create_space` mints the SpaceCommon from
+        // the post's id). DynamoDB stored them as `SPACE#<X>` and `FEED#<X>` with
+        // the SAME `<X>`, so hashing the full prefixed string would give the
+        // space and its post DIFFERENT uuids and break every space-detail lookup
+        // ("Post Not Found"). Canonicalize a bare `SPACE#<X>` to `FEED#<X>` before
+        // hashing so `space.id == post.id`. Only single-segment keys are
+        // canonicalized — composite keys (`SPACE#<X>##USER#<Y>`) are surrogate
+        // ids nothing prefix-swaps against, so they hash as-is.
+        let canonical = match k.strip_prefix("SPACE#") {
+            Some(rest) if !rest.contains('#') => format!("FEED#{rest}"),
+            _ => k.to_string(),
+        };
+        Uuid::new_v5(&RATEL_NS, canonical.as_bytes())
     }
 
     fn strip1<'a>(s: &'a str, prefix: &str) -> &'a str {
         s.strip_prefix(prefix).unwrap_or(s)
+    }
+
+    // ── FK reference-id remapping ─────────────────────────────────────────────
+    //
+    // Every entity's own Postgres `id` is `key_to_uuid(pk)` — a UUIDv5 of its
+    // original DynamoDB pk. But cross-feature reference columns (`user_pk`,
+    // `team_pk`, `space_pk`, …) are stored as the Display string form
+    // `"PREFIX#<id>"`, and the running app reconstructs them from the referenced
+    // entity's id via `Partition::X(entity.id)` → `"PREFIX#" + entity.id`. So a
+    // reference must embed the SAME uuid the target row was minted with, not the
+    // original DynamoDB id — otherwise "my teams / my invitations / my posts"
+    // reverse-lookups (`WHERE user_pk = "USER#" + users.id`) never match the
+    // migrated rows. Rewrite each reference `"PREFIX#<orig>"` →
+    // `"PREFIX#" + key_to_uuid("PREFIX#<orig>")`. Deterministic ⇒ idempotent.
+
+    /// Field names that hold a single `"PREFIX#<id>"` reference to another
+    /// entity (every `*_pk: String` FK column across the migrated models, plus
+    /// the lone `pk: String` on user_metadata which is a user reference).
+    const FK_REF_FIELDS: &[&str] = &[
+        "user_pk",
+        "team_pk",
+        "space_pk",
+        "owner_pk",
+        "author_pk",
+        "parent_team_pk",
+        "target_pk",
+        "post_pk",
+        "applicant_team_pk",
+        "target_user_pk",
+        "source_pk",
+        "other_user_pk",
+        "other_pk",
+        "child_team_pk",
+        "anchor_post_pk",
+        "pk",
+    ];
+
+    /// Rewrite a single `"PREFIX#<orig-id>"` reference to embed the target's
+    /// migrated uuid. Returns `None` (leave untouched) for anything that isn't a
+    /// bare single-segment prefixed reference — composite `PREFIX#a##PREFIX#b`
+    /// keys, values with no `#`, or non-uppercase prefixes.
+    fn remap_ref_string(s: &str) -> Option<String> {
+        let (prefix, rest) = s.split_once('#')?;
+        if rest.is_empty() || rest.contains('#') {
+            return None; // composite / malformed — not a single entity reference
+        }
+        if prefix.is_empty()
+            || !prefix
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c == '_')
+        {
+            return None;
+        }
+        Some(format!("{prefix}#{}", key_to_uuid(s)))
+    }
+
+    /// Apply `remap_ref_string` to every FK reference column of a finalized
+    /// entity object, in place. Called once per row in `finish!`, so it covers
+    /// references injected by any `prep_*` path uniformly.
+    fn remap_fk_reference_ids(v: &mut Value) {
+        if let Value::Object(map) = v {
+            for &field in FK_REF_FIELDS {
+                if let Some(Value::String(s)) = map.get(field) {
+                    if let Some(mapped) = remap_ref_string(s) {
+                        map.insert(field.to_string(), Value::String(mapped));
+                    }
+                }
+            }
+        }
     }
 
     // ── Reporting ───────────────────────────────────────────────────────────
@@ -966,7 +1050,11 @@ mod imp {
 
     macro_rules! finish {
         ($report:expr, $name:expr, $dry_run:expr, $pk:expr, $sk:expr, $Model:ty, $val:expr) => {{
-            match serde_json::from_value::<$Model>($val) {
+            let mut __val = $val;
+            // Remap every "PREFIX#<orig-id>" reference to the target's migrated
+            // uuid so the app's reverse-lookups (WHERE user_pk = "USER#"+id) hit.
+            remap_fk_reference_ids(&mut __val);
+            match serde_json::from_value::<$Model>(__val) {
                 Ok(row) => {
                     $report.parse_ok($name);
                     if !$dry_run {
