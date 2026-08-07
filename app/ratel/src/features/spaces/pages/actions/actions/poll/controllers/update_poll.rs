@@ -70,6 +70,14 @@ pub async fn update_poll(
         .await
         .map_err(crate::common::Error::from)?;
 
+    // Emit outbox event (Phase 5) — EssenceIndexPoll rule on SPACE_POLL# MODIFY.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_POLL,
+        &poll,
+    )
+    .await
+    .ok();
+
     if let Some(title) = action_title {
         if let Some(mut action) = SpaceAction::get_one(&space_id, &poll_sk.0).await? {
             action.title = title;

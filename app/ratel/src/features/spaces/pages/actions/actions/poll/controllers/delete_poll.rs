@@ -16,6 +16,14 @@ pub async fn delete_poll(
         .await?
         .ok_or(Error::NotFound("Poll not found".into()))?;
 
+    // Emit outbox event (Phase 5) — EssenceDeletePoll rule on SPACE_POLL# REMOVE.
+    crate::common::events::outbox::EventOutbox::emit_remove(
+        crate::common::events::outbox::topic::SPACE_POLL,
+        &poll,
+    )
+    .await
+    .ok();
+
     SpacePoll::repository()
         .delete(poll.id)
         .await

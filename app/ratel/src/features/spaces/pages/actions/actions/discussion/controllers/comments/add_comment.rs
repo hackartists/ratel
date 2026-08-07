@@ -63,6 +63,15 @@ pub async fn add_comment(
     )
     .await?;
 
+    // Emit outbox event (Phase 5) — AiModeratorReplyIndex / DiscussionXpRecord /
+    // EssenceIndexDiscussionComment rules on SPACE_POST_COMMENT# INSERT.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_POST_COMMENT,
+        &comment,
+    )
+    .await
+    .ok();
+
     let space_pk: Partition = space_id.clone().into();
 
     // Essence indexing happens via the DynamoDB Stream pipeline.

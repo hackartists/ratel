@@ -268,6 +268,14 @@ pub async fn respond_poll(
             member.clone(),
         );
         answer_record.save().await?;
+        // Phase 5: emit so the outbox poller dispatches "PollXpRecord"
+        // (handle_poll_xp) — the Postgres analogue of the old EventBridge path.
+        crate::common::events::outbox::EventOutbox::emit_insert(
+            crate::common::events::outbox::topic::POLL_USER_ANSWER,
+            &answer_record,
+        )
+        .await
+        .ok();
 
         SpacePoll::bump_response_count(poll.id, 1).await?;
 

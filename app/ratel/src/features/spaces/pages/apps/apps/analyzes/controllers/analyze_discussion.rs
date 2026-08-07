@@ -89,6 +89,15 @@ pub async fn analyze_discussion(
             e
         })?;
 
+    // Emit outbox event (Phase 5) — AnalyzeDiscussionInProgress rule on
+    // SPACE_ANALYZE_DISCUSSION_RESULT# INSERT.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_ANALYZE_DISCUSSION_RESULT,
+        &row,
+    )
+    .await
+    .ok();
+
     Ok(AnalyzeDiscussionResponse {
         request_id,
         report_id: report_id_str,

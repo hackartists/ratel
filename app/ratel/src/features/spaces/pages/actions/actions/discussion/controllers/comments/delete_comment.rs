@@ -51,6 +51,15 @@ pub async fn delete_comment(
     let tx = postgres::Tx::begin()
         .await
         .map_err(crate::common::Error::from)?;
+    // Emit outbox event (Phase 5) — EssenceDeleteDiscussionComment rule on
+    // SPACE_POST_COMMENT# REMOVE.
+    crate::common::events::outbox::EventOutbox::emit_remove_tx(
+        &tx,
+        crate::common::events::outbox::topic::SPACE_POST_COMMENT,
+        &comment,
+    )
+    .await
+    .map_err(|_| SpaceActionDiscussionError::DeleteFailed)?;
     SpacePostComment::repository()
         .with_tx(&tx)
         .delete(comment.id)

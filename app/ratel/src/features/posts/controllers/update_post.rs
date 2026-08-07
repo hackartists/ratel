@@ -91,6 +91,10 @@ pub async fn update_post_handler(post_id: FeedPartition, req: UpdatePostRequest)
     // Post row is saved (Postgres has no cross-table transact needed here).
     let mut pending_directive: Option<PostSyndicationDirective> = None;
 
+    // Phase 5: capture the pre-edit post so the outbox MODIFY event carries the
+    // real old→new images (see the emit after `post.save()` below).
+    let old_post = post.clone();
+
     match req {
         UpdatePostRequest::Writing {
             title,
@@ -207,6 +211,18 @@ pub async fn update_post_handler(post_id: FeedPartition, req: UpdatePostRequest)
     }
 
     let post = post.save().await?;
+
+    // Phase 5: emit as MODIFY (real old→new images) so the is_modify POST rules
+    // fire (TimelineUpdate, PopularPostUpdate, PostPublishedForSyndication —
+    // gated on `is_modify && status==PUBLISHED`) alongside the is_upsert
+    // essence/vector rules.
+    crate::common::events::outbox::EventOutbox::emit_modify(
+        crate::common::events::outbox::topic::POST,
+        &old_post,
+        &post,
+    )
+    .await
+    .ok();
 
     // Write the cross-posting directive to Postgres now that the Post publish
     // has been saved. Natural-key (`post_id`) upsert keeps re-publish idempotent.

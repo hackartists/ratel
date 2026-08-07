@@ -405,7 +405,14 @@ pub async fn publish_announcement_handler(
         existing.target_post_pk = Some(anchor_post_pk_str);
     }
 
-    // Fan-out happens asynchronously via the stream poller / event pipe.
+    // Phase 5: emit so the outbox poller dispatches "SubTeamAnnouncementPublished"
+    // (announcement fan-out) — the Postgres analogue of the old stream fan-out.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SUB_TEAM_ANNOUNCEMENT,
+        &existing,
+    )
+    .await
+    .ok();
 
     Ok(existing.into())
 }

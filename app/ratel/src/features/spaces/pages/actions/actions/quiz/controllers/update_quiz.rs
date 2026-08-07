@@ -102,6 +102,14 @@ pub async fn update_quiz(
         .await
         .map_err(crate::common::Error::from)?;
 
+    // Emit outbox event (Phase 5) — EssenceIndexQuiz rule on SPACE_QUIZ# MODIFY.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_QUIZ,
+        &existing,
+    )
+    .await
+    .ok();
+
     if should_update_action {
         if let Some(mut action) =
             crate::features::spaces::pages::actions::models::SpaceAction::get_one(

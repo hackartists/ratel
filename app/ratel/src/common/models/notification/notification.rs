@@ -40,10 +40,20 @@ impl Notification {
     /// Persist a freshly built notification row. Replaces the DynamoDB
     /// `notification.create(cli)` call.
     pub async fn save(&self) -> crate::common::Result<Self> {
-        Self::repository()
+        let saved = Self::repository()
             .insert(self)
             .await
-            .map_err(crate::common::Error::from)
+            .map_err(crate::common::Error::from)?;
+        // Phase 5: any notification row created anywhere emits so the outbox
+        // poller dispatches "NotificationSend" (the 2nd-order push delivery) —
+        // the Postgres analogue of the NOTIFICATION# stream record.
+        crate::common::events::outbox::EventOutbox::emit_insert(
+            crate::common::events::outbox::topic::NOTIFICATION,
+            &saved,
+        )
+        .await
+        .ok();
+        Ok(saved)
     }
 
     pub async fn process(&self) -> crate::common::Result<()> {

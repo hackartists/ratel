@@ -45,6 +45,13 @@ pub async fn reply_to_comment_handler(
     )
     .await?;
 
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::POST_COMMENT,
+        &comment,
+    )
+    .await
+    .ok();
+
     // Essence indexing happens via the DynamoDB Stream pipeline.
 
     let cta_url = format!(

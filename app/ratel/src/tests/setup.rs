@@ -89,7 +89,14 @@ impl TestContext {
 async fn init_test_postgres() {
     use std::sync::atomic::{AtomicBool, Ordering};
     static DONE: AtomicBool = AtomicBool::new(false);
-    if DONE.swap(true, Ordering::SeqCst) {
+    // Only skip if a PREVIOUS call fully succeeded. Setting the flag up-front
+    // (swap-true) was a bug: if the first test's connect/schema-create failed
+    // (e.g. Postgres still accepting connections at first-test time in CI), the
+    // flag latched true with the global pool never set, and every subsequent
+    // test then panicked "global pool not set". `init` runs under the serialized
+    // DB_TEST_LOCK, so a plain load-then-store-at-end has no race and lets a
+    // transient first-attempt failure be retried by the next test.
+    if DONE.load(Ordering::SeqCst) {
         return;
     }
     let url = std::env::var("DATABASE_URL")
@@ -133,6 +140,9 @@ async fn init_test_postgres() {
         .create(&pool)
         .await
         .expect("test postgres: schema create");
+    // Mark done only after the pool is set AND the schema is built, so a
+    // transient earlier failure is retried rather than latched.
+    DONE.store(true, Ordering::SeqCst);
 }
 
 pub fn create_user_name() -> String {

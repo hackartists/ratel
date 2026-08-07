@@ -54,6 +54,14 @@ pub async fn create_quiz(
             crate::error!("Failed to create quiz answer: {e}");
             SpaceActionQuizError::CreateFailed
         })?;
+    // Emit outbox event (Phase 5) — EssenceIndexQuiz rule on SPACE_QUIZ# INSERT.
+    crate::common::events::outbox::EventOutbox::emit_insert_tx(
+        &tx,
+        crate::common::events::outbox::topic::SPACE_QUIZ,
+        &quiz,
+    )
+    .await
+    .map_err(|_| SpaceActionQuizError::CreateFailed)?;
     tx.commit().await.map_err(|e| {
         crate::error!("Failed to commit quiz: {e}");
         SpaceActionQuizError::CreateFailed

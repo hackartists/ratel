@@ -85,6 +85,16 @@ pub async fn follow_user(
             crate::error!("Failed to follow user: {e}");
             SpaceFollowError::FollowFailed
         })?;
+    // Phase 5: emit the follow event in the SAME transaction (atomic) so the
+    // outbox poller dispatches "FollowXpRecord" (handle_follow_xp). The follower
+    // record carries the FOLLOWER# routing token the dispatcher rule matches.
+    crate::common::events::outbox::EventOutbox::emit_insert_tx(
+        &tx,
+        crate::common::events::outbox::topic::FOLLOWER,
+        &follower_record,
+    )
+    .await
+    .map_err(|_| SpaceFollowError::FollowFailed)?;
 
     bump_target_followers_tx(&tx, &target_pk, 1)
         .await

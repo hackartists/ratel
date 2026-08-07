@@ -36,6 +36,13 @@ pub async fn create_post_handler(team_id: Option<TeamPartition>) -> Result<Creat
     let post = Post::draft(author);
     let post = post.create().await?;
 
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::POST,
+        &post,
+    )
+    .await
+    .ok();
+
     // Essence indexing is now driven by the DynamoDB Stream pipeline
     // (see `common::stream_handler::essence_index_dispatch`).
 

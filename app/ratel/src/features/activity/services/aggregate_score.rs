@@ -47,5 +47,13 @@ pub async fn aggregate_score(
     score.updated_at = now;
 
     score.save().await?;
+    // Phase 5: emit so the outbox poller dispatches "CharacterXpDelta"
+    // (apply_character_xp_delta) — matches the SPACE_SCORE routing token.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_SCORE,
+        &score,
+    )
+    .await
+    .ok();
     Ok(())
 }

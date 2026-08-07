@@ -97,6 +97,15 @@ pub async fn record_activity(
         .insert(&activity)
         .await
         .map_err(crate::features::activity::models::map_db_err)?;
+    // Phase 5: emit the activity event so the outbox poller dispatches the
+    // "ActivityScoreAggregate" rule (best-effort; see outbox.rs for the
+    // transactional variant used by hot paths like SpaceStatusChange).
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_ACTIVITY,
+        &activity,
+    )
+    .await
+    .ok();
     tracing::info!(
         action_id = %action_id,
         action_type = ?action_type,

@@ -235,36 +235,41 @@ pub async fn update_space(
         }
     }
 
-    updated_space = updated_space.save().await?;
+    // Postgres migration (Phase 5): commit the space write, the status-change
+    // audit row, and the outbox event in ONE transaction — the transactional
+    // outbox. Either all three commit or none do, so the participant-
+    // notification event can never be lost relative to the status change.
+    {
+        use crate::common::events::outbox::{EventOutbox, topic};
+        use crate::common::models::space::SpaceStatusChangeEvent;
+        let tx = postgres::Tx::begin().await.map_err(crate::common::Error::from)?;
+        updated_space = SpaceCommon::repository()
+            .with_tx(&tx)
+            .upsert_on(&["space_pk"], &updated_space)
+            .await
+            .map_err(crate::common::Error::from)?;
+        // Phase 5: emit the space write so the outbox poller dispatches the
+        // SPACE_COMMON rules (SpacePublished, PopularSpaceUpdate) — atomic with
+        // the write. The dispatcher re-checks each rule's field conditions
+        // (status / participants), so emitting on every update is safe.
+        EventOutbox::emit_insert_tx(&tx, topic::SPACE_COMMON, &updated_space).await?;
+        if let Some((old_status, new_status)) = status_transition {
+            let event = SpaceStatusChangeEvent::new(space_pk.clone(), old_status, new_status);
+            SpaceStatusChangeEvent::repository()
+                .with_tx(&tx)
+                .insert(&event)
+                .await
+                .map_err(crate::common::Error::from)?;
+            EventOutbox::emit_insert_tx(&tx, topic::SPACE_STATUS_CHANGE, &event).await?;
+        }
+        tx.commit().await.map_err(crate::common::Error::from)?;
+    }
 
     if should_send_invitation {
         let post_pk = space_pk.clone().to_post_key()?;
         let post = load_post(&post_pk).await?;
 
         SpaceInvitationMember::send_email(&updated_space, post.title).await?;
-    }
-
-    if let Some((old_status, new_status)) = status_transition {
-        use crate::common::models::space::SpaceStatusChangeEvent;
-        let event = SpaceStatusChangeEvent::new(space_pk.clone(), old_status, new_status);
-        if let Err(e) = event.save().await {
-            tracing::error!(
-                "update_space: failed to persist SpaceStatusChangeEvent: {e}"
-            );
-            // Do not fail the request — the status has already changed.
-        }
-        // Postgres migration: the DynamoDB stream that used to drive the
-        // dispatcher's "SpaceStatusChangeEvent" rule is gone (no stream on
-        // Postgres), so the participant notifications it produced would never
-        // fire. Invoke the SAME handler inline here — identical logic, run
-        // synchronously at the mutation site (the Phase 1 inline-notification
-        // pattern). Best-effort: a notification failure must not fail the
-        // status change the caller already committed.
-        if let Err(e) =
-            crate::features::spaces::space_common::services::handle_space_status_change(event).await
-        {
-            tracing::error!("update_space: handle_space_status_change failed: {e}");
-        }
     }
 
     crate::features::spaces::space_common::services::upsert_hot_space(dynamo, &space_pk).await;

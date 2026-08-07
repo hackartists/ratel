@@ -67,6 +67,16 @@ pub async fn reply_comment(
     )
     .await?;
 
+    // Phase 5: replies carry the SPACE_POST_COMMENT_REPLY# routing token — emit
+    // so the outbox poller dispatches the discussion-comment essence/index rules
+    // for replies too (they matched that token on the DynamoDB stream).
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_POST_COMMENT_REPLY,
+        &comment,
+    )
+    .await
+    .ok();
+
     let space_pk: Partition = space_id.clone().into();
 
     // Essence indexing happens via the DynamoDB Stream pipeline.

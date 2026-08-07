@@ -41,6 +41,11 @@ pub async fn update_space_action(
         })?
         .ok_or(Error::NotFound("Space action not found".into()))?;
 
+    // Phase 5: capture the pre-mutation action so the outbox event carries the
+    // real old→new transition (the "SpaceActionStatusChange" rule matches
+    // old status == Designing && new status == Ongoing).
+    let old_action = space_action.clone();
+
     match req {
         UpdateSpaceActionRequest::Credits { credits } => {
             update_credits(
@@ -84,6 +89,18 @@ pub async fn update_space_action(
         crate::error!("Failed to update space action: {e:?}");
         SpaceActionError::ActionUpdateFailed
     })?;
+
+    // Phase 5: emit the action change so the outbox poller dispatches
+    // "SpaceActionStatusChange" (notify_action_ongoing) and
+    // "EssenceActionMetadataUpdate". MODIFY with the real old→new images so the
+    // Designing→Ongoing status-transition filter matches.
+    crate::common::events::outbox::EventOutbox::emit_modify(
+        crate::common::events::outbox::topic::SPACE_ACTION_STATUS,
+        &old_action,
+        &space_action,
+    )
+    .await
+    .ok();
 
     reindex_essence_for_action(cli, &space_id, &action_id, &space_action, &space).await;
     Ok(space_action)

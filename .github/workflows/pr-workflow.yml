@@ -403,6 +403,12 @@ jobs:
       - name: Run tests
         working-directory: app/ratel
         env:
+          # Postgres migration: the server-function tests now run against
+          # Postgres (the `postgres` service the infra profile brings up, mapped
+          # to host 55432 in docker-compose). Without this the tests fall back to
+          # the asset:asset@5433 dev DSN, fail to connect, and every test after
+          # the first panics "global pool not set".
+          DATABASE_URL: postgres://ratel:ratel@127.0.0.1:55432/ratel
           DYNAMO_TABLE_PREFIX: ratel-local
           DYNAMO_ENDPOINT: http://localhost:4566
           AWS_ACCESS_KEY_ID: test

@@ -38,6 +38,13 @@ pub async fn add_comment_handler(
 
     let comment = Post::comment(post_uuid, req.content, req.images, user.clone()).await?;
 
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::POST_COMMENT,
+        &comment,
+    )
+    .await
+    .ok();
+
     // Essence indexing happens via the DynamoDB Stream pipeline.
 
     // Send mention notifications

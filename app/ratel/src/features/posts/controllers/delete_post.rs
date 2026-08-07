@@ -31,6 +31,13 @@ pub async fn delete_post_handler(post_id: FeedPartition, force: Option<bool>) ->
 
     let post = Post::delete_by_feed_id(post_uuid).await?;
 
+    crate::common::events::outbox::EventOutbox::emit_remove(
+        crate::common::events::outbox::topic::POST,
+        &post,
+    )
+    .await
+    .ok();
+
     // Qdrant vector deletion is handled by DynamoStream → PostVectorDelete event
 
     Ok(post)

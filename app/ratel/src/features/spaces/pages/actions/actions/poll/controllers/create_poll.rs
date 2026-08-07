@@ -41,6 +41,14 @@ pub async fn create_poll(
             crate::error!("Failed to create poll action: {e}");
             SpacePollError::CreateFailed
         })?;
+    // Emit outbox event (Phase 5) — EssenceIndexPoll rule on SPACE_POLL# INSERT.
+    crate::common::events::outbox::EventOutbox::emit_insert_tx(
+        &tx,
+        crate::common::events::outbox::topic::SPACE_POLL,
+        &poll,
+    )
+    .await
+    .map_err(|_| SpacePollError::CreateFailed)?;
     tx.commit().await.map_err(|e| {
         crate::error!("Failed to commit poll: {e}");
         SpacePollError::CreateFailed

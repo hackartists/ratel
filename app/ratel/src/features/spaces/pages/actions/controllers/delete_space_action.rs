@@ -38,6 +38,15 @@ pub async fn delete_space_action(space_id: SpacePartition, action_id: String) ->
                 return Err(SpaceActionError::ActionDeleteFailed.into());
             }
 
+            // Emit outbox event (Phase 5) — EssenceDeletePoll rule on
+            // SPACE_POLL# REMOVE.
+            crate::common::events::outbox::EventOutbox::emit_remove(
+                crate::common::events::outbox::topic::SPACE_POLL,
+                &poll,
+            )
+            .await
+            .ok();
+
             delete_entities_tx(&[poll.id], space_action.id, "poll").await?;
             let _ = DashboardAggregate::inc_polls(&space_pk, -1).await;
         }
@@ -76,6 +85,15 @@ pub async fn delete_space_action(space_id: SpacePartition, action_id: String) ->
             let tx = postgres::Tx::begin()
                 .await
                 .map_err(crate::common::Error::from)?;
+            // Emit outbox event (Phase 5) — EssenceDeleteQuiz rule on
+            // SPACE_QUIZ# REMOVE.
+            crate::common::events::outbox::EventOutbox::emit_remove_tx(
+                &tx,
+                crate::common::events::outbox::topic::SPACE_QUIZ,
+                &quiz,
+            )
+            .await
+            .map_err(|_| SpaceActionError::ActionDeleteFailed)?;
             SpaceQuiz::repository()
                 .with_tx(&tx)
                 .delete(quiz.id)

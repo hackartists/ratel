@@ -64,6 +64,14 @@ pub async fn create_discussion(
             crate::error!("Failed to subscribe author: {e}");
             SpaceActionDiscussionError::CreateFailed
         })?;
+    // Emit outbox event (Phase 5) — AiModeratorReplyCheck rule on SPACE_POST# INSERT.
+    crate::common::events::outbox::EventOutbox::emit_insert_tx(
+        &tx,
+        crate::common::events::outbox::topic::SPACE_POST,
+        &post,
+    )
+    .await
+    .map_err(|_| SpaceActionDiscussionError::CreateFailed)?;
     tx.commit().await.map_err(|e| {
         crate::error!("Failed to commit discussion: {e}");
         SpaceActionDiscussionError::CreateFailed

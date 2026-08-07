@@ -12,6 +12,9 @@ pub static POOL: Lazy<PgPool> = Lazy::new(|| async move {
 
     let pool = PgPoolOptions::new()
         .max_connections(config.max_connections)
+        // Explicit acquire timeout (sqlx default is 30s) — kept modest so a
+        // genuinely exhausted pool surfaces fast instead of hanging requests.
+        .acquire_timeout(std::time::Duration::from_secs(30))
         .connect(&config.database_url)
         .await?;
 

@@ -140,6 +140,15 @@ pub async fn handle_post_published_for_syndication(post: Post) -> Result<()> {
                 ?platform,
                 "factory: SyndicationJob created"
             );
+            // Phase 5: emit so the outbox poller dispatches "SyndicationJobReady"
+            // (handle_syndication_job_ready) — the Postgres analogue of the
+            // SYNDICATION_JOB# stream record that drove per-platform dispatch.
+            crate::common::events::outbox::EventOutbox::emit_insert(
+                crate::common::events::outbox::topic::SYNDICATION_JOB,
+                &job,
+            )
+            .await
+            .ok();
         }
     }
 

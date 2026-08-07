@@ -83,6 +83,14 @@ pub async fn respond_quiz(
         .insert(&attempt)
         .await
         .map_err(crate::common::Error::from)?;
+    // Phase 5: emit so the outbox poller dispatches "QuizXpRecord"
+    // (handle_quiz_xp) — the Postgres analogue of the old EventBridge path.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::QUIZ_ATTEMPT,
+        &attempt,
+    )
+    .await
+    .ok();
 
     if attempts.is_empty() {
         SpaceQuiz::bump_response_count(quiz.id, 1).await?;

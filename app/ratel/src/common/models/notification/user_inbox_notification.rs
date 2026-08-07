@@ -64,10 +64,20 @@ impl UserInboxNotification {
 
     /// Insert a new inbox row. Replaces `row.create(cli)`.
     pub async fn save(&self) -> crate::common::Result<Self> {
-        Self::repository()
+        let saved = Self::repository()
             .insert(self)
             .await
-            .map_err(crate::common::Error::from)
+            .map_err(crate::common::Error::from)?;
+        // Phase 5: any inbox-notification row emits so the outbox poller
+        // dispatches "InboxPushFanout" (the 2nd-order push fan-out) — the
+        // Postgres analogue of the USER_INBOX_NOTIFICATION# stream record.
+        crate::common::events::outbox::EventOutbox::emit_insert(
+            crate::common::events::outbox::topic::USER_INBOX_NOTIFICATION,
+            &saved,
+        )
+        .await
+        .ok();
+        Ok(saved)
     }
 
     /// One page of a user's inbox, newest-first. `unread_only` filters to

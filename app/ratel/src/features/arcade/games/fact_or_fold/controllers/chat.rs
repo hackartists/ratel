@@ -79,6 +79,14 @@ pub async fn post_chat_handler(
         crate::error!("post_chat_handler create failed: {e}");
         FactOrFoldError::StorageFailure
     })?;
+    // Phase 5: emit so the outbox poller dispatches "FactFoldChat"
+    // (handle_fact_fold_chat_inserted) — drives the SSE chat fan-out.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::FACT_FOLD_CHAT,
+        &row,
+    )
+    .await
+    .ok();
 
     Ok(PostChatResponse {
         msg_id: row.msg_id.clone(),

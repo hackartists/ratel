@@ -97,6 +97,15 @@ pub async fn create_analyze_report(
             Error::Internal
         })?;
 
+    // Emit outbox event (Phase 5) — AnalyzeReportInProgress rule on
+    // SPACE_ANALYZE_REPORT# INSERT.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_ANALYZE_REPORT,
+        &report,
+    )
+    .await
+    .ok();
+
     Ok(CreateAnalyzeReportResponse { report_id })
 }
 
