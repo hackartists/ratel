@@ -25,7 +25,7 @@ services:
       POSTGRES_MAX_CONNECTIONS: "10"
       RUST_LOG: "error"
     ports:
-      - "8090:8080"
+      - "8080:8080"
     healthcheck:
       test:
         [

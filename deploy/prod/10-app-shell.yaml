@@ -49,6 +49,13 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: "8080"
+            # Postgres migration: the app resolves its global pool from
+            # DATABASE_URL and migrates the inventory schema on boot (with retry;
+            # see common/run.rs). Reuses the shared infra Postgres — the dedicated
+            # `ratel` database isolates prod from dev (`ratel-dev`) and gives the
+            # outbox poller's pg_advisory_lock its own per-database namespace.
+            - name: DATABASE_URL
+              value: postgres://ratel:ratel@postgres.infra.svc.cluster.local:5432/ratel
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: /usr/src/app/.gcp/firebase-service-account.json
           envFrom:
