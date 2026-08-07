@@ -4,7 +4,7 @@ mod controllers;
 mod dto;
 mod hooks;
 mod layout;
-mod models;
+pub mod models;
 pub mod pages;
 pub(crate) mod space_common;
 mod types;

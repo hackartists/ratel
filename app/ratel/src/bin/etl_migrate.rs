@@ -53,12 +53,12 @@ mod imp {
     use std::collections::BTreeMap;
     use uuid::Uuid;
 
-    use app_shell::common::models::auth::User;
+    use app_shell::common::models::auth::{User, UserFollow};
     use app_shell::common::models::did::{AttributeCode, VerifiedAttributes};
     use app_shell::common::models::notification::{
         Notification, UserDeviceToken, UserInboxNotification,
     };
-    use app_shell::common::models::reward::UserReward;
+    use app_shell::common::models::reward::{UserReward, UserRewardHistory};
     use app_shell::common::models::space::{SpaceAdmin, SpaceCommon, SpaceParticipant, SpaceStatusChangeEvent};
     use app_shell::features::activity::models::{SpaceActivity, SpaceScore};
     use app_shell::features::auth::models::{
@@ -66,12 +66,28 @@ mod imp {
     };
     use app_shell::features::character::models::{CharacterXp, CharacterXpSource};
     use app_shell::features::essence::models::{Essence, UserEssenceStats};
-    use app_shell::features::membership::models::{Membership, TeamMembership, UserMembership};
-    use app_shell::features::posts::models::{Category, Post, PostLike, Team, TeamGroup, TeamOwner};
-    use app_shell::features::spaces::SpaceInvitationMember;
-    use app_shell::features::spaces::pages::actions::actions::discussion::{
-        SpaceCategory, SpacePost, SpacePostComment, SpacePostCommentLike,
+    use app_shell::features::ai_moderator::models::AiModeratorConfig;
+    use app_shell::features::cross_posting::models::{
+        PostSyndicationDirective, SocialConnection, SyndicationJob,
     };
+    use app_shell::features::membership::models::{
+        Membership, TeamMembership, UserMembership, UserPurchase,
+    };
+    use app_shell::features::sub_team::models::{
+        SubTeamAnnouncement, SubTeamAnnouncementFanout, SubTeamApplication, SubTeamFormField,
+        SubTeamLink,
+    };
+    use app_shell::features::posts::models::{
+        Category, Post, PostComment, PostLike, Team, TeamGroup, TeamOwner,
+    };
+    use app_shell::features::spaces::SpaceInvitationMember;
+    use app_shell::features::spaces::models::SpacePanelParticipant;
+    use app_shell::features::spaces::pages::apps::apps::file::models::{FileLink, SpaceFile};
+    use app_shell::features::spaces::pages::apps::models::SpaceApp;
+    use app_shell::features::spaces::pages::actions::actions::discussion::{
+        SpaceCategory, SpacePost, SpacePostComment, SpacePostCommentLike, SpacePostSubscription,
+    };
+    use app_shell::features::spaces::pages::actions::actions::follow::SpaceFollowAction;
     use app_shell::features::spaces::pages::actions::actions::poll::models::{
         SpacePoll, SpacePollUserAnswer,
     };
@@ -181,6 +197,71 @@ mod imp {
             for &field in FK_REF_FIELDS {
                 if let Some(Value::String(s)) = map.get(field) {
                     if let Some(mapped) = remap_ref_string(s) {
+                        map.insert(field.to_string(), Value::String(mapped));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Bare `*_id` cross-entity reference columns → the referenced entity's
+    /// canonical prefix. Unlike `FK_REF_FIELDS` (which hold the full
+    /// `"PREFIX#<id>"` string), these hold a BARE id and the running app compares
+    /// them against a target entity's uuid `id` (`Partition::User(user.id).0`,
+    /// `Partition::Space(space.id).0`, …). The ETL forgot to remap them, so
+    /// actions/scores/activity/etc. — which link to their Space via a bare
+    /// `space_id` — never resolved. Field→prefix from the 3-tree audit; every
+    /// name here references the SAME entity type in every model it appears in.
+    /// Context-dependent names (`post_id`, `announcement_id`) are deliberately
+    /// EXCLUDED: in every ETL-dispatched entity they are natural keys (KEEP);
+    /// the models that would remap them (hot_spaces, syndication, …) aren't
+    /// migrated. `remap_id_value` also handles the rare prefixed form
+    /// (`mcp_client_secret.user_id` = `"USER#.."`, `backing_post_id` = `"FEED#.."`).
+    const ID_REF_FIELDS: &[(&str, &str)] = &[
+        ("space_id", "FEED"), // Space canonicalizes to FEED (space.id == post.id)
+        ("user_id", "USER"),
+        ("author_user_id", "USER"),
+        ("submitter_user_id", "USER"),
+        ("parent_team_id", "TEAM"),
+        ("pending_parent_team_id", "TEAM"),
+        ("sub_team_id", "TEAM"),
+        ("applicant_team_id", "TEAM"),
+        ("child_team_id", "TEAM"),
+        ("target_child_team_id", "TEAM"),
+        ("announcement_parent_team_id", "TEAM"),
+        ("backing_post_id", "FEED"),
+    ];
+
+    /// Remap one reference value to the referenced entity's migrated id.
+    /// `key_to_uuid` applies the SPACE→FEED canonicalization, so a bare space id
+    /// hashed under `FEED#` lands on the exact same uuid as the space's own row.
+    fn remap_id_value(value: &str, prefix: &str) -> String {
+        if value.is_empty() {
+            return value.to_string();
+        }
+        let pfx = format!("{prefix}#");
+        if let Some(rest) = value.strip_prefix(&pfx) {
+            // Already prefixed (mcp_client_secret.user_id / backing_post_id):
+            // keep the prefix, rewrite the inner id. Skip composites.
+            if rest.contains('#') {
+                return value.to_string();
+            }
+            format!("{prefix}#{}", key_to_uuid(value))
+        } else if value.contains('#') {
+            // Composite or a differently-prefixed value — not a bare id ref.
+            value.to_string()
+        } else {
+            // Bare id → bare canonical uuid of the referenced entity.
+            key_to_uuid(&format!("{prefix}#{value}")).to_string()
+        }
+    }
+
+    fn remap_id_reference_fields(v: &mut Value) {
+        if let Value::Object(map) = v {
+            for &(field, prefix) in ID_REF_FIELDS {
+                if let Some(Value::String(s)) = map.get(field) {
+                    let mapped = remap_id_value(s, prefix);
+                    if mapped != *s {
                         map.insert(field.to_string(), Value::String(mapped));
                     }
                 }
@@ -775,6 +856,281 @@ mod imp {
         Value::Object(obj)
     }
 
+    /// FOLLOWER / FOLLOWING edges → `UserFollow`. DynamoDB stored two rows per
+    /// relationship (pk=owner, sk="FOLLOWER#<other>" or "FOLLOWING#<other>").
+    /// Natural key (owner_pk, relation, other_pk) == (pk, sk), so
+    /// `id = key_to_uuid("{pk}#{sk}")`. owner_pk/other_pk/user_pk/target_user_pk
+    /// are raw Partition strings → remapped by `finish!` (FK_REF_FIELDS).
+    fn prep_user_follow(
+        pk: &str,
+        sk: &str,
+        relation: &str,
+        prefix: &str,
+        mut obj: Map<String, Value>,
+    ) -> Value {
+        let other_pk = strip1(sk, prefix).to_string();
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.entry("owner_pk".to_string()).or_insert(json!(pk));
+        obj.insert("relation".into(), json!(relation));
+        obj.entry("other_pk".to_string()).or_insert(json!(other_pk));
+        Value::Object(obj)
+    }
+
+    /// SPACE_ACTION_FOLLOW → `SpaceFollowAction`. pk="SPACE#<space>",
+    /// sk="SPACE_ACTION_FOLLOW#<uuid>". Surrogate id + space_id (bare, remapped
+    /// to FEED) + follow_id (natural key, kept). id = key_to_uuid("{pk}#{sk}").
+    fn prep_space_follow_action(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let space_id = strip1(pk, "SPACE#");
+        let follow_id = strip1(sk, "SPACE_ACTION_FOLLOW#");
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.entry("space_id".to_string()).or_insert(json!(space_id));
+        obj.entry("follow_id".to_string()).or_insert(json!(follow_id));
+        Value::Object(obj)
+    }
+
+    /// SPACE_POST_SUBSCRIPTION → `SpacePostSubscription`. pk="SPACE_POST#<post>",
+    /// sk="SPACE_POST_SUBSCRIPTION#USER#<uid>". id = key_to_uuid("{pk}#{sk}");
+    /// post_id (bare, natural key, kept), space_id derived from `space_pk`.
+    fn prep_space_post_subscription(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let post_id = strip1(pk, "SPACE_POST#");
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.entry("post_id".to_string()).or_insert(json!(post_id));
+        derive_space_id_from_space_pk(&mut obj);
+        Value::Object(obj)
+    }
+
+    /// SPACE_REWARD## per-event ledger → `UserRewardHistory`. Shares the summary's
+    /// pk ("{target}##REWARD") and "SPACE_REWARD##" sk prefix, but the sk is
+    /// "<reward_key>###<time_key>". Natural key (target_pk, reward_key, time_key)
+    /// == (pk, sk) → id = key_to_uuid("{pk}#{sk}"). reward_key/time_key are opaque
+    /// (not references). target_pk → remapped by finish! (FK_REF_FIELDS).
+    fn prep_user_reward_history(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let target_pk = pk.strip_suffix("##REWARD").unwrap_or(pk).to_string();
+        let (reward_key, time_key) = match sk.split_once("###") {
+            Some((rk, tk)) => (rk.to_string(), tk.to_string()),
+            None => (sk.to_string(), String::new()),
+        };
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.insert("target_pk".into(), json!(target_pk));
+        obj.insert("reward_key".into(), json!(reward_key));
+        obj.insert("time_key".into(), json!(time_key));
+        Value::Object(obj)
+    }
+
+    // ── Sub-team ──────────────────────────────────────────────────────────
+    fn prep_sub_team_announcement(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        // pk="TEAM#<parent>", sk="SUB_TEAM_ANNOUNCEMENT#<id>". App looks it up by
+        // announcement_id.parse::<Uuid>() → id MUST equal that uuid.
+        let ann_id = strip1(sk, "SUB_TEAM_ANNOUNCEMENT#");
+        let id = Uuid::parse_str(ann_id).unwrap_or_else(|_| key_to_uuid(&format!("{pk}#{sk}")));
+        obj.insert("id".into(), json!(id.to_string()));
+        obj.entry("team_pk".to_string()).or_insert(json!(pk));
+        obj.entry("announcement_id".to_string()).or_insert(json!(ann_id));
+        Value::Object(obj)
+    }
+
+    fn prep_sub_team_announcement_fanout(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let ann_id = strip1(sk, "SUB_TEAM_ANNOUNCEMENT_FANOUT#");
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.entry("child_team_pk".to_string()).or_insert(json!(pk));
+        obj.entry("announcement_id".to_string()).or_insert(json!(ann_id));
+        Value::Object(obj)
+    }
+
+    fn prep_sub_team_application(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        // App parses application_id → get(uuid); id MUST equal that uuid.
+        let app_id = strip1(sk, "SUB_TEAM_APPLICATION#");
+        let id = Uuid::parse_str(app_id).unwrap_or_else(|_| key_to_uuid(&format!("{pk}#{sk}")));
+        obj.insert("id".into(), json!(id.to_string()));
+        obj.entry("parent_team_pk".to_string()).or_insert(json!(pk));
+        obj.entry("application_id".to_string()).or_insert(json!(app_id));
+        Value::Object(obj)
+    }
+
+    fn prep_sub_team_form_field(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let field_id = strip1(sk, "SUB_TEAM_FORM_FIELD#");
+        let id = Uuid::parse_str(field_id).unwrap_or_else(|_| key_to_uuid(&format!("{pk}#{sk}")));
+        obj.insert("id".into(), json!(id.to_string()));
+        obj.entry("team_pk".to_string()).or_insert(json!(pk));
+        Value::Object(obj)
+    }
+
+    fn prep_sub_team_link(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let child_id = strip1(sk, "SUB_TEAM_LINK#");
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.entry("parent_team_pk".to_string()).or_insert(json!(pk));
+        obj.entry("child_team_id".to_string()).or_insert(json!(child_id));
+        // `approved_by` ("USER#<id>") is not in FK_REF_FIELDS → remap here.
+        if let Some(Value::String(s)) = obj.get("approved_by") {
+            if let Some(mapped) = remap_ref_string(s) {
+                obj.insert("approved_by".into(), Value::String(mapped));
+            }
+        }
+        Value::Object(obj)
+    }
+
+    // ── Cross-posting ─────────────────────────────────────────────────────
+    fn prep_social_connection(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let user_id = strip1(pk, "USER#");
+        let platform = strip1(sk, "SOCIAL_CONNECTION#");
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.entry("user_id".to_string()).or_insert(json!(user_id));
+        obj.entry("platform".to_string()).or_insert(json!(platform));
+        if !obj.contains_key("platform_status") {
+            let status = obj
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("connected");
+            obj.insert("platform_status".into(), json!(format!("{platform}#{status}")));
+        }
+        obj.entry("external_handle".to_string()).or_insert(json!(""));
+        Value::Object(obj)
+    }
+
+    fn prep_syndication_directive(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        // post_id excluded from auto-remap → set explicitly to the migrated Post uuid.
+        obj.insert("post_id".into(), json!(key_to_uuid(pk).to_string()));
+        // author_user_id must be BARE to match SocialConnection.user_id.
+        if let Some(Value::String(s)) = obj.get("author_user_id") {
+            obj.insert("author_user_id".into(), json!(strip1(s, "USER#").to_string()));
+        }
+        Value::Object(obj)
+    }
+
+    fn prep_syndication_job(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let platform = strip1(sk, "SYNDICATION_JOB#");
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.insert("post_id".into(), json!(key_to_uuid(pk).to_string()));
+        obj.entry("platform".to_string()).or_insert(json!(platform));
+        if let Some(Value::String(s)) = obj.get("author_user_id") {
+            obj.insert("author_user_id".into(), json!(strip1(s, "USER#").to_string()));
+        }
+        obj.entry("dispatch_shard".to_string()).or_insert(Value::Null);
+        obj.entry("engagement_shard".to_string()).or_insert(Value::Null);
+        Value::Object(obj)
+    }
+
+    // ── Membership ────────────────────────────────────────────────────────
+    fn prep_user_purchase(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let purchase_uuid = strip1(sk, "USER_PURCHASE#");
+        let id =
+            Uuid::parse_str(purchase_uuid).unwrap_or_else(|_| key_to_uuid(&format!("{pk}#{sk}")));
+        obj.insert("id".into(), json!(id.to_string()));
+        let user_pk = pk.strip_suffix("##PURCHASE").unwrap_or(pk);
+        obj.entry("user_pk".to_string()).or_insert(json!(user_pk));
+        // PurchaseStatus expects PascalCase; prod stores SCREAMING.
+        if let Some(Value::String(s)) = obj.get("status") {
+            let norm = match s.to_ascii_uppercase().as_str() {
+                "SUCCESS" => "Success",
+                "SCHEDULED" => "Scheduled",
+                "CANCELED" | "CANCELLED" => "Canceled",
+                _ => "Success",
+            };
+            obj.insert("status".into(), json!(norm));
+        }
+        Value::Object(obj)
+    }
+
+    // ── AI moderator ──────────────────────────────────────────────────────
+    fn prep_ai_moderator_config(pk: &str, mut obj: Map<String, Value>) -> Value {
+        // pk = "<space_id>##<discussion_id>" (both bare), sk = "AI_MODERATOR_CONFIG".
+        let mut parts = pk.splitn(2, "##");
+        let space_id = parts.next().unwrap_or("").to_string();
+        let discussion_id = parts.next().unwrap_or("").to_string();
+        obj.insert("id".into(), json!(key_to_uuid(pk).to_string()));
+        obj.entry("space_id".to_string()).or_insert(json!(space_id));
+        obj.entry("discussion_id".to_string())
+            .or_insert(json!(discussion_id));
+        Value::Object(obj)
+    }
+
+    // ── Space apps / files / panels ───────────────────────────────────────
+    /// SPACE_APP: pk="SPACE#<space>", sk="SPACE_APP#<AppType>". One installed-app
+    /// row per (space, app_type). `app_type` (e.g. "Analyzes") is already in obj.
+    fn prep_space_app(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.entry("space_pk".to_string()).or_insert(json!(pk));
+        Value::Object(obj)
+    }
+
+    /// SPACE_FILE: pk="SPACE#<space>", sk="SPACE_FILE" (singleton). `files`
+    /// (Vec<File>) already in obj; space_pk = pk (remapped by finish!).
+    fn prep_space_file(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.entry("space_pk".to_string()).or_insert(json!(pk));
+        Value::Object(obj)
+    }
+
+    /// FILE_LINK: pk="SPACE#<space>", sk="FILE_LINK#<uuid>". file_url/link_target
+    /// already in obj; space_pk = pk (remapped by finish!).
+    fn prep_file_link(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.entry("space_pk".to_string()).or_insert(json!(pk));
+        Value::Object(obj)
+    }
+
+    /// SPACE_PANEL_PARTICIPANT: pk="SPACE#<space>",
+    /// sk="SPACE_PANEL_PARTICIPANT#USER#<uid>". unique(space_id, user_pk).
+    /// space_id (bare, →FEED via finish!), user_pk already in obj (→remapped).
+    fn prep_space_panel_participant(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let space_id = strip1(pk, "SPACE#");
+        obj.insert(
+            "id".into(),
+            json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
+        );
+        obj.entry("space_id".to_string()).or_insert(json!(space_id));
+        Value::Object(obj)
+    }
+
+    /// POST_COMMENT → `PostComment` (feed-post comment). pk="FEED#<post>",
+    /// sk="POST_COMMENT#<uuid>". id = the comment uuid; post_id = migrated Post
+    /// uuid (key_to_uuid(pk)). author_pk (USER#..) remapped by finish!.
+    fn prep_post_comment(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let comment_uuid = strip1(sk, "POST_COMMENT#");
+        let id = Uuid::parse_str(comment_uuid).unwrap_or_else(|_| key_to_uuid(&format!("{pk}#{sk}")));
+        obj.insert("id".into(), json!(id.to_string()));
+        obj.insert("post_id".into(), json!(key_to_uuid(pk).to_string()));
+        obj.entry("images".to_string()).or_insert(json!([]));
+        Value::Object(obj)
+    }
+
     fn prep_timeline(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
         // pk = "TIMELINE#<user_id>", sk = "TIMELINE_ENTRY#<created_at>#<post_id>"
         let user_id = strip1(pk, "TIMELINE#").to_string();
@@ -1054,6 +1410,8 @@ mod imp {
             // Remap every "PREFIX#<orig-id>" reference to the target's migrated
             // uuid so the app's reverse-lookups (WHERE user_pk = "USER#"+id) hit.
             remap_fk_reference_ids(&mut __val);
+            // Same for bare `*_id` reference columns (space_id/user_id/*_team_id).
+            remap_id_reference_fields(&mut __val);
             match serde_json::from_value::<$Model>(__val) {
                 Ok(row) => {
                     $report.parse_ok($name);
@@ -1175,12 +1533,55 @@ mod imp {
         } else if sk == "SPACE_SCORE" {
             let val = prep_score(pk, obj);
             finish!(report, "SPACE_SCORE", dry_run, pk, sk, SpaceScore, val);
+        } else if sk.starts_with("SPACE_REWARD##") && sk.contains("###") {
+            // Per-transaction ledger row ("<reward_key>###<time_key>") →
+            // `UserRewardHistory`. MUST precede the summary branch below, which
+            // matches the same "SPACE_REWARD##" prefix WITHOUT the "###"
+            // separator and would otherwise swallow these as bogus UserReward.
+            let val = prep_user_reward_history(pk, sk, obj);
+            finish!(
+                report,
+                "SPACE_REWARD->UserRewardHistory",
+                dry_run,
+                pk,
+                sk,
+                UserRewardHistory,
+                val
+            );
         } else if sk.starts_with("SPACE_REWARD##") {
             // Maps to the per-(target,reward) aggregate `UserReward`, not the
             // per-space `SpaceReward` config row — see doc comment on
             // `prep_user_reward` / the ETL report for rationale.
             let val = prep_user_reward(pk, sk, obj);
             finish!(report, "SPACE_REWARD->UserReward", dry_run, pk, sk, UserReward, val);
+        } else if sk.starts_with("FOLLOWER#") {
+            let val = prep_user_follow(pk, sk, "follower", "FOLLOWER#", obj);
+            finish!(report, "USER_FOLLOW", dry_run, pk, sk, UserFollow, val);
+        } else if sk.starts_with("FOLLOWING#") {
+            let val = prep_user_follow(pk, sk, "following", "FOLLOWING#", obj);
+            finish!(report, "USER_FOLLOW", dry_run, pk, sk, UserFollow, val);
+        } else if sk.starts_with("SPACE_ACTION_FOLLOW#") {
+            let val = prep_space_follow_action(pk, sk, obj);
+            finish!(
+                report,
+                "SPACE_ACTION_FOLLOW",
+                dry_run,
+                pk,
+                sk,
+                SpaceFollowAction,
+                val
+            );
+        } else if sk.starts_with("SPACE_POST_SUBSCRIPTION#") {
+            let val = prep_space_post_subscription(pk, sk, obj);
+            finish!(
+                report,
+                "SPACE_POST_SUBSCRIPTION",
+                dry_run,
+                pk,
+                sk,
+                SpacePostSubscription,
+                val
+            );
         } else if sk.starts_with("NOTIFICATION#") {
             // Two disjoint shapes share this sk prefix. The current
             // `Notification` model (event-dispatch row: id/created_at/status
@@ -1410,7 +1811,7 @@ mod imp {
                 "DID_DOCUMENT",
                 "no Postgres model exists yet for this entity (retired DID-document flow)",
             );
-        } else if sk == "TEST_ACCOUNT" {
+        } else if sk.starts_with("TEST_ACCOUNT") {
             report.skip_intentional(
                 "TEST_ACCOUNT",
                 "dev/test fixture row, not production domain data",
@@ -1430,29 +1831,37 @@ mod imp {
                 "PAYMENT_CREATED",
                 "billing/payment record (customer_id, billing_key) — sensitive financial data, out of migration scope",
             );
-        } else if sk == "SPACE_PANEL_PARTICIPANT" || sk.starts_with("SPACE_PANEL_PARTICIPANT#") {
-            report.skip_intentional(
+        } else if sk.starts_with("SPACE_PANEL_PARTICIPANT#") {
+            let val = prep_space_panel_participant(pk, sk, obj);
+            finish!(
+                report,
                 "SPACE_PANEL_PARTICIPANT",
-                "model (features/spaces/models/) is not publicly reachable from an external bin crate \
-                 without changing library module visibility — out of scope for this additive ETL",
+                dry_run,
+                pk,
+                sk,
+                SpacePanelParticipant,
+                val
             );
         } else if sk.starts_with("FILE_LINK#") {
-            report.skip_intentional(
-                "FILE_LINK",
-                "model (features/spaces/pages/apps/apps/file/models/) is not publicly reachable from an \
-                 external bin crate without changing library module visibility — out of scope",
-            );
+            let val = prep_file_link(pk, sk, obj);
+            finish!(report, "FILE_LINK", dry_run, pk, sk, FileLink, val);
         } else if sk.starts_with("SPACE_APP#") {
+            let val = prep_space_app(pk, sk, obj);
+            finish!(report, "SPACE_APP", dry_run, pk, sk, SpaceApp, val);
+        } else if sk == "SPACE_FILE" {
+            let val = prep_space_file(pk, sk, obj);
+            finish!(report, "SPACE_FILE", dry_run, pk, sk, SpaceFile, val);
+        } else if sk.starts_with("SPACE_PANEL_ATTRIBUTE#")
+            || sk == "SPACE_PANEL"
+            || sk.starts_with("SPACE_PANEL#")
+            || sk == "SPACE_PANELS"
+            || sk.starts_with("SPACE_REQUIREMENT#")
+        {
             report.skip_intentional(
-                "SPACE_APP",
-                "model (features/spaces/pages/apps/models/) is not publicly reachable from an external \
-                 bin crate without changing library module visibility — out of scope",
-            );
-        } else if sk.starts_with("SPACE_PANEL_ATTRIBUTE#") {
-            report.skip_intentional(
-                "SPACE_PANEL_ATTRIBUTE",
-                "model (features/spaces/models/panel_attribute.rs) is not publicly reachable from an \
-                 external bin crate without changing library module visibility — out of scope",
+                "SPACE_PANEL_DEFINITION",
+                "panel definition / attribute / requirement rows have no standalone \
+                 PostgresEntity table (the panel app folds them into space_panel_quotas \
+                 at runtime) — deferred; participant rows ARE migrated",
             );
         } else if sk.starts_with("SPACE_DASHBOARD_EXTENSION#") {
             report.skip_intentional(
@@ -1493,6 +1902,117 @@ mod imp {
         } else if sk.starts_with("SPACE_QUIZ#") {
             let val = prep_space_quiz(pk, sk, obj);
             finish!(report, "SPACE_QUIZ", dry_run, pk, sk, SpaceQuiz, val);
+        // ── Coverage expansion round 3: sub-team / cross-posting / misc ──
+        } else if sk.starts_with("SUB_TEAM_ANNOUNCEMENT_FANOUT#") {
+            let val = prep_sub_team_announcement_fanout(pk, sk, obj);
+            finish!(
+                report,
+                "SUB_TEAM_ANNOUNCEMENT_FANOUT",
+                dry_run,
+                pk,
+                sk,
+                SubTeamAnnouncementFanout,
+                val
+            );
+        } else if sk.starts_with("SUB_TEAM_ANNOUNCEMENT#") {
+            let val = prep_sub_team_announcement(pk, sk, obj);
+            finish!(
+                report,
+                "SUB_TEAM_ANNOUNCEMENT",
+                dry_run,
+                pk,
+                sk,
+                SubTeamAnnouncement,
+                val
+            );
+        } else if sk.starts_with("SUB_TEAM_APPLICATION#") {
+            let val = prep_sub_team_application(pk, sk, obj);
+            finish!(
+                report,
+                "SUB_TEAM_APPLICATION",
+                dry_run,
+                pk,
+                sk,
+                SubTeamApplication,
+                val
+            );
+        } else if sk.starts_with("SUB_TEAM_FORM_FIELD#") {
+            let val = prep_sub_team_form_field(pk, sk, obj);
+            finish!(
+                report,
+                "SUB_TEAM_FORM_FIELD",
+                dry_run,
+                pk,
+                sk,
+                SubTeamFormField,
+                val
+            );
+        } else if sk.starts_with("SUB_TEAM_LINK#") {
+            let val = prep_sub_team_link(pk, sk, obj);
+            finish!(report, "SUB_TEAM_LINK", dry_run, pk, sk, SubTeamLink, val);
+        } else if sk.starts_with("SOCIAL_CONNECTION#") {
+            let val = prep_social_connection(pk, sk, obj);
+            finish!(
+                report,
+                "SOCIAL_CONNECTION",
+                dry_run,
+                pk,
+                sk,
+                SocialConnection,
+                val
+            );
+        } else if sk == "SYNDICATION_DIRECTIVE" {
+            let val = prep_syndication_directive(pk, sk, obj);
+            finish!(
+                report,
+                "SYNDICATION_DIRECTIVE",
+                dry_run,
+                pk,
+                sk,
+                PostSyndicationDirective,
+                val
+            );
+        } else if sk.starts_with("SYNDICATION_JOB#") {
+            let val = prep_syndication_job(pk, sk, obj);
+            finish!(report, "SYNDICATION_JOB", dry_run, pk, sk, SyndicationJob, val);
+        } else if sk.starts_with("USER_PURCHASE#") {
+            let val = prep_user_purchase(pk, sk, obj);
+            finish!(report, "USER_PURCHASE", dry_run, pk, sk, UserPurchase, val);
+        } else if sk == "AI_MODERATOR_CONFIG" {
+            let val = prep_ai_moderator_config(pk, obj);
+            finish!(
+                report,
+                "AI_MODERATOR_CONFIG",
+                dry_run,
+                pk,
+                sk,
+                AiModeratorConfig,
+                val
+            );
+        } else if sk == "SPRINT_LEAGUE"
+            || sk.starts_with("SPRINT_LEAGUE_PLAYER#")
+            || sk.starts_with("SPRINT_LEAGUE_VOTE#")
+        {
+            report.skip_intentional(
+                "SPRINT_LEAGUE",
+                "no PostgresEntity model exists for the sprint-league game entities \
+                 (only Partition/EntityType variants) — out of scope",
+            );
+        } else if pk == "REWARD" {
+            report.skip_intentional(
+                "REWARD_CONFIG",
+                "global reward-config rows (pk=REWARD; DISCUSSION_COMMENT/QUIZ_ANSWER/\
+                 RESPOND_POLL/FOLLOW action rows) map to SpaceReward under crate-private \
+                 space_common — not reachable from the bin crate",
+            );
+        } else if sk == "PHONE_VERIFICATION" {
+            report.skip_intentional(
+                "PHONE_VERIFICATION",
+                "one-time TTL'd phone verification code, security-sensitive — not migrated",
+            );
+        } else if sk.starts_with("POST_COMMENT#") {
+            let val = prep_post_comment(pk, sk, obj);
+            finish!(report, "POST_COMMENT", dry_run, pk, sk, PostComment, val);
         } else {
             report.skip(sk);
         }

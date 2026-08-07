@@ -3,7 +3,7 @@ mod context;
 pub(crate) mod controllers;
 mod hooks;
 mod layout;
-mod models;
+pub mod models;
 pub mod types;
 
 use context::*;

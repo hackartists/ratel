@@ -2,7 +2,7 @@ pub mod components;
 mod controllers;
 mod hooks;
 mod i18n;
-mod models;
+pub mod models;
 mod types;
 mod views;
 
