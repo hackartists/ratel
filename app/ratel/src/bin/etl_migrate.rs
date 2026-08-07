@@ -167,6 +167,12 @@ mod imp {
         "other_pk",
         "child_team_pk",
         "anchor_post_pk",
+        "actor_pk",   // poll answers reference the responding user via actor_pk
+        "creator_pk", // fact_fold_subject creator
+        "agreed_by",  // sub_team doc agreement — the agreeing user
+        "approved_by", // sub_team link — the approving user
+        "flip_cite_user_pk",
+        "target_post_pk",
         "pk",
     ];
 
@@ -644,14 +650,27 @@ mod imp {
         // pk = "SPACE_POLL_USER_ANSWER#USER#<uid>"
         // sk = "SPACE_POLL_USER_ANSWER#SPACE#<space>#SPACE_POLL#<poll>"
         let actor_pk = strip1(pk, "SPACE_POLL_USER_ANSWER#");
-        let rest = strip1(sk, "SPACE_POLL_USER_ANSWER#");
-        let poll_id = rest.rsplit('#').next().unwrap_or("").to_string();
+        let rest = strip1(sk, "SPACE_POLL_USER_ANSWER#"); // "SPACE#<space>#SPACE_POLL#<poll>"
+        // ALWAYS derive space_id + poll_id from the sk — some source rows (e.g.
+        // the "사전 설문조사" answers) omit the `space_id` attribute entirely, which
+        // left them with a NULL space_id and made the space-scoped completion
+        // lookup (`WHERE space_id = …`) miss them.
+        let (space_id, poll_id) = match strip1(rest, "SPACE#").split_once("#SPACE_POLL#") {
+            Some((s, p)) => (s.to_string(), p.to_string()),
+            None => (
+                String::new(),
+                rest.rsplit('#').next().unwrap_or("").to_string(),
+            ),
+        };
         obj.insert(
             "id".into(),
             json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
         );
         obj.insert("actor_pk".into(), json!(actor_pk));
-        obj.entry("poll_id".to_string()).or_insert(json!(poll_id));
+        if !space_id.is_empty() {
+            obj.insert("space_id".into(), json!(space_id)); // bare → remapped to FEED by finish!
+        }
+        obj.insert("poll_id".into(), json!(poll_id));
         Value::Object(obj)
     }
 
@@ -668,6 +687,17 @@ mod imp {
         obj.entry("quiz_id".to_string()).or_insert(json!(quiz_id));
         obj.entry("attempt_id".to_string())
             .or_insert(json!(attempt_id));
+        // `quiz_user` = "USER#<uid>#<quiz_id>" — a composite the app rebuilds from
+        // the CURRENT user id (find_latest_by_quiz_user), so the embedded user_pk
+        // must be remapped (composite → not covered by the field-level auto-remap).
+        if let Some(Value::String(qu)) = obj.get("quiz_user") {
+            if let Some(rest) = qu.strip_prefix("USER#") {
+                if let Some((uid, quiz)) = rest.split_once('#') {
+                    let mapped = key_to_uuid(&format!("USER#{uid}"));
+                    obj.insert("quiz_user".into(), json!(format!("USER#{mapped}#{quiz}")));
+                }
+            }
+        }
         Value::Object(obj)
     }
 
@@ -808,6 +838,47 @@ mod imp {
         Value::Object(obj)
     }
 
+    /// Replace the space-id segment of a `/spaces/<id>/…` URL with the space's
+    /// migrated (canonical) id. Discussion/comment/post ids in the rest of the
+    /// path are natural keys (kept raw at migration), so they already match.
+    fn remap_space_in_url(url: &str) -> Option<String> {
+        let idx = url.find("/spaces/")?;
+        let after = &url[idx + "/spaces/".len()..];
+        let end = after.find('/').unwrap_or(after.len());
+        let raw = &after[..end];
+        if raw.is_empty() {
+            return None;
+        }
+        let canonical = key_to_uuid(&format!("FEED#{raw}")).to_string();
+        Some(format!(
+            "{}/spaces/{}{}",
+            &url[..idx],
+            canonical,
+            &after[end..]
+        ))
+    }
+
+    /// Remap the space references embedded in an inbox notification's `payload`
+    /// jsonb. The in-space inbox filter queries `payload->>'space_id'` and the
+    /// deep-link `cta_url` both carry the space id, which the running app now
+    /// expresses as the canonical (post-migration) id — so a raw id here makes
+    /// the in-space bell show nothing and clicking the notification 404.
+    fn remap_inbox_payload(obj: &mut Map<String, Value>) {
+        if let Some(Value::Object(p)) = obj.get_mut("payload") {
+            if let Some(Value::String(s)) = p.get("space_id") {
+                if !s.is_empty() {
+                    let mapped = key_to_uuid(&format!("FEED#{s}")).to_string();
+                    p.insert("space_id".into(), json!(mapped));
+                }
+            }
+            if let Some(Value::String(url)) = p.get("cta_url") {
+                if let Some(new_url) = remap_space_in_url(url) {
+                    p.insert("cta_url".into(), json!(new_url));
+                }
+            }
+        }
+    }
+
     fn prep_inbox(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
         // pk = "USER#<id>", sk = "USER_INBOX_NOTIFICATION#<uuid>"
         let user_id = strip1(pk, "USER#").to_string();
@@ -816,6 +887,7 @@ mod imp {
             json!(key_to_uuid(&format!("{pk}#{sk}")).to_string()),
         );
         obj.entry("user_id".to_string()).or_insert(json!(user_id));
+        remap_inbox_payload(&mut obj);
         Value::Object(obj)
     }
 
