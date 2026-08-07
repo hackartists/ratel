@@ -2214,7 +2214,7 @@ async fn test_activity_requires_admin_role() {
 use crate::features::sub_team::types::TerminationAck;
 
 /// Helper: look up a team's `username` (needed for DELETE /api/teams/:username/settings).
-async fn team_username(ctx: &TestContext, team_pk: &Partition) -> String {
+async fn team_username(_ctx: &TestContext, team_pk: &Partition) -> String {
     let team = Team::get_by_id(team_uuid_from(team_pk))
         .await
         .unwrap()

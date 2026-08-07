@@ -629,6 +629,12 @@ jobs:
           kubectl -n "${NS}" create configmap pr-preview-dynamodb-data \
             --from-file=scripts/dynamodb-data/ \
             --dry-run=client -o yaml | kubectl apply -f -
+          # Postgres migration: the postgres-seed Job loads the same Playwright
+          # fixtures into Postgres (data-only SQL generated from the
+          # scripts/dynamodb-data/*.json seed via etl_migrate).
+          kubectl -n "${NS}" create configmap pr-preview-postgres-seed \
+            --from-file=scripts/postgres-seed.sql \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy the preview stack (envsubst → kubectl apply)
         # Plain YAML with ${PR_NUM} placeholders — no helm chart exists in
@@ -666,6 +672,10 @@ jobs:
             echo "── rollout ${d}"
             kubectl -n "${NS}" rollout status "$d" --timeout=420s
           done
+          # Postgres migration: the seed Job's initContainer blocks until
+          # app-shell has migrated the schema, then loads the fixtures — wait
+          # for it here so Playwright never races an unseeded database.
+          kubectl -n "${NS}" wait --for=condition=complete job/postgres-seed --timeout=300s
           INGRESS_IP=$(kubectl -n infra get svc ingress-nginx-controller -o jsonpath='{.spec.clusterIP}')
           [ -n "$INGRESS_IP" ] || { echo "::error::ingress-nginx-controller service not found"; exit 1; }
           base="https://${HOST}"

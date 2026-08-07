@@ -1,5 +1,7 @@
 package-lock.json
 /target/
+/target-linux/
+/target-etl/
 .vscode/*
 /.build/
 .DS_Store

@@ -253,6 +253,18 @@ pub async fn update_space(
             );
             // Do not fail the request — the status has already changed.
         }
+        // Postgres migration: the DynamoDB stream that used to drive the
+        // dispatcher's "SpaceStatusChangeEvent" rule is gone (no stream on
+        // Postgres), so the participant notifications it produced would never
+        // fire. Invoke the SAME handler inline here — identical logic, run
+        // synchronously at the mutation site (the Phase 1 inline-notification
+        // pattern). Best-effort: a notification failure must not fail the
+        // status change the caller already committed.
+        if let Err(e) =
+            crate::features::spaces::space_common::services::handle_space_status_change(event).await
+        {
+            tracing::error!("update_space: handle_space_status_change failed: {e}");
+        }
     }
 
     crate::features::spaces::space_common::services::upsert_hot_space(dynamo, &space_pk).await;

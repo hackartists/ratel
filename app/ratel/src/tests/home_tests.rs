@@ -64,7 +64,7 @@ async fn seed_space(ctx: &TestContext, author: &User, status: SpaceStatus) -> Sp
 }
 
 async fn seed_participant(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     space_pk: &Partition,
     user: &User,
     last_activity_at: Option<i64>,
