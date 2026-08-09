@@ -1,9 +1,29 @@
 use crate::features::spaces::pages::apps::apps::incentive_pool::*;
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, DynamoEntity, Default, PartialEq)]
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+
+/// One token-balance row per (incentive contract, token). Postgres
+/// migration: surrogate `id` PK; the DynamoDB
+/// `(SpaceIncentive(address), SpaceIncentiveToken(token_address))`
+/// identity becomes the `unique(incentive_address, token_address)`
+/// natural key. `incentive_address` is stored lowercase (as the old pk
+/// inner was) — a cross-feature/on-chain reference, no FK.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(PostgresEntity))]
+#[cfg_attr(
+    feature = "server",
+    postgres(
+        table = "space_incentive_tokens",
+        unique(incentive_address, token_address)
+    )
+)]
 pub struct SpaceIncentiveToken {
-    pub pk: Partition,
-    pub sk: EntityType,
+    pub id: Uuid,
+
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub incentive_address: String,
 
     pub token_address: String,
     pub symbol: String,
@@ -21,12 +41,10 @@ impl SpaceIncentiveToken {
         balance: String,
         updated_at: i64,
     ) -> Self {
-        let token_address = token_address.to_string();
-
         Self {
-            pk: Partition::SpaceIncentive(incentive_address.to_string().to_lowercase()),
-            sk: EntityType::SpaceIncentiveToken(token_address.clone()),
-            token_address,
+            id: Uuid::now_v7(),
+            incentive_address: incentive_address.to_string().to_lowercase(),
+            token_address: token_address.to_string(),
             symbol,
             decimals,
             balance,
@@ -37,40 +55,72 @@ impl SpaceIncentiveToken {
 
 #[cfg(feature = "server")]
 impl SpaceIncentiveToken {
-    pub async fn find_by_incentive_address(
-        cli: &aws_sdk_dynamodb::Client,
+    /// Page of token rows for an incentive contract, ordered by
+    /// `token_address` ascending (matching the old sk order). `bookmark`
+    /// is a decimal 1-based page number; the returned bookmark is the
+    /// next page number, or `None` on the last page.
+    pub async fn find_page(
         incentive_address: &str,
-        opt: SpaceIncentiveTokenQueryOption,
-    ) -> crate::features::spaces::pages::apps::apps::incentive_pool::Result<(Vec<Self>, Option<String>)> {
-        let opt = opt.sk(EntityType::SpaceIncentiveToken(String::new()).to_string());
-        Self::query(
-            cli,
-            Partition::SpaceIncentive(incentive_address.to_string().to_lowercase()),
-            opt,
-        )
-        .await
+        bookmark: Option<String>,
+        page_size: i64,
+    ) -> crate::common::Result<(Vec<Self>, Option<String>)> {
+        use postgres::Order;
+        use postgres::ops::StringOp;
+
+        let page: i64 = bookmark
+            .as_deref()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1)
+            .max(1);
+        let addr = incentive_address.to_lowercase();
+
+        let p = Self::repository()
+            .find(
+                Self::query()
+                    .incentive_address(StringOp::Eq(addr))
+                    .order_by(SpaceIncentiveTokenColumn::TokenAddress, Order::Asc)
+                    .page(page)
+                    .page_size(page_size),
+            )
+            .await?;
+
+        let next = if page < p.total_pages {
+            Some((page + 1).to_string())
+        } else {
+            None
+        };
+
+        Ok((p.items, next))
     }
 
+    /// Every token address held under an incentive contract.
     pub async fn list_token_addresses(
-        cli: &aws_sdk_dynamodb::Client,
         incentive_address: impl std::fmt::Display,
-    ) -> crate::features::spaces::pages::apps::apps::incentive_pool::Result<std::collections::HashSet<String>> {
-        let (items, _) =
-            Self::find_by_incentive_address(cli, &incentive_address.to_string(), Self::opt_all())
-                .await?;
-
-        Ok(items.into_iter().map(|item| item.token_address).collect())
+    ) -> crate::common::Result<std::collections::HashSet<String>> {
+        let addr = incentive_address.to_string().to_lowercase();
+        let mut out = std::collections::HashSet::new();
+        let mut page = 1i64;
+        loop {
+            let (items, next) = Self::find_page(&addr, Some(page.to_string()), 200).await?;
+            for it in items {
+                out.insert(it.token_address);
+            }
+            match next {
+                Some(_) => page += 1,
+                None => break,
+            }
+        }
+        Ok(out)
     }
 
     pub async fn upsert_balance(
-        cli: &aws_sdk_dynamodb::Client,
         incentive_address: impl std::fmt::Display,
         token_address: impl std::fmt::Display,
         symbol: String,
         decimals: i64,
         balance: String,
         updated_at: i64,
-    ) -> crate::features::spaces::pages::apps::apps::incentive_pool::Result<()> {
+    ) -> crate::common::Result<()> {
         let item = Self::new(
             incentive_address,
             token_address,
@@ -80,7 +130,9 @@ impl SpaceIncentiveToken {
             updated_at,
         );
 
-        item.upsert(cli).await?;
+        Self::repository()
+            .upsert_on(&["incentive_address", "token_address"], &item)
+            .await?;
         Ok(())
     }
 }

@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 use crate::features::posts::models::Category;
 use crate::features::posts::*;
 #[cfg(feature = "server")]
@@ -10,6 +11,7 @@ pub struct CategoryResponse {
     pub name: String,
 }
 
+#[cfg(feature = "server")]
 impl From<Category> for CategoryResponse {
     fn from(category: Category) -> Self {
         Self {

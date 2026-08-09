@@ -17,22 +17,14 @@ pub async fn update_comment(
     req: UpdateCommentRequest,
 ) -> Result<SpacePostComment> {
     SpacePost::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let discussion_sk_entity: EntityType = discussion_sk.clone().into();
-    let space_action = SpaceAction::get(
-        cli,
-        &CompositePartition(space_id.clone(), discussion_sk.to_string()),
-        Some(EntityType::SpaceAction),
-    )
-    .await?
-    .ok_or(Error::SpaceActionNotFound)?;
+    let space_action = SpaceAction::get_one(&space_id, &discussion_sk.0)
+        .await?
+        .ok_or(Error::SpaceActionNotFound)?;
 
     let deps_met = crate::features::spaces::pages::actions::services::dependency::dependencies_met(
-        cli,
         &space,
         &space_action,
-        &user.pk,
+        &user.pk(),
     )
     .await?;
 
@@ -47,44 +39,34 @@ pub async fn update_comment(
         return Err(SpaceActionDiscussionError::NotAvailableInCurrentStatus.into());
     }
 
-    let space_post_id = match &discussion_sk_entity {
-        EntityType::SpacePost(id) => SpacePostPartition(id.clone()),
-        _ => return Err(SpaceActionDiscussionError::InvalidDiscussionId.into()),
-    };
-    let (post_pk, post_sk) = SpacePost::keys(&space_id, &space_post_id);
-    let _post = SpacePost::get(cli, &post_pk, Some(post_sk))
+    let space_post_id = SpacePostPartition(discussion_sk.0.clone());
+    let _post = SpacePost::get_one(&space_id, &space_post_id)
         .await?
         .ok_or(SpaceActionDiscussionError::NotFound)?;
 
-    let space_post_pk: Partition = space_post_id.into();
-
     let comment_sk_entity: EntityType = comment_sk.into();
 
-    let comment = SpacePostComment::get(cli, &space_post_pk, Some(comment_sk_entity.clone()))
+    let mut comment = SpacePostComment::get_by_entity(&space_post_id, &comment_sk_entity)
         .await?
         .ok_or(Error::NotFound("Comment not found".into()))?;
 
     // Only the author can update
-    if comment.author_pk != user.pk {
+    if comment.author_partition() != user.pk() {
         return Err(Error::NoPermission);
     }
 
     let now = chrono::Utc::now().timestamp();
-    // Only touch `content` / `updated_at` / `images`. `updated_at_align` is the
-    // tiebreaker in GSI2 (`find_by_post_order_by_likes`) and GSI3
-    // (`find_replies_by_likes`); rewriting it on every edit causes the comment
-    // to jump in the list. Leaving it at its creation-time value keeps the
-    // ordering pinned to `created_at`, which matches user expectations when
-    // they edit their own comment.
-    let mut updater = SpacePostComment::updater(&space_post_pk, &comment_sk_entity)
-        .with_content(req.content)
-        .with_updated_at(now);
-
+    // Only touch `content` / `updated_at` / `images`.
+    comment.content = req.content;
+    comment.updated_at = now;
     if let Some(images) = req.images {
-        updater = updater.with_images(images);
+        comment.images = CommentImages(images);
     }
 
-    let comment = updater.execute(cli).await?;
+    let comment = SpacePostComment::repository()
+        .upsert(&comment)
+        .await
+        .map_err(crate::common::Error::from)?;
 
     // Essence re-indexing happens via the DynamoDB Stream pipeline.
 

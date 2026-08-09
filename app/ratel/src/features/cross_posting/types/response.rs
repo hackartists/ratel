@@ -52,7 +52,7 @@ pub struct SyndicationJobView {
     /// Phase 1 surfaces the platform-side error message verbatim, which
     /// is safe to show to the post's author (the only viewer).
     pub last_error_message: Option<String>,
-    pub attempts: u8,
+    pub attempts: i32,
     /// Next scheduled retry time (epoch seconds). 0 when not scheduled.
     pub next_attempt_at: i64,
     /// Engagement counts (likes / comments / reposts) — populated when an

@@ -23,13 +23,13 @@ pub fn make_score(user_pk: &Partition, space_id: &str, total: i64) -> SpaceScore
 
 /// Pump XP into the user's CharacterXp via the production code path
 /// (not direct entity manipulation) so tests exercise `apply_character_xp_delta`.
-pub async fn award_xp(ctx: &TestContext, user_pk: &Partition, total: i64) {
-    crate::features::character::services::apply_character_xp_delta(
-        &ctx.ddb,
-        make_score(user_pk, "s", total),
-    )
-    .await
-    .unwrap();
+pub async fn award_xp(_ctx: &TestContext, user_pk: &Partition, total: i64) {
+    // `apply_character_xp_delta` no longer takes a DynamoDB client — the
+    // CharacterXp / CharacterXpSource models it writes are Postgres-backed and
+    // resolve the global pool internally.
+    crate::features::character::services::apply_character_xp_delta(make_score(user_pk, "s", total))
+        .await
+        .unwrap();
 }
 
 /// Clear the migration-state singleton so tests start from a clean slate.
@@ -38,11 +38,10 @@ pub async fn award_xp(ctx: &TestContext, user_pk: &Partition, total: i64) {
 /// reset the order tests run in matters: e.g. once one test advances the
 /// version to 1, every subsequent test's `advance_to(0, …)` fails the
 /// conditional update with `ConditionalCheckFailedException`.
-pub async fn reset_migration_state(ddb: &aws_sdk_dynamodb::Client) {
+pub async fn reset_migration_state(_ddb: &aws_sdk_dynamodb::Client) {
     use crate::common::models::migration::LastBackfillVersion;
-    let (pk, sk) = LastBackfillVersion::singleton_keys();
-    // `delete` returns NotFound for an absent row; we don't care either way.
-    let _ = LastBackfillVersion::delete(ddb, &pk, Some(&sk)).await;
+    // `delete_by_id` is a no-op (Ok) for an absent row; we don't care either way.
+    let _ = LastBackfillVersion::delete_by_id(LastBackfillVersion::singleton_id()).await;
 }
 
 /// Run a future with an env var temporarily set, then restore the prior value.

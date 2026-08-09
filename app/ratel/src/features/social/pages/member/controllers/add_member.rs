@@ -1,6 +1,7 @@
 use super::super::dto::{AddTeamMemberRequest, AddTeamMemberResponse};
 use super::super::*;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use std::collections::HashSet;
 
@@ -9,8 +10,7 @@ pub async fn add_team_member_handler(
     team_pk: TeamPartition,
     body: AddTeamMemberRequest,
 ) -> Result<AddTeamMemberResponse> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
+    let _ = team_pk;
 
     if body.user_pks.len() > 100 {
         return Err(MemberError::TooManyInvitations.into());
@@ -19,7 +19,6 @@ pub async fn add_team_member_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let user_team_sk = EntityType::UserTeam(team.pk.to_string());
 
     // Deduplicate requested user pks.
     let mut seen = HashSet::new();
@@ -44,58 +43,69 @@ pub async fn add_team_member_handler(
         });
     }
 
-    // Batch-fetch users to verify they exist.
-    let user_keys: Vec<(Partition, EntityType)> = unique_pks
-        .iter()
-        .filter_map(|pk| pk.parse::<Partition>().ok().map(|p| (p, EntityType::User)))
-        .collect();
-    let found_users = crate::features::auth::User::batch_get(cli, user_keys).await?;
-    let found_user_pks: HashSet<String> = found_users.iter().map(|u| u.pk.to_string()).collect();
+    // Fetch users to verify they exist.
+    let user_results: Vec<(String, Option<crate::features::auth::User>)> =
+        futures::future::join_all(unique_pks.iter().map(|pk| async move {
+            let user = crate::features::auth::User::find_by_pk_str(pk)
+                .await
+                .ok()
+                .flatten();
+            (pk.clone(), user)
+        }))
+        .await;
 
-    for pk in &unique_pks {
-        if !found_user_pks.contains(pk.as_str()) {
-            failed_pks.push(pk.clone());
+    let mut found_users = Vec::new();
+    for (pk, user) in user_results {
+        match user {
+            Some(u) => found_users.push(u),
+            None => failed_pks.push(pk),
         }
     }
 
-    // Batch-fetch existing UserTeam memberships to skip duplicates.
-    let membership_keys: Vec<(Partition, EntityType)> = found_users
-        .iter()
-        .map(|u| (u.pk.clone(), user_team_sk.clone()))
-        .collect();
-    let existing_memberships =
-        crate::features::auth::UserTeam::batch_get(cli, membership_keys).await?;
-    let already_member_pks: HashSet<String> = existing_memberships
-        .iter()
-        .map(|ut| ut.pk.to_string())
-        .collect();
+    // Check existing UserTeam memberships to skip duplicates.
+    let team_pk = team.partition();
+    let membership_checks = futures::future::join_all(found_users.iter().map(|u| {
+        let user_pk = u.pk();
+        let team_pk = team_pk.clone();
+        async move {
+            crate::features::auth::UserTeam::get_membership(&user_pk, &team_pk)
+                .await
+                .ok()
+                .flatten()
+        }
+    }))
+    .await;
 
     let new_members: Vec<_> = found_users
         .into_iter()
-        .filter(|u| !already_member_pks.contains(&u.pk.to_string()))
+        .zip(membership_checks)
+        .filter_map(|(u, existing)| if existing.is_none() { Some(u) } else { None })
         .collect();
     let success_count = new_members.len() as i64;
 
-    // Build UserTeam upsert items. upsert (no condition check) avoids
-    // ConditionalCheckFailedException from races between our batch-read and
-    // this write.
-    let transact_items: Vec<aws_sdk_dynamodb::types::TransactWriteItem> = new_members
-        .iter()
-        .map(|u| {
+    // Insert UserTeam rows inside one transaction — natural-key upsert (no
+    // condition check) avoids a unique-violation race between our read and
+    // this write, matching the old unconditional DynamoDB upsert-transact.
+    if !new_members.is_empty() {
+        let tx = postgres::Tx::begin().await.map_err(crate::common::Error::from)?;
+        for u in &new_members {
             let user_team = crate::features::auth::UserTeam::new(
-                u.pk.clone(),
-                team.pk.clone(),
+                u.pk(),
+                team.partition(),
                 team.display_name.clone(),
                 team.profile_url.clone(),
                 team.username.clone(),
                 team.dao_address.clone(),
                 body.role,
             );
-            user_team.upsert_transact_write_item()
-        })
-        .collect();
-
-    crate::transact_write_all_items!(cli, transact_items);
+            crate::features::auth::UserTeam::repository()
+                .with_tx(&tx)
+                .upsert_on(&["user_pk", "team_pk"], &user_team)
+                .await
+                .map_err(crate::common::Error::from)?;
+        }
+        tx.commit().await.map_err(crate::common::Error::from)?;
+    }
 
     Ok(AddTeamMemberResponse {
         total_added: success_count,

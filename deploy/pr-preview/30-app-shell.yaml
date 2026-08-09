@@ -39,30 +39,21 @@ spec:
       nodeSelector:
         biyard.io/node-class: main
       initContainers:
-        - name: wait-for-dynamo
-          # amazon/aws-cli is multi-arch (arm64 ok). Loops until LocalStack
-          # answers DescribeTable for the table localstack-init creates.
-          image: amazon/aws-cli:latest
+        # Postgres migration: the app connects to Postgres and migrates its
+        # schema on startup, so gate the app on Postgres being ready (replaces
+        # the old wait-for-dynamo gate — the app no longer needs the DynamoDB
+        # table to exist; its vestigial Dynamo client connects lazily).
+        - name: wait-for-postgres
+          image: postgres:16-alpine
           command:
             - sh
             - -c
             - |
-              until aws dynamodb describe-table \
-                --table-name ratel-local-main \
-                --endpoint-url http://localstack:4566 >/dev/null 2>&1; do
-                echo "waiting for localstack + ratel-local-main table..."
+              until pg_isready -h postgres -p 5432 -U ratel -d ratel >/dev/null 2>&1; do
+                echo "waiting for postgres..."
                 sleep 3
               done
-              echo "ratel-local-main table exists — starting app-shell"
-          env:
-            - name: AWS_ACCESS_KEY_ID
-              value: test
-            - name: AWS_SECRET_ACCESS_KEY
-              value: test
-            - name: AWS_REGION
-              value: ap-northeast-2
-            - name: AWS_DEFAULT_REGION
-              value: ap-northeast-2
+              echo "postgres ready — starting app-shell"
       containers:
         - name: app-shell
           image: registry.infra.svc.cluster.local:5000/ratel-app-shell:pr-${PR_NUM}
@@ -77,6 +68,27 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: "8080"
+            # Postgres migration: the app resolves its pool from DATABASE_URL
+            # and migrates the inventory schema on startup (common/run.rs).
+            - name: DATABASE_URL
+              value: postgres://ratel:ratel@postgres:5432/ratel
+            # Per-instance sqlx POOL max (client side), NOT postgres server
+            # max_connections. Small (10) to mirror production sizing
+            # (replicas × pool ≤ server max_connections) and to keep the pool a
+            # leak check under the e2e run.
+            - name: POSTGRES_MAX_CONNECTIONS
+              value: "10"
+            # Vestigial DynamoDB client is still constructed at boot (no live
+            # reads/writes) — keep the AWS_*/DYNAMO_* vars so construction
+            # succeeds; DYNAMO_ENDPOINT points at localstack which is still up.
+            - name: AWS_ACCESS_KEY_ID
+              value: test
+            - name: AWS_SECRET_ACCESS_KEY
+              value: test
+            - name: AWS_REGION
+              value: ap-northeast-2
+            - name: AWS_DEFAULT_REGION
+              value: ap-northeast-2
           readinessProbe:
             httpGet:
               path: /

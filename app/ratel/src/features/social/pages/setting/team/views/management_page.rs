@@ -35,7 +35,7 @@ pub fn ManagementPage(username: ReadSignal<String>) -> Element {
     let failed_change_role = tr.failed_change_role.to_string();
 
     let user_ctx = crate::features::auth::hooks::use_user_context();
-    let current_user_pk: Option<String> = user_ctx().user.as_ref().map(|u| u.pk.to_string());
+    let current_user_pk: Option<String> = user_ctx().user.as_ref().map(|u| u.pk().to_string());
 
     // Members infinite scroll query
     let team_pk_signal = use_signal(|| team_pk.clone());

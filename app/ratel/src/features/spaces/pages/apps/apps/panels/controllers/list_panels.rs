@@ -6,18 +6,9 @@ pub async fn list_panels(
 ) -> crate::common::Result<Vec<SpacePanelQuotaResponse>> {
     SpacePanelQuota::can_view(role)?;
 
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
 
-    let (panels, _) = SpacePanelQuota::query(
-        cli,
-        CompositePartition(space_pk, Partition::PanelAttribute),
-        SpacePanelQuota::opt_all()
-            .sk("SPACE_PANEL_ATTRIBUTE#".to_string())
-            .scan_index_forward(true),
-    )
-    .await?;
+    let panels = SpacePanelQuota::list_by_space(&space_pk).await?;
 
     Ok(panels
         .into_iter()

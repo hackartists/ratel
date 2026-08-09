@@ -1,6 +1,6 @@
 use crate::common::models::auth::User;
 use crate::common::models::space::{SpaceCommon, SpaceParticipant};
-use crate::common::types::{CompositePartition, EntityType, Partition};
+use crate::common::types::Partition;
 use crate::common::*;
 #[cfg(feature = "server")]
 use tower_sessions::Session;
@@ -16,7 +16,7 @@ pub struct SpaceUser {
 impl From<User> for SpaceUser {
     fn from(user: User) -> Self {
         Self {
-            pk: user.pk,
+            pk: user.pk(),
             display_name: user.display_name,
             profile_url: user.profile_url,
             username: user.username,
@@ -27,7 +27,7 @@ impl From<User> for SpaceUser {
 impl From<SpaceParticipant> for SpaceUser {
     fn from(participant: SpaceParticipant) -> Self {
         Self {
-            pk: participant.user_pk,
+            pk: participant.user_pk.parse().unwrap_or_default(),
             display_name: participant.display_name,
             profile_url: participant.profile_url,
             username: participant.username,
@@ -55,14 +55,8 @@ where
             if let Some(participant) = parts.extensions.get::<SpaceParticipant>() {
                 participant.clone().into()
             } else {
-                let config = ServerConfig::default();
-                let cli = config.dynamodb();
-                let participant = SpaceParticipant::get(
-                    cli,
-                    CompositePartition(space.pk.clone(), user.pk.clone()),
-                    Some(EntityType::SpaceParticipant),
-                )
-                .await?;
+                let participant =
+                    SpaceParticipant::get_participant(&space.partition(), &user.pk()).await?;
 
                 participant.map(Into::into).unwrap_or_else(|| user.into())
             }

@@ -42,18 +42,12 @@ pub async fn list_analyze_discussions(
     #[mcp(description = "Pagination bookmark. Omit for first page.")] bookmark: Option<String>,
 ) -> Result<ListResponse<AnalyzeDiscussionItem>> {
     SpaceApp::can_edit(role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_id.into();
-    let opt = SpacePost::opt_with_bookmark(bookmark)
-        .scan_index_forward(false)
-        .limit(20);
-    let (posts, bookmark) = SpacePost::find_by_space_ordered(cli, space_pk, opt).await?;
+    let (posts, bookmark) = SpacePost::list_by_space(&space_id, None, bookmark, 20).await?;
 
     let items = posts
         .into_iter()
         .map(|post| AnalyzeDiscussionItem {
-            discussion_id: post.sk.clone().into(),
+            discussion_id: post.post_id.into(),
             title: post.title.trim().to_string(),
             comment_count: post.comments,
             matched_comment_count: 0,

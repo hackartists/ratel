@@ -14,6 +14,10 @@ use crate::features::spaces::pages::actions::actions::poll::SpacePollUserAnswer;
 #[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::quiz::{SpaceQuiz, SpaceQuizAttempt};
 #[cfg(feature = "server")]
+use postgres::ops::StringOp;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
 use std::collections::{HashMap, HashSet};
 
 #[mcp_tool(
@@ -24,41 +28,37 @@ use std::collections::{HashMap, HashSet};
 pub async fn list_actions(
     #[mcp(description = "Space partition key")] space_pk: SpacePartition,
 ) -> Result<Vec<SpaceActionSummary>> {
-    let cli = crate::features::spaces::pages::actions::config::get()
-        .common
-        .dynamodb();
-    let space_pk: Partition = space_pk.into();
+    let space_id = space_pk;
+    let space_pk: Partition = space_id.clone().into();
 
-    let (space_actions, _) =
-        SpaceAction::find_by_space(cli, &space_pk, SpaceAction::opt_all().oldest())
-            .await
-            .map_err(|e| {
-                crate::error!("failed to load actions: {e:?}");
-                SpaceActionError::ActionLoadFailed
-            })?;
+    let space_actions = SpaceAction::list_by_space(&space_id).await.map_err(|e| {
+        crate::error!("failed to load actions: {e:?}");
+        SpaceActionError::ActionLoadFailed
+    })?;
 
     let mut actions: Vec<SpaceActionSummary> = space_actions.into_iter().map(Into::into).collect();
 
     // Enrich discussion actions with their current comment count.
-    let discussion_keys: Vec<(Partition, EntityType)> = actions
+    let discussion_ids: Vec<String> = actions
         .iter()
         .filter(|a| a.action_type == SpaceActionType::TopicDiscussion)
-        .map(|a| (space_pk.clone(), EntityType::SpacePost(a.action_id.clone())))
+        .map(|a| a.action_id.clone())
         .collect();
-    if !discussion_keys.is_empty() {
-        let posts = SpacePost::batch_get(cli, discussion_keys)
+    if !discussion_ids.is_empty() {
+        let posts = SpacePost::repository()
+            .find(
+                SpacePost::query()
+                    .space_id(StringOp::Eq(space_id.0.clone()))
+                    .post_id(StringOp::In(discussion_ids)),
+            )
             .await
+            .map(|p| p.items)
             .map_err(|e| {
-                crate::error!("failed to batch_get discussion posts: {e:?}");
+                crate::error!("failed to load discussion posts: {e:?}");
                 SpaceActionError::ActionLoadFailed
             })?;
-        let count_by_id: std::collections::HashMap<String, i64> = posts
-            .into_iter()
-            .filter_map(|p| match &p.sk {
-                EntityType::SpacePost(id) => Some((id.clone(), p.comments)),
-                _ => None,
-            })
-            .collect();
+        let count_by_id: HashMap<String, i64> =
+            posts.into_iter().map(|p| (p.post_id, p.comments)).collect();
         for action in actions.iter_mut() {
             if action.action_type == SpaceActionType::TopicDiscussion {
                 action.comment_count =
@@ -72,14 +72,13 @@ pub async fn list_actions(
         // Quiz: always enrich quiz scores
         if action.action_type == SpaceActionType::Quiz {
             let quiz_id: SpaceQuizEntityType = action.action_id.clone().into();
-            let quiz_sk: EntityType = quiz_id.clone().into();
 
-            if let Some(quiz) = SpaceQuiz::get(cli, &space_pk, Some(quiz_sk)).await? {
+            if let Some(quiz) = SpaceQuiz::get_one(&space_id, &quiz_id).await? {
                 action.quiz_total_score = Some(quiz.questions.len() as i64);
 
                 if let Some(user) = current_user.as_ref() {
                     if let Some(attempt) =
-                        SpaceQuizAttempt::find_latest_by_quiz_user(cli, &quiz_id, &user.pk).await?
+                        SpaceQuizAttempt::find_latest_by_quiz_user(&quiz_id, &user.pk()).await?
                     {
                         action.quiz_score = Some(attempt.score);
                         action.quiz_passed = Some(attempt.score >= quiz.pass_score);
@@ -95,18 +94,18 @@ pub async fn list_actions(
                 SpaceActionType::Poll => {
                     let poll_sk = EntityType::SpacePoll(action.action_id.clone());
                     if let Ok(Some(_)) =
-                        SpacePollUserAnswer::find_one(cli, &space_pk, &poll_sk, &user.pk).await
+                        SpacePollUserAnswer::find_one(&space_pk, &poll_sk, &user.pk()).await
                     {
                         action.user_participated = true;
                     }
                 }
                 SpaceActionType::TopicDiscussion => {
                     action.user_participated =
-                        has_completed_discussion_action(cli, &action.action_id, &user.pk).await?;
+                        has_completed_discussion_action(&action.action_id, &user.pk()).await?;
                 }
                 SpaceActionType::Follow => {
                     action.user_participated =
-                        has_completed_follow_action(cli, &space_pk, &user.pk).await?;
+                        has_completed_follow_action(&space_id, &space_pk, &user.pk()).await?;
                 }
                 _ => {}
             }
@@ -163,103 +162,61 @@ pub async fn list_actions(
 }
 
 #[cfg(feature = "server")]
-async fn has_completed_discussion_action(
-    cli: &aws_sdk_dynamodb::Client,
-    action_id: &str,
-    user_pk: &Partition,
-) -> Result<bool> {
-    let discussion_pk = Partition::SpacePost(action_id.to_string());
-    let prefixes = [
-        EntityType::SpacePostComment(String::default()).to_string(),
-        EntityType::SpacePostCommentReply(String::default(), String::default()).to_string(),
-    ];
-
-    for sk_prefix in prefixes {
-        let mut bookmark: Option<String> = None;
-
-        loop {
-            let opt = if let Some(next_bookmark) = bookmark.clone() {
-                SpacePostComment::opt()
-                    .sk(sk_prefix.clone())
-                    .bookmark(next_bookmark)
-                    .limit(100)
-            } else {
-                SpacePostComment::opt().sk(sk_prefix.clone()).limit(100)
-            };
-
-            let (comments, next_bookmark) = SpacePostComment::find_by_user_pk(cli, user_pk, opt)
-                .await
-                .map_err(|err| {
-                    crate::error!("failed to verify discussion prerequisite: {err}");
-                    SpaceActionError::ActionLoadFailed
-                })?;
-
-            if comments.iter().any(|comment| comment.pk == discussion_pk) {
-                return Ok(true);
-            }
-
-            if next_bookmark.is_none() {
-                break;
-            }
-
-            bookmark = next_bookmark;
-        }
-    }
-
-    Ok(false)
+async fn has_completed_discussion_action(action_id: &str, user_pk: &Partition) -> Result<bool> {
+    // Any comment (top-level or reply) by this user on the discussion counts.
+    let page = SpacePostComment::repository()
+        .find(
+            SpacePostComment::query()
+                .post_id(StringOp::Eq(action_id.to_string()))
+                .author_pk(StringOp::Eq(user_pk.to_string()))
+                .page(1)
+                .page_size(1),
+        )
+        .await
+        .map_err(|e| {
+            crate::error!("failed to verify discussion prerequisite: {e}");
+            SpaceActionError::ActionLoadFailed
+        })?;
+    Ok(!page.items.is_empty())
 }
 
 #[cfg(feature = "server")]
 async fn has_completed_follow_action(
-    cli: &aws_sdk_dynamodb::Client,
+    space_id: &SpacePartition,
     space_pk: &Partition,
     user_pk: &Partition,
 ) -> Result<bool> {
-    let space = SpaceCommon::get(cli, space_pk, Some(EntityType::SpaceCommon))
+    let space = SpaceCommon::get_by_partition(space_pk)
         .await?
         .ok_or_else(|| Error::NotFound("space not found".to_string()))?;
 
     let mut target_user_pks = Vec::new();
     let mut bookmark: Option<String> = None;
-
     loop {
-        let opt = if let Some(next_bookmark) = bookmark.clone() {
-            SpaceFollowUser::opt()
-                .sk(EntityType::SpaceSubscriptionUser(String::default()).to_string())
-                .bookmark(next_bookmark)
-                .limit(100)
-        } else {
-            SpaceFollowUser::opt()
-                .sk(EntityType::SpaceSubscriptionUser(String::default()).to_string())
-                .limit(100)
-        };
-
-        let (users, next_bookmark) = SpaceFollowUser::query(cli, space_pk.clone(), opt)
+        let (users, next) = SpaceFollowUser::list_by_space(space_id, bookmark, 100)
             .await
             .map_err(|err| {
                 crate::error!("failed to load follow prerequisite targets: {err}");
                 SpaceActionError::ActionLoadFailed
             })?;
-
+        let none_str = Partition::None.to_string();
         target_user_pks.extend(
             users
                 .into_iter()
-                .filter(|user| user.user_pk != Partition::None)
-                .map(|user| user.user_pk),
+                .filter(|u| u.user_pk != none_str)
+                .map(|u| u.user_partition()),
         );
-
-        if next_bookmark.is_none() {
+        if next.is_none() {
             break;
         }
-
-        bookmark = next_bookmark;
+        bookmark = next;
     }
 
-    if !target_user_pks
-        .iter()
-        .any(|target| target == &space.user_pk)
-    {
-        target_user_pks.push(space.user_pk);
+    use std::str::FromStr;
+    let space_user_pk =
+        Partition::from_str(&space.user_pk).unwrap_or(Partition::User(space.user_pk.clone()));
+    if !target_user_pks.iter().any(|target| target == &space_user_pk) {
+        target_user_pks.push(space_user_pk);
     }
 
     let mut deduped_targets = Vec::new();
@@ -271,19 +228,16 @@ async fn has_completed_follow_action(
         }
     }
 
-    let keys: Vec<_> = deduped_targets
-        .iter()
-        .map(|target_user_pk| UserFollow::follower_keys(target_user_pk, user_pk))
-        .collect();
-
-    if keys.is_empty() {
+    if deduped_targets.is_empty() {
         return Ok(true);
     }
 
-    let follows = UserFollow::batch_get(cli, keys).await.map_err(|err| {
-        crate::error!("failed to verify follow prerequisite: {err}");
-        SpaceActionError::ActionLoadFailed
-    })?;
+    let follows = UserFollow::following_targets_in(user_pk, &deduped_targets)
+        .await
+        .map_err(|err| {
+            crate::error!("failed to verify follow prerequisite: {err}");
+            SpaceActionError::ActionLoadFailed
+        })?;
 
     Ok(follows.len() == deduped_targets.len())
 }

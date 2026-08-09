@@ -13,11 +13,9 @@ pub struct FileLinkInfo {
 
 #[get("/api/spaces/{space_pk}/file-links", _role: SpaceUserRole)]
 pub async fn list_file_links(space_pk: SpacePartition) -> Result<Vec<FileLinkInfo>> {
-    let cli = crate::features::spaces::pages::apps::apps::file::config::get().common.dynamodb();
-
     let space_pk: Partition = space_pk.into();
 
-    let links = FileLink::list_by_space(cli, &space_pk).await?;
+    let links = FileLink::list_by_space(&space_pk).await?;
 
     Ok(links
         .into_iter()

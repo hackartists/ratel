@@ -1,12 +1,10 @@
-use crate::{
-    common::RewardUserBehavior, features::spaces::pages::actions::*,
-    spaces::pages::actions::actions::quiz::SpaceQuiz,
-};
+use crate::{common::RewardUserBehavior, features::spaces::pages::actions::*};
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
 #[derive(Debug, Clone, Default, Translate, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 pub enum SpaceActionType {
     #[default]
     // #[translate(ko = "숙의 및 퀴즈", en = "Quiz")]
@@ -46,7 +44,7 @@ impl SpaceActionType {
             }
             SpaceActionType::TopicDiscussion => {
                 let response = crate::features::spaces::pages::actions::actions::discussion::controllers::create_discussion(space_id.clone()).await?;
-                let discussion_id: SpacePostEntityType = response.sk.try_into().unwrap_or_default();
+                let discussion_id = SpacePostEntityType(response.post_id);
                 Ok(Route::DiscussionActionEditorPage {
                     space_id: space_id.clone(),
                     discussion_id: discussion_id.clone(),
@@ -54,7 +52,7 @@ impl SpaceActionType {
             }
             SpaceActionType::Follow => {
                 let response = crate::features::spaces::pages::actions::actions::follow::controllers::create_follow(space_id.clone()).await?;
-                let follow_id = SpaceActionFollowEntityType::from(response.sk);
+                let follow_id = SpaceActionFollowEntityType(response.follow_id);
                 Ok(Route::FollowActionPage {
                     space_id: space_id.clone(),
                     follow_id: follow_id.clone(),

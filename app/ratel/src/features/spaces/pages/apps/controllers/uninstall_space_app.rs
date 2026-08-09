@@ -14,19 +14,19 @@ pub async fn uninstall_space_app(
 ) -> Result<SpaceApp> {
     SpaceApp::can_delete(role)?;
 
-    let common_config = crate::common::CommonConfig::default();
-    let dynamo = common_config.dynamodb();
     let space_pk_partition: Partition = space_id.clone().into();
 
-    let (pk, sk) = SpaceApp::keys(&space_pk_partition, app_type);
-    let app = SpaceApp::new(space_pk_partition, app_type);
+    let app = SpaceApp::new(space_pk_partition.clone(), app_type);
 
-    let items = vec![SpaceApp::delete_transact_write_item(&pk, sk)];
-    crate::transact_write_items!(dynamo, items)
-        .map_err(|e| {
-            crate::error!("Failed to uninstall app: {e}");
-            SpaceAppError::UninstallFailed
-        })?;
+    if let Some(existing) = SpaceApp::find_by_space_and_type(&space_pk_partition, app_type).await? {
+        SpaceApp::repository()
+            .delete(existing.id)
+            .await
+            .map_err(|e| {
+                crate::error!("Failed to uninstall app: {e}");
+                SpaceAppError::UninstallFailed
+            })?;
+    }
 
     Ok(app)
 }

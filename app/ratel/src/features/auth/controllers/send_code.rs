@@ -34,43 +34,37 @@ pub async fn send_phone_code_handler(phone: String) -> Result<SendCodeResponse> 
     };
     use crate::features::auth::utils::generate_random_numeric_code;
 
-    let cli = crate::features::auth::config::get().dynamodb();
     let sns = crate::features::auth::config::get().sns();
 
-    let (verification_list, _) =
-        PhoneVerification::find_by_phone(cli, &phone, PhoneVerification::opt_one()).await?;
+    let existing = PhoneVerification::find_by_phone(&phone).await?;
 
     let PhoneVerification {
         value, expired_at, ..
-    } = if !verification_list.is_empty()
-        && verification_list[0].expired_at > crate::common::utils::time::get_now_timestamp()
-        && verification_list[0].attempt_count < MAX_ATTEMPT_COUNT
-    {
-        verification_list[0].clone()
-    } else if !verification_list.is_empty()
-        && verification_list[0].attempt_count >= MAX_ATTEMPT_COUNT
-        && verification_list[0].expired_at
-            < (crate::common::utils::time::get_now_timestamp() - ATTEMPT_BLOCK_TIME)
-    {
+    } = if existing.as_ref().is_some_and(|v| {
+        v.expired_at > crate::common::utils::time::get_now_timestamp()
+            && v.attempt_count < MAX_ATTEMPT_COUNT
+    }) {
+        existing.clone().unwrap()
+    } else if existing.as_ref().is_some_and(|v| {
+        v.attempt_count >= MAX_ATTEMPT_COUNT
+            && v.expired_at
+                < (crate::common::utils::time::get_now_timestamp() - ATTEMPT_BLOCK_TIME)
+    }) {
         return Err(Error::ExceededAttemptPhoneVerification);
     } else {
         let code = generate_random_numeric_code();
         let expired_at = crate::common::utils::time::get_now_timestamp() + EXPIRATION_TIME as i64;
 
-        if verification_list.len() > 0 {
-            let mut v = verification_list[0].clone();
-            PhoneVerification::updater(v.pk.clone(), v.sk.clone())
-                .with_attempt_count(0)
-                .with_value(code.clone())
-                .with_expired_at(expired_at)
-                .execute(cli)
-                .await?;
-            v.value = code;
+        if let Some(mut v) = existing.clone() {
+            v.attempt_count = 0;
+            v.value = code.clone();
             v.expired_at = expired_at;
+            // Natural-key upsert on `phone` preserves the surrogate id/created_at.
+            v.save().await?;
             v
         } else {
             let phone_verification = PhoneVerification::new(phone.clone(), code, expired_at);
-            phone_verification.create(cli).await?;
+            phone_verification.save().await?;
             phone_verification
         }
     };
@@ -102,54 +96,42 @@ async fn send_email_code(email: String) -> Result<SendCodeResponse> {
     };
     use crate::features::auth::utils::generate_random_code;
 
-    let cli = crate::features::auth::config::get().dynamodb();
-
     // Reviewer test accounts never receive a real verification email; the fixed
     // code "000000" is accepted at verification time (see `verify_email_code`).
     // Return a normal future expiry so the client's code-entry UI behaves as usual.
-    if crate::common::models::auth::TestAccount::is_test_account(cli, &email).await {
+    if crate::common::models::auth::TestAccount::is_test_account(&email).await {
         let expired_at = crate::common::utils::time::get_now_timestamp() + EXPIRATION_TIME as i64;
         return Ok(SendCodeResponse { expired_at });
     }
 
-    let (verification_list, _) = EmailVerification::find_by_email(
-        cli,
-        &email,
-        EmailVerificationQueryOption::builder().limit(1),
-    )
-    .await?;
+    let existing = EmailVerification::find_by_email(&email).await?;
 
     let EmailVerification {
         value, expired_at, ..
-    } = if !verification_list.is_empty()
-        && verification_list[0].expired_at > crate::common::utils::time::get_now_timestamp()
-        && verification_list[0].attempt_count < MAX_ATTEMPT_COUNT
-    {
-        verification_list[0].clone()
-    } else if !verification_list.is_empty()
-        && verification_list[0].attempt_count >= MAX_ATTEMPT_COUNT
-        && verification_list[0].expired_at
-            < (crate::common::utils::time::get_now_timestamp() - ATTEMPT_BLOCK_TIME)
-    {
+    } = if existing.as_ref().is_some_and(|v| {
+        v.expired_at > crate::common::utils::time::get_now_timestamp()
+            && v.attempt_count < MAX_ATTEMPT_COUNT
+    }) {
+        existing.clone().unwrap()
+    } else if existing.as_ref().is_some_and(|v| {
+        v.attempt_count >= MAX_ATTEMPT_COUNT
+            && v.expired_at
+                < (crate::common::utils::time::get_now_timestamp() - ATTEMPT_BLOCK_TIME)
+    }) {
         return Err(Error::ExceededAttemptEmailVerification);
     } else {
         let code = generate_random_code();
         let expired_at = crate::common::utils::time::get_now_timestamp() + EXPIRATION_TIME as i64;
 
-        if verification_list.len() > 0 {
-            let mut v = verification_list[0].clone();
-            EmailVerification::updater(v.pk.clone(), v.sk.clone())
-                .with_attempt_count(0)
-                .with_value(code.clone())
-                .with_expired_at(expired_at)
-                .execute(cli)
-                .await?;
-            v.value = code;
+        if let Some(mut v) = existing.clone() {
+            v.attempt_count = 0;
+            v.value = code.clone();
             v.expired_at = expired_at;
+            v.save().await?;
             v
         } else {
             let email_verification = EmailVerification::new(email.clone(), code, expired_at);
-            email_verification.create(cli).await?;
+            email_verification.save().await?;
             email_verification
         }
     };
@@ -160,7 +142,7 @@ async fn send_email_code(email: String) -> Result<SendCodeResponse> {
         code: value,
         email: email.clone(),
     });
-    notification.create(cli).await?;
+    notification.save().await?;
 
     Ok(SendCodeResponse { expired_at })
 }

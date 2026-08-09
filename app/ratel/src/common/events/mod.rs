@@ -20,6 +20,12 @@ pub mod cdc_event;
 pub mod config;
 pub mod dispatcher;
 
+// Postgres outbox poller — the Postgres-native event source that replaces the
+// DynamoDB Stream (Phase 5). Server-only, and NOT gated on `redpanda`: it uses
+// the unconditional `dispatch` directly, no broker involved.
+#[cfg(feature = "server")]
+pub mod outbox;
+
 #[cfg(feature = "redpanda")]
 pub mod checkpoint;
 #[cfg(feature = "redpanda")]

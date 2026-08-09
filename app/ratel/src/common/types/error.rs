@@ -551,6 +551,16 @@ impl From<serde_dynamo::Error> for Error {
     }
 }
 
+// Postgres ORM errors carry internal DB detail that must never reach the user;
+// log the specifics server-side and surface a generic internal error.
+#[cfg(feature = "server")]
+impl From<postgres::Error> for Error {
+    fn from(e: postgres::Error) -> Self {
+        tracing::error!("Postgres error: {e}");
+        Error::Internal
+    }
+}
+
 #[cfg(feature = "server")]
 impl From<Error> for rmcp::ErrorData {
     fn from(e: Error) -> Self {

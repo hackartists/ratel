@@ -11,23 +11,20 @@ pub async fn get_poll(
     poll_sk: SpacePollEntityType,
 ) -> Result<PollResponse> {
     SpacePoll::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_id = space_pk;
     let poll_id = poll_sk;
     let space_pk: Partition = space_id.clone().into();
     let poll_sk_entity: EntityType = poll_id.clone().into();
 
-    let poll = SpacePoll::get(cli, &space_pk, Some(poll_sk_entity.clone()))
+    let poll = SpacePoll::get_one(&space_id, &poll_id)
         .await?
         .ok_or(Error::NotFound("Poll not found".into()))?;
 
     let mut response: PollResponse = poll.into();
 
-    let space_action = crate::features::spaces::pages::actions::models::SpaceAction::get(
-        cli,
-        &CompositePartition(space_id.clone(), poll_id.clone()),
-        Some(EntityType::SpaceAction),
+    let space_action = crate::features::spaces::pages::actions::models::SpaceAction::get_one(
+        &space_id,
+        &poll_id.0,
     )
     .await?
     .ok_or(Error::SpaceActionNotFound)?;
@@ -41,8 +38,8 @@ pub async fn get_poll(
 
     if let Some(user) = user.0 {
         let my_answer =
-            SpacePollUserAnswer::find_one(cli, &space_pk, &poll_sk_entity, &user.pk).await?;
-        response.my_response = my_answer.map(|a| a.answers);
+            SpacePollUserAnswer::find_one(&space_pk, &poll_sk_entity, &user.pk()).await?;
+        response.my_response = my_answer.map(|a| a.answers.0);
     }
 
     Ok(response)

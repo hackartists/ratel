@@ -1,9 +1,10 @@
 #[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::*;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[cfg(feature = "server")]
 pub async fn dependencies_met(
-    cli: &aws_sdk_dynamodb::Client,
     space: &crate::common::models::space::SpaceCommon,
     action: &crate::features::spaces::pages::actions::models::SpaceAction,
     user_pk: &Partition,
@@ -14,25 +15,23 @@ pub async fn dependencies_met(
         return Ok(true);
     }
 
-    let space_id: SpacePartition = match &space.pk {
-        Partition::Space(id) => SpacePartition(id.clone()),
+    let space_id: SpacePartition = match space.partition() {
+        Partition::Space(id) => SpacePartition(id),
         _ => return Ok(false),
     };
 
-    let keys: Vec<(CompositePartition<SpacePartition, String>, EntityType)> = action
-        .depends_on
-        .iter()
-        .map(|dep_id| {
-            (
-                CompositePartition(space_id.clone(), dep_id.clone()),
-                EntityType::SpaceAction,
-            )
-        })
-        .collect();
-    let expected = keys.len();
+    let dep_ids: Vec<String> = action.depends_on.0.clone();
+    let expected = dep_ids.len();
 
-    let deps = crate::features::spaces::pages::actions::models::SpaceAction::batch_get(cli, keys)
+    use postgres::ops::StringOp;
+    let deps = crate::features::spaces::pages::actions::models::SpaceAction::repository()
+        .find(
+            crate::features::spaces::pages::actions::models::SpaceAction::query()
+                .space_id(StringOp::Eq(space_id.0.clone()))
+                .action_id(StringOp::In(dep_ids)),
+        )
         .await
+        .map(|p| p.items)
         .map_err(|e| {
             crate::error!("failed to load dependency actions: {e:?}");
             SpaceActionError::ActionLoadFailed
@@ -44,7 +43,7 @@ pub async fn dependencies_met(
 
     let checks = deps
         .iter()
-        .map(|dep| crate::common::has_completed_prerequisite_action(cli, space, dep, user_pk));
+        .map(|dep| crate::common::has_completed_prerequisite_action(space, dep, user_pk));
 
     let results = try_join_all(checks).await?;
     Ok(results.into_iter().all(|completed| completed))

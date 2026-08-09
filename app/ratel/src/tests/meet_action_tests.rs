@@ -1,8 +1,6 @@
 use super::*;
 use crate::common::models::space::SpaceCommon;
-use crate::common::types::{
-    EntityType, Partition, SpacePublishState, SpaceStatus, SpaceVisibility,
-};
+use crate::common::types::{Partition, SpacePublishState, SpaceStatus, SpaceVisibility};
 
 /// Helper: seed a public individual-owned space so the `SpaceCommon`
 /// extractor succeeds and the test user is recognised as Creator.
@@ -14,34 +12,34 @@ async fn seed_creator_space(ctx: &TestContext) -> String {
     let space_pk = Partition::Space(space_id.clone());
     let post_pk = Partition::Feed(space_id.clone());
 
-    let mut space = SpaceCommon::default();
-    space.pk = space_pk.clone();
-    space.sk = EntityType::SpaceCommon;
-    space.created_at = now;
-    space.updated_at = now;
-    space.status = Some(SpaceStatus::Ongoing);
-    space.publish_state = SpacePublishState::Published;
-    space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk.clone();
-    space.user_pk = ctx.test_user.0.pk.clone();
-    space.author_display_name = ctx.test_user.0.display_name.clone();
-    space.author_profile_url = ctx.test_user.0.profile_url.clone();
-    space.author_username = ctx.test_user.0.username.clone();
-    space.create(&ctx.ddb).await.expect("create space");
+    let space = SpaceCommon {
+        space_pk: space_pk.to_string(),
+        created_at: now,
+        updated_at: now,
+        status: Some(SpaceStatus::Ongoing),
+        publish_state: SpacePublishState::Published,
+        visibility: SpaceVisibility::Public,
+        post_pk: post_pk.to_string(),
+        user_pk: ctx.test_user.0.pk().to_string(),
+        author_display_name: ctx.test_user.0.display_name.clone(),
+        author_profile_url: ctx.test_user.0.profile_url.clone(),
+        author_username: ctx.test_user.0.username.clone(),
+        ..Default::default()
+    };
+    space.create().await.expect("create space");
 
     // Minimal Post row so SpaceCommon extraction side-paths (if any) do not 404.
     let post = crate::features::posts::models::Post {
-        pk: post_pk,
-        sk: EntityType::Post,
+        id: uuid::Uuid::parse_str(&space_id).expect("space_id is a valid uuid"),
         title: "Meet Action Test Space".to_string(),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.expect("create post");
+    post.create().await.expect("create post");
 
     space_id
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_meet_admin_success() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;
@@ -55,7 +53,7 @@ async fn test_create_meet_admin_success() {
     assert!(body["sk"].as_str().is_some(), "response must include sk");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_meet_unauthenticated() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;
@@ -67,7 +65,7 @@ async fn test_create_meet_unauthenticated() {
     assert_ne!(status, 200, "unauthenticated create_meet should fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_meet_returns_response_with_space_action() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;
@@ -89,7 +87,7 @@ async fn test_get_meet_returns_response_with_space_action() {
     assert!(body["space_action"].is_object(), "space_action must be populated");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_meet_mode() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;
@@ -117,7 +115,7 @@ async fn test_update_meet_mode() {
     assert_eq!(body["mode"], "Instant", "mode should be updated");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_meet_duration_invalid_zero() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;
@@ -138,7 +136,7 @@ async fn test_update_meet_duration_invalid_zero() {
     assert_ne!(status, 200, "duration 0 should fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_delete_meet_removes_row() {
     let ctx = TestContext::setup().await;
     let space_id = seed_creator_space(&ctx).await;

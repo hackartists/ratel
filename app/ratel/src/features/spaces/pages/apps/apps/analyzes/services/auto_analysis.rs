@@ -20,6 +20,7 @@
 
 use crate::common::utils::time::get_now_timestamp_millis;
 use crate::features::spaces::pages::apps::apps::analyzes::*;
+use postgres::PostgresEntity;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -29,14 +30,8 @@ pub async fn process_analyze_report(
     cli: &aws_sdk_dynamodb::Client,
     report: &SpaceAnalyzeReport,
 ) -> Result<()> {
-    let space_pk = report.pk.clone();
-    let report_id = match &report.sk {
-        EntityType::SpaceAnalyzeReport(id) => id.clone(),
-        _ => {
-            crate::error!("process_analyze_report: unexpected sk on report row");
-            return Ok(());
-        }
-    };
+    let space_pk = report.space_partition();
+    let report_id = report.report_id();
 
     // 1. Determine matched user_pks. Empty filter list means "all
     //    space participants" — same semantics as the preview endpoint.
@@ -64,20 +59,21 @@ pub async fn process_analyze_report(
     //    converts via `#[from]` so `?` is enough.
     let mut result = SpaceAnalyzeReportResult::new(space_pk.clone(), report_id.clone());
     result.respondent_count = matched_users.len() as i64;
-    result.poll_aggregates = poll_aggregates;
-    result.quiz_aggregates = quiz_aggregates;
-    result.follow_aggregates = follow_aggregates;
-    result.create(cli).await?;
+    result.poll_aggregates = PollAggregates(poll_aggregates);
+    result.quiz_aggregates = QuizAggregates(quiz_aggregates);
+    result.follow_aggregates = FollowAggregates(follow_aggregates);
+    SpaceAnalyzeReportResult::repository().insert(&result).await?;
 
     // 4. Flip the parent report's status. Any consumers gated on
-    //    `status==Finish` (list-card click, refetch) start working
-    //    here. The DynamoEntity-derived updater exposes
-    //    `with_<field>` setters for every plain field on the struct.
-    SpaceAnalyzeReport::updater(report.pk.clone(), report.sk.clone())
-        .with_status(AnalyzeReportStatus::Finish)
-        .with_respondent_count(matched_users.len() as i64)
-        .with_updated_at(get_now_timestamp_millis())
-        .execute(cli)
+    //    `status==Finish` (list-card click, refetch) start working here.
+    SpaceAnalyzeReport::repository()
+        .update(
+            report.id,
+            SpaceAnalyzeReport::update()
+                .status(AnalyzeReportStatus::Finish)
+                .respondent_count(matched_users.len() as i64)
+                .updated_at(get_now_timestamp_millis()),
+        )
         .await?;
 
     Ok(())
@@ -90,9 +86,7 @@ async fn aggregate_polls(
     space_pk: &Partition,
     matched_users: &HashSet<String>,
 ) -> Result<Vec<PollQuestionAggregate>> {
-    use crate::features::spaces::pages::actions::actions::poll::{
-        SpacePoll, SpacePollUserAnswer, SpacePollUserAnswerQueryOption,
-    };
+    use crate::features::spaces::pages::actions::actions::poll::SpacePollUserAnswer;
 
     // Pull every poll in the space — same prefix scan list_analyze_polls
     // uses. We need the question definitions to label tallies.
@@ -104,37 +98,17 @@ async fn aggregate_polls(
     let mut aggregates: Vec<PollQuestionAggregate> = Vec::new();
 
     for poll in polls {
-        let poll_id = match &poll.sk {
-            EntityType::SpacePoll(id) => id.clone(),
-            _ => continue,
-        };
+        let poll_id = poll.poll_id.clone();
         let poll_title = poll.title.clone();
 
-        // Gather all answers for this poll — paginated through the
-        // gsi by space_pk + poll_sk.
-        let gsi_sk = EntityType::SpacePollUserAnswer(space_pk.to_string(), poll.sk.to_string());
+        // Gather all answers for this poll.
+        let poll_sk = EntityType::SpacePoll(poll_id.clone());
         let mut answers_by_user: HashMap<String, Vec<crate::features::spaces::pages::actions::actions::poll::Answer>> = HashMap::new();
-        let mut bookmark: Option<String> = None;
-        loop {
-            let opt = if let Some(b) = bookmark.clone() {
-                SpacePollUserAnswerQueryOption::builder().bookmark(b)
-            } else {
-                SpacePollUserAnswerQueryOption::builder()
-            };
-            let (rows, next) = SpacePollUserAnswer::find_by_space_pk(cli, &gsi_sk, opt).await?;
-            for row in rows {
-                let user_key = row
-                    .user_pk
-                    .as_ref()
-                    .map(|pk| pk.to_string())
-                    .unwrap_or_else(|| row.pk.to_string());
-                if matched_users.contains(&user_key) {
-                    answers_by_user.insert(user_key, row.answers);
-                }
-            }
-            match next {
-                Some(b) => bookmark = Some(b),
-                None => break,
+        let rows = SpacePollUserAnswer::list_by_poll(space_pk, &poll_sk).await?;
+        for row in rows {
+            let user_key = row.actor_pk.clone();
+            if matched_users.contains(&user_key) {
+                answers_by_user.insert(user_key, row.answers.0);
             }
         }
 
@@ -197,37 +171,35 @@ async fn aggregate_polls(
                 text_answers,
             });
         }
-
-        let _ = SpacePoll::default(); // silence unused-import paths
     }
 
     Ok(aggregates)
 }
 
 async fn list_all_polls(
-    cli: &aws_sdk_dynamodb::Client,
+    // No longer used — `SpacePoll` is Postgres-backed now and reads from the
+    // global connection pool. Kept so call sites don't need to change.
+    _cli: &aws_sdk_dynamodb::Client,
     space_pk: &Partition,
 ) -> Result<Vec<crate::features::spaces::pages::actions::actions::poll::SpacePoll>> {
-    use crate::features::spaces::pages::actions::actions::poll::SpacePoll;
+    use crate::features::spaces::pages::actions::actions::poll::{SpacePoll, SpacePollColumn};
+    use postgres::ops::StringOp;
+    use postgres::{Order, PostgresEntity};
 
-    let mut bookmark: Option<String> = None;
-    let mut polls: Vec<SpacePoll> = Vec::new();
-    let prefix = EntityType::SpacePoll(String::default()).to_string();
+    let space_id = match space_pk {
+        Partition::Space(id) => id.clone(),
+        other => other.to_string(),
+    };
 
-    loop {
-        let mut opt = SpacePoll::opt().sk(prefix.clone()).limit(50);
-        if let Some(b) = bookmark.clone() {
-            opt = opt.bookmark(b);
-        }
-        let (rows, next) = SpacePoll::query(cli, space_pk.clone(), opt).await?;
-        polls.extend(rows);
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
-        }
-    }
-
-    Ok(polls)
+    SpacePoll::repository()
+        .find(
+            SpacePoll::query()
+                .space_id(StringOp::Eq(space_id))
+                .order_by(SpacePollColumn::CreatedAt, Order::Asc),
+        )
+        .await
+        .map(|p| p.items)
+        .map_err(crate::common::Error::from)
 }
 
 // ── Quiz aggregation ──────────────────────────────────────────────
@@ -237,9 +209,7 @@ async fn aggregate_quizzes(
     space_pk: &Partition,
     matched_users: &HashSet<String>,
 ) -> Result<Vec<QuizQuestionAggregate>> {
-    use crate::features::spaces::pages::actions::actions::quiz::{
-        QuizCorrectAnswer, SpaceQuiz, SpaceQuizAnswer, SpaceQuizAttempt,
-    };
+    use crate::features::spaces::pages::actions::actions::quiz::{SpaceQuizAnswer, SpaceQuizAttempt};
     use crate::features::spaces::pages::actions::models::SpaceAction;
 
     let quizzes = list_all_quizzes(cli, space_pk).await?;
@@ -247,40 +217,34 @@ async fn aggregate_quizzes(
         return Ok(Vec::new());
     }
 
-    // Quiz title lives on SpaceAction (CompositePartition(space_id, quiz_id)).
-    // Batch-get them in one round trip — same pattern as
-    // `list_analyze_quizzes`. Fall back to empty title on miss.
+    // Quiz title lives on SpaceAction, `(space_id, action_id=quiz_id)`.
+    // Fetch each title concurrently. Fall back to empty title on miss.
     let space_id: SpacePartition = match space_pk {
         Partition::Space(id) => SpacePartition(id.clone()),
         _ => SpacePartition::default(),
     };
-    let action_keys: Vec<(CompositePartition<SpacePartition, String>, EntityType)> = quizzes
-        .iter()
-        .filter_map(|quiz| match &quiz.sk {
-            EntityType::SpaceQuiz(quiz_id) => Some((
-                CompositePartition(space_id.clone(), quiz_id.clone()),
-                EntityType::SpaceAction,
-            )),
-            _ => None,
-        })
-        .collect();
-    let actions = if action_keys.is_empty() {
-        Vec::new()
-    } else {
-        SpaceAction::batch_get(cli, action_keys).await.unwrap_or_default()
-    };
-    let title_by_quiz_id: HashMap<String, String> = actions
+    let action_lookups = quizzes.iter().map(|quiz| {
+        let quiz_id = quiz.quiz_id.clone();
+        let space_id = space_id.clone();
+        async move {
+            let title = SpaceAction::get_one(&space_id, &quiz_id)
+                .await
+                .ok()
+                .flatten()
+                .map(|a| a.title);
+            (quiz_id, title)
+        }
+    });
+    let title_by_quiz_id: HashMap<String, String> = futures::future::join_all(action_lookups)
+        .await
         .into_iter()
-        .map(|action| (action.pk.1.clone(), action.title))
+        .filter_map(|(quiz_id, title)| title.map(|t| (quiz_id, t)))
         .collect();
 
     let mut aggregates: Vec<QuizQuestionAggregate> = Vec::new();
 
     for quiz in quizzes {
-        let quiz_id_str = match &quiz.sk {
-            EntityType::SpaceQuiz(id) => id.clone(),
-            _ => continue,
-        };
+        let quiz_id_str = quiz.quiz_id.clone();
         let quiz_title = title_by_quiz_id
             .get(&quiz_id_str)
             .cloned()
@@ -289,12 +253,11 @@ async fn aggregate_quizzes(
 
         // Pull correct answers from SpaceQuizAnswer (gated by quiz id).
         // Best-effort: if missing, fall back to empty correct sets.
-        let correct_answer_sk = EntityType::SpaceQuizAnswer(quiz_id_str.clone());
-        let correct_answers = SpaceQuizAnswer::get(cli, space_pk, Some(correct_answer_sk))
+        let correct_answers = SpaceQuizAnswer::get_one(&space_id, &quiz_id_st)
             .await
             .ok()
             .flatten()
-            .map(|a| a.answers)
+            .map(|a| a.answers.0)
             .unwrap_or_default();
 
         // For each matched user, fetch their latest attempt for this
@@ -309,7 +272,7 @@ async fn aggregate_quizzes(
             let user_pk = user_pk.clone();
             async move {
                 let attempt =
-                    SpaceQuizAttempt::find_latest_by_quiz_user(cli, &quiz_id, &user_pk).await;
+                    SpaceQuizAttempt::find_latest_by_quiz_user(&quiz_id, &user_pk).await;
                 attempt
             }
         });
@@ -388,38 +351,35 @@ async fn aggregate_quizzes(
                 text_answers,
             });
         }
-
-        let _ = QuizCorrectAnswer::Single { answer: None };
-        let _ = SpaceQuiz::default();
     }
 
     Ok(aggregates)
 }
 
 async fn list_all_quizzes(
-    cli: &aws_sdk_dynamodb::Client,
+    // No longer used — `SpaceQuiz` is Postgres-backed now and reads from the
+    // global connection pool. Kept so call sites don't need to change.
+    _cli: &aws_sdk_dynamodb::Client,
     space_pk: &Partition,
 ) -> Result<Vec<crate::features::spaces::pages::actions::actions::quiz::SpaceQuiz>> {
-    use crate::features::spaces::pages::actions::actions::quiz::SpaceQuiz;
+    use crate::features::spaces::pages::actions::actions::quiz::{SpaceQuiz, SpaceQuizColumn};
+    use postgres::ops::StringOp;
+    use postgres::{Order, PostgresEntity};
 
-    let mut bookmark: Option<String> = None;
-    let mut quizzes: Vec<SpaceQuiz> = Vec::new();
-    let prefix = EntityType::SpaceQuiz(String::default()).to_string();
+    let space_id = match space_pk {
+        Partition::Space(id) => id.clone(),
+        other => other.to_string(),
+    };
 
-    loop {
-        let mut opt = SpaceQuiz::opt().sk(prefix.clone()).limit(50);
-        if let Some(b) = bookmark.clone() {
-            opt = opt.bookmark(b);
-        }
-        let (rows, next) = SpaceQuiz::query(cli, space_pk.clone(), opt).await?;
-        quizzes.extend(rows);
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
-        }
-    }
-
-    Ok(quizzes)
+    SpaceQuiz::repository()
+        .find(
+            SpaceQuiz::query()
+                .space_id(StringOp::Eq(space_id))
+                .order_by(SpaceQuizColumn::CreatedAt, Order::Asc),
+        )
+        .await
+        .map(|p| p.items)
+        .map_err(crate::common::Error::from)
 }
 
 fn correct_indices_at(
@@ -439,7 +399,10 @@ fn correct_indices_at(
 // ── Follow aggregation ────────────────────────────────────────────
 
 async fn aggregate_follows(
-    cli: &aws_sdk_dynamodb::Client,
+    // No longer used — `SpaceFollowUser` / `UserFollow` are Postgres-backed
+    // now and read from the global connection pool. Kept so call sites
+    // don't need to change.
+    _cli: &aws_sdk_dynamodb::Client,
     space_pk: &Partition,
     matched_users: &HashSet<String>,
 ) -> Result<Vec<FollowTargetAggregate>> {
@@ -448,17 +411,12 @@ async fn aggregate_follows(
 
     // Space-defined follow targets — the same list the cross-filter
     // picker shows.
-    let mut bookmark: Option<String> = None;
+    let space_partition: SpacePartition = space_pk.clone().into();
     let mut targets: Vec<SpaceFollowUser> = Vec::new();
-    let target_sk_prefix = EntityType::SpaceSubscriptionUser(String::default()).to_string();
+    let mut bookmark: Option<String> = None;
     loop {
-        let mut opt = SpaceFollowUser::opt()
-            .sk(target_sk_prefix.clone())
-            .limit(50);
-        if let Some(b) = bookmark.clone() {
-            opt = opt.bookmark(b);
-        }
-        let (rows, next) = SpaceFollowUser::query(cli, space_pk.clone(), opt).await?;
+        let (rows, next) =
+            SpaceFollowUser::list_by_space(&space_partition, bookmark, 50).await?;
         targets.extend(rows);
         match next {
             Some(b) => bookmark = Some(b),
@@ -471,31 +429,26 @@ async fn aggregate_follows(
 
     // For each target, walk its followers and count matched users.
     let mut aggregates: Vec<FollowTargetAggregate> = Vec::new();
-    let follower_sk_prefix = EntityType::Follower(String::default()).to_string();
     for target in targets {
-        if target.user_pk == Partition::None {
+        let target_partition = target.user_partition();
+        if target_partition == Partition::None {
             continue;
         }
 
-        let mut bookmark: Option<String> = None;
         let mut count: u32 = 0;
+        let mut page: i64 = 1;
+        const PAGE_SIZE: i64 = 100;
         loop {
-            let mut opt = UserFollow::opt()
-                .sk(follower_sk_prefix.clone())
-                .limit(100);
-            if let Some(b) = bookmark.clone() {
-                opt = opt.bookmark(b);
-            }
-            let (rows, next) =
-                UserFollow::query(cli, target.user_pk.clone(), opt).await?;
-            for row in rows {
-                if matched_users.contains(&row.user_pk.to_string()) {
+            let result = UserFollow::list_followers_page(&target_partition, page, PAGE_SIZE).await?;
+            for row in &result.items {
+                if matched_users.contains(&row.user_pk) {
                     count += 1;
                 }
             }
-            match next {
-                Some(b) => bookmark = Some(b),
-                None => break,
+            if page < result.total_pages {
+                page += 1;
+            } else {
+                break;
             }
         }
 
@@ -504,7 +457,7 @@ async fn aggregate_follows(
         }
 
         aggregates.push(FollowTargetAggregate {
-            user_pk: target.user_pk.to_string(),
+            user_pk: target.user_pk.clone(),
             display_name: target.display_name,
             username: target.username,
             profile_url: target.profile_url,

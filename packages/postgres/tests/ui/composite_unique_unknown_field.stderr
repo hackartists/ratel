@@ -1,0 +1,10 @@
+error: #[postgres(unique(...))] references `nonexistent`, which is not a scalar/pk field of this struct
+  --> tests/ui/composite_unique_unknown_field.rs:11:1
+   |
+11 | / #[postgres(unique(workspace_id, nonexistent))]
+12 | | pub struct CompositeUniqueUnknownField {
+13 | |     pub id: Uuid,
+14 | |     pub workspace_id: Uuid,
+15 | |     pub application_number: String,
+16 | | }
+   | |_^

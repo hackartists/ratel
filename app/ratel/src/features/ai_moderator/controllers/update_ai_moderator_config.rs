@@ -2,6 +2,8 @@ use crate::features::ai_moderator::*;
 
 use super::get_ai_moderator_config::AiModeratorConfigResponse;
 #[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
 
@@ -24,41 +26,41 @@ pub async fn update_ai_moderator_config(
     #[mcp(description = "AI moderator config: {\"enabled\": bool, \"reply_interval\": int, \"guidelines\": \"text\"}")]
     req: UpdateAiModeratorConfigRequest,
 ) -> Result<AiModeratorConfigResponse> {
+    use postgres::ops::StringOp;
+
     role.is_creator()?;
 
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
-    super::require_premium(cli, &user).await?;
+    super::require_premium(&user).await?;
 
     if req.reply_interval < 1 {
         return Err(AiModeratorError::InvalidReplyInterval.into());
     }
 
-    let pk = CompositePartition(space_id.clone(), discussion_id.to_string());
     let now = crate::common::utils::time::get_now_timestamp_millis();
 
-    let existing =
-        AiModeratorConfig::get(cli, &pk, Some(EntityType::AiModeratorConfig)).await?;
+    // Preserve the existing row's `id` / `created_at` on update, otherwise
+    // build a fresh config. `upsert_on` the `(space_id, discussion_id)`
+    // natural key so create and update collapse into one write.
+    let existing = AiModeratorConfig::repository()
+        .find_one(
+            AiModeratorConfig::query()
+                .space_id(StringOp::Eq(space_id.to_string()))
+                .discussion_id(StringOp::Eq(discussion_id.to_string())),
+        )
+        .await
+        .map_err(crate::common::Error::from)?;
 
-    match existing {
-        Some(_) => {
-            AiModeratorConfig::updater(&pk, &EntityType::AiModeratorConfig)
-                .with_enabled(req.enabled)
-                .with_reply_interval(req.reply_interval)
-                .with_guidelines(req.guidelines.clone())
-                .with_updated_at(now)
-                .execute(cli)
-                .await?;
-        }
-        None => {
-            let mut config = AiModeratorConfig::new(space_id, discussion_id.to_string());
-            config.enabled = req.enabled;
-            config.reply_interval = req.reply_interval;
-            config.guidelines = req.guidelines.clone();
-            config.create(cli).await?;
-        }
-    }
+    let mut config =
+        existing.unwrap_or_else(|| AiModeratorConfig::new(space_id.clone(), discussion_id.to_string()));
+    config.enabled = req.enabled;
+    config.reply_interval = req.reply_interval;
+    config.guidelines = req.guidelines.clone();
+    config.updated_at = now;
+
+    AiModeratorConfig::repository()
+        .upsert_on(&["space_id", "discussion_id"], &config)
+        .await
+        .map_err(crate::common::Error::from)?;
 
     Ok(AiModeratorConfigResponse {
         enabled: req.enabled,

@@ -3,41 +3,58 @@ use crate::features::posts::models::Team;
 use crate::features::sub_team::models::SubTeamLink;
 use crate::features::sub_team::services::application_lifecycle::resolve_team_admins;
 use crate::features::sub_team::types::SubTeamError;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
+/// Parse a `Partition::Team(id)` into its `Uuid` — Postgres `Team` rows are
+/// keyed by the raw uuid, not the `"TEAM#…"` partition string.
 #[cfg(feature = "server")]
-const LINK_SK_PREFIX: &str = "SUB_TEAM_LINK";
-#[cfg(feature = "server")]
-const PAGE_SIZE: i32 = 50;
-#[cfg(feature = "server")]
-const MAX_PAGES: usize = 5;
+fn team_uuid(team_pk: &Partition) -> Option<Uuid> {
+    match team_pk {
+        Partition::Team(id) => Uuid::parse_str(id).ok(),
+        _ => None,
+    }
+}
 
-/// Sever a single parent↔child relationship in a single transact-write:
-///   1. Delete the SubTeamLink row under parent_pk / sk=SUB_TEAM_LINK#child_id
-///   2. Clear child Team.parent_team_id
+/// Sever a single parent↔child relationship:
+///   1. Delete the `SubTeamLink` row (Postgres)
+///   2. Clear child `Team.parent_team_id` (DynamoDB)
 /// Leaves all sub-team content (posts, spaces, members, messages) untouched.
+///
+/// **Migration note:** the DynamoDB version did both writes in one
+/// `transact_write_items` call. The `SubTeamLink` now lives in Postgres while
+/// `Team` stays in DynamoDB, so the two writes can no longer share a
+/// transaction — the link delete happens first, then the child update. A crash
+/// between them leaves an orphan `parent_team_id` on the child (recoverable via
+/// leave-parent's orphan-clear path) but no dangling link.
 #[cfg(feature = "server")]
 pub async fn detach_sub_team_link(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     parent_pk: &Partition,
     child_pk: &Partition,
     child_id: &str,
 ) -> Result<()> {
     let now = crate::common::utils::time::get_now_timestamp_millis();
 
-    let link_sk = EntityType::SubTeamLink(child_id.to_string());
-    let delete_link = SubTeamLink::delete_transact_write_item(parent_pk.clone(), link_sk);
+    SubTeamLink::delete_link(parent_pk, child_id).await.map_err(|e| {
+        crate::error!("detach_sub_team_link: link delete failed: {e}");
+        Error::from(SubTeamError::ApplicationStateMismatch)
+    })?;
 
-    let clear_parent = Team::updater(child_pk, EntityType::Team)
-        .remove_parent_team_id()
-        .with_updated_at(now)
-        .transact_write_item();
-
-    cli.transact_write_items()
-        .set_transact_items(Some(vec![delete_link, clear_parent]))
-        .send()
+    let child_uuid = team_uuid(child_pk).ok_or_else(|| {
+        crate::error!("detach_sub_team_link: unexpected child pk variant");
+        Error::from(SubTeamError::ApplicationStateMismatch)
+    })?;
+    Team::repository()
+        .update(
+            child_uuid,
+            Team::update().parent_team_id(None).updated_at(now),
+        )
         .await
         .map_err(|e| {
-            crate::error!("detach_sub_team_link transact_write failed: {:?}", e);
+            crate::error!("detach_sub_team_link: child clear failed: {:?}", e);
             Error::from(SubTeamError::ApplicationStateMismatch)
         })?;
 
@@ -47,24 +64,8 @@ pub async fn detach_sub_team_link(
 /// List all sub-team links under a given parent's pk. Used by the parent-delete
 /// cascade to enumerate every child that needs detaching before Team removal.
 #[cfg(feature = "server")]
-pub async fn list_sub_team_links_for_cascade(
-    cli: &aws_sdk_dynamodb::Client,
-    parent_pk: &Partition,
-) -> Result<Vec<SubTeamLink>> {
-    let mut out: Vec<SubTeamLink> = Vec::new();
-    let mut bookmark: Option<String> = None;
-    for _ in 0..MAX_PAGES {
-        let opts = SubTeamLink::opt_with_bookmark(bookmark.clone())
-            .sk(LINK_SK_PREFIX.to_string())
-            .limit(PAGE_SIZE);
-        let (items, next) = SubTeamLink::query(cli, parent_pk.clone(), opts).await?;
-        out.extend(items);
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => return Ok(out),
-        }
-    }
-    Ok(out)
+pub async fn list_sub_team_links_for_cascade(parent_pk: &Partition) -> Result<Vec<SubTeamLink>> {
+    SubTeamLink::list_for_parent(parent_pk).await
 }
 
 /// Notify every admin/owner of `target_pk` with the provided payload.
@@ -84,25 +85,21 @@ pub async fn notify_team_admins(
     }
 }
 
-/// Sub-team-side landing for deregister / leave notifications. The
-/// Dioxus route is `/:username/sub-teams/application`, so we resolve
-/// the team's `username` from its id first. Falls back to the team
-/// home `/:username` (or the bare id) when the lookup fails.
+/// Sub-team-side landing for deregister / leave notifications.
+#[cfg(feature = "server")]
 pub async fn build_sub_team_parent_url(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     sub_team_id: &str,
 ) -> String {
-    let pk = Partition::Team(sub_team_id.to_string());
-    let username = crate::features::posts::models::Team::get(
-        cli,
-        &pk,
-        Some(EntityType::Team),
-    )
-    .await
-    .ok()
-    .flatten()
-    .map(|t| t.username)
-    .unwrap_or_default();
+    let username = match Uuid::parse_str(sub_team_id) {
+        Ok(uuid) => crate::features::posts::models::Team::get_by_id(uuid)
+            .await
+            .ok()
+            .flatten()
+            .map(|t| t.username)
+            .unwrap_or_default(),
+        Err(_) => String::new(),
+    };
     if username.is_empty() {
         format!("/{sub_team_id}")
     } else {
@@ -110,23 +107,21 @@ pub async fn build_sub_team_parent_url(
     }
 }
 
-/// Parent-side sub-team management dashboard. Route is
-/// `/:username/sub-teams/manage`.
+/// Parent-side sub-team management dashboard.
+#[cfg(feature = "server")]
 pub async fn build_parent_sub_teams_url(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     parent_team_id: &str,
 ) -> String {
-    let pk = Partition::Team(parent_team_id.to_string());
-    let username = crate::features::posts::models::Team::get(
-        cli,
-        &pk,
-        Some(EntityType::Team),
-    )
-    .await
-    .ok()
-    .flatten()
-    .map(|t| t.username)
-    .unwrap_or_default();
+    let username = match Uuid::parse_str(parent_team_id) {
+        Ok(uuid) => crate::features::posts::models::Team::get_by_id(uuid)
+            .await
+            .ok()
+            .flatten()
+            .map(|t| t.username)
+            .unwrap_or_default(),
+        Err(_) => String::new(),
+    };
     if username.is_empty() {
         format!("/{parent_team_id}")
     } else {
@@ -135,12 +130,9 @@ pub async fn build_parent_sub_teams_url(
 }
 
 /// Parent-delete cascade: enumerate every SubTeamLink under `parent_pk`,
-/// detach each one (delete link + clear child parent_team_id), and notify
-/// the former sub-team admins. Sub-team CONTENT (posts, spaces, members,
-/// messages) is NEVER touched here — this only severs the relationship.
-///
-/// Called from `delete_team_handler` before the Team row is removed so the
-/// cascade happens synchronously in the same user-facing request.
+/// detach each one, and notify the former sub-team admins. Sub-team CONTENT is
+/// NEVER touched here — this only severs the relationship. Keeps the `cli`
+/// argument for the external `Team` writes / inbox notifications.
 #[cfg(feature = "server")]
 pub async fn cascade_parent_delete_to_sub_teams(
     cli: &aws_sdk_dynamodb::Client,
@@ -153,7 +145,7 @@ pub async fn cascade_parent_delete_to_sub_teams(
     };
     let former_parent_team_name = parent_display_name.to_string();
 
-    let links = list_sub_team_links_for_cascade(cli, parent_pk).await?;
+    let links = list_sub_team_links_for_cascade(parent_pk).await?;
     if links.is_empty() {
         return Ok(());
     }

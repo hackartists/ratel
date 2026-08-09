@@ -20,22 +20,33 @@ pub async fn get_ranking_handler(
 ) -> Result<ListResponse<RankingEntryResponse>> {
     use crate::features::activity::models::SpaceScore;
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let space_pk: Partition = space_id.into();
+    // `bookmark` carries an opaque 1-based page number as a string.
+    const PAGE_SIZE: i64 = 50;
+    let page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
 
-    let opts = SpaceScore::opt_with_bookmark(bookmark)
-        .limit(50)
-        .scan_index_forward(false);
+    let result = SpaceScore::find_by_space_rank(&space_id, page, PAGE_SIZE).await?;
 
-    let (scores, next_bookmark) = SpaceScore::find_by_space_rank(cli, &space_pk, opts).await?;
+    let has_more = page < result.total_pages;
+    let next_bookmark = if has_more {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
 
-    let items: Vec<RankingEntryResponse> = scores
+    // Rank resets to 1 at the top of every page (per-page rank, 1-based),
+    // matching the original DynamoDB handler which mapped `(i as u32) + 1`
+    // over each page's rows independently.
+    let items: Vec<RankingEntryResponse> = result
+        .items
         .iter()
         .enumerate()
         .map(|(i, score)| RankingEntryResponse {
             rank: (i as u32) + 1,
-            user_pk: score.user_pk.to_string(),
+            user_pk: score.author_pk.clone(),
             name: score.user_name.clone(),
             avatar: score.user_avatar.clone(),
             total_score: score.total_score,

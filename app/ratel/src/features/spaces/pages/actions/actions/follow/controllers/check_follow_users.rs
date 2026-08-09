@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::spaces::pages::actions::actions::follow::*;
 #[cfg(feature = "server")]
@@ -32,9 +33,6 @@ pub async fn check_follow_users(
     req: CheckFollowUsersRequest,
 ) -> Result<CheckFollowUsersResponse> {
     SpaceFollowAction::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    use crate::features::auth::models::user::UserQueryOption;
 
     let mut existing_identifiers = vec![];
     let mut seen = std::collections::HashSet::<String>::new();
@@ -53,41 +51,30 @@ pub async fn check_follow_users(
         }
 
         if is_email {
-            let (users, _) = crate::features::auth::User::find_by_email(
-                cli,
-                &identifier,
-                UserQueryOption::builder().limit(1),
-            )
-            .await?;
-            if users.first().is_some() {
+            let user = crate::common::models::auth::User::find_by_email(&identifier).await?;
+            if user.is_some() {
                 existing_identifiers.push(identifier);
             }
             continue;
         }
 
-        let users = match crate::features::auth::User::find_by_username(
-            cli,
-            &identifier,
-            UserQueryOption::builder().limit(1),
-        )
-        .await
-        {
-            Ok((users, _)) => users,
+        let user = match crate::common::models::auth::User::find_by_username(&identifier).await {
+            Ok(user) => user,
             Err(err) => {
                 error!("Failed to query user by username: {:?}", err);
-                vec![]
+                None
             }
         };
 
-        if users.first().is_some() {
+        if user.is_some() {
             existing_identifiers.push(identifier);
             continue;
         }
 
-        let (teams, _) =
-            Team::find_by_username_prefix(cli, &identifier, Team::opt().limit(5)).await?;
-        if teams.into_iter().any(|team| team.username == identifier) {
-            existing_identifiers.push(identifier);
+        if let Some(team) = Team::find_by_username(&identifier).await? {
+            if team.username == identifier {
+                existing_identifiers.push(identifier);
+            }
         }
     }
 

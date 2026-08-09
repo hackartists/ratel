@@ -31,7 +31,7 @@ impl From<(crate::features::posts::models::Team, i64)> for TeamResponse {
             permissions,
         );
         Self {
-            id: team.pk.into(),
+            id: team.partition().into(),
             created_at: team.created_at,
             updated_at: team.updated_at,
             nickname: team.display_name,

@@ -5,6 +5,7 @@ use crate::features::membership::models::{
     ENTERPRISE_MAX_CREDITS_PER_SPACE, ENTERPRISE_MONTHLY_REFILL_CREDITS, Membership,
     MembershipResponse, MembershipTier, TeamMembership, UserMembership,
 };
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 const ENTERPRISE_DISPLAY_ORDER: i32 = 999;
@@ -38,25 +39,25 @@ pub struct GrantEnterpriseMembershipResponse {
 fn build_enterprise_membership(existing: Option<Membership>) -> Membership {
     let now = crate::common::utils::time::now();
     let tier = MembershipTier::Enterprise(ENTERPRISE_NAME.to_string());
-    let pk = Partition::Membership(tier.to_string());
     let created_at = existing
         .as_ref()
         .map_or(now, |membership| membership.created_at);
+    let id = existing
+        .as_ref()
+        .map_or_else(uuid::Uuid::now_v7, |membership| membership.id);
 
     Membership {
-        pk,
-        sk: EntityType::Membership,
+        id,
+        tier,
         created_at,
         updated_at: now,
         credits: ENTERPRISE_MONTHLY_REFILL_CREDITS,
-        tier,
         price_dollars: 0,
         price_won: 0,
         display_order: ENTERPRISE_DISPLAY_ORDER,
         duration_days: -1,
         max_credits_per_space: ENTERPRISE_MAX_CREDITS_PER_SPACE,
         is_active: true,
-        display_order_indexed: ENTERPRISE_DISPLAY_ORDER,
     }
 }
 
@@ -64,8 +65,8 @@ fn build_enterprise_membership(existing: Option<Membership>) -> Membership {
 pub async fn grant_enterprise_membership(
     req: GrantEnterpriseMembershipRequest,
 ) -> Result<GrantEnterpriseMembershipResponse> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
+    use postgres::PostgresEntity;
+    use postgres::ops::EnumOp;
 
     let username = req.username.trim().to_string();
     if username.is_empty() {
@@ -73,28 +74,26 @@ pub async fn grant_enterprise_membership(
     }
 
     let enterprise_tier = MembershipTier::Enterprise(ENTERPRISE_NAME.to_string());
-    let existing_membership = Membership::get(
-        cli,
-        Partition::Membership(enterprise_tier.to_string()),
-        Some(EntityType::Membership),
-    )
-    .await?;
+    let existing_membership = Membership::repository()
+        .find_one(Membership::query().tier(EnumOp::Eq(enterprise_tier.clone())))
+        .await
+        .map_err(Error::from)?;
     let enterprise_membership = build_enterprise_membership(existing_membership);
-    enterprise_membership.upsert(cli).await?;
-
-    let membership_pk = enterprise_membership.pk.clone().into();
+    Membership::repository()
+        .upsert_on(&["tier"], &enterprise_membership)
+        .await
+        .map_err(Error::from)?;
 
     let remaining_credits = match req.target_type {
         MembershipGrantTargetType::User => {
-            let (users, _) = User::find_by_username(cli, &username, User::opt().limit(1)).await?;
-            let user = users
-                .into_iter()
-                .find(|user| user.username == username)
+            let user = User::find_by_username(&username)
+                .await?
+                .filter(|user| user.username == username)
                 .ok_or_else(|| Error::NotFound("User not found".to_string()))?;
 
             let mut user_membership = UserMembership::new(
-                user.pk.into(),
-                membership_pk,
+                user.pk().into(),
+                enterprise_membership.tier.clone(),
                 enterprise_membership.duration_days,
                 enterprise_membership.credits,
             )?;
@@ -104,23 +103,18 @@ pub async fn grant_enterprise_membership(
             user_membership.next_refill_at =
                 crate::common::utils::time::add_one_month(crate::common::utils::time::now())
                     .unwrap_or(crate::common::utils::time::now() + 30 * 24 * 60 * 60 * 1_000);
-            user_membership.upsert(cli).await?;
+            user_membership.save().await?;
             user_membership.remaining_credits
         }
         MembershipGrantTargetType::Team => {
-            let team_query_option = Team::opt()
-                .sk(Team::compose_gsi2_sk(String::default()))
-                .limit(5);
-            let (teams, _) =
-                Team::find_by_username_prefix(cli, username.clone(), team_query_option).await?;
-            let team = teams
-                .into_iter()
-                .find(|team| team.username == username)
+            let team = Team::find_by_username(&username)
+                .await?
+                .filter(|team| team.username == username)
                 .ok_or_else(|| Error::NotFound("Team not found".to_string()))?;
 
             let mut team_membership = TeamMembership::new(
-                team.pk.into(),
-                membership_pk,
+                team.partition().into(),
+                enterprise_membership.tier.clone(),
                 enterprise_membership.duration_days,
                 enterprise_membership.credits,
             )?;
@@ -130,7 +124,7 @@ pub async fn grant_enterprise_membership(
             team_membership.next_refill_at =
                 crate::common::utils::time::add_one_month(crate::common::utils::time::now())
                     .unwrap_or(crate::common::utils::time::now() + 30 * 24 * 60 * 60 * 1_000);
-            team_membership.upsert(cli).await?;
+            team_membership.save().await?;
             team_membership.remaining_credits
         }
     };

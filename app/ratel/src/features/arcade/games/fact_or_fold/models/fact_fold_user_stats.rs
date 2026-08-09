@@ -3,70 +3,51 @@ use crate::common::*;
 #[allow(unused_imports)]
 use rmcp::schemars;
 
+use postgres::PostgresEntity;
+use postgres::ops::StringOp;
+use uuid::Uuid;
+
 /// Lifetime per-user FOF statistics. Updated as a side effect of
-/// settlement (PR6). Lives at `Partition::User(user_pk) +
-/// EntityType::FactFoldUserStats` so a `get_user_profile` query
-/// reads it inline with other user-scoped rows.
+/// settlement.
 ///
-/// PR7 wires the leaderboard view on top of these rows — accuracy
-/// ranking is `correct_count / total_rounds`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(
-    feature = "server",
-    derive(DynamoEntity, rmcp::schemars::JsonSchema)
-)]
+/// Postgres migration: the DynamoDB `(User(user_id),
+/// FactFoldUserStats)` pair becomes a surrogate `id` PK plus a
+/// `unique(user_id)` natural key.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "fact_fold_user_stats")]
 pub struct FactFoldUserStats {
-    pub pk: Partition,  // Partition::User(user_pk)
-    pub sk: EntityType, // EntityType::FactFoldUserStats
+    pub id: Uuid,
+
+    #[postgres(unique)]
+    pub user_id: String,
 
     pub created_at: i64,
     pub updated_at: i64,
 
-    /// Total rounds the user has played (won or lost). Increments
-    /// once per settled round.
-    #[serde(default)]
+    /// Total rounds the user has played (won or lost).
     pub total_rounds: i64,
     /// Subset of `total_rounds` where the user's final side matched
-    /// the truth. (`bet.flipped_to.unwrap_or(bet.side) == verdict`.)
-    #[serde(default)]
+    /// the truth.
     pub correct_count: i64,
-    /// Cumulative chip delta across all rounds — sum of
-    /// `chips_out - buy_in` per settlement. Can be negative.
-    #[serde(default)]
+    /// Cumulative chip delta across all rounds.
     pub lifetime_delta_chips: i64,
     /// Millis-since-epoch of the last settled round.
-    #[serde(default)]
     pub last_played_at: i64,
 
-    /// `Some(round_id)` while the user is bound into an in-flight
-    /// round (any non-Settled stage). Set on `lobby/join`, cleared
-    /// on `lobby/leave` (waiting only) or in `settle_round_internal`
-    /// per participant. lobby/join uses its presence to short-circuit
-    /// with [`FactOrFoldError::RoundInProgress`] so a disconnected
-    /// player cannot start a second round before their first finishes.
-    #[serde(default)]
+    /// `Some(round_id)` while the user is bound into an in-flight round.
     pub current_round_id: Option<String>,
 }
 
-#[cfg(feature = "server")]
 impl FactFoldUserStats {
-    pub fn keys(user_id: &str) -> (Partition, EntityType) {
-        (
-            Partition::User(user_id.to_string()),
-            EntityType::FactFoldUserStats,
-        )
-    }
-
-    pub async fn get_or_default(
-        cli: &aws_sdk_dynamodb::Client,
-        user_id: &str,
-    ) -> crate::common::Result<Self> {
-        let (pk, sk) = Self::keys(user_id);
-        let row = FactFoldUserStats::get(cli, &pk, Some(sk.clone())).await?;
+    pub async fn get_or_default(user_id: &str) -> crate::common::Result<Self> {
+        let row = Self::repository()
+            .find_one(Self::query().user_id(StringOp::Eq(user_id.to_string())))
+            .await
+            .map_err(crate::common::Error::from)?;
         let now = crate::common::utils::time::get_now_timestamp_millis();
         Ok(row.unwrap_or_else(|| Self {
-            pk,
-            sk,
+            id: Uuid::now_v7(),
+            user_id: user_id.to_string(),
             created_at: now,
             updated_at: now,
             total_rounds: 0,
@@ -75,5 +56,13 @@ impl FactFoldUserStats {
             last_played_at: 0,
             current_round_id: None,
         }))
+    }
+
+    /// Natural-key upsert on `user_id`.
+    pub async fn save(&self) -> crate::common::Result<Self> {
+        Self::repository()
+            .upsert_on(&["user_id"], self)
+            .await
+            .map_err(crate::common::Error::from)
     }
 }

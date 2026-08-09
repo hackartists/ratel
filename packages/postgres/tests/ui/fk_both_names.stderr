@@ -1,0 +1,6 @@
+error: field has both `references` and `foreign_key`; use one
+  --> tests/ui/fk_both_names.rs:12:5
+   |
+12 | /     #[postgres(references = "parents(id)", foreign_key = "parents(id)")]
+13 | |     pub parent_id: Uuid,
+   | |_______________________^

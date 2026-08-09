@@ -46,13 +46,20 @@ pub const MIN_PARTICIPANTS_FOR_HOT: i64 = 10;
 ///   upsert the HotSpace row.
 /// - Everything else (private, draft, low participation, missing): delete the
 ///   row. Best-effort; missing-row deletes are ignored.
-pub async fn upsert_hot_space(cli: &aws_sdk_dynamodb::Client, space_pk: &Partition) {
-    let space = match SpaceCommon::get(cli, space_pk.clone(), Some(EntityType::SpaceCommon)).await
-    {
+pub async fn upsert_hot_space(_cli: &aws_sdk_dynamodb::Client, space_pk: &Partition) {
+    // Bare space id — HotSpace is Postgres-backed and keyed by `space_id`.
+    // SpaceCommon / Post / SpaceAction below are Postgres-backed too now, so
+    // `_cli` is unused — kept for external caller compatibility.
+    let space_id_str: String = {
+        let sp: SpacePartition = space_pk.clone().into();
+        sp.0
+    };
+
+    let space = match SpaceCommon::get_by_partition(space_pk).await {
         Ok(Some(s)) => s,
         Ok(None) => {
             // Space deleted — drop any stale row.
-            let _ = HotSpace::delete(cli, space_pk.clone(), Some(EntityType::HotSpace)).await;
+            let _ = HotSpace::delete_for_space(&space_id_str).await;
             return;
         }
         Err(e) => {
@@ -66,7 +73,7 @@ pub async fn upsert_hot_space(cli: &aws_sdk_dynamodb::Client, space_pk: &Partiti
     };
 
     if !space.is_public() || space.participants < MIN_PARTICIPANTS_FOR_HOT {
-        if let Err(e) = HotSpace::delete(cli, space_pk.clone(), Some(EntityType::HotSpace)).await {
+        if let Err(e) = HotSpace::delete_for_space(&space_id_str).await {
             crate::warn!(
                 space_pk = %space_pk,
                 error = %e,
@@ -76,17 +83,22 @@ pub async fn upsert_hot_space(cli: &aws_sdk_dynamodb::Client, space_pk: &Partiti
         return;
     }
 
-    let title = match space.pk.clone().to_post_key() {
-        Ok(post_pk) => Post::get(cli, post_pk, Some(EntityType::Post))
-            .await
-            .ok()
-            .flatten()
-            .map(|p| p.title)
-            .unwrap_or_default(),
-        Err(_) => String::new(),
+    let space_partition = space.partition();
+    let post_pk = space_partition.clone().to_post_key().unwrap_or_default();
+    let post_uuid = match &post_pk {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).ok(),
+        _ => None,
     };
+    let post = match post_uuid {
+        Some(id) => Post::get_by_feed_id(id).await.ok().flatten(),
+        None => None,
+    };
+    let title = post.map(|p| p.title).unwrap_or_default();
 
-    let post_pk = space.pk.clone().to_post_key().unwrap_or_default();
+    let post_id: String = {
+        let fp: FeedPartition = post_pk.into();
+        fp.0
+    };
     let description = if !space.content.is_empty() {
         extract_description(&space.content)
     } else {
@@ -94,7 +106,7 @@ pub async fn upsert_hot_space(cli: &aws_sdk_dynamodb::Client, space_pk: &Partiti
     };
 
     let (poll_count, discussion_count, quiz_count, follow_count) =
-        count_actions(cli, &space.pk).await;
+        count_actions(&space_partition).await;
     let total_actions = poll_count + discussion_count + quiz_count + follow_count;
 
     let now_ms = get_now_timestamp_millis();
@@ -114,13 +126,13 @@ pub async fn upsert_hot_space(cli: &aws_sdk_dynamodb::Client, space_pk: &Partiti
     );
 
     let row = HotSpace {
-        pk: space.pk.clone(),
-        sk: EntityType::HotSpace,
+        id: uuid::Uuid::now_v7(),
+        space_id: space_id_str,
         created_at: now_ms,
         updated_at: now_ms,
         rank_pk: HOT_SPACE_RANK_PK.to_string(),
-        rank_key,
-        post_pk,
+        rank_key: rank_key.to_string(),
+        post_id,
         title,
         description,
         logo: space.logo.clone(),
@@ -136,7 +148,12 @@ pub async fn upsert_hot_space(cli: &aws_sdk_dynamodb::Client, space_pk: &Partiti
         space_created_at: space.created_at,
     };
 
-    if let Err(e) = row.upsert(cli).await {
+    // Natural-key upsert on `space_id` preserves the surrogate `id` for an
+    // existing row (mirrors the DynamoDB per-space singleton upsert).
+    if let Err(e) = HotSpace::repository()
+        .upsert_on(&["space_id"], &row)
+        .await
+    {
         crate::error!(
             space_pk = %space_pk,
             error = %e,
@@ -145,13 +162,10 @@ pub async fn upsert_hot_space(cli: &aws_sdk_dynamodb::Client, space_pk: &Partiti
     }
 }
 
-async fn count_actions(
-    cli: &aws_sdk_dynamodb::Client,
-    space_pk: &Partition,
-) -> (i64, i64, i64, i64) {
-    let opts = SpaceAction::opt_all();
-    let actions = match SpaceAction::find_by_space(cli, space_pk.clone(), opts).await {
-        Ok((actions, _)) => actions,
+async fn count_actions(space_pk: &Partition) -> (i64, i64, i64, i64) {
+    let space_id: SpacePartition = space_pk.clone().into();
+    let actions = match SpaceAction::list_by_space(&space_id).await {
+        Ok(actions) => actions,
         Err(_) => return (0, 0, 0, 0),
     };
 

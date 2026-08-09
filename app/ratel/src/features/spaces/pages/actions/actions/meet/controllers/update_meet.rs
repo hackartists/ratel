@@ -23,30 +23,30 @@ pub async fn update_meet(
     req: UpdateMeetRequest,
 ) -> Result<String> {
     SpaceMeet::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_pk.into();
-    let meet_sk_entity: EntityType = meet_sk.into();
+
+    let mut meet = SpaceMeet::get_one(&space_pk, &meet_sk)
+        .await?
+        .ok_or(MeetActionError::NotFound)?;
 
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut meet_updater = SpaceMeet::updater(&space_pk, &meet_sk_entity).with_updated_at(now);
+    meet.updated_at = now;
 
     match req {
         UpdateMeetRequest::Mode { mode } => {
-            meet_updater = meet_updater.with_mode(mode);
+            meet.mode = mode;
         }
         UpdateMeetRequest::StartTime { start_time } => {
-            meet_updater = meet_updater.with_start_time(start_time);
+            meet.start_time = start_time;
         }
         UpdateMeetRequest::DurationMin { duration_min } => {
             if !(15..=1440).contains(&duration_min) {
                 return Err(MeetActionError::InvalidDuration(duration_min).into());
             }
-            meet_updater = meet_updater.with_duration_min(duration_min);
+            meet.duration_min = duration_min;
         }
     }
 
-    meet_updater.execute(cli).await.map_err(|e| {
+    SpaceMeet::repository().upsert(&meet).await.map_err(|e| {
         crate::error!("update meet failed: {e}");
         MeetActionError::UpdateFailed
     })?;

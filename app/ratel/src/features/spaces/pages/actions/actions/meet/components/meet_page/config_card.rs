@@ -15,10 +15,10 @@ pub fn MeetConfigCard() -> Element {
         ..
     } = use_context::<UseMeet>();
     let current = meet().space_action.clone();
-    let saved_credits = current.credits;
+    let saved_credits = current.credits as u64;
     let action_status = current.status.clone();
     let initial_prereq = current.prerequisite;
-    let initial_depends = current.depends_on.clone();
+    let initial_depends = current.depends_on.0.clone();
 
     let action_id_str = meet_id().to_string();
     let action_id_signal: ReadSignal<String> = use_signal(move || action_id_str.clone()).into();

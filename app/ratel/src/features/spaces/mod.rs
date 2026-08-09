@@ -4,13 +4,16 @@ mod controllers;
 mod dto;
 mod hooks;
 mod layout;
-mod models;
+pub mod models;
 pub mod pages;
 pub(crate) mod space_common;
 mod types;
 
 pub use layout::SpaceLayout;
-pub use space_common::{InvitationStatus, SpaceInvitationMember};
+pub use space_common::InvitationStatus;
+// `SpaceInvitationMember` is Postgres-backed and server-only.
+#[cfg(feature = "server")]
+pub use space_common::SpaceInvitationMember;
 
 use crate::*;
 use hooks::*;

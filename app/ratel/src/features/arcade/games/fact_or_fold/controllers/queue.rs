@@ -17,26 +17,18 @@ use crate::common::models::auth::AdminUser;
 use crate::features::arcade::games::fact_or_fold::models::{FactFoldSubject, FactFoldSettings};
 
 #[cfg(feature = "server")]
-const HEADLINE_SK_PREFIX: &str = "FACT_FOLD_SUBJECT";
-#[cfg(feature = "server")]
 const MS_PER_DAY: f64 = 86_400_000.0;
 
 #[get("/api/fact-or-fold/admin/queue/alarm", _user: AdminUser)]
 pub async fn get_queue_alarm_handler() -> Result<QueueAlarmResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    let settings = FactFoldSettings::get_or_default(cli).await.map_err(|e| {
+    let settings = FactFoldSettings::get_or_default().await.map_err(|e| {
         crate::error!("get_queue_alarm_handler settings read failed: {e}");
         FactOrFoldError::StorageFailure
     })?;
 
-    // We anticipate ≤ a few hundred subjects lifetime. One sk-prefix
-    // query is fine without pagination for an alarm check.
-    let opts = FactFoldSubject::opt()
-        .sk(HEADLINE_SK_PREFIX.to_string())
-        .limit(500);
-    let (rows, _) = FactFoldSubject::query(cli, FactFoldSubject::anchor_pk(), opts)
+    // We anticipate ≤ a few hundred subjects lifetime. One page is
+    // fine without pagination for an alarm check.
+    let rows = FactFoldSubject::list_page(None, false, 500, 0)
         .await
         .map_err(|e| {
             crate::error!("get_queue_alarm_handler query failed: {e}");

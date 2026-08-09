@@ -20,11 +20,7 @@ pub struct BillingInfoResponse {
 #[get("/v3/me/billing", user: User)]
 pub async fn get_billing_info_handler() -> Result<BillingInfoResponse> {
     let result = async {
-        let conf = crate::features::membership::config::get();
-        let cli = conf.common.dynamodb();
-
-        let pk = CompositePartition::user_payment_pk(user.pk.into());
-        let payment: Option<UserPayment> = UserPayment::get(cli, &pk, None::<String>).await?;
+        let payment = UserPayment::find_by_user_pk(&user.pk().to_string()).await?;
 
         match payment {
             Some(p) => Ok(BillingInfoResponse {

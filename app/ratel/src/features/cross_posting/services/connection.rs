@@ -17,16 +17,20 @@
 //! tail is platform-agnostic and lives here.
 
 use crate::common::*;
-use crate::features::cross_posting::models::{ConnectionStatus, SocialConnection};
+use crate::features::cross_posting::models::{
+    ConnectionStatus, CredentialCiphertext, SocialConnection,
+};
 use crate::features::cross_posting::services::adapters::DecryptedCredentials;
 use crate::features::cross_posting::services::credentials::seal_credentials;
 use crate::features::cross_posting::types::{CrossPostingError, SocialPlatform};
+use uuid::Uuid;
 
 /// Shape that callers fill in once their platform-specific validation
 /// succeeded. Field-level docs match the homonymous `SocialConnection`
 /// fields they map onto.
 pub struct ConnectionUpsert {
-    pub user_pk: Partition,
+    /// Bare auth user id (no `USER#` prefix) — see `services::user_id_of`.
+    pub user_id: String,
     pub platform: SocialPlatform,
     /// Decrypted credential blob to seal. Caller is responsible for
     /// constructing the right `DecryptedCredentials::*` variant for the
@@ -56,11 +60,10 @@ pub struct ConnectionUpsert {
 /// the HTTP response body.
 #[cfg(feature = "server")]
 pub async fn seal_and_upsert_connection(
-    cli: &aws_sdk_dynamodb::Client,
     upsert: ConnectionUpsert,
 ) -> Result<SocialConnection> {
     let ConnectionUpsert {
-        user_pk,
+        user_id,
         platform,
         decrypted,
         external_handle,
@@ -73,13 +76,12 @@ pub async fn seal_and_upsert_connection(
         CrossPostingError::ConnectFailed
     })?;
 
-    let sk = EntityType::SocialConnection(platform.to_string());
     let now = crate::common::utils::time::now();
 
-    // Reconnect preserves prior counts / created_at so the user's
+    // Reconnect preserves prior counts / created_at / id so the user's
     // syndication history continues uninterrupted across token-expiry-
     // driven re-auth.
-    let existing = SocialConnection::get(cli, user_pk.clone(), Some(sk.clone()))
+    let existing = SocialConnection::find_by_user_platform(&user_id, platform)
         .await
         .map_err(|e| {
             crate::error!("seal_and_upsert_connection lookup failed: {e}");
@@ -87,8 +89,8 @@ pub async fn seal_and_upsert_connection(
         })?;
 
     let row = SocialConnection {
-        pk: user_pk,
-        sk,
+        id: existing.as_ref().map(|c| c.id).unwrap_or_else(Uuid::now_v7),
+        user_id,
         platform_status: SocialConnection::platform_status_key(
             platform,
             ConnectionStatus::Connected,
@@ -97,7 +99,7 @@ pub async fn seal_and_upsert_connection(
         status: ConnectionStatus::Connected,
         external_handle,
         external_user_id,
-        credential_ciphertext: ciphertext,
+        credential_ciphertext: CredentialCiphertext(ciphertext),
         token_expires_at,
         auto_post_enabled: existing.as_ref().map_or(true, |c| c.auto_post_enabled),
         posts_syndicated_count: existing.as_ref().map_or(0, |c| c.posts_syndicated_count),
@@ -106,14 +108,16 @@ pub async fn seal_and_upsert_connection(
         updated_at: now,
     };
 
-    // `upsert` (not `create`) so reconnect after Disconnect — which
-    // soft-deletes by flipping `status = Revoked` — overwrites cleanly.
-    // `create`'s `attribute_not_exists(pk)` would fail on the second
-    // attempt.
-    row.upsert(cli).await.map_err(|e| {
-        crate::error!("seal_and_upsert_connection persist failed: {e}");
-        CrossPostingError::ConnectFailed
-    })?;
+    // `upsert_on` the `(user_id, platform)` natural key so reconnect after
+    // Disconnect — which soft-deletes by flipping `status = Revoked` —
+    // overwrites cleanly in place and preserves the row's `id`.
+    let saved = SocialConnection::repository()
+        .upsert_on(&["user_id", "platform"], &row)
+        .await
+        .map_err(|e| {
+            crate::error!("seal_and_upsert_connection persist failed: {e}");
+            CrossPostingError::ConnectFailed
+        })?;
 
-    Ok(row)
+    Ok(saved)
 }

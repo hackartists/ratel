@@ -18,18 +18,23 @@ pub async fn like_comment_handler(
     comment_id: PostCommentTargetEntityType,
     liked: bool,
 ) -> Result<LikeCommentResponse> {
-    let conf = crate::features::posts::config::get();
-    let cli = conf.dynamodb();
+    let post_uuid = uuid::Uuid::parse_str(&post_id.0)
+        .map_err(|_| Error::NotFound("Post not found".into()))?;
 
-    let post_pk: Partition = post_id.into();
-    let comment_sk: EntityType = comment_id.into();
+    // `PostCommentTargetEntityType.0` is either `<id>` (top-level comment) or
+    // `<parent>::<reply>` (a reply); the liked comment's own id is the last
+    // segment.
+    let raw = comment_id.0;
+    let comment_str = raw.rsplit_once("::").map(|(_, r)| r).unwrap_or(raw.as_str());
+    let comment_uuid = uuid::Uuid::parse_str(comment_str)
+        .map_err(|_| Error::NotFound("Comment not found".into()))?;
 
     tracing::debug!("Handling like comment request: like = {}", liked);
 
     if liked {
-        Post::like_comment(cli, post_pk, comment_sk, user.pk).await?;
+        Post::like_comment(post_uuid, comment_uuid, user.pk()).await?;
     } else {
-        Post::unlike_comment(cli, post_pk, comment_sk, user.pk).await?;
+        Post::unlike_comment(post_uuid, comment_uuid, user.pk()).await?;
     }
 
     Ok(LikeCommentResponse { liked })

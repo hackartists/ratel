@@ -23,20 +23,11 @@ pub async fn get_me_handler() -> Result<GetMeResponse> {
     let membership = {
         match &user {
             Some(u) => {
-                let conf = crate::config::get();
-                let cli = conf.dynamodb();
-                match UserMembership::get(cli, u.pk.clone(), Some(EntityType::UserMembership))
-                    .await
-                {
+                let user_pk = u.pk().to_string();
+                match UserMembership::find_by_user(&user_pk).await {
                     Ok(Some(um)) => {
                         let mut resp: UserMembershipResponse = um.clone().into();
-                        let membership_pk: Partition = um.membership_pk.clone().into();
-                        if let Ok(Some(m)) = Membership::get(
-                            cli,
-                            membership_pk,
-                            Some(EntityType::Membership),
-                        )
-                        .await
+                        if let Ok(m) = Membership::get_by_membership_tier(&um.membership_pk).await
                         {
                             resp.max_credits_per_space = m.max_credits_per_space;
                         }
@@ -45,18 +36,17 @@ pub async fn get_me_handler() -> Result<GetMeResponse> {
                     Ok(None) => {
                         // Create a default Free membership if none exists
                         let free_tier = MembershipTier::Free;
-                        let free_pk = Partition::Membership(free_tier.to_string());
-                        match Membership::get(cli, free_pk, Some(EntityType::Membership)).await {
-                            Ok(Some(free_membership)) => {
+                        match Membership::get_by_membership_tier(&free_tier).await {
+                            Ok(free_membership) => {
                                 let um = UserMembership::new(
-                                    u.pk.clone().into(),
-                                    free_membership.pk.clone().into(),
+                                    u.pk().into(),
+                                    free_membership.tier.clone(),
                                     free_membership.duration_days,
                                     free_membership.credits,
                                 )
                                 .ok();
                                 if let Some(ref um) = um {
-                                    let _ = um.create(cli).await;
+                                    let _ = um.save().await;
                                 }
                                 um.map(|m| {
                                     let mut resp: UserMembershipResponse = m.into();

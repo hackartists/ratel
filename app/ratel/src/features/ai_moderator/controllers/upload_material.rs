@@ -1,8 +1,10 @@
 use crate::features::ai_moderator::*;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 use super::list_materials::MaterialResponse;
 
-const MAX_MATERIALS: usize = 10;
+const MAX_MATERIALS: i64 = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadMaterialRequest {
@@ -16,33 +18,36 @@ pub async fn upload_material(
     discussion_id: SpaceDiscussionEntityType,
     req: UploadMaterialRequest,
 ) -> Result<MaterialResponse> {
+    use postgres::ops::StringOp;
+
     role.is_creator()?;
 
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
+    super::require_premium(&user).await?;
 
-    super::require_premium(cli, &user).await?;
+    let existing_count = AiModeratorMaterial::repository()
+        .find(
+            AiModeratorMaterial::query()
+                .space_id(StringOp::Eq(space_id.to_string()))
+                .discussion_id(StringOp::Eq(discussion_id.to_string()))
+                .page_size(1),
+        )
+        .await
+        .map_err(crate::common::Error::from)?
+        .total_count;
 
-    let pk = CompositePartition(space_id.clone(), discussion_id.to_string());
-
-    let opt = AiModeratorMaterial::opt()
-        .sk(EntityType::AiModeratorMaterial(String::default()).to_string())
-        .limit((MAX_MATERIALS + 1) as i32);
-    let (existing, _) = AiModeratorMaterial::query(cli, &pk, opt).await?;
-    if existing.len() >= MAX_MATERIALS {
+    if existing_count >= MAX_MATERIALS {
         return Err(AiModeratorError::MaterialLimitReached.into());
     }
 
-    let material = AiModeratorMaterial::new(space_id, discussion_id.to_string(), req.file_name, req.file_url);
-    material.create(cli).await?;
-
-    let material_id = match &material.sk {
-        EntityType::AiModeratorMaterial(id) => id.clone(),
-        _ => String::new(),
-    };
+    let material =
+        AiModeratorMaterial::new(space_id, discussion_id.to_string(), req.file_name, req.file_url);
+    let material = AiModeratorMaterial::repository()
+        .insert(&material)
+        .await
+        .map_err(crate::common::Error::from)?;
 
     Ok(MaterialResponse {
-        material_id,
+        material_id: material.id.to_string(),
         file_name: material.file_name,
         file_url: material.file_url,
         created_at: material.created_at,

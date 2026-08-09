@@ -28,12 +28,9 @@ pub struct ChangeAccountResponse {
 
 #[post("/api/auth/change-account", session: Extension<tower_sessions::Session>)]
 pub async fn change_account_handler(req: ChangeAccountRequest) -> Result<ChangeAccountResponse> {
-    let cli = crate::features::auth::config::get().dynamodb();
     let Extension(session) = session;
 
-    let target_sk = EntityType::UserRefreshToken(req.device_id.clone());
-
-    let rt = UserRefreshToken::get(cli, &req.user_pk, Some(target_sk))
+    let rt = UserRefreshToken::get_by_user_device(&req.user_pk, &req.device_id)
         .await?
         .ok_or(AuthError::UserNotFound)?;
 
@@ -56,20 +53,13 @@ pub async fn change_account_handler(req: ChangeAccountRequest) -> Result<ChangeA
     let new_plain = sorted_uuid();
     let new_hash = sha256_base64url(&new_plain);
 
-    UserRefreshToken::updater(&rt.pk, &rt.sk)
-        .with_token_hash(new_hash)
-        .with_created_at(now_ts)
-        .with_revoked(false)
-        .execute(cli)
-        .await?;
+    rt.rotate(new_hash, now_ts).await?;
 
     session
-        .insert(SESSION_KEY_USER_ID, rt.pk.to_string())
+        .insert(SESSION_KEY_USER_ID, rt.user_pk.clone())
         .await?;
 
-    let user = User::get(cli, &req.user_pk, Some(EntityType::User))
-        .await?
-        .unwrap_or_default();
+    let user = User::find_by_pk(&req.user_pk).await?.unwrap_or_default();
 
     Ok(ChangeAccountResponse {
         user,

@@ -12,34 +12,18 @@ pub async fn list_analyze_reports(
     #[mcp(description = "Pagination bookmark. Omit for first page.")] bookmark: Option<String>,
 ) -> Result<ListResponse<AnalyzeReport>> {
     SpaceApp::can_edit(role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
 
-    let mut opt = SpaceAnalyzeReport::opt()
-        .sk(EntityType::SpaceAnalyzeReport(String::default()).to_string())
-        .scan_index_forward(false)
-        .limit(20);
-    if let Some(bookmark) = bookmark {
-        opt = opt.bookmark(bookmark);
-    }
-
-    let (reports, bookmark) = SpaceAnalyzeReport::query(cli, space_pk, opt).await?;
+    let (reports, bookmark) = SpaceAnalyzeReport::list_page(&space_pk, bookmark, 20).await?;
 
     let items = reports
         .into_iter()
-        .map(|report| {
-            let id = match &report.sk {
-                EntityType::SpaceAnalyzeReport(id) => id.clone(),
-                _ => String::new(),
-            };
-            AnalyzeReport {
-                id,
-                name: report.name,
-                status: report.status,
-                created_at: report.created_at,
-                filters: report.filters,
-            }
+        .map(|report| AnalyzeReport {
+            id: report.report_id(),
+            name: report.name,
+            status: report.status,
+            created_at: report.created_at,
+            filters: report.filters.0,
         })
         .collect();
 

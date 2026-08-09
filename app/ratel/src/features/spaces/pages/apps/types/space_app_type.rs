@@ -4,7 +4,10 @@ use super::*;
 use rmcp::schemars;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, DynamoEnum, Eq, PartialEq, Translate)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(
+    feature = "server",
+    derive(rmcp::schemars::JsonSchema, postgres::PostgresEnum)
+)]
 pub enum SpaceAppType {
     #[default]
     #[translate(en = "General", ko = "스페이스 설정")]

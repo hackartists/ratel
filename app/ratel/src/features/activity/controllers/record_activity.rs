@@ -1,5 +1,7 @@
 use crate::features::activity::models::SpaceActivity;
 use crate::features::activity::*;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 /// Fixed XP values per activity type
 #[cfg(feature = "server")]
@@ -44,7 +46,6 @@ fn dedup_key(action_id: &str, data: &SpaceActivityData) -> String {
 
 #[cfg(feature = "server")]
 pub async fn record_activity(
-    cli: &aws_sdk_dynamodb::Client,
     space_id: SpacePartition,
     author: AuthorPartition,
     action_id: String,
@@ -53,18 +54,24 @@ pub async fn record_activity(
     user_name: String,
     user_avatar: String,
 ) -> crate::common::Result<()> {
+    use postgres::ops::StringOp;
+
     let xp = calculate_xp(&data);
     let dedup = dedup_key(&action_id, &data);
 
-    // Check for duplicate: query existing activities with the same
-    // (space_id, author) pk and SPACE_ACTIVITY#<dedup_key> sk prefix.
-    // This prevents double-counting when both stream_handler and
-    // EventBridge Lambda process the same DynamoDB Stream event.
-    let pk = crate::common::types::CompositePartition(space_id.clone(), author.clone());
-    let sk_prefix = format!("SPACE_ACTIVITY#{}#", dedup);
-    let opt = SpaceActivity::opt().sk(sk_prefix).limit(1);
-    let (existing, _) = SpaceActivity::query(cli, pk, opt).await?;
-    if !existing.is_empty() {
+    // Check for duplicate: an existing activity row for the same
+    // (space_id, author, dedup_key). This prevents double-counting when both
+    // the stream handler and the EventBridge Lambda process the same event.
+    let existing = SpaceActivity::repository()
+        .find_one(
+            SpaceActivity::query()
+                .space_id(StringOp::Eq(space_id.0.clone()))
+                .author_pk(StringOp::Eq(author.to_string()))
+                .dedup_key(StringOp::Eq(dedup.clone())),
+        )
+        .await
+        .map_err(crate::features::activity::models::map_db_err)?;
+    if existing.is_some() {
         tracing::warn!(
             action_id = %action_id,
             action_type = ?action_type,
@@ -74,7 +81,6 @@ pub async fn record_activity(
     }
 
     let activity = SpaceActivity::new_with_dedup(
-        cli,
         space_id,
         author,
         action_id.clone(),
@@ -87,7 +93,19 @@ pub async fn record_activity(
         dedup.clone(),
     )
     .await;
-    activity.create(cli).await?;
+    SpaceActivity::repository()
+        .insert(&activity)
+        .await
+        .map_err(crate::features::activity::models::map_db_err)?;
+    // Phase 5: emit the activity event so the outbox poller dispatches the
+    // "ActivityScoreAggregate" rule (best-effort; see outbox.rs for the
+    // transactional variant used by hot paths like SpaceStatusChange).
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_ACTIVITY,
+        &activity,
+    )
+    .await
+    .ok();
     tracing::info!(
         action_id = %action_id,
         action_type = ?action_type,

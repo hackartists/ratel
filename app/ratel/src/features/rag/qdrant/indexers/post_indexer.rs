@@ -1,5 +1,5 @@
 use crate::common::Result;
-use crate::common::types::{FeedPartition, Partition};
+use crate::common::types::FeedPartition;
 use crate::features::posts::models::Post;
 use crate::features::posts::types::PostStatus;
 use crate::features::rag::qdrant::payloads::PostPayload;
@@ -30,10 +30,7 @@ pub async fn index_post(post: Post) -> Result<()> {
 pub async fn delete_post_index(post: Post) -> Result<()> {
     let config = crate::common::CommonConfig::default();
     let qdrant = config.qdrant();
-    let point_id = match &post.pk {
-        Partition::Feed(uuid) => FeedPartition(uuid.clone()),
-        _ => FeedPartition(format!("{:?}", post.pk)),
-    };
+    let point_id = FeedPartition(post.feed_id());
     PostPayload::delete_points(qdrant, &point_id.to_string()).await?;
     Ok(())
 }

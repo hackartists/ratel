@@ -1,4 +1,6 @@
 use crate::features::ai_moderator::*;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct AiModeratorConfigResponse {
@@ -12,11 +14,18 @@ pub async fn get_ai_moderator_config(
     space_id: SpacePartition,
     discussion_id: SpaceDiscussionEntityType,
 ) -> Result<AiModeratorConfigResponse> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let pk = CompositePartition(space_id, discussion_id.to_string());
+    use postgres::ops::StringOp;
 
-    match AiModeratorConfig::get(cli, &pk, Some(EntityType::AiModeratorConfig)).await? {
+    let config = AiModeratorConfig::repository()
+        .find_one(
+            AiModeratorConfig::query()
+                .space_id(StringOp::Eq(space_id.to_string()))
+                .discussion_id(StringOp::Eq(discussion_id.to_string())),
+        )
+        .await
+        .map_err(crate::common::Error::from)?;
+
+    match config {
         Some(config) => Ok(AiModeratorConfigResponse {
             enabled: config.enabled,
             reply_interval: config.reply_interval,

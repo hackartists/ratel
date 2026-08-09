@@ -86,7 +86,6 @@ pub struct SignupResponse {
 ///
 #[post("/api/auth/signup", session: Extension<tower_sessions::Session>)]
 pub async fn signup_handler(req: SignupRequest) -> Result<SignupResponse> {
-    let cli = crate::features::auth::config::get().dynamodb();
     let Extension(session) = session;
 
     tracing::info!("signup_handler: req = {:?}", req);
@@ -100,15 +99,13 @@ pub async fn signup_handler(req: SignupRequest) -> Result<SignupResponse> {
             email,
             password,
             code,
-        } => signup_with_email_password(cli, req.clone(), email, password, code).await?,
-        SignupType::Email { email, code } => {
-            signup_with_email(cli, req.clone(), email, code).await?
-        }
-        SignupType::Phone { phone, code } => signup_with_phone(cli, phone, code).await?,
+        } => signup_with_email_password(req.clone(), email, password, code).await?,
+        SignupType::Email { email, code } => signup_with_email(req.clone(), email, code).await?,
+        SignupType::Phone { phone, code } => signup_with_phone(phone, code).await?,
         SignupType::OAuth {
             provider,
             access_token,
-        } => signup_with_oauth(cli, req.clone(), provider, access_token).await?,
+        } => signup_with_oauth(req.clone(), provider, access_token).await?,
         SignupType::Telegram { .. } => {
             unimplemented!()
         }
@@ -116,24 +113,22 @@ pub async fn signup_handler(req: SignupRequest) -> Result<SignupResponse> {
             evm_address,
             signature,
             message,
-        } => {
-            signup_with_wallet(cli, req.clone(), evm_address, signature, message, &session).await?
-        }
+        } => signup_with_wallet(req.clone(), evm_address, signature, message, &session).await?,
     };
 
-    UserReferralCode::new(user.pk.clone(), generate_referral_code())
-        .create(cli)
+    UserReferralCode::new(user.pk(), generate_referral_code())
+        .create()
         .await?;
 
     session
-        .insert(SESSION_KEY_USER_ID, user.pk.to_string())
+        .insert(SESSION_KEY_USER_ID, user.pk().to_string())
         .await?;
 
     let device_id: Option<String> = req.device_id.clone();
 
     let refresh_token = if let Some(device_id) = device_id {
         let (rt, plain) = UserRefreshToken::new(&user, device_id);
-        rt.upsert(cli).await?;
+        rt.save().await?;
 
         Some(plain)
     } else {
@@ -147,24 +142,15 @@ pub async fn signup_handler(req: SignupRequest) -> Result<SignupResponse> {
 }
 
 #[cfg(feature = "server")]
-async fn ensure_username_available(cli: &aws_sdk_dynamodb::Client, username: &str) -> Result<()> {
+async fn ensure_username_available(username: &str) -> Result<()> {
     // Check user username
-    let (users, _) = User::find_by_username(
-        cli,
-        username,
-        UserQueryOption::builder().sk("TS#".to_string()).limit(1),
-    )
-    .await?;
-
-    if !users.is_empty() {
+    if User::find_by_username(username).await?.is_some() {
         return Err(Error::UsernameAlreadyExists);
     }
 
     // Check team username
     use crate::features::posts::models::Team;
-    let opt = Team::opt().limit(1);
-    let (teams, _): (Vec<Team>, _) = Team::find_by_username_prefix(cli, username, opt).await?;
-    if teams.iter().any(|t| t.username == username) {
+    if Team::find_by_username(username).await?.is_some() {
         return Err(Error::UsernameAlreadyExists);
     }
 
@@ -173,7 +159,6 @@ async fn ensure_username_available(cli: &aws_sdk_dynamodb::Client, username: &st
 
 #[cfg(feature = "server")]
 async fn signup_with_email(
-    cli: &aws_sdk_dynamodb::Client,
     SignupRequest {
         display_name,
         username,
@@ -187,17 +172,16 @@ async fn signup_with_email(
 ) -> Result<User> {
     tracing::debug!("Signing up with email: {}", email);
 
-    crate::features::auth::controllers::verify_code::verify_email_code(cli, &email, &code).await?;
+    crate::features::auth::controllers::verify_code::verify_email_code(&email, &code).await?;
 
-    let (users, _) = User::find_by_email(cli, &email, UserQueryOption::builder().limit(1)).await?;
-    if !users.is_empty() {
+    if User::find_by_email(&email).await?.is_some() {
         return Err(Error::Duplicate(format!(
             "Email already registered: {}",
             email
         )));
     }
 
-    ensure_username_available(cli, &username).await?;
+    ensure_username_available(&username).await?;
 
     let user = User::new(
         display_name,
@@ -210,7 +194,7 @@ async fn signup_with_email(
         None, // passwordless
     );
 
-    user.create(cli).await?;
+    user.create().await?;
 
     Ok(user)
 }
@@ -221,7 +205,6 @@ async fn signup_with_email(
 /// (`find_by_email_and_password`) keeps working.
 #[cfg(feature = "server")]
 async fn signup_with_email_password(
-    cli: &aws_sdk_dynamodb::Client,
     SignupRequest {
         display_name,
         username,
@@ -236,17 +219,16 @@ async fn signup_with_email_password(
 ) -> Result<User> {
     tracing::debug!("Signing up with email + password: {}", email);
 
-    crate::features::auth::controllers::verify_code::verify_email_code(cli, &email, &code).await?;
+    crate::features::auth::controllers::verify_code::verify_email_code(&email, &code).await?;
 
-    let (users, _) = User::find_by_email(cli, &email, UserQueryOption::builder().limit(1)).await?;
-    if !users.is_empty() {
+    if User::find_by_email(&email).await?.is_some() {
         return Err(Error::Duplicate(format!(
             "Email already registered: {}",
             email
         )));
     }
 
-    ensure_username_available(cli, &username).await?;
+    ensure_username_available(&username).await?;
 
     let hashed_password = crate::common::utils::password::hash_password(&password);
     let user = User::new(
@@ -260,14 +242,13 @@ async fn signup_with_email_password(
         Some(hashed_password),
     );
 
-    user.create(cli).await?;
+    user.create().await?;
 
     Ok(user)
 }
 
 #[cfg(feature = "server")]
 async fn signup_with_oauth(
-    cli: &aws_sdk_dynamodb::Client,
     SignupRequest {
         display_name,
         username,
@@ -282,15 +263,13 @@ async fn signup_with_oauth(
     tracing::debug!("Verifying id_token with provider: {:?}", provider);
     let email = provider.get_email(&access_token).await?;
 
-    let (user, _bookmark) =
-        User::find_by_email(cli, &email, UserQueryOption::builder().limit(1)).await?;
-    if user.len() > 0 {
+    if User::find_by_email(&email).await?.is_some() {
         return Err(Error::Duplicate(format!(
             "Email already registered: {}",
             email
         )));
     }
-    ensure_username_available(cli, &username).await?;
+    ensure_username_available(&username).await?;
 
     let user = User::new(
         display_name,
@@ -303,30 +282,18 @@ async fn signup_with_oauth(
         None,
     );
 
-    user.create(cli).await?;
+    user.create().await?;
 
     Ok(user)
 }
 
 #[cfg(feature = "server")]
-async fn signup_with_phone(
-    cli: &aws_sdk_dynamodb::Client,
-    phone: String,
-    code: String,
-) -> Result<User> {
+async fn signup_with_phone(phone: String, code: String) -> Result<User> {
     tracing::debug!("Signing up with phone: {}", phone);
 
-    let is_invalid = PhoneVerification::find_by_phone_and_code(
-        cli,
-        phone.clone(),
-        PhoneVerificationQueryOption::builder()
-            .sk(code.clone())
-            .limit(1),
-    )
-    .await?
-    .0
-    .len()
-        == 0;
+    let is_invalid = PhoneVerification::find_by_phone_and_code(&phone, &code)
+        .await?
+        .is_none();
 
     #[cfg(feature = "bypass")]
     let is_invalid = is_invalid && !code.eq("000000");
@@ -335,22 +302,19 @@ async fn signup_with_phone(
         return Err(Error::InvalidVerificationCode);
     }
 
-    let (users, _) = User::find_by_phone(cli, &phone, UserQueryOption::builder().limit(1)).await?;
-
-    if users.len() > 0 {
-        return Ok(users[0].clone());
+    if let Some(existing) = User::find_by_phone(&phone).await? {
+        return Ok(existing);
     }
 
     let user = User::new_phone(phone);
 
-    user.create(cli).await?;
+    user.create().await?;
 
     Ok(user)
 }
 
 #[cfg(feature = "server")]
 async fn signup_with_wallet(
-    cli: &aws_sdk_dynamodb::Client,
     SignupRequest {
         display_name,
         username,
@@ -390,20 +354,15 @@ async fn signup_with_wallet(
     session.remove::<String>("wallet_nonce").await.ok();
 
     // Check if EVM address already registered
-    let (existing, _) = UserEvmAddress::find_by_evm(
-        cli,
-        &evm_address.to_lowercase(),
-        UserEvmAddressQueryOption::builder().limit(1),
-    )
-    .await?;
-    if !existing.is_empty() {
+    let existing = UserEvmAddress::find_by_evm(&evm_address.to_lowercase()).await?;
+    if existing.is_some() {
         return Err(Error::Duplicate(format!(
             "Wallet address already registered: {}",
             evm_address
         )));
     }
 
-    ensure_username_available(cli, &username).await?;
+    ensure_username_available(&username).await?;
 
     let email = format!("{}@wallet.placeholder", &evm_address[2..10].to_lowercase());
     let user = User::new(
@@ -417,13 +376,12 @@ async fn signup_with_wallet(
         None,
     );
 
-    let user_evm = UserEvmAddress::new(user.pk.clone(), evm_address.to_lowercase());
+    let user_evm = UserEvmAddress::new(user.pk(), evm_address.to_lowercase());
 
-    crate::transact_write!(
-        cli,
-        user.create_transact_write_item(),
-        user_evm.create_transact_write_item()
-    )?;
+    // Create the user row first, then persist the EVM linkage row (no
+    // cross-table transaction yet).
+    user.create().await?;
+    user_evm.save().await?;
 
     Ok(user)
 }

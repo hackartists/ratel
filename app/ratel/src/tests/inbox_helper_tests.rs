@@ -11,31 +11,27 @@ fn dummy_payload() -> InboxPayload {
     }
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_inbox_row_persists_row() {
     let ctx = TestContext::setup().await;
-    let user_pk = ctx.test_user.0.pk.clone();
+    let user_pk = ctx.test_user.0.pk();
 
     create_inbox_row(user_pk.clone(), dummy_payload())
         .await
         .unwrap();
 
-    let (rows, _) = UserInboxNotification::query(
-        &ctx.ddb,
-        user_pk.clone(),
-        UserInboxNotification::opt().sk("USER_INBOX_NOTIFICATION".to_string()),
-    )
-    .await
-    .unwrap();
+    let rows = UserInboxNotification::find_for_user(&ctx.test_user.0.id(), false, 1, 50)
+        .await
+        .unwrap()
+        .items;
     assert_eq!(rows.len(), 1);
     assert!(!rows[0].is_read);
-    assert!(rows[0].unread_created_at.starts_with("U#"));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_inbox_row_once_dedups_on_same_source() {
     let ctx = TestContext::setup().await;
-    let user_pk = ctx.test_user.0.pk.clone();
+    let user_pk = ctx.test_user.0.pk();
 
     create_inbox_row_once(user_pk.clone(), dummy_payload(), "comment-123")
         .await
@@ -44,20 +40,17 @@ async fn test_create_inbox_row_once_dedups_on_same_source() {
         .await
         .unwrap();
 
-    let (rows, _) = UserInboxNotification::query(
-        &ctx.ddb,
-        user_pk.clone(),
-        UserInboxNotification::opt().sk("USER_INBOX_NOTIFICATION".to_string()),
-    )
-    .await
-    .unwrap();
+    let rows = UserInboxNotification::find_for_user(&ctx.test_user.0.id(), false, 1, 50)
+        .await
+        .unwrap()
+        .items;
     assert_eq!(rows.len(), 1, "second call should be deduped");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_inbox_row_once_distinct_sources_produce_rows() {
     let ctx = TestContext::setup().await;
-    let user_pk = ctx.test_user.0.pk.clone();
+    let user_pk = ctx.test_user.0.pk();
 
     create_inbox_row_once(user_pk.clone(), dummy_payload(), "comment-1")
         .await
@@ -66,12 +59,9 @@ async fn test_create_inbox_row_once_distinct_sources_produce_rows() {
         .await
         .unwrap();
 
-    let (rows, _) = UserInboxNotification::query(
-        &ctx.ddb,
-        user_pk.clone(),
-        UserInboxNotification::opt().sk("USER_INBOX_NOTIFICATION".to_string()),
-    )
-    .await
-    .unwrap();
+    let rows = UserInboxNotification::find_for_user(&ctx.test_user.0.id(), false, 1, 50)
+        .await
+        .unwrap()
+        .items;
     assert_eq!(rows.len(), 2);
 }

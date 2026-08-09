@@ -78,8 +78,69 @@ fn serve(app: fn() -> Element) {
         }
     }
 
+    // Wire the Postgres pool: register it as the process-global pool and run
+    // schema migrations from the PostgresEntity inventory before serving. The
+    // session store (and future migrated slices) resolve the global pool.
+    {
+        let pool = cfg.postgres().clone();
+        ::postgres::set_global_pool(pool.clone());
+
+        // Resolve a runtime once (reused across retries).
+        enum MigRt {
+            Current(tokio::runtime::Handle),
+            Owned(tokio::runtime::Runtime),
+        }
+        let rt = match tokio::runtime::Handle::try_current() {
+            Ok(h) => MigRt::Current(h),
+            Err(_) => MigRt::Owned(
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("tokio runtime build for postgres migrations"),
+            ),
+        };
+
+        // Retry transient migration failures in-process instead of exiting.
+        // A hard exit here restarts the container, and every aborted boot leaks
+        // its pooled connections (a killed process's sockets linger on the
+        // server); enough of those and Postgres hits `max_connections`, which
+        // then makes EVERY subsequent boot's migration time out — a
+        // self-inflicted crash loop. Retrying rides out Postgres still coming up
+        // or a momentary connection blip without ever entering that loop.
+        let mut attempt = 0u32;
+        const MAX_ATTEMPTS: u32 = 20;
+        loop {
+            attempt += 1;
+            let migrate =
+                async { ::postgres::Schema::from_inventory().migrate(&pool).await };
+            let res = match &rt {
+                MigRt::Current(h) => h.block_on(migrate),
+                MigRt::Owned(r) => r.block_on(migrate),
+            };
+            match res {
+                Ok(()) => break,
+                Err(e) if attempt < MAX_ATTEMPTS => {
+                    tracing::warn!(
+                        error = %e,
+                        attempt,
+                        "postgres schema migration failed; retrying in 3s"
+                    );
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                }
+                Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        attempt,
+                        "postgres schema migration failed after retries; aborting startup"
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
     let session_layer =
-        crate::common::middlewares::session_layer::get_session_layer(cli, cfg.env.to_string());
+        crate::common::middlewares::session_layer::get_session_layer(cfg.env.to_string());
 
     // Allow cross-origin requests from the Tauri Android/iOS WebView
     // (http://tauri.localhost / https://tauri.localhost) and from the
@@ -170,6 +231,17 @@ fn serve(app: fn() -> Element) {
 
     #[cfg(not(feature = "lambda"))]
     {
+        // Postgres migration (Phase 5): the Postgres outbox poller replaces the
+        // DynamoDB Stream as the event source for the CDC dispatcher. It runs on
+        // every server deployment (single-processing across replicas via a
+        // pg_advisory_lock) — unlike the local-dev-only DynamoDB stream poller
+        // below, which is now inert (no stream on Postgres).
+        #[cfg(feature = "server")]
+        {
+            tracing::info!("Starting Postgres outbox poller (CDC dispatcher source)");
+            crate::common::events::outbox::spawn_outbox_poller();
+        }
+
         #[cfg(feature = "local-dev")]
         {
             if crate::common::events::stream_poller_enabled() {

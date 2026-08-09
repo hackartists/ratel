@@ -10,34 +10,30 @@ pub async fn list_space_rewards(
 ) -> Result<ListResponse<SpaceRewardResponse>> {
     use crate::common::models::reward::UserReward;
     use crate::features::spaces::space_common::models::SpaceReward;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
 
-    let space_rewards = SpaceReward::list_by_action(cli, space_id.clone(), action_id).await?;
+    let space_rewards = SpaceReward::list_by_action(space_id.clone(), action_id).await?;
 
-    let user_rewards = if let Some(user) = user.0 {
-        let user_reward_keys: Vec<_> = space_rewards
-            .iter()
-            .filter_map(|reward| UserReward::keys(user.pk.clone(), reward.sk.clone()).ok())
-            .collect();
-        UserReward::batch_get(cli, user_reward_keys)
-            .await
-            .unwrap_or_default()
-    } else {
-        vec![]
-    };
+    let target_pk = user.0.map(|u| u.pk());
+
+    let mut items = Vec::with_capacity(space_rewards.len());
+    for reward in space_rewards {
+        let user_reward = if let Some(ref target_pk) = target_pk {
+            UserReward::get_for(target_pk, &reward.reward_key())
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+
+        items.push(match user_reward {
+            Some(user_reward) => SpaceRewardResponse::from((reward, user_reward)),
+            None => SpaceRewardResponse::from(reward),
+        });
+    }
 
     Ok(ListResponse {
-        items: space_rewards
-            .into_iter()
-            .map(|reward| {
-                if let Some(user_reward) = user_rewards.iter().find(|ur| ur.sk == reward.sk) {
-                    SpaceRewardResponse::from((reward, user_reward.clone()))
-                } else {
-                    SpaceRewardResponse::from(reward)
-                }
-            })
-            .collect(),
+        items,
         bookmark: None,
     })
 }

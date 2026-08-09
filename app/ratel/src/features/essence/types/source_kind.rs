@@ -10,7 +10,7 @@ use rmcp::schemars;
 /// source is a comment we split it into `PostComment` vs `DiscussionComment`
 /// so the UI can render a parent-context tag without re-querying.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, Translate)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema, postgres::PostgresEnum))]
 pub enum EssenceSourceKind {
     #[default]
     #[translate(en = "Post", ko = "포스트")]

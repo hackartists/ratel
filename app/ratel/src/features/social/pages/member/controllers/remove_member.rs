@@ -1,6 +1,7 @@
 use super::super::dto::{RemoveMemberRequest, RemoveMemberResponse};
 use super::super::*;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 #[delete("/api/teams/:team_pk/members", user: crate::features::auth::User, team: Team, role: crate::features::social::pages::member::dto::TeamRole)]
@@ -8,8 +9,6 @@ pub async fn remove_team_member_handler(
     team_pk: TeamPartition,
     body: RemoveMemberRequest,
 ) -> Result<RemoveMemberResponse> {
-    let conf = super::super::config::get();
-    let cli = conf.common.dynamodb();
     let team_pk: Partition = team_pk.into();
 
     if !role.is_admin_or_owner() {
@@ -20,18 +19,20 @@ pub async fn remove_team_member_handler(
     let mut failed_pks = vec![];
 
     for member_pk in &body.user_pks {
-        let user = crate::features::auth::User::get(cli, member_pk, Some(EntityType::User)).await?;
+        let user = crate::features::auth::User::find_by_pk_str(member_pk).await?;
         let Some(user) = user else {
             failed_pks.push(member_pk.to_string());
             continue;
         };
 
-        crate::features::auth::UserTeam::delete(
-            cli,
-            &user.pk,
-            Some(EntityType::UserTeam(team_pk.to_string())),
-        )
-        .await?;
+        if let Some(existing) =
+            crate::features::auth::UserTeam::get_membership(&user.pk(), &team_pk).await?
+        {
+            crate::features::auth::UserTeam::repository()
+                .delete(existing.id)
+                .await
+                .map_err(crate::common::Error::from)?;
+        }
 
         success_count += 1;
     }

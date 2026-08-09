@@ -36,20 +36,26 @@ const CHAT_HISTORY_LIMIT: usize = 50;
 /// because the DTO module is feature-gate-free.
 pub fn chat_payload_from(row: FactFoldChatMessage) -> ChatMessagePayload {
     ChatMessagePayload {
-        msg_id: row.id().unwrap_or_default(),
-        author_pk: UserPartition::from(row.author_pk),
+        msg_id: row.msg_id.clone(),
+        author_pk: crate::features::arcade::games::fact_or_fold::types::dto::user_partition_from_pk(
+            &row.author_pk,
+        ),
         text: row.text,
         sent_at: row.sent_at,
     }
 }
 
-pub struct FactFoldChatChannel {
-    cli: aws_sdk_dynamodb::Client,
-}
+pub struct FactFoldChatChannel;
 
 impl FactFoldChatChannel {
-    pub fn new(cli: aws_sdk_dynamodb::Client) -> Self {
-        Self { cli }
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for FactFoldChatChannel {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -74,8 +80,7 @@ impl RoomChannel for FactFoldChatChannel {
         // in the round's participant list. We never expose the
         // round's pk shape to the channel layer — the round read
         // happens here and the channel layer only sees the result.
-        let (pk, sk) = FactFoldRound::keys(&round_id);
-        let round = FactFoldRound::get(&self.cli, &pk, Some(sk))
+        let round = FactFoldRound::get_by_round_id(&round_id)
             .await
             .map_err(|e| {
                 crate::error!("fof.chat authorize round read failed: {e}");
@@ -83,19 +88,16 @@ impl RoomChannel for FactFoldChatChannel {
             })?
             .ok_or(ArcadeError::ChannelForbidden)?;
 
-        let user_pk = Partition::User(ctx.user_id.clone());
+        let user_pk = Partition::User(ctx.user_id.clone()).to_string();
         if !round.participant_pks.iter().any(|p| p == &user_pk) {
             return Err(ArcadeError::ChannelForbidden.into());
         }
 
         // Backlog: load the latest CHAT_HISTORY_LIMIT messages for
-        // this round. v1 simple sk-prefix scan; pagination lands
-        // when round transcripts grow past a single page (rare in
-        // practice — 4 players × 70s debate × 80 char cap).
-        let opts = FactFoldChatMessage::opt()
-            .sk("FACT_FOLD_CHAT".to_string())
-            .limit(CHAT_HISTORY_LIMIT as i32);
-        let (rows, _) = FactFoldChatMessage::query(&self.cli, pk, opts)
+        // this round. v1 single-page fetch; pagination lands when
+        // round transcripts grow past a single page (rare in practice
+        // — 4 players × 70s debate × 80 char cap).
+        let rows = FactFoldChatMessage::list_by_round(&round_id, CHAT_HISTORY_LIMIT as i64)
             .await
             .map_err(|e| {
                 crate::error!("fof.chat history query failed: {e}");

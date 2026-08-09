@@ -1,5 +1,3 @@
-use crate::features::spaces::pages::report::models::SpaceReport;
-use crate::features::spaces::pages::report::types::SpaceReportError;
 use crate::features::spaces::pages::report::*;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -20,20 +18,18 @@ pub async fn create_report(
     space_pk: SpacePartition,
     req: CreateReportRequest,
 ) -> Result<CreateReportResponse> {
+    use crate::features::spaces::pages::report::models::SpaceReport;
+    use crate::features::spaces::pages::report::types::SpaceReportError;
+
     SpaceReport::can_edit(role)?;
-    let conf = ServerConfig::default();
-    let dynamo = conf.dynamodb();
 
     let title = req.title.unwrap_or_default();
     let description = req.description.unwrap_or_default();
 
     let report = SpaceReport::new(space_pk, title, description);
-    let id = match &report.sk {
-        EntityType::SpaceReport(id) => id.clone(),
-        _ => String::new(),
-    };
+    let id = report.report_id();
 
-    report.create(dynamo).await.map_err(|e| {
+    SpaceReport::repository().insert(&report).await.map_err(|e| {
         crate::error!("failed to create report: {e:?}");
         SpaceReportError::ReportCreateFailed
     })?;

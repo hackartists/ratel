@@ -1,4 +1,5 @@
 use crate::features::spaces::pages::actions::actions::poll::*;
+#[cfg(feature = "server")]
 use crate::features::spaces::space_common::models::aggregate::DashboardAggregate;
 
 #[mcp_tool(name = "delete_poll", description = "Delete a poll from a space. Requires creator role.")]
@@ -10,20 +11,27 @@ pub async fn delete_poll(
     poll_sk: SpacePollEntityType,
 ) -> Result<String> {
     SpacePoll::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_pk.into();
-    let poll_sk_entity: EntityType = poll_sk.into();
 
-    let _poll = SpacePoll::get(cli, &space_pk, Some(poll_sk_entity.clone()))
+    let poll = SpacePoll::get_one(&space_pk, &poll_sk)
         .await?
         .ok_or(Error::NotFound("Poll not found".into()))?;
 
-    SpacePoll::delete(cli, &space_pk, Some(poll_sk_entity)).await?;
+    // Emit outbox event (Phase 5) — EssenceDeletePoll rule on SPACE_POLL# REMOVE.
+    crate::common::events::outbox::EventOutbox::emit_remove(
+        crate::common::events::outbox::topic::SPACE_POLL,
+        &poll,
+    )
+    .await
+    .ok();
 
-    // Decrement poll count in aggregate
-    let agg_item = DashboardAggregate::inc_polls(&space_pk, -1);
-    crate::transact_write_items!(cli, vec![agg_item]).ok();
+    SpacePoll::repository()
+        .delete(poll.id)
+        .await
+        .map_err(crate::common::Error::from)?;
+
+    // Decrement poll count in aggregate.
+    let space_pk_partition: Partition = space_pk.into();
+    let _ = DashboardAggregate::inc_polls(&space_pk_partition, -1).await;
 
     Ok("success".to_string())
 }

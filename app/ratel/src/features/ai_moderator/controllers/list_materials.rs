@@ -1,4 +1,6 @@
 use crate::features::ai_moderator::*;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MaterialResponse {
@@ -18,29 +20,29 @@ pub async fn list_materials(
     space_id: SpacePartition,
     discussion_id: SpaceDiscussionEntityType,
 ) -> Result<MaterialListResponse> {
+    use postgres::Order;
+    use postgres::ops::StringOp;
+
     role.is_creator()?;
 
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let pk = CompositePartition(space_id, discussion_id.to_string());
-
-    let opt = AiModeratorMaterial::opt()
-        .sk(EntityType::AiModeratorMaterial(String::default()).to_string());
-    let (materials, _) = AiModeratorMaterial::query(cli, &pk, opt).await?;
+    let materials = AiModeratorMaterial::repository()
+        .find(
+            AiModeratorMaterial::query()
+                .space_id(StringOp::Eq(space_id.to_string()))
+                .discussion_id(StringOp::Eq(discussion_id.to_string()))
+                .order_by(AiModeratorMaterialColumn::CreatedAt, Order::Asc),
+        )
+        .await
+        .map_err(crate::common::Error::from)?
+        .items;
 
     let items = materials
         .into_iter()
-        .map(|m| {
-            let material_id = match &m.sk {
-                EntityType::AiModeratorMaterial(id) => id.clone(),
-                _ => String::new(),
-            };
-            MaterialResponse {
-                material_id,
-                file_name: m.file_name,
-                file_url: m.file_url,
-                created_at: m.created_at,
-            }
+        .map(|m| MaterialResponse {
+            material_id: m.id.to_string(),
+            file_name: m.file_name,
+            file_url: m.file_url,
+            created_at: m.created_at,
         })
         .collect();
 

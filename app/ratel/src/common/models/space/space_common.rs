@@ -1,36 +1,55 @@
 use crate::common::{types::*, utils::time::get_now_timestamp_millis, *};
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, DynamoEntity)]
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+
+/// Space aggregate root (was DynamoDB `SPACE#{id}` + `SPACE_COMMON`).
+///
+/// Postgres migration: the single `pk = SPACE#{id}` / `sk = SPACE_COMMON`
+/// identity collapses to a surrogate `id` PK with the space's full `Partition`
+/// string kept as the `space_pk` natural key (`unique`) so cross-feature
+/// look-ups by space partition (`"SPACE#…"`) stay a single-column query.
+///
+/// `post_pk` and `user_pk` are **cross-feature** references (posts / auth),
+/// stored as their full `Partition` strings (`"POST#…"` / `"FEED#…"` /
+/// `"USER#…"`) — plain indexed columns, **no FK** for now (FK pass is later).
+///
+/// `status` / `visibility` / `publish_state` stay their shared `common::types`
+/// enum types; their Postgres `TEXT` column codecs live in
+/// [`super::pg_enum_glue`] (the shared enums can't derive `PostgresEnum`
+/// themselves), so `is_active()` / `is_public()` and every field reader keep
+/// working unchanged.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(PostgresEntity))]
+#[cfg_attr(feature = "server", postgres(table = "space_commons", unique(space_pk)))]
 pub struct SpaceCommon {
-    pub pk: Partition,
-    pub sk: EntityType,
+    #[serde(default)]
+    pub id: Uuid,
 
-    #[dynamo(index = "gsi2", sk)]
-    #[dynamo(index = "gsi1", sk)]
-    #[dynamo(index = "gsi6", sk)]
+    /// Natural key — the space's full `Partition` string (`"SPACE#{id}"`).
+    pub space_pk: String,
+
     pub created_at: i64,
     pub updated_at: i64,
 
-    pub status: Option<SpaceStatus>, // Waiting, InProgress, Started, Finished
+    pub status: Option<SpaceStatus>, // Designing, Open, Ongoing, Processing, Finished
 
-    #[dynamo(
-        prefix = "SPACE_COMMON_VIS",
-        name = "find_by_visibility",
-        index = "gsi6",
-        order = 2,
-        pk
-    )]
+    #[cfg_attr(feature = "server", postgres(index))]
     pub visibility: SpaceVisibility, // Private, Public, Team(team_pk)
-    #[dynamo(index = "gsi6", order = 1, pk)]
+    #[cfg_attr(feature = "server", postgres(index))]
     pub publish_state: SpacePublishState, // Draft, Published
-    #[dynamo(prefix = "POST_PK", name = "find_by_post_pk", index = "gsi2", pk)]
-    pub post_pk: Partition,
-    // pub space_type: SpaceType,
+
+    /// Cross-feature reference — originating post, full `Partition` string.
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub post_pk: String,
+
     #[serde(default)]
     pub content: String,
 
-    #[dynamo(prefix = "USER_PK", name = "find_by_user_pk", index = "gsi1", pk)]
-    pub user_pk: Partition,
+    /// Cross-feature reference — author user, full `Partition` string.
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub user_pk: String,
     pub author_display_name: String,
     pub author_profile_url: String,
     pub author_username: String,
@@ -38,7 +57,6 @@ pub struct SpaceCommon {
     pub started_at: Option<i64>,
     pub ended_at: Option<i64>,
 
-    // pub booster: BoosterType,
     pub custom_booster: Option<i64>,
     pub rewards: Option<i64>,
 
@@ -77,26 +95,34 @@ impl SpaceCommon {
     ) -> Self {
         let now = get_now_timestamp_millis();
         let post_pk: Partition = post_id.into();
+        let space_pk: Partition = post_pk
+            .clone()
+            .to_space_pk()
+            .expect("Failed to convert post_pk to space_pk");
 
         Self {
-            pk: post_pk
-                .clone()
-                .to_space_pk()
-                .expect("Failed to convert post_pk to space_pk"),
-            sk: EntityType::SpaceCommon,
+            id: Uuid::now_v7(),
+            space_pk: space_pk.to_string(),
             created_at: now,
             updated_at: now,
-            post_pk,
+            post_pk: post_pk.to_string(),
             publish_state: SpacePublishState::Draft,
             status: None,
             visibility: SpaceVisibility::Private,
-            user_pk,
+            user_pk: user_pk.to_string(),
             author_display_name,
             author_profile_url,
             author_username,
             join_anytime: true,
+            quota: max_quota(),
+            remains: max_quota(),
             ..Default::default()
         }
+    }
+
+    /// The space's `Partition` (`"SPACE#{id}"`) parsed back from `space_pk`.
+    pub fn partition(&self) -> Partition {
+        self.space_pk.parse().unwrap_or_default()
     }
 
     pub fn should_explicit_participation(&self) -> bool {
@@ -122,6 +148,50 @@ impl SpaceCommon {
 }
 
 #[cfg(feature = "server")]
+impl SpaceCommon {
+    /// Point read by space `Partition` (`"SPACE#{id}"`) — replaces the DynamoDB
+    /// `get(space_pk, SPACE_COMMON)` read.
+    pub async fn get_by_partition(space_pk: &Partition) -> Result<Option<Self>> {
+        use postgres::ops::StringOp;
+        Self::repository()
+            .find_one(Self::query().space_pk(StringOp::Eq(space_pk.to_string())))
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// Every space authored by a user (`find_by_user_pk` GSI1), newest first.
+    pub async fn find_by_user_pk(user_pk: &Partition) -> Result<Vec<Self>> {
+        use postgres::ops::StringOp;
+        Ok(Self::repository()
+            .find(
+                Self::query()
+                    .user_pk(StringOp::Eq(user_pk.to_string()))
+                    .order_by(SpaceCommonColumn::CreatedAt, postgres::Order::Desc),
+            )
+            .await
+            .map_err(crate::common::Error::from)?
+            .items)
+    }
+
+    /// The space originating from a given post (`find_by_post_pk` GSI2).
+    pub async fn find_by_post_pk(post_pk: &Partition) -> Result<Option<Self>> {
+        use postgres::ops::StringOp;
+        Self::repository()
+            .find_one(Self::query().post_pk(StringOp::Eq(post_pk.to_string())))
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// Natural-key upsert on `space_pk`, preserving the surrogate `id`.
+    pub async fn save(&self) -> Result<Self> {
+        Self::repository()
+            .upsert_on(&["space_pk"], self)
+            .await
+            .map_err(crate::common::Error::from)
+    }
+}
+
+#[cfg(feature = "server")]
 impl<S> FromRequestParts<S> for SpaceCommon
 where
     S: Send + Sync,
@@ -129,10 +199,6 @@ where
     type Rejection = Error;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self> {
-        use std::collections::HashMap;
-
-        use dioxus::fullstack::{extract::Path, response::IntoResponse};
-
         if let Some(space) = parts.extensions.get::<SpaceCommon>() {
             return Ok(space.clone());
         }
@@ -156,10 +222,7 @@ where
         let space_pk: Partition = space_id.into();
         debug!("Verifying project access for space_id: {}", space_pk);
 
-        let conf = ServerConfig::default();
-        let cli = conf.dynamodb();
-
-        let space: SpaceCommon = SpaceCommon::get(cli, space_pk, Some(EntityType::SpaceCommon))
+        let space: SpaceCommon = SpaceCommon::get_by_partition(&space_pk)
             .await
             .map_err(|e| {
                 error!("failed to get space common from db: {:?}", e);

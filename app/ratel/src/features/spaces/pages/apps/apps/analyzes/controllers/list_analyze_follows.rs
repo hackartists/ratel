@@ -1,4 +1,5 @@
 use crate::common::ListResponse;
+#[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::follow::SpaceFollowUser;
 use crate::features::spaces::pages::apps::apps::analyzes::*;
 use crate::features::spaces::pages::apps::models::SpaceApp;
@@ -29,27 +30,19 @@ pub async fn list_analyze_follows(
     #[mcp(description = "Pagination bookmark. Omit for first page.")] bookmark: Option<String>,
 ) -> Result<ListResponse<AnalyzeFollowItem>> {
     SpaceApp::can_edit(role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_id.into();
 
-    let mut opt = SpaceFollowUser::opt()
-        .sk(EntityType::SpaceSubscriptionUser(String::default()).to_string())
-        .limit(20);
-    if let Some(bookmark) = bookmark {
-        opt = opt.bookmark(bookmark);
-    }
-
-    let (users, bookmark) = SpaceFollowUser::query(cli, space_pk, opt).await?;
+    let (users, bookmark) = SpaceFollowUser::list_by_space(&space_id, bookmark, 20).await?;
 
     let items = users
         .into_iter()
-        .filter(|u| u.user_pk != Partition::None)
-        .map(|u| AnalyzeFollowItem {
-            user_pk: u.user_pk,
-            display_name: u.display_name,
-            username: u.username,
-            profile_url: u.profile_url,
+        .filter_map(|u| {
+            let user_pk = u.user_partition();
+            (user_pk != Partition::None).then_some(AnalyzeFollowItem {
+                user_pk,
+                display_name: u.display_name,
+                username: u.username,
+                profile_url: u.profile_url,
+            })
         })
         .collect();
 

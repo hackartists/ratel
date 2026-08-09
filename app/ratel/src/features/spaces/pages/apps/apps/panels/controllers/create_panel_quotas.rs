@@ -22,8 +22,6 @@ pub async fn create_panel_quotas(
 ) -> crate::common::Result<Vec<SpacePanelQuotaResponse>> {
     SpacePanelQuota::can_edit(role)?;
 
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
 
     let mut panels: Vec<SpacePanelQuota> = req
@@ -39,17 +37,22 @@ pub async fn create_panel_quotas(
         )
     }));
 
-    let items = panels
-        .iter()
-        .cloned()
-        .map(|panel| panel.create_transact_write_item())
-        .collect();
-
-    crate::transact_write_items!(cli, items)
-        .map_err(|e| {
-            crate::error!("Failed to create panel quotas: {e}");
-            SpaceAppError::PanelQuotaCreateFailed
-        })?;
+    // Atomic all-or-nothing insert (mirrors the original DynamoDB
+    // `transact_write_items!` create batch).
+    let tx = postgres::Tx::begin()
+        .await
+        .map_err(crate::common::Error::from)?;
+    for panel in &panels {
+        SpacePanelQuota::repository()
+            .with_tx(&tx)
+            .insert(panel)
+            .await
+            .map_err(|e| {
+                crate::error!("Failed to create panel quotas: {e}");
+                SpaceAppError::PanelQuotaCreateFailed
+            })?;
+    }
+    tx.commit().await.map_err(crate::common::Error::from)?;
 
     Ok(panels.into_iter().map(Into::into).collect())
 }

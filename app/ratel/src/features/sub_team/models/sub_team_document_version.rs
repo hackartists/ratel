@@ -1,67 +1,66 @@
 use crate::common::*;
+use crate::features::sub_team::models::json::FileList;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+use uuid::Uuid;
 
 /// Immutable snapshot of a `SubTeamDocument` at a specific version.
 ///
-/// Written on every successful create/update of the parent document:
-/// on create, a v1 snapshot is laid down alongside the doc row; on
-/// update, the controller bumps the doc's `version` and writes a new
-/// snapshot row at that new version. Snapshots are never mutated and
-/// never deleted by the regular doc lifecycle — only the deletion of
-/// the parent doc cleans them up (handled in `delete_sub_team_doc`).
-///
-/// Sort key encodes `{doc_id}#{version:08}` so a single Dynamo query
-/// can fetch every snapshot of one document in chronological order.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, DynamoEntity)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+/// **Postgres migration:** the DynamoDB `(pk = Team(team), sk =
+/// SubTeamDocumentVersion(doc_id, padded_version))` identity becomes a
+/// surrogate `id` PK plus `unique(doc_id, version)` (doc_id is a global uuid so
+/// this pair is unique). `team_pk` (raw `"TEAM#…"`) and `doc_id` are indexed so
+/// "every version of this doc" is a single-index query. Snapshots are never
+/// mutated and only deleted when the parent doc is deleted.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
+#[cfg_attr(
+    feature = "server",
+    postgres(table = "sub_team_document_versions", unique(doc_id, version))
+)]
 pub struct SubTeamDocumentVersion {
-    pub pk: Partition,  // Partition::Team(team_id) — same parent team
-    pub sk: EntityType, // EntityType::SubTeamDocumentVersion(doc_id, padded_version)
+    /// Surrogate primary key.
+    pub id: Uuid,
+
+    /// Owning team partition string (`"TEAM#…"`). Indexed.
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub team_pk: String,
+
+    /// Parent doc id. Indexed.
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub doc_id: String,
 
     /// Wall-clock timestamp when this snapshot was taken (millis).
     pub created_at: i64,
 
-    /// Denormalized doc id — convenient for client filtering when
-    /// querying across a doc list without parsing the sk string.
-    pub doc_id: String,
-
-    /// Monotonic version number, matches the parent doc's `version`
-    /// at the moment this snapshot was taken.
+    /// Monotonic version number, matches the parent doc's `version`.
     pub version: i32,
 
     // ── Snapshot of the doc fields at this version ────────────────
     pub title: String,
     pub body: String,
     pub body_hash: String,
-    #[serde(default)]
     pub required: bool,
-    #[serde(default)]
     pub order: i32,
-    #[serde(default)]
-    pub attachments: Vec<File>,
+    /// Stored as jsonb.
+    pub attachments: FileList,
     /// Username of the editor who produced this version.
-    #[serde(default)]
     pub editor_username: String,
 }
 
 #[cfg(feature = "server")]
 impl SubTeamDocumentVersion {
-    /// Build a new snapshot for a freshly-created or freshly-updated
-    /// parent doc. The caller is responsible for ensuring `version`
-    /// matches the doc's current `version`.
+    /// Build a new snapshot for a freshly-created or freshly-updated doc.
     pub fn snapshot_of(team_pk: Partition, doc: &super::SubTeamDocument) -> Self {
-        let doc_id = match &doc.sk {
-            EntityType::SubTeamDocument(id) => id.clone(),
-            _ => String::new(),
-        };
         let now = crate::common::utils::time::get_now_timestamp_millis();
         Self {
-            pk: team_pk,
-            sk: EntityType::SubTeamDocumentVersion(doc_id.clone(), pad_version(doc.version)),
+            id: Uuid::now_v7(),
+            team_pk: team_pk.to_string(),
+            doc_id: doc.id.to_string(),
             created_at: now,
-            doc_id,
             version: doc.version,
             title: doc.title.clone(),
             body: doc.body.clone(),
@@ -72,15 +71,32 @@ impl SubTeamDocumentVersion {
             editor_username: doc.editor_username.clone(),
         }
     }
-}
 
-/// Zero-pad to 8 digits so the lexicographic sk order matches numeric
-/// order (`v00000001 < v00000002 < … < v00000010`).
-pub fn pad_version(v: i32) -> String {
-    format!("{:08}", v.max(0))
-}
+    /// Every version snapshot for one doc under a team.
+    pub async fn list_for_doc(
+        team_pk: &Partition,
+        doc_id: &str,
+    ) -> crate::common::Result<Vec<Self>> {
+        use postgres::ops::StringOp;
+        Ok(Self::repository()
+            .find(
+                Self::query()
+                    .team_pk(StringOp::Eq(team_pk.to_string()))
+                    .doc_id(StringOp::Eq(doc_id.to_string())),
+            )
+            .await
+            .map_err(crate::common::Error::from)?
+            .items)
+    }
 
-/// Sort-key prefix for "every version of this doc" queries.
-pub fn version_sk_prefix(doc_id: &str) -> String {
-    format!("SUB_TEAM_DOCUMENT_VERSION#{doc_id}#")
+    /// Cascade-remove every snapshot row for a doc. Best-effort per-row.
+    pub async fn delete_for_doc(team_pk: &Partition, doc_id: &str) -> crate::common::Result<()> {
+        let versions = Self::list_for_doc(team_pk, doc_id).await?;
+        for v in versions {
+            if let Err(e) = Self::repository().delete(v.id).await {
+                crate::error!("delete_for_doc snapshot cleanup failed: {e}");
+            }
+        }
+        Ok(())
+    }
 }

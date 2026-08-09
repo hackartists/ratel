@@ -14,17 +14,15 @@ pub struct LikePostResponse {
 #[mcp_tool(name = "like_post", description = "Like or unlike a post.")]
 #[post("/api/posts/:post_id/like", user: User)]
 pub async fn like_post_handler(post_id: FeedPartition, like: bool) -> Result<LikePostResponse> {
-    let conf = crate::features::posts::config::get();
-    let cli = conf.dynamodb();
-
-    let post_pk: Partition = post_id.into();
+    let post_uuid = uuid::Uuid::parse_str(&post_id.0)
+        .map_err(|_| Error::NotFound("Post not found".into()))?;
 
     if like {
-        Post::like(cli, post_pk.clone(), user.pk).await?;
+        Post::like(post_uuid, user.pk()).await?;
 
         Ok(LikePostResponse { like: true })
     } else {
-        Post::unlike(cli, post_pk, user.pk).await?;
+        Post::unlike(post_uuid, user.pk()).await?;
         Ok(LikePostResponse { like: false })
     }
 }

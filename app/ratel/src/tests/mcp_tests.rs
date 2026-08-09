@@ -1,22 +1,20 @@
 use super::*;
 use crate::common::models::McpClientSecret;
 use crate::common::models::space::SpaceCommon;
-use crate::common::types::{
-    EntityType, Partition, SpacePublishState, SpaceStatus, SpaceVisibility,
-};
+use crate::common::types::{Partition, SpacePublishState, SpaceStatus, SpaceVisibility};
 
 pub(super) async fn create_mcp_secret(
-    cli: &crate::common::aws_sdk_dynamodb::Client,
+    _cli: &crate::common::aws_sdk_dynamodb::Client,
     user_pk: &Partition,
 ) -> String {
     let (entity, raw_token) = McpClientSecret::new(user_pk.clone());
-    entity.create(cli).await.unwrap();
+    entity.create().await.unwrap();
     raw_token
 }
 
 pub(super) async fn setup_mcp_test() -> (TestContext, String) {
     let ctx = TestContext::setup().await;
-    let raw_token = create_mcp_secret(&ctx.ddb, &ctx.test_user.0.pk).await;
+    let raw_token = create_mcp_secret(&ctx.ddb, &ctx.test_user.0.pk()).await;
     (ctx, raw_token)
 }
 
@@ -95,7 +93,7 @@ pub(super) fn extract_tool_content(body: &serde_json::Value) -> serde_json::Valu
     serde_json::from_str(text).unwrap_or_default()
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_get_me() {
     let (ctx, token) = setup_mcp_test().await;
     let (status, body) = mcp_tool_call(ctx.app, &token, "get_me", serde_json::json!({})).await;
@@ -103,7 +101,7 @@ async fn test_mcp_tool_get_me() {
     assert!(body.get("result").is_some(), "should have result: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_create_post() {
     let (ctx, token) = setup_mcp_test().await;
     let (status, body) =
@@ -113,7 +111,7 @@ async fn test_mcp_tool_create_post() {
     assert!(content.get("post_pk").is_some(), "should have post_pk: {:?}", content);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_list_teams() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -157,7 +155,7 @@ async fn test_mcp_tool_list_teams() {
     assert!(found, "created team '{}' not found in list_teams result: {:?}", team_username, teams);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_invalid_secret() {
     let ctx = TestContext::setup().await;
     let (status, body) =
@@ -170,7 +168,7 @@ async fn test_mcp_tool_invalid_secret() {
     assert!(has_error, "invalid secret should error: status={}, body={:?}", status, body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_create_and_get_post() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -184,7 +182,7 @@ async fn test_mcp_tool_create_and_get_post() {
     assert_eq!(status, 200, "get_post: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_create_publish_like() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -204,7 +202,7 @@ async fn test_mcp_tool_create_publish_like() {
     assert_eq!(status, 200, "like_post: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_delete_post() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -218,7 +216,7 @@ async fn test_mcp_tool_delete_post() {
     assert_eq!(status, 200, "delete_post: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_create_space() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -283,7 +281,7 @@ async fn get_team_id_by_username(
         .to_string()
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_team_create_post() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -318,7 +316,7 @@ async fn test_mcp_tool_team_create_post() {
     assert_eq!(status, 200, "get_post (team post): {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_team_post_and_space() {
     let (ctx, token) = setup_mcp_test().await;
 
@@ -378,34 +376,34 @@ async fn seed_creator_space(ctx: &TestContext) -> String {
     let space_pk = Partition::Space(space_id.clone());
     let post_pk = Partition::Feed(space_id.clone());
 
-    let mut space = SpaceCommon::default();
-    space.pk = space_pk.clone();
-    space.sk = EntityType::SpaceCommon;
-    space.created_at = now;
-    space.updated_at = now;
-    space.status = Some(SpaceStatus::Ongoing);
-    space.publish_state = SpacePublishState::Published;
-    space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk.clone();
-    space.user_pk = ctx.test_user.0.pk.clone();
-    space.author_display_name = ctx.test_user.0.display_name.clone();
-    space.author_profile_url = ctx.test_user.0.profile_url.clone();
-    space.author_username = ctx.test_user.0.username.clone();
-    space.create(&ctx.ddb).await.expect("create space");
+    let space = SpaceCommon {
+        space_pk: space_pk.to_string(),
+        created_at: now,
+        updated_at: now,
+        status: Some(SpaceStatus::Ongoing),
+        publish_state: SpacePublishState::Published,
+        visibility: SpaceVisibility::Public,
+        post_pk: post_pk.to_string(),
+        user_pk: ctx.test_user.0.pk().to_string(),
+        author_display_name: ctx.test_user.0.display_name.clone(),
+        author_profile_url: ctx.test_user.0.profile_url.clone(),
+        author_username: ctx.test_user.0.username.clone(),
+        ..Default::default()
+    };
+    space.create().await.expect("create space");
 
     // Minimal Post row so SpaceCommon extraction side-paths do not 404.
     let post = crate::features::posts::models::Post {
-        pk: post_pk,
-        sk: EntityType::Post,
+        id: uuid::Uuid::parse_str(&space_id).expect("space_id is a valid uuid"),
         title: "MCP Meet Test Space".to_string(),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.expect("create post");
+    post.create().await.expect("create post");
 
     space_id
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mcp_tool_create_meet() {
     let (ctx, token) = setup_mcp_test().await;
     let space_id = seed_creator_space(&ctx).await;

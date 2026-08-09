@@ -17,7 +17,7 @@ pub struct UserResponse {
 impl From<crate::features::auth::User> for UserResponse {
     fn from(user: crate::features::auth::User) -> Self {
         Self {
-            pk: user.pk.to_string(),
+            pk: user.pk().to_string(),
             username: user.username,
             display_name: user.display_name,
             profile_url: user.profile_url,
@@ -72,7 +72,7 @@ impl From<(crate::features::posts::models::Team, Option<crate::features::social:
         let permissions_i64: i64 = role.map(|r| r.to_legacy_permissions()).unwrap_or(0);
         let perms: crate::features::posts::types::TeamGroupPermissions = permissions_i64.into();
         Self {
-            pk: team.pk.to_string(),
+            pk: team.partition().to_string(),
             created_at: team.created_at,
             updated_at: team.updated_at,
             nickname: team.display_name,
@@ -97,7 +97,7 @@ impl TeamResponse {
     /// that builds a `TeamResponse` into the lookup.
     pub async fn with_parent_username(
         mut self,
-        cli: &aws_sdk_dynamodb::Client,
+        _cli: &aws_sdk_dynamodb::Client,
     ) -> Self {
         let Some(parent_id) = self.parent_team_id.clone() else {
             return self;
@@ -105,13 +105,10 @@ impl TeamResponse {
         if parent_id.is_empty() {
             return self;
         }
-        let parent_pk = crate::common::types::Partition::Team(parent_id);
-        if let Ok(Some(parent)) = crate::features::posts::models::Team::get(
-            cli,
-            &parent_pk,
-            Some(crate::common::types::EntityType::Team),
-        )
-        .await
+        let Ok(parent_uuid) = uuid::Uuid::parse_str(&parent_id) else {
+            return self;
+        };
+        if let Ok(Some(parent)) = crate::features::posts::models::Team::get_by_id(parent_uuid).await
         {
             self.parent_username = Some(parent.username);
         }

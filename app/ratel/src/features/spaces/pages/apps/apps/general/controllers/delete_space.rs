@@ -14,40 +14,49 @@ pub async fn delete_space(
     space_id: SpacePartition,
 ) -> crate::common::Result<DeleteSpaceResponse> {
     use crate::common::models::space::SpaceCommon;
-    use crate::common::types::{EntityType, Partition};
+    use crate::common::types::Partition;
     use crate::features::posts::models::Post;
     use crate::features::spaces::pages::actions::actions::poll::SpacePoll;
+    use postgres::PostgresEntity;
 
     if role != SpaceUserRole::Creator {
         return Err(Error::NoPermission);
     }
 
-    let common_config = crate::common::CommonConfig::default();
-    let dynamo = common_config.dynamodb();
     let space_pk: Partition = space_id.clone().into();
-    let space = SpaceCommon::get(dynamo, &space_pk, Some(&EntityType::SpaceCommon))
+    let space = SpaceCommon::get_by_partition(&space_pk)
         .await?
         .ok_or(Error::SpaceNotFound)?;
 
-    let space_pk: Partition = space.pk.clone();
     let post_pk = space_pk.clone().to_post_key()?;
 
-    SpaceCommon::delete(dynamo, &space.pk, Some(space.sk)).await?;
-    SpacePoll::delete_one(dynamo, &space_pk).await?;
+    SpaceCommon::repository()
+        .delete(space.id)
+        .await
+        .map_err(crate::common::Error::from)?;
+    SpacePoll::delete_one(&space_pk).await?;
     // TODO(main-api only): delete SpaceDiscussion entities linked to this space.
     // TODO(main-api only): delete SpaceFile entities linked to this space.
     // TODO(main-api only): delete SpaceRecommendation entities linked to this space.
 
-    if Post::get(dynamo, &post_pk, Some(EntityType::Post))
-        .await?
-        .is_some()
-    {
-        Post::updater(post_pk, EntityType::Post)
-            .remove_space_pk()
-            .remove_space_type()
-            .remove_space_visibility()
-            .execute(dynamo)
-            .await?;
+    let post_id = match &post_pk {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).ok(),
+        _ => None,
+    };
+
+    if let Some(post_id) = post_id {
+        if let Some(post) = Post::get_by_feed_id(post_id).await? {
+            Post::repository()
+                .update(
+                    post.id,
+                    Post::update()
+                        .space_pk(None)
+                        .space_type(None)
+                        .space_visibility(None),
+                )
+                .await
+                .map_err(crate::common::Error::from)?;
+        }
     }
 
     Ok(DeleteSpaceResponse {

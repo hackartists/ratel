@@ -27,17 +27,11 @@ pub async fn add_comment(
     SpacePost::can_view(&role)?;
     let common_config = crate::common::CommonConfig::default();
     let cli = common_config.dynamodb();
-    let discussion_sk_entity: EntityType = discussion_sk.clone().into();
-    let space_action = SpaceAction::get(
-        cli,
-        &CompositePartition(space_id.clone(), discussion_sk.to_string()),
-        Some(EntityType::SpaceAction),
-    )
-    .await?
-    .ok_or(Error::SpaceActionNotFound)?;
+    let space_action = SpaceAction::get_one(&space_id, &discussion_sk.0)
+        .await?
+        .ok_or(Error::SpaceActionNotFound)?;
 
     let deps_met = crate::features::spaces::pages::actions::services::dependency::dependencies_met(
-        cli,
         &space,
         &space_action,
         &member.pk,
@@ -55,17 +49,12 @@ pub async fn add_comment(
         return Err(SpaceActionDiscussionError::NotAvailableInCurrentStatus.into());
     }
 
-    let space_post_id = match &discussion_sk_entity {
-        EntityType::SpacePost(id) => SpacePostPartition(id.clone()),
-        _ => return Err(SpaceActionDiscussionError::InvalidDiscussionId.into()),
-    };
-    let (post_pk, post_sk) = SpacePost::keys(&space_id, &space_post_id);
-    let post = SpacePost::get(cli, &post_pk, Some(post_sk))
+    let space_post_id = SpacePostPartition(discussion_sk.0.clone());
+    let post = SpacePost::get_one(&space_id, &space_post_id)
         .await?
         .ok_or(SpaceActionDiscussionError::NotFound)?;
 
     let comment = SpacePost::comment(
-        cli,
         space_id.clone(),
         space_post_id,
         req.content,
@@ -74,14 +63,22 @@ pub async fn add_comment(
     )
     .await?;
 
+    // Emit outbox event (Phase 5) — AiModeratorReplyIndex / DiscussionXpRecord /
+    // EssenceIndexDiscussionComment rules on SPACE_POST_COMMENT# INSERT.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_POST_COMMENT,
+        &comment,
+    )
+    .await
+    .ok();
+
     let space_pk: Partition = space_id.clone().into();
 
     // Essence indexing happens via the DynamoDB Stream pipeline.
-    let agg_item =
-        crate::features::spaces::space_common::models::aggregate::DashboardAggregate::inc_comments(
-            &space_pk, 1,
-        );
-    crate::transact_write_items!(cli, vec![agg_item]).ok();
+    let _ = crate::features::spaces::space_common::models::aggregate::DashboardAggregate::inc_comments(
+        &space_pk, 1,
+    )
+    .await;
 
     crate::features::spaces::space_common::services::bump_participant_activity(
         cli, &space_pk, &member.pk,
@@ -99,10 +96,7 @@ pub async fn add_comment(
     // Router strips both query strings and fragments during URL
     // normalization on hydration.
     {
-        let comment_id_str = match &comment.sk {
-            EntityType::SpacePostComment(id) => id.clone(),
-            _ => String::new(),
-        };
+        let comment_id_str = comment.comment_id.clone();
         let cta_url = format!(
             "{}/spaces/{}/discussions/{}/comments/{}",
             crate::common::config::site_base_url(),
@@ -112,7 +106,6 @@ pub async fn add_comment(
         );
 
         crate::common::utils::mention::create_mention_notifications(
-            cli,
             &comment.content,
             &member.pk,
             &member.display_name,
@@ -125,10 +118,7 @@ pub async fn add_comment(
     // per recipient per comment; mention > reply-target > subscriber) runs off
     // the DynamoDB stream — we only enqueue one notification row here.
     {
-        let comment_id_str = match &comment.sk {
-            EntityType::SpacePostComment(id) => id.clone(),
-            _ => String::new(),
-        };
+        let comment_id_str = comment.comment_id.clone();
         let cta_url = format!(
             "{}/spaces/{}/discussions/{}/comments/{}",
             crate::common::config::site_base_url(),
@@ -141,7 +131,7 @@ pub async fn add_comment(
                 space_id: space_id.clone(),
                 discussion_id: discussion_sk.to_string(),
                 discussion_title: post.title.clone(),
-                comment_sk: comment.sk.to_string(),
+                comment_sk: comment.comment_entity().to_string(),
                 parent_comment_sk: None,
                 commenter_pk: member.pk.to_string(),
                 commenter_name: member.display_name.clone(),
@@ -149,7 +139,7 @@ pub async fn add_comment(
                 cta_url,
             },
         );
-        if let Err(e) = notification.create(cli).await {
+        if let Err(e) = notification.create().await {
             tracing::error!("Failed to enqueue discussion comment notification: {e}");
         }
     }

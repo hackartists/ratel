@@ -34,7 +34,7 @@ pub async fn connect_linkedin_init_handler(
             CrossPostingError::LinkedInAuthFailed
         })?;
 
-    let state = oauth_state::encode(&user.pk, req.return_to.as_deref()).map_err(|e| {
+    let state = oauth_state::encode(&user.pk(), req.return_to.as_deref()).map_err(|e| {
         crate::error!("connect_linkedin_init state encode failed: {e}");
         CrossPostingError::LinkedInAuthFailed
     })?;

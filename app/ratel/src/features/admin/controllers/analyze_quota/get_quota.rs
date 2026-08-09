@@ -19,10 +19,16 @@ pub struct AnalyzeQuotaResponse {
 
 #[get("/api/admin/analyze-quota", _user: AdminUser)]
 pub async fn get_analyze_quota() -> Result<AnalyzeQuotaResponse> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let (pk, sk) = AnalyzeQuotaConfig::keys();
-    let row = AnalyzeQuotaConfig::get(cli, &pk, Some(sk)).await?;
+    #[cfg(feature = "server")]
+    use postgres::{PostgresEntity, ops::StringOp};
+
+    let row = AnalyzeQuotaConfig::repository()
+        .find_one(
+            AnalyzeQuotaConfig::query()
+                .config_key(StringOp::Eq(AnalyzeQuotaConfig::GLOBAL_KEY.to_string())),
+        )
+        .await
+        .map_err(crate::common::Error::from)?;
     Ok(match row {
         Some(r) => AnalyzeQuotaResponse {
             non_enterprise_limit: r.non_enterprise_limit,

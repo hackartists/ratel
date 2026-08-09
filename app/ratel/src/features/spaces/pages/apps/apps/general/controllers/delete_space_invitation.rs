@@ -1,4 +1,5 @@
 use crate::features::spaces::pages::apps::apps::general::*;
+#[cfg(feature = "server")]
 use crate::spaces::SpaceInvitationMember;
 
 #[delete(
@@ -13,17 +14,14 @@ pub async fn delete_space_invitation(
         return Err(Error::NoPermission);
     }
 
-    let common_config = crate::common::CommonConfig::default();
-    let dynamo = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
     let user_pk: Partition = user_id.into();
-    let (pk, sk) = SpaceInvitationMember::keys(&space_pk, &user_pk);
 
-    SpaceInvitationMember::get(dynamo, &pk, Some(&sk))
+    SpaceInvitationMember::get_for(&space_pk, &user_pk)
         .await?
         .ok_or(Error::InvitationNotFound)?;
 
-    SpaceInvitationMember::delete(dynamo, &pk, Some(sk)).await?;
+    SpaceInvitationMember::delete_for(&space_pk, &user_pk).await?;
 
     Ok(())
 }

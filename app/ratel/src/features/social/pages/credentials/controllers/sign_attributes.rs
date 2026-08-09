@@ -1,3 +1,4 @@
+#[cfg(feature = "server")]
 use super::super::models::{AttributeCode, VerifiedAttributes};
 use super::super::*;
 use super::get_credentials::CredentialResponse;
@@ -17,11 +18,9 @@ pub enum SignAttributesRequest {
 #[post("/api/me/did", user: crate::features::auth::User)]
 pub async fn sign_attributes_handler(body: SignAttributesRequest) -> Result<CredentialResponse> {
     debug!("Handling sign attributes request: {:?}", body);
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
     let attrs = match body {
-        SignAttributesRequest::PortOne { id } => portone_sign_attributes(cli, &user, id).await?,
-        SignAttributesRequest::Code { code } => add_attributes_by_code(cli, &user, code).await?,
+        SignAttributesRequest::PortOne { id } => portone_sign_attributes(&user, id).await?,
+        SignAttributesRequest::Code { code } => add_attributes_by_code(&user, code).await?,
     };
 
     return Ok(CredentialResponse {
@@ -33,7 +32,6 @@ pub async fn sign_attributes_handler(body: SignAttributesRequest) -> Result<Cred
 
 #[cfg(feature = "server")]
 async fn add_attributes_by_code(
-    cli: &crate::common::aws_sdk_dynamodb::Client,
     user: &crate::features::auth::User,
     code: String,
 ) -> Result<VerifiedAttributes> {
@@ -42,20 +40,14 @@ async fn add_attributes_by_code(
         return Err(SocialError::InvalidVerificationAttribute.into());
     }
 
-    let code_item = AttributeCode::get(
-        cli,
-        Partition::AttributeCode(code),
-        Some(EntityType::AttributeCode),
-    )
-    .await?
-    .ok_or_else(|| Error::NotFound("Attribute code not found".to_string()))?;
-
-    let (pk, sk) = VerifiedAttributes::keys(&user.pk);
-    let mut attrs = VerifiedAttributes::get(cli, pk.clone(), Some(sk.clone()))
+    let code_item = AttributeCode::get_by_code(&code)
         .await?
-        .unwrap_or_default();
-    attrs.pk = pk;
-    attrs.sk = sk;
+        .ok_or_else(|| Error::NotFound("Attribute code not found".to_string()))?;
+
+    let user_pk = user.pk();
+    let mut attrs = VerifiedAttributes::get_by_user(&user_pk)
+        .await?
+        .unwrap_or_else(|| VerifiedAttributes::new(user_pk));
 
     if let Some(birth_date) = code_item.birth_date {
         attrs.birth_date = Some(birth_date);
@@ -65,13 +57,12 @@ async fn add_attributes_by_code(
         attrs.university = Some(university);
     }
 
-    attrs.upsert(cli).await?;
+    attrs.save().await?;
     Ok(attrs)
 }
 
 #[cfg(all(feature = "server", not(feature = "bypass")))]
 async fn portone_sign_attributes(
-    cli: &crate::common::aws_sdk_dynamodb::Client,
     user: &crate::features::auth::User,
     id: String,
 ) -> Result<VerifiedAttributes> {
@@ -89,40 +80,42 @@ async fn portone_sign_attributes(
 
     let birth_date = verified.birth_date.replace('-', "");
 
-    let (pk, sk) = VerifiedAttributes::keys(&user.pk);
-    let mut attrs = VerifiedAttributes::get(cli, pk.clone(), Some(sk.clone()))
+    let user_pk = user.pk();
+    let mut attrs = VerifiedAttributes::get_by_user(&user_pk)
         .await?
-        .unwrap_or_default();
-    attrs.pk = pk;
-    attrs.sk = sk;
+        .unwrap_or_else(|| VerifiedAttributes::new(user_pk));
     attrs.birth_date = Some(birth_date);
-    attrs.gender = gender.or(attrs.gender);
+    // Postgres migration: `VerifiedAttributes.gender` stores the bare
+    // snake_case string ("male" / "female") — serialize the typed enum the
+    // same way serde would before falling back to the existing value.
+    attrs.gender = gender.map(|g| g.to_string()).or(attrs.gender);
 
-    attrs.upsert(cli).await?;
+    attrs.save().await?;
     Ok(attrs)
 }
 
 #[cfg(all(feature = "server", feature = "bypass"))]
 async fn portone_sign_attributes(
-    cli: &crate::common::aws_sdk_dynamodb::Client,
     user: &crate::features::auth::User,
     id: String,
 ) -> Result<VerifiedAttributes> {
     use super::super::services::PortOneClient;
 
+    let _ = id;
     let gender = Some(crate::common::attribute::Gender::Male);
 
     let birth_date = "20000101".to_string();
 
-    let (pk, sk) = VerifiedAttributes::keys(&user.pk);
-    let mut attrs = VerifiedAttributes::get(cli, pk.clone(), Some(sk.clone()))
+    let user_pk = user.pk();
+    let mut attrs = VerifiedAttributes::get_by_user(&user_pk)
         .await?
-        .unwrap_or_default();
-    attrs.pk = pk;
-    attrs.sk = sk;
+        .unwrap_or_else(|| VerifiedAttributes::new(user_pk));
     attrs.birth_date = Some(birth_date);
-    attrs.gender = gender.or(attrs.gender);
+    // Postgres migration: `VerifiedAttributes.gender` stores the bare
+    // snake_case string ("male" / "female") — serialize the typed enum the
+    // same way serde would before falling back to the existing value.
+    attrs.gender = gender.map(|g| g.to_string()).or(attrs.gender);
 
-    attrs.upsert(cli).await?;
+    attrs.save().await?;
     Ok(attrs)
 }

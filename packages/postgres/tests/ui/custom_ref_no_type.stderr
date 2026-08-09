@@ -1,0 +1,6 @@
+error: macro cannot infer FK column type for a non-pk reference_key; add type = "…"
+  --> tests/ui/custom_ref_no_type.rs:17:5
+   |
+17 | /     #[postgres(many_to_one, reference_key = "email")]
+18 | |     pub target: RefTarget,
+   | |_________________________^

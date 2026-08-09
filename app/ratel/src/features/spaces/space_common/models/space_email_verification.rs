@@ -1,19 +1,30 @@
-#[cfg(feature = "server")]
 use crate::common::models::notification::Notification;
-#[cfg(feature = "server")]
 use crate::common::models::space::SpaceCommon;
-#[cfg(feature = "server")]
 use crate::common::utils::time::get_now_timestamp;
 use crate::features::spaces::space_common::*;
+use postgres::PostgresEntity;
+use uuid::Uuid;
 
 const EXPIRATION_TIME: u64 = 1800; // 30 minutes
 const MAX_ATTEMPT_COUNT: i32 = 5;
 
-#[derive(Debug, Clone, Serialize, Deserialize, DynamoEntity, Default)]
+/// Per-(space, email) verification code for space invitations.
+///
+/// Postgres migration: the DynamoDB identity was `pk = Space(space_id)` +
+/// `sk = SpaceEmailVerification(email)`. It becomes the natural key
+/// `(space_pk, email)` (composite UNIQUE) on a surrogate `id` PK. `space_pk`
+/// is a cross-feature reference stored as the full `Partition` string
+/// (`"SPACE#…"`) — plain column, **no FK**.
+#[derive(Debug, Clone, Serialize, Deserialize, PostgresEntity, Default)]
+#[postgres(table = "space_email_verifications", unique(space_pk, email))]
 pub struct SpaceEmailVerification {
-    pub pk: Partition,
-    pub sk: EntityType,
+    pub id: Uuid,
 
+    /// Cross-feature reference to the space, full `Partition` string.
+    #[postgres(index)]
+    pub space_pk: String,
+
+    #[postgres(order)]
     pub created_at: i64,
     pub email: String,
     pub value: String,
@@ -25,13 +36,11 @@ pub struct SpaceEmailVerification {
 
 impl SpaceEmailVerification {
     pub fn new(space_pk: Partition, email: String, value: String, expired_at: i64) -> Self {
-        let pk = space_pk;
-        let sk = EntityType::SpaceEmailVerification(email.clone());
         let created_at = chrono::Utc::now().timestamp_micros();
 
         Self {
-            pk,
-            sk,
+            id: Uuid::now_v7(),
+            space_pk: space_pk.to_string(),
             email,
             created_at,
             value,
@@ -42,84 +51,49 @@ impl SpaceEmailVerification {
     }
 }
 
-#[cfg(feature = "server")]
 impl SpaceEmailVerification {
-    pub async fn expire_verifications(
-        cli: &aws_sdk_dynamodb::Client,
-        space_pk: Partition,
-    ) -> Result<()> {
-        let mut bookmark = None::<String>;
-        let mut tx = vec![];
-
-        loop {
-            let (responses, new_bookmark) = SpaceEmailVerification::query(
-                cli,
-                space_pk.clone(),
-                if let Some(b) = &bookmark {
-                    SpaceEmailVerificationQueryOption::builder()
-                        .sk("SPACE_EMAIL_VERIFICATION#".into())
-                        .bookmark(b.clone())
-                } else {
-                    SpaceEmailVerificationQueryOption::builder()
-                        .sk("SPACE_EMAIL_VERIFICATION#".into())
-                },
+    /// The verification row for `(space, email)`, if present.
+    pub async fn get_for(space_pk: &Partition, email: &str) -> Result<Option<Self>> {
+        use postgres::ops::StringOp;
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .space_pk(StringOp::Eq(space_pk.to_string()))
+                    .email(StringOp::Eq(email.to_string())),
             )
-            .await?;
+            .await
+            .map_err(crate::common::Error::from)
+    }
 
-            let expired_at = get_now_timestamp();
+    /// Expire every outstanding verification for a space in one atomic
+    /// `UPDATE … SET expired_at = $now`. Mirrors the original bulk transact
+    /// that stamped `expired_at` across all rows.
+    pub async fn expire_verifications(space_pk: Partition) -> Result<()> {
+        use postgres::Value;
+        use postgres::sqlx::{Postgres, QueryBuilder};
 
-            for response in responses {
-                let d = SpaceEmailVerification::updater(response.pk, response.sk)
-                    .with_expired_at(expired_at)
-                    .transact_write_item();
+        let expired_at = get_now_timestamp();
+        let table = Self::table_name();
 
-                tx.push(d);
+        let mut qb =
+            QueryBuilder::<Postgres>::new(format!("UPDATE \"{table}\" SET expired_at = "));
+        Value::from(expired_at).push_bind(&mut qb);
+        qb.push(" WHERE space_pk = ");
+        Value::from(space_pk.to_string()).push_bind(&mut qb);
 
-                if tx.len() == 10 {
-                    cli.transact_write_items()
-                        .set_transact_items(Some(tx.clone()))
-                        .send()
-                        .await
-                        .map_err(|e| {
-                            crate::error!("Failed to update verifications: {:?}", e);
-                            SpaceError::EmailVerificationFailed
-                        })?;
-
-                    tx.clear();
-                }
-            }
-
-            match new_bookmark {
-                Some(b) => bookmark = Some(b),
-                None => break,
-            }
-        }
-
-        if !tx.is_empty() {
-            cli.transact_write_items()
-                .set_transact_items(Some(tx.clone()))
-                .send()
-                .await
-                .map_err(|e| {
-                    crate::error!("Failed to update verifications: {:?}", e);
-                    SpaceError::EmailVerificationFailed
-                })?;
-        }
+        Self::repository().db().execute(qb).await.map_err(|e| {
+            crate::error!("Failed to update verifications: {:?}", e);
+            SpaceError::EmailVerificationFailed
+        })?;
 
         Ok(())
     }
 
     pub async fn upsert_verification(
-        cli: &aws_sdk_dynamodb::Client,
         space_pk: Partition,
         user_email: String,
     ) -> Result<SpaceEmailVerification> {
-        let existing = SpaceEmailVerification::get(
-            cli,
-            &space_pk,
-            Some(EntityType::SpaceEmailVerification(user_email.clone())),
-        )
-        .await?;
+        let existing = Self::get_for(&space_pk, &user_email).await?;
 
         let now = get_now_timestamp();
 
@@ -129,15 +103,13 @@ impl SpaceEmailVerification {
                 let code = Self::generate_random_code();
                 let expired_at = now + EXPIRATION_TIME as i64;
 
-                SpaceEmailVerification::updater(v.pk.clone(), v.sk.clone())
-                    .with_attempt_count(0)
-                    .with_value(code.clone())
-                    .with_expired_at(expired_at)
-                    .execute(cli)
-                    .await?;
-
-                v.value = code;
+                v.attempt_count = 0;
+                v.value = code.clone();
                 v.expired_at = expired_at;
+                Self::repository()
+                    .upsert_on(&["space_pk", "email"], &v)
+                    .await
+                    .map_err(crate::common::Error::from)?;
                 v
             }
             None => {
@@ -145,7 +117,10 @@ impl SpaceEmailVerification {
                 let expired_at = now + EXPIRATION_TIME as i64;
 
                 let v = SpaceEmailVerification::new(space_pk.clone(), user_email, code, expired_at);
-                v.create(cli).await?;
+                Self::repository()
+                    .upsert_on(&["space_pk", "email"], &v)
+                    .await
+                    .map_err(crate::common::Error::from)?;
                 v
             }
         };
@@ -168,10 +143,12 @@ impl SpaceEmailVerification {
         s
     }
 
-    /// Send invitation emails by creating Notification documents.
-    /// DynamoDB Streams will trigger a Lambda function to actually send the emails.
+    /// Send invitation emails by creating a Notification document.
+    /// The async worker pipeline sends the actual emails.
+    ///
+    /// Postgres migration: `Notification` is Postgres-backed now too, so no
+    /// DynamoDB client is needed.
     pub async fn send_invitation_emails(
-        cli: &aws_sdk_dynamodb::Client,
         user_emails: Vec<String>,
         space: &SpaceCommon,
         title: String,
@@ -179,11 +156,11 @@ impl SpaceEmailVerification {
         let mut verifications = Vec::with_capacity(user_emails.len());
 
         for email in &user_emails {
-            let v = Self::upsert_verification(cli, space.pk.clone(), email.clone()).await?;
+            let v = Self::upsert_verification(space.partition(), email.clone()).await?;
             verifications.push((email.clone(), v.value.clone()));
         }
 
-        let space_id = match space.pk.clone() {
+        let space_id = match space.partition() {
             Partition::Space(v) => v.to_string(),
             _ => String::new(),
         };
@@ -201,7 +178,7 @@ impl SpaceEmailVerification {
             author_display_name: space.author_display_name.clone(),
             cta_url,
         });
-        notification.create(cli).await?;
+        notification.save().await?;
 
         Ok(())
     }

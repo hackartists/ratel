@@ -30,6 +30,31 @@ use rest_error::rest_error_impl;
 use sub_partition::sub_partition_impl;
 use syn::{parse_macro_input, Data, DataEnum, DeriveInput, Fields};
 
+/// Test attribute that runs an `async fn` test body on the shared, never-dropped
+/// Postgres test runtime instead of a fresh per-test `#[tokio::test]` runtime.
+///
+/// Swap `#[tokio::test]` → `#[by_macros::pg_test]` on integration tests that hit
+/// the global sqlx pool. Expands `async fn foo() { .. }` to a plain
+/// `#[test] fn foo() { crate::tests::pg_block_on(async move { .. }); }`, so all
+/// test bodies share one runtime and the pool stays valid for the whole process.
+/// See `app/ratel/src/tests/mod.rs` `pg_runtime`.
+#[proc_macro_attribute]
+pub fn pg_test(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let func = parse_macro_input!(item as syn::ItemFn);
+    let attrs = &func.attrs;
+    let vis = &func.vis;
+    let ident = &func.sig.ident;
+    let block = &func.block;
+    quote! {
+        #(#attrs)*
+        #[test]
+        #vis fn #ident() {
+            crate::tests::pg_block_on(async move #block);
+        }
+    }
+    .into()
+}
+
 #[proc_macro_derive(QueryDisplay)]
 pub fn query_display_derive(input: TokenStream) -> TokenStream {
     let _ = tracing_subscriber::fmt()

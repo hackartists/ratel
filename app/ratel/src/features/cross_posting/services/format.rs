@@ -26,7 +26,7 @@ const ELLIPSIS: char = '…';
 pub fn format_for_platform(post: &Post, platform: SocialPlatform, backlink: &str) -> String {
     let limit = platform.char_limit();
     let title = post.title.trim();
-    let body = post.body.to_plain_text();
+    let body = post.body.0.to_plain_text();
 
     // Reserve trailing "\n{backlink}" — backlink is non-truncatable.
     let suffix = format!("\n{backlink}");
@@ -163,9 +163,14 @@ mod tests {
     use super::*;
     use crate::common::types::ContentBody;
     use crate::features::posts::models::Post;
+    use crate::features::posts::models::pg_json::BodyJson;
 
     fn make_post(title: &str, html: &str) -> Post {
-        Post { title: title.to_string(), body: ContentBody::html(html), ..Default::default() }
+        Post {
+            title: title.to_string(),
+            body: BodyJson(ContentBody::html(html)),
+            ..Default::default()
+        }
     }
 
     // ── strip_html ──────────────────────────────────────────────────────

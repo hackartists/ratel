@@ -7,10 +7,8 @@ use axum::http::{header, Method, StatusCode};
 /// explicitly to exercise the CORS middleware in isolation.
 async fn build_cors_app() -> axum::Router {
     let config = crate::config::get();
-    let cli = config.common.dynamodb();
 
     let session_layer = crate::common::middlewares::session_layer::get_session_layer(
-        cli,
         config.common.env.to_string(),
     );
 
@@ -52,7 +50,7 @@ async fn build_cors_app() -> axum::Router {
     app
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn cors_preflight_allows_tauri_localhost() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter("error")
@@ -87,7 +85,7 @@ async fn cors_preflight_allows_tauri_localhost() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn cors_preflight_rejects_unknown_origin() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter("error")

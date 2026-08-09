@@ -1,4 +1,5 @@
 pub mod category;
+pub mod pg_json;
 pub mod post;
 pub mod post_artwork;
 pub mod post_comment;
@@ -11,6 +12,7 @@ pub mod team_group;
 pub mod team_owner;
 
 pub use category::*;
+pub use pg_json::*;
 pub use post::*;
 pub use post_artwork::*;
 pub use post_comment::*;

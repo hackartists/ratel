@@ -27,8 +27,7 @@ pub async fn get_matched_users(
     let cli = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
 
-    let report_sk: EntityType = report_id.into();
-    let report = match SpaceAnalyzeReport::get(cli, &space_pk, Some(report_sk)).await {
+    let report = match SpaceAnalyzeReport::get_for_space(&space_pk, &report_id.to_string()).await {
         Ok(Some(r)) => r,
         Ok(None) => return Ok(Vec::new()),
         Err(e) => {

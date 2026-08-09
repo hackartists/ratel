@@ -1,0 +1,16 @@
+[package]
+name = "postgres-macros"
+version = "0.1.0"
+edition.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+convert_case = "0.8"
+# 기본 테이블명 자동 복수화 (마지막 snake 세그먼트만): `User`→`users`,
+# `Company`→`companies`. `pluralize(word, 2, false)` → count 접두어 없는 복수형.
+pluralizer = "0.4"

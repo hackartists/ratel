@@ -29,7 +29,7 @@ pub fn PostDetailHeader(detail: PostDetailResponse, post_pk: FeedPartition) -> E
     let post_pk_for_create = post_pk.clone();
     let post_pk_for_delete = post_pk.clone();
 
-    let post_user_pk = post.user_pk.clone();
+    let post_user_pk = post.user_pk.parse::<Partition>().unwrap_or_default();
     let admin_state = use_memo(move || {
         let role = crate::features::social::pages::member::dto::TeamRole::from_legacy_permissions(
             detail.permissions,
@@ -39,7 +39,7 @@ pub fn PostDetailHeader(detail: PostDetailResponse, post_pk: FeedPartition) -> E
         let is_post_owner = user_ctx()
             .user
             .as_ref()
-            .map(|user| user.pk == post_user_pk)
+            .map(|user| user.pk() == post_user_pk)
             .unwrap_or(false);
         (
             can_edit,
@@ -49,7 +49,10 @@ pub fn PostDetailHeader(detail: PostDetailResponse, post_pk: FeedPartition) -> E
     });
     let (can_edit, can_delete, show_admin) = admin_state();
 
-    let post_space_pk = post.space_pk.clone();
+    let post_space_pk = post
+        .space_pk
+        .as_ref()
+        .and_then(|s| s.parse::<Partition>().ok());
     let existing_space_id = use_memo(move || {
         post_space_pk.clone().and_then(|pk| match pk {
             Partition::Space(id) => Some(id),
@@ -57,7 +60,7 @@ pub fn PostDetailHeader(detail: PostDetailResponse, post_pk: FeedPartition) -> E
         })
     });
 
-    let img_class = if post.author_type == crate::features::auth::UserType::Team {
+    let img_class = if post.author_type.0 == crate::features::auth::UserType::Team {
         "rounded-lg object-cover object-top w-6 h-6"
     } else {
         "rounded-full object-cover object-top w-6 h-6"
@@ -142,7 +145,7 @@ pub fn PostDetailHeader(detail: PostDetailResponse, post_pk: FeedPartition) -> E
                                         class: "flex items-center py-2 px-4 w-full text-sm text-red-400 cursor-pointer hover:bg-hover"
                                             .to_string(),
                                         onclick: {
-                                            let author_type = post.author_type.clone();
+                                            let author_type = post.author_type.0.clone();
                                             let author_username = post.author_username.clone();
                                             move |_| {
                                                 let nav = nav.clone();

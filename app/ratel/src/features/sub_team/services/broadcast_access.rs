@@ -24,8 +24,14 @@ use crate::features::posts::models::{Post, Team, TeamOwner};
 use crate::features::posts::types::PostError;
 use crate::features::sub_team::models::{SubTeamAnnouncement, SubTeamAnnouncementFanout};
 
-const USER_TEAM_PAGE: i32 = 100;
-const USER_TEAM_MAX_PAGES: usize = 10;
+/// Parse a `Partition::Team(id)` into its `Uuid` — Postgres `Team`/`TeamOwner`
+/// rows are keyed by the raw uuid, not the `"TEAM#…"` partition string.
+fn team_uuid(team_pk: &Partition) -> Option<uuid::Uuid> {
+    match team_pk {
+        Partition::Team(id) => uuid::Uuid::parse_str(id).ok(),
+        _ => None,
+    }
+}
 
 /// Is `post` a sub-team broadcast / direct-message anchor? Cheap pure check.
 pub fn is_broadcast_post(post: &Post) -> bool {
@@ -117,8 +123,7 @@ pub async fn can_view_broadcast_post(
     }
 
     // Need to know broadcast vs direct to scope the children check.
-    let ann_sk = EntityType::SubTeamAnnouncement(announcement_id.clone());
-    let announcement = match SubTeamAnnouncement::get(cli, &parent_pk, Some(ann_sk)).await {
+    let announcement = match SubTeamAnnouncement::find_in_team(&parent_pk, announcement_id).await {
         Ok(Some(a)) => a,
         Ok(None) => return Ok(false),
         Err(e) => {
@@ -133,24 +138,16 @@ pub async fn can_view_broadcast_post(
         return is_team_member(cli, &child_pk, viewer).await;
     }
 
-    let user_team_prefix = EntityType::UserTeam(String::new()).to_string();
-    let ut_opts = UserTeam::opt_all().sk(user_team_prefix);
-    let (user_teams, _): (Vec<UserTeam>, _) =
-        UserTeam::query(cli, viewer, ut_opts).await.map_err(|e| {
-            crate::error!("can_view_broadcast_post UserTeam query failed: {e}");
-            Error::Internal
-        })?;
+    let user_teams = UserTeam::find_by_user(viewer).await.map_err(|e| {
+        crate::error!("can_view_broadcast_post UserTeam query failed: {e}");
+        Error::Internal
+    })?;
     for ut in user_teams {
-        let team_pk_str = match &ut.sk {
-            EntityType::UserTeam(s) => s.clone(),
-            _ => continue,
-        };
-        let team_pk: Partition = match team_pk_str.parse() {
+        let team_pk: Partition = match ut.team_pk.parse() {
             Ok(p) => p,
             Err(_) => continue,
         };
-        let marker_sk = EntityType::SubTeamAnnouncementFanout(announcement_id.clone());
-        let marker = SubTeamAnnouncementFanout::get(cli, &team_pk, Some(marker_sk))
+        let marker = SubTeamAnnouncementFanout::find_marker(&team_pk, announcement_id)
             .await
             .ok()
             .flatten();
@@ -197,39 +194,27 @@ pub async fn is_broadcast_audience(
 /// UserTeam member of it. Stops at the first hit so the broadcast-fanout
 /// path doesn't quadratically scan every child's roster.
 async fn is_team_member(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     team_pk: &Partition,
     viewer: &Partition,
 ) -> Result<bool> {
     let viewer_str = viewer.to_string();
 
-    if let Ok(Some(owner)) = TeamOwner::get(cli, team_pk, Some(&EntityType::TeamOwner)).await {
-        if owner.user_pk.to_string() == viewer_str {
-            return Ok(true);
-        }
-    }
-
-    let user_team_sk = EntityType::UserTeam(team_pk.to_string());
-    let mut bookmark: Option<String> = None;
-    for _ in 0..USER_TEAM_MAX_PAGES {
-        let mut opt = crate::features::auth::UserTeamQueryOption::builder().limit(USER_TEAM_PAGE);
-        if let Some(bm) = bookmark.as_ref() {
-            opt = opt.bookmark(bm.clone());
-        }
-        let (rows, next) = UserTeam::find_by_team(cli, &user_team_sk, opt)
-            .await
-            .map_err(|e| {
-                crate::error!("is_team_member UserTeam query failed: {e}");
-                Error::Internal
-            })?;
-        for row in rows {
-            if row.pk.to_string() == viewer_str {
+    if let Some(uuid) = team_uuid(team_pk) {
+        if let Ok(Some(owner)) = TeamOwner::find_by_team(uuid).await {
+            if owner.user_pk == viewer_str {
                 return Ok(true);
             }
         }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
+    }
+
+    let rows = UserTeam::find_by_team(team_pk).await.map_err(|e| {
+        crate::error!("is_team_member UserTeam query failed: {e}");
+        Error::Internal
+    })?;
+    for row in rows {
+        if row.user_pk == viewer_str {
+            return Ok(true);
         }
     }
 

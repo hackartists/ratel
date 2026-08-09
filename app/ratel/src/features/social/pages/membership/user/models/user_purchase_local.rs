@@ -1,25 +1,40 @@
-use super::super::dto::TransactionType;
-use serde;
 use super::super::*;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[cfg_attr(feature = "server", derive(DynamoEntity))]
+/// Purchase / payment history row for a user. Migrated DynamoDB → Postgres.
+///
+/// The former DynamoDB shape used a composite partition key
+/// `CompositePartition(user_pk, Purchase)` plus an `EntityType` sort key and
+/// three GSIs (`find_by_user`, `find_by_status`, `find_by_payment_id`). In
+/// Postgres this collapses to a surrogate `id` with plain indexed columns:
+/// `user_pk` (the owning user's `Partition` string — a cross-feature ref, so
+/// no `references=` FK yet), `status`, and `payment_id`.
+///
+/// `tx_type` was a payload-carrying `TransactionType` enum serialized via
+/// `Display`/`FromStr`. Because it is not expressible as a native
+/// `PostgresEnum` (it carries a `MembershipTier` payload), it is flattened to
+/// its `String` display form here (reversible via `TransactionType::from_str`).
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, PostgresEntity)]
+#[postgres(table = "user_purchases")]
 pub struct UserPurchaseLocal {
-    #[cfg_attr(feature = "server", dynamo(prefix = "PAYMENT", name = "find_by_user", index = "gsi1", pk))]
-    #[cfg_attr(feature = "server", dynamo(prefix = "PAYMENT", name = "find_by_status", index = "gsi2", pk))]
-    pub pk: CompositePartition,
-    pub sk: EntityType,
-
-    #[cfg_attr(feature = "server", dynamo(prefix = "PAYMENT", name = "find_by_user", index = "gsi1", sk))]
+    pub id: Uuid,
+    /// Owning user's `Partition` string (e.g. `USER#abc`). Cross-feature ref
+    /// (User = Wave 9, un-migrated) → plain indexed column, no `references=`.
+    #[postgres(index)]
+    pub user_pk: String,
+    #[postgres(order)]
     pub created_at: i64,
-
-    #[cfg_attr(feature = "server", dynamo(name = "find_by_status", index = "gsi2", sk))]
-    #[cfg_attr(feature = "server", dynamo(name = "find_by_payment_id", index = "gsi3", sk))]
+    #[postgres(index)]
     pub status: String,
-    pub tx_type: TransactionType,
+    /// `TransactionType` flattened to its `Display` string.
+    pub tx_type: String,
     pub amount: i64,
     pub currency: String,
-    #[cfg_attr(feature = "server", dynamo(prefix = "PAYMENT", name = "find_by_payment_id", index = "gsi3", pk))]
+    #[postgres(index)]
     pub payment_id: String,
     pub tx_id: String,
 }

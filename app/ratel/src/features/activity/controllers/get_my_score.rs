@@ -24,13 +24,9 @@ pub async fn get_my_score_handler(space_id: SpacePartition) -> Result<MyScoreRes
         return Ok(MyScoreResponse::default());
     };
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
+    let author = AuthorPartition::from(user.pk());
 
-    let author = AuthorPartition::from(user.pk.clone());
-    let (pk, sk) = SpaceScore::keys(&space_id, &author);
-
-    let score = SpaceScore::get(cli, &pk, Some(sk))
+    let score = SpaceScore::get_for(&space_id, &author)
         .await
         .map_err(|e| {
             crate::error!("score: {e:?}");
@@ -38,19 +34,22 @@ pub async fn get_my_score_handler(space_id: SpacePartition) -> Result<MyScoreRes
         })?
         .unwrap_or_default();
 
-    // Calculate rank by counting entries with higher score
-    let space_pk: Partition = space_id.into();
-    let opts = SpaceScore::opt_all().scan_index_forward(false);
-
-    let (all_scores, _) = SpaceScore::find_by_space_rank(cli, &space_pk, opts)
+    // Rank = the participant's position in the full space ranking, ordered by
+    // the DynamoDB GSI2 composite sort key (`total_score DESC, updated_at DESC,
+    // author_pk DESC`). Ties are broken by those secondary keys, so each
+    // participant gets a unique 1-based rank. A participant with no score row
+    // (never in the ranking list) → rank 0, mirroring the original
+    // `position(...)` / `unwrap_or(0)` behaviour.
+    let all_scores = SpaceScore::find_all_by_space_ranked(&space_id)
         .await
         .map_err(|e| {
             crate::error!("ranking: {e:?}");
             ActivityError::RankingLoadFailed
         })?;
+    let author_key = author.to_string();
     let rank = all_scores
         .iter()
-        .position(|s| s.user_pk == author)
+        .position(|s| s.author_pk == author_key)
         .map(|pos| (pos as u32) + 1)
         .unwrap_or(0);
 

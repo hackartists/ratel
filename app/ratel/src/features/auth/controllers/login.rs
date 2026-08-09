@@ -67,8 +67,6 @@ pub struct LoginResponse {
 #[post("/api/auth/login", session: Extension<tower_sessions::Session>)]
 pub async fn login_handler(req: LoginRequest) -> Result<LoginResponse> {
     debug!("Login request: {:?}", req);
-    let conf = crate::features::auth::config::get();
-    let cli = conf.dynamodb();
     let Extension(session) = session;
 
     let user = match req.clone() {
@@ -76,36 +74,36 @@ pub async fn login_handler(req: LoginRequest) -> Result<LoginResponse> {
             phone,
             code,
             device_id: _,
-        } => login_with_phone(cli, phone, code).await?,
+        } => login_with_phone(phone, code).await?,
         LoginRequest::EmailPassword {
             email,
             password,
             device_id: _,
-        } => login_with_email_password(cli, email, password).await?,
+        } => login_with_email_password(email, password).await?,
         LoginRequest::Email {
             email,
             code,
             device_id: _,
-        } => login_with_email(cli, email, code).await?,
+        } => login_with_email(email, code).await?,
         LoginRequest::OAuth {
             provider,
             access_token,
             device_id: _,
-        } => login_with_oauth(cli, provider, access_token).await?,
+        } => login_with_oauth(provider, access_token).await?,
         LoginRequest::Telegram {
             telegram_raw,
             device_id: _,
-        } => login_with_telegram(cli, telegram_raw).await?,
+        } => login_with_telegram(telegram_raw).await?,
         LoginRequest::Wallet {
             signature,
             evm_address,
             message,
             device_id: _,
-        } => wallet_login_handler(cli, evm_address, signature, message, &session).await?,
+        } => wallet_login_handler(evm_address, signature, message, &session).await?,
     };
 
     session
-        .insert(SESSION_KEY_USER_ID, user.pk.to_string())
+        .insert(SESSION_KEY_USER_ID, user.pk().to_string())
         .await?;
 
     let device_id: Option<String> = match &req.clone() {
@@ -119,7 +117,7 @@ pub async fn login_handler(req: LoginRequest) -> Result<LoginResponse> {
 
     let refresh_token = if let Some(device_id) = device_id {
         let (rt, plain) = UserRefreshToken::new(&user, device_id);
-        rt.upsert(cli).await?;
+        rt.save().await?;
 
         Some(plain)
     } else {
@@ -133,21 +131,12 @@ pub async fn login_handler(req: LoginRequest) -> Result<LoginResponse> {
 }
 
 #[cfg(feature = "server")]
-pub async fn login_with_phone(
-    cli: &aws_sdk_dynamodb::Client,
-    phone: String,
-    code: String,
-) -> Result<User> {
+pub async fn login_with_phone(phone: String, code: String) -> Result<User> {
     // Verify the phone verification code
     let now = crate::common::utils::time::get_now_timestamp();
-    let (verification_list, _) = PhoneVerification::find_by_phone(
-        cli,
-        &phone,
-        PhoneVerificationQueryOption::builder().limit(1),
-    )
-    .await?;
+    let verification = PhoneVerification::find_by_phone(&phone).await?;
 
-    if verification_list.is_empty() {
+    if verification.is_none() {
         return Err(Error::NotFoundVerificationCode);
     }
 
@@ -155,43 +144,36 @@ pub async fn login_with_phone(
     if code.eq("000000") {
         // Bypass verification for testing
     } else {
-        let phone_verification = verification_list[0].clone();
+        let phone_verification = verification.clone().unwrap();
 
         if phone_verification.expired_at < now {
             return Err(Error::ExpiredVerification);
         }
 
         if phone_verification.value != code {
-            PhoneVerification::updater(phone_verification.pk, phone_verification.sk)
-                .increase_attempt_count(1)
-                .execute(cli)
-                .await?;
+            phone_verification.increase_attempt_count().await?;
             return Err(Error::InvalidVerificationCode);
         }
     }
 
     #[cfg(not(feature = "bypass"))]
     {
-        let phone_verification = verification_list[0].clone();
+        let phone_verification = verification.clone().unwrap();
 
         if phone_verification.expired_at < now {
             return Err(Error::ExpiredVerification);
         }
 
         if phone_verification.value != code {
-            PhoneVerification::updater(phone_verification.pk, phone_verification.sk)
-                .increase_attempt_count(1)
-                .execute(cli)
-                .await?;
+            phone_verification.increase_attempt_count().await?;
             return Err(Error::InvalidVerificationCode);
         }
     }
 
     // Get or create user by phone number
-    let (res, _) =
-        UserPhoneNumber::find_by_phone_number(cli, &phone, UserPhoneNumber::opt_one()).await?;
+    let existing_phone = UserPhoneNumber::find_by_phone_number(&phone).await?;
 
-    let user = if res.is_empty() {
+    let user = if existing_phone.is_none() {
         // Create new user with phone number
         let username = format!("user{}", now);
         let display_name = phone.clone();
@@ -208,18 +190,21 @@ pub async fn login_with_phone(
             None, // No password
         );
 
-        let user_phone = UserPhoneNumber::new(user.pk.clone(), phone.clone());
+        let user_phone = UserPhoneNumber::new(user.pk(), phone.clone());
 
-        crate::transact_write!(
-            cli,
-            user.create_transact_write_item(),
-            user_phone.create_transact_write_item()
-        )?;
+        // Create the user row first, then persist the phone linkage row (no
+        // cross-table transaction yet).
+        user.create().await?;
+        user_phone.save().await?;
 
         user
     } else {
-        let user_phone = res.first().cloned().ok_or(AuthError::PhoneNotFound)?;
-        User::get(cli, &user_phone.pk, Some(EntityType::User))
+        let user_phone = existing_phone.ok_or(AuthError::PhoneNotFound)?;
+        let user_pk: Partition = user_phone
+            .user_pk
+            .parse()
+            .map_err(|_| AuthError::UserNotFound)?;
+        User::find_by_pk(&user_pk)
             .await?
             .ok_or(AuthError::UserNotFound)?
     };
@@ -228,36 +213,25 @@ pub async fn login_with_phone(
 }
 
 #[cfg(feature = "server")]
-pub async fn login_with_oauth(
-    cli: &aws_sdk_dynamodb::Client,
-    provider: OauthProvider,
-    access_token: String,
-) -> Result<User> {
+pub async fn login_with_oauth(provider: OauthProvider, access_token: String) -> Result<User> {
     let email = provider.get_email(&access_token).await?;
 
-    let user = User::find_by_email(cli, &email, UserQueryOption::builder().limit(1))
+    let user = User::find_by_email(&email)
         .await?
-        .0
-        .get(0)
-        .cloned()
         .ok_or(AuthError::UserNotFound)?;
 
     Ok(user)
 }
 
 #[cfg(feature = "server")]
-pub async fn login_with_email(
-    cli: &aws_sdk_dynamodb::Client,
-    email: String,
-    code: String,
-) -> Result<User> {
-    crate::features::auth::controllers::verify_code::verify_email_code(cli, &email, &code).await?;
+pub async fn login_with_email(email: String, code: String) -> Result<User> {
+    crate::features::auth::controllers::verify_code::verify_email_code(&email, &code).await?;
 
-    let (users, _) =
-        User::find_by_email(cli, &email, UserQueryOption::builder().limit(1)).await?;
     // Valid code but no account → caller (frontend) treats this as "go signup".
     // A tombstoned (soft-deleted) row is treated the same as "no account".
-    let user = users.into_iter().next().ok_or(AuthError::UserNotFound)?;
+    let user = User::find_by_email(&email)
+        .await?
+        .ok_or(AuthError::UserNotFound)?;
     if user.deleted_at.is_some() {
         return Err(AuthError::UserNotFound.into());
     }
@@ -266,30 +240,17 @@ pub async fn login_with_email(
 
 /// Backward-compat: password login for already-shipped mobile apps (the
 /// Android build in App Store review). Looks the user up by email + hashed
-/// password via gsi1. New clients use the email-code `login_with_email` path.
+/// password. New clients use the email-code `login_with_email` path.
 #[cfg(feature = "server")]
-pub async fn login_with_email_password(
-    cli: &aws_sdk_dynamodb::Client,
-    email: String,
-    password: String,
-) -> Result<User> {
+pub async fn login_with_email_password(email: String, password: String) -> Result<User> {
     let hashed_password = crate::common::utils::password::hash_password(&password);
-    let (u, _) = User::find_by_email_and_password(
-        cli,
-        &email,
-        UserQueryOption::builder().sk(hashed_password),
-    )
-    .await?;
-    u.into_iter()
-        .next()
+    User::find_by_email_and_password(&email, &hashed_password)
+        .await?
         .ok_or(AuthError::InvalidCredentials.into())
 }
 
 #[cfg(feature = "server")]
-pub async fn login_with_telegram(
-    cli: &aws_sdk_dynamodb::Client,
-    telegram_raw: String,
-) -> Result<User> {
+pub async fn login_with_telegram(telegram_raw: String) -> Result<User> {
     let telegram_user = crate::features::auth::utils::telegram::parse_telegram_raw(
         telegram_raw.clone(),
     )
@@ -298,13 +259,8 @@ pub async fn login_with_telegram(
         AuthError::InvalidTelegramData
     })?;
     tracing::debug!("Parsed telegram user: {:?}", telegram_user);
-    let (res, _) = UserTelegram::find_by_telegram_id(
-        cli,
-        telegram_user.id,
-        UserTelegramQueryOption::builder().limit(1),
-    )
-    .await?;
-    let user = if res.is_empty() {
+    let existing_telegram = UserTelegram::find_by_telegram_id(telegram_user.id).await?;
+    let user = if existing_telegram.is_none() {
         let username = telegram_user
             .username
             .clone()
@@ -326,17 +282,20 @@ pub async fn login_with_telegram(
             username,
             None,
         );
-        let user_telegram = UserTelegram::new(user.pk.clone(), telegram_user.id, telegram_raw);
+        let user_telegram = UserTelegram::new(user.pk(), telegram_user.id, telegram_raw);
 
-        crate::transact_write!(
-            cli,
-            user.create_transact_write_item(),
-            user_telegram.create_transact_write_item()
-        )?;
+        // Create the user row first, then persist the telegram linkage row
+        // (no cross-table transaction yet).
+        user.create().await?;
+        user_telegram.save().await?;
         user
     } else {
-        let user_telegram = res.first().cloned().ok_or(AuthError::UserNotFound)?;
-        User::get(cli, &user_telegram.pk, Some(EntityType::User))
+        let user_telegram = existing_telegram.ok_or(AuthError::UserNotFound)?;
+        let user_pk: Partition = user_telegram
+            .user_pk
+            .parse()
+            .map_err(|_| AuthError::UserNotFound)?;
+        User::find_by_pk(&user_pk)
             .await?
             .ok_or(AuthError::UserNotFound)?
     };
@@ -348,7 +307,6 @@ pub async fn login_with_telegram(
 
 #[cfg(feature = "server")]
 pub async fn wallet_login_handler(
-    cli: &aws_sdk_dynamodb::Client,
     address: String,
     signature: String,
     message: String,
@@ -375,15 +333,14 @@ pub async fn wallet_login_handler(
     // Clear nonce (one-time use)
     session.remove::<String>("wallet_nonce").await.ok();
 
-    let (evm_records, _) = UserEvmAddress::find_by_evm(
-        cli,
-        &address.to_lowercase(),
-        UserEvmAddressQueryOption::builder().limit(1),
-    )
-    .await?;
+    let evm_record = UserEvmAddress::find_by_evm(&address.to_lowercase()).await?;
 
-    if let Some(evm_record) = evm_records.first() {
-        let user = User::get(cli, &evm_record.pk, Some(EntityType::User))
+    if let Some(evm_record) = evm_record {
+        let user_pk: Partition = evm_record
+            .user_pk
+            .parse()
+            .map_err(|_| AuthError::UserNotFound)?;
+        let user = User::find_by_pk(&user_pk)
             .await?
             .ok_or(AuthError::UserNotFound)?;
 
@@ -408,16 +365,10 @@ pub struct WalletCheckResponse {
 
 #[post("/api/auth/wallet/check")]
 pub async fn wallet_check_handler(req: WalletCheckRequest) -> Result<WalletCheckResponse> {
-    let cli = crate::features::auth::config::get().dynamodb();
-    let (records, _) = UserEvmAddress::find_by_evm(
-        cli,
-        &req.evm_address.to_lowercase(),
-        UserEvmAddressQueryOption::builder().limit(1),
-    )
-    .await?;
+    let record = UserEvmAddress::find_by_evm(&req.evm_address.to_lowercase()).await?;
 
     Ok(WalletCheckResponse {
-        exists: !records.is_empty(),
+        exists: record.is_some(),
     })
 }
 

@@ -12,20 +12,27 @@
 
 use super::*;
 
-use crate::common::types::{EntityType, Partition};
+use crate::common::types::Partition;
 use crate::features::arcade::models::ArcadeWalletBalance;
 use crate::features::arcade::types::{ArcadeSettingsResponse, ConvertRpResponse, WalletStateResponse};
+use postgres::PostgresEntity;
 
 // ── Helpers ───────────────────────────────────────────────────────
 
-/// Set the User's RP balance directly via DDB so convert tests
+/// Set the User's RP balance directly via Postgres so convert tests
 /// don't need to thread through admin grant endpoints.
-async fn grant_rp_for_test(ctx: &TestContext, user_pk: &Partition, rp: i64) {
+async fn grant_rp_for_test(_ctx: &TestContext, user_pk: &Partition, rp: i64) {
     use crate::common::models::auth::User;
-    User::updater(user_pk, &EntityType::User)
-        .with_points(rp)
-        .with_updated_at(crate::common::utils::time::get_now_timestamp_millis())
-        .execute(&ctx.ddb)
+    let Some(id) = User::id_from_partition(user_pk) else {
+        panic!("grant_rp_for_test: not a user partition: {user_pk:?}");
+    };
+    User::repository()
+        .update(
+            id,
+            User::update()
+                .points(rp)
+                .updated_at(crate::common::utils::time::get_now_timestamp_millis()),
+        )
         .await
         .expect("grant rp update");
 }
@@ -34,14 +41,21 @@ async fn grant_rp_for_test(ctx: &TestContext, user_pk: &Partition, rp: i64) {
 /// `ArcadeSettingsResponse::default()`. Sibling tests that PUT a
 /// custom config (e.g. `test_arcade_settings_put_persists`,
 /// `test_redeem_flag_can_be_flipped`) leave the row dirty across
-/// parallel runs against a shared LocalStack — any test that asserts
-/// default behaviour must reset first.
-async fn reset_arcade_settings(ctx: &TestContext) {
-    use crate::features::arcade::models::ArcadeSettings;
-    let (pk, sk) = ArcadeSettings::keys();
-    // Delete returns NotFound when the row hasn't been written yet;
-    // either way the post-condition is "row absent".
-    let _ = ArcadeSettings::delete(&ctx.ddb, &pk, Some(sk)).await;
+/// parallel runs against a shared Postgres instance — any test that
+/// asserts default behaviour must reset first.
+async fn reset_arcade_settings(_ctx: &TestContext) {
+    use crate::features::arcade::models::{ARCADE_SETTINGS_SINGLETON, ArcadeSettings};
+    use postgres::ops::StringOp;
+    // Absent row is a no-op; either way the post-condition is "row absent".
+    if let Some(row) = ArcadeSettings::repository()
+        .find_one(
+            ArcadeSettings::query().singleton(StringOp::Eq(ARCADE_SETTINGS_SINGLETON.to_string())),
+        )
+        .await
+        .unwrap_or(None)
+    {
+        let _ = ArcadeSettings::delete_by_id(row.id).await;
+    }
 }
 
 async fn enable_redeem(ctx: &TestContext, admin: &axum::http::HeaderMap) {
@@ -56,7 +70,7 @@ async fn enable_redeem(ctx: &TestContext, admin: &axum::http::HeaderMap) {
 
 // ── Wallet — read ─────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_wallet_zero_balance_for_new_user() {
     let ctx = TestContext::setup().await;
     reset_arcade_settings(&ctx).await;
@@ -73,7 +87,7 @@ async fn test_wallet_zero_balance_for_new_user() {
     assert!(!body.redeem_enabled);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_wallet_requires_auth() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {
@@ -85,13 +99,13 @@ async fn test_wallet_requires_auth() {
 
 // ── Wallet — convert ──────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_convert_rp_to_chip_debits_rp_and_credits_chip() {
     let ctx = TestContext::setup().await;
     // Reset settings so the 1:1 default ratio is in effect — sibling
     // PUT test installs 2:1 which would skew chips_credited below.
     reset_arcade_settings(&ctx).await;
-    grant_rp_for_test(&ctx, &ctx.test_user.0.pk, 500).await;
+    grant_rp_for_test(&ctx, &ctx.test_user.0.pk(), 500).await;
 
     let (status, _, body) = crate::test_post! {
         app: ctx.app.clone(),
@@ -115,7 +129,7 @@ async fn test_convert_rp_to_chip_debits_rp_and_credits_chip() {
     assert_eq!(w.chip_balance, 300);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_convert_rejects_insufficient_rp() {
     let ctx = TestContext::setup().await;
     // RP balance stays at 0
@@ -128,13 +142,13 @@ async fn test_convert_rejects_insufficient_rp() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_convert_rejects_below_minimum() {
     let ctx = TestContext::setup().await;
     // Reset so default min_convert_rp=100 is the gate (siblings can
     // PUT custom min).
     reset_arcade_settings(&ctx).await;
-    grant_rp_for_test(&ctx, &ctx.test_user.0.pk, 10_000).await;
+    grant_rp_for_test(&ctx, &ctx.test_user.0.pk(), 10_000).await;
     let (status, _, _) = crate::test_post! {
         app: ctx.app,
         path: "/api/arcade/wallet/convert",
@@ -147,29 +161,21 @@ async fn test_convert_rejects_below_minimum() {
 
 // ── Wallet — redeem (disabled v1) ─────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_redeem_disabled_in_v1() {
     let ctx = TestContext::setup().await;
     // Seed some chips directly so the chips themselves aren't the
     // blocker.
-    let user_id = ctx
-        .test_user
-        .0
-        .pk
-        .to_string()
-        .strip_prefix("USER#")
-        .unwrap_or(&ctx.test_user.0.pk.to_string())
-        .to_string();
-    let (pk, sk) = ArcadeWalletBalance::keys(&user_id);
+    let user_id = ctx.test_user.0.id();
     let now = crate::common::utils::time::get_now_timestamp_millis();
     ArcadeWalletBalance {
-        pk,
-        sk,
+        id: uuid::Uuid::now_v7(),
+        user_id,
         created_at: now,
         updated_at: now,
         chip_balance: 500,
     }
-    .upsert(&ctx.ddb)
+    .upsert()
     .await
     .expect("seed balance");
 
@@ -184,7 +190,7 @@ async fn test_redeem_disabled_in_v1() {
 
 // ── Admin settings ────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_arcade_settings_get_returns_defaults() {
     let ctx = TestContext::setup().await;
     reset_arcade_settings(&ctx).await;
@@ -201,7 +207,7 @@ async fn test_arcade_settings_get_returns_defaults() {
     assert!(!body.redeem_enabled);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_arcade_settings_put_persists() {
     let ctx = TestContext::setup().await;
     let (_, admin) = ctx.create_admin_user().await;
@@ -228,7 +234,7 @@ async fn test_arcade_settings_put_persists() {
     assert_eq!(body.rp_to_chip_ratio_bps, 20_000);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_arcade_settings_rejects_non_admin() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {
@@ -239,7 +245,7 @@ async fn test_arcade_settings_rejects_non_admin() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_arcade_settings_rejects_invalid_values() {
     let ctx = TestContext::setup().await;
     let (_, admin) = ctx.create_admin_user().await;
@@ -254,7 +260,7 @@ async fn test_arcade_settings_rejects_invalid_values() {
 
 // ── SSE realtime ──────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_events_rejects_unknown_channel() {
     let ctx = TestContext::setup().await;
     // `unknown_kind` is not registered with the hub. PR4f registered
@@ -271,7 +277,7 @@ async fn test_events_rejects_unknown_channel() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_events_chat_rejects_non_participant() {
     // fof.chat is registered. authorize() loads the round and
     // checks the participant list — a round id that doesn't exist
@@ -290,7 +296,7 @@ async fn test_events_chat_rejects_non_participant() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_events_rejects_unauthenticated() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {
@@ -300,7 +306,7 @@ async fn test_events_rejects_unauthenticated() {
     assert_ne!(status, 200, "unauthenticated SSE subscription must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_redeem_flag_can_be_flipped() {
     // Demonstrates that the v2 path opens up by flipping the
     // operator-side `redeem_enabled` flag (the wallet impl still

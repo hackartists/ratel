@@ -56,8 +56,6 @@ pub async fn get_poll_result(
     poll_sk: SpacePollEntityType,
 ) -> Result<PollResultResponse> {
     SpacePoll::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
 
     let space_pk: Partition = space_pk.into();
     let poll_sk_entity: EntityType = poll_sk.into();
@@ -69,7 +67,7 @@ pub async fn get_poll_result(
         summaries_by_school,
         sample_answers,
         final_answers,
-    ) = SpacePollUserAnswer::summarize_responses_with_attribute(cli, &space_pk, &poll_sk_entity)
+    ) = SpacePollUserAnswer::summarize_responses_with_attribute(&space_pk, &poll_sk_entity)
         .await?;
 
     Ok(PollResultResponse {

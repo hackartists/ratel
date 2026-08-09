@@ -12,7 +12,9 @@
 use crate::common::*;
 #[cfg(feature = "server")]
 use crate::features::auth::OptionalUser;
-use crate::features::spaces::space_common::models::{HotSpace, HotSpaceHeat, HOT_SPACE_RANK_PK};
+use crate::features::spaces::space_common::models::HotSpaceHeat;
+#[cfg(feature = "server")]
+use crate::features::spaces::space_common::models::HotSpace;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct HotSpaceResponse {
@@ -37,19 +39,23 @@ pub struct HotSpaceResponse {
 #[get("/api/hot-spaces")]
 pub async fn list_hot_spaces_handler() -> Result<ListResponse<HotSpaceResponse>> {
     debug!("Listing hot spaces");
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
 
-    let opts = HotSpace::opt().limit(20);
-    let (rows, next_bookmark) =
-        HotSpace::find_by_rank(cli, HOT_SPACE_RANK_PK.to_string(), opts).await?;
+    // The original endpoint took no input bookmark — return the top page.
+    let page = 1i64;
+    let page_size = 20i64;
 
-    let items: Vec<HotSpaceResponse> = rows
+    let result = HotSpace::find_ranked(page, page_size).await?;
+    let has_next = result.page < result.total_pages;
+
+    // Preserve the absolute 1-based rank across pages.
+    let base_rank = (page - 1) * page_size;
+    let items: Vec<HotSpaceResponse> = result
+        .items
         .into_iter()
         .enumerate()
         .map(|(idx, h)| HotSpaceResponse {
-            space_id: h.pk.into(),
-            post_id: h.post_pk.into(),
+            space_id: SpacePartition(h.space_id),
+            post_id: FeedPartition(h.post_id),
             title: h.title,
             description: h.description,
             logo: h.logo,
@@ -62,10 +68,16 @@ pub async fn list_hot_spaces_handler() -> Result<ListResponse<HotSpaceResponse>>
             follow_count: h.follow_count,
             total_actions: h.total_actions,
             heat: h.heat,
-            rank: idx as i64 + 1,
+            rank: base_rank + idx as i64 + 1,
             created_at: h.space_created_at,
         })
         .collect();
 
-    Ok((items, next_bookmark).into())
+    let next = if has_next {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
+
+    Ok((items, next).into())
 }

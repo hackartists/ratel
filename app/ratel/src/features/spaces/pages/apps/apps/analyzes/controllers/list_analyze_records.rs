@@ -43,9 +43,8 @@ pub async fn list_analyze_records(
     let common_config = crate::common::CommonConfig::default();
     let cli = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
-    let sk: EntityType = report_id.into();
 
-    let report = SpaceAnalyzeReport::get(cli, space_pk.clone(), Some(sk))
+    let report = SpaceAnalyzeReport::get_for_space(&space_pk, &report_id.to_string())
         .await
         .map_err(|e| {
             crate::error!("list_analyze_records: failed to load report: {e}");

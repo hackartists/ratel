@@ -11,17 +11,11 @@ use crate::features::notifications::i18n::NotificationsTranslate;
 use dioxus_translate::Language;
 
 /// Max device tokens we push to per notification (a user rarely has more).
-const MAX_DEVICES: i32 = 50;
+const MAX_DEVICES: usize = 50;
 
 pub async fn fan_out_push(n: UserInboxNotification) {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    let opts = UserDeviceToken::opt_with_bookmark(None)
-        .sk("USER_DEVICE_TOKEN".to_string())
-        .limit(MAX_DEVICES);
-    let tokens = match UserDeviceToken::query(cli, n.pk.clone(), opts).await {
-        Ok((rows, _)) => rows,
+    let mut tokens = match UserDeviceToken::find_by_user(&n.user_id).await {
+        Ok(rows) => rows,
         Err(e) => {
             crate::error!("push fanout: device-token query failed: {e}");
             return;
@@ -30,6 +24,7 @@ pub async fn fan_out_push(n: UserInboxNotification) {
     if tokens.is_empty() {
         return;
     }
+    tokens.truncate(MAX_DEVICES);
 
     // Recipient locale isn't stored yet → default to Korean (primary locale).
     let tr = NotificationsTranslate::new(&Language::Ko);
@@ -43,7 +38,7 @@ pub async fn fan_out_push(n: UserInboxNotification) {
     for t in tokens {
         if fcm::send_to_token(&t.token, &msg).await == PushOutcome::Stale {
             // Prune dead tokens so they don't accumulate / waste future sends.
-            let _ = UserDeviceToken::delete(cli, &t.pk, Some(t.sk)).await;
+            let _ = t.delete_self().await;
         }
     }
 }

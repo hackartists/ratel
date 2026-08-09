@@ -120,7 +120,6 @@ pub fn stamp_initial_stage(
 /// Walk the round forward through every stage whose deadline has
 /// already passed at `now_ms`. Persists at most once at the end.
 pub async fn advance_round_if_due(
-    cli: &aws_sdk_dynamodb::Client,
     mut round: FactFoldRound,
     settings: &FactOrFoldSettingsResponse,
     now_ms: i64,
@@ -132,7 +131,7 @@ pub async fn advance_round_if_due(
     if outcome.persisted_needed {
         write_clock_back(&mut round, clock);
         round.updated_at = now_ms;
-        round.upsert(cli).await.map_err(|e| {
+        round.save().await.map_err(|e| {
             crate::error!("advance_round_if_due upsert failed: {e}");
             FactOrFoldError::StorageFailure
         })?;

@@ -51,20 +51,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = cfg.dynamodb();
     let space_pk = Partition::Space(space_uuid.clone());
 
-    // Begin-with prefix on the discussion-result sk. `query` is fine
-    // here because all discussion-analysis rows for a space share the
-    // same pk. NOTE: the on-disk prefix is the SCREAMING_SNAKE form
-    // emitted by the DynamoEnum derive — using the variant name
-    // (`SpaceAnalyzeDiscussionResult`) verbatim silently misses every
-    // row.
-    let sk_prefix = match report_filter.as_deref() {
-        Some(rid) => format!("SPACE_ANALYZE_DISCUSSION_RESULT#{}#", rid),
-        None => "SPACE_ANALYZE_DISCUSSION_RESULT#".to_string(),
-    };
-    let opt = SpaceAnalyzeDiscussionResult::opt().sk(sk_prefix).limit(100);
-    let (rows, _) = SpaceAnalyzeDiscussionResult::query(cli, space_pk.clone(), opt).await?;
+    // All discussion-analysis rows for the space (optionally scoped to
+    // one report), newest first. Status is filtered in Rust below to
+    // preserve the original `InProgress`-only semantics.
+    use postgres::PostgresEntity;
+    use postgres::ops::StringOp;
+    let mut query = SpaceAnalyzeDiscussionResult::query()
+        .space_pk(StringOp::Eq(space_pk.to_string()));
+    if let Some(rid) = report_filter.as_deref() {
+        query = query.report_id(StringOp::Eq(rid.to_string()));
+    }
+    let page = SpaceAnalyzeDiscussionResult::repository()
+        .find(query.page(1).page_size(100))
+        .await?;
 
-    let pending: Vec<_> = rows
+    let pending: Vec<_> = page
+        .items
         .into_iter()
         .filter(|r| matches!(r.status, AnalyzeReportStatus::InProgress))
         .collect();
@@ -82,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             pending.len(),
             row.report_id,
             row.discussion_id,
-            row.sk
+            row.request_id
         );
         match discussion_analysis::process_discussion_analysis(cli, row).await {
             Ok(()) => println!("  ✓ done"),

@@ -1,4 +1,6 @@
 use crate::features::social::*;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateTeamRequest {
@@ -46,36 +48,24 @@ pub async fn create_team_handler(
 
     // Check username uniqueness against teams
     use crate::features::posts::models::Team;
-    let opt = Team::opt().limit(1);
-    let (existing, _): (Vec<Team>, _) = Team::find_by_username_prefix(cli, &username, opt).await?;
+    let existing = Team::find_by_username(&username).await?;
 
-    if existing.iter().any(|t| t.username == username) {
+    if existing.is_some() {
         return Err(crate::features::social::types::SocialError::TeamNameTaken.into());
     }
 
     // Check username uniqueness against users
-    let (existing_users, _) = crate::common::models::User::find_by_username(
-        cli,
-        &username,
-        crate::features::auth::UserQueryOption::builder()
-            .sk("TS#".to_string())
-            .limit(1),
-    )
-    .await?;
+    let existing_user = crate::common::models::User::find_by_username(&username).await?;
 
-    if !existing_users.is_empty() {
+    if existing_user.is_some() {
         return Err(crate::features::social::types::SocialError::TeamNameTaken.into());
     }
 
     // Get the user
     use crate::common::models::User;
-    let user: User = User::get(
-        cli,
-        user_pk.clone(),
-        Some(crate::common::types::EntityType::User),
-    )
-    .await?
-    .ok_or(crate::features::social::types::SocialError::UserNotFound)?;
+    let user: User = User::find_by_pk(&user_pk)
+        .await?
+        .ok_or(crate::features::social::types::SocialError::UserNotFound)?;
 
     let (team_pk, created_at) = Team::create_new_team(
         &user,
@@ -101,40 +91,39 @@ pub async fn create_team_handler(
 pub async fn get_user_teams_handler(
 ) -> crate::features::social::Result<crate::common::types::ListResponse<crate::common::TeamItem>> {
     let cli = crate::features::social::config::get().dynamodb();
-    let user_pk = user.pk.clone();
+    let user_pk = user.pk();
 
-    let sk_prefix = crate::common::types::EntityType::UserTeam(String::new()).to_string();
-    let opt = crate::features::auth::UserTeam::opt_all().sk(sk_prefix);
-    let (user_teams, next_bookmark): (Vec<crate::features::auth::UserTeam>, _) =
-        crate::features::auth::UserTeam::query(cli, &user_pk, opt).await?;
+    let user_teams = crate::features::auth::UserTeam::find_by_user(&user_pk).await?;
+    let next_bookmark: Option<String> = None;
 
     let mut items: Vec<crate::common::TeamItem> = Vec::new();
     for ut in user_teams {
-        let team_pk = match ut.sk.clone() {
-            crate::common::types::EntityType::UserTeam(team_pk) => team_pk,
-            _ => String::new(),
-        };
+        let team_pk = ut.team_pk.clone();
         let (permissions, description) = if team_pk.is_empty() {
             (Vec::new(), String::new())
         } else {
-            let team_pk: crate::common::types::Partition = team_pk.parse().unwrap_or_default();
-            let role = crate::features::posts::models::Team::get_user_role(cli, &team_pk, &user_pk)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_default();
+            let team_pk_part: crate::common::types::Partition = team_pk.parse().unwrap_or_default();
+            let role =
+                crate::features::posts::models::Team::get_user_role(cli, &team_pk_part, &user_pk)
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
             let perms: crate::features::posts::types::TeamGroupPermissions =
                 role.to_legacy_permissions().into();
-            let description = crate::features::posts::models::Team::get(
-                cli,
-                &team_pk,
-                Some(crate::common::types::EntityType::Team),
-            )
-            .await
-            .ok()
-            .flatten()
-            .map(|team| team.description)
-            .unwrap_or_default();
+            let description = if let crate::common::types::Partition::Team(id) = &team_pk_part {
+                match uuid::Uuid::parse_str(id) {
+                    Ok(uuid) => crate::features::posts::models::Team::get_by_id(uuid)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|team| team.description)
+                        .unwrap_or_default(),
+                    Err(_) => String::new(),
+                }
+            } else {
+                String::new()
+            };
             (perms.0.into_iter().map(|p| p as u8).collect(), description)
         };
 
@@ -165,24 +154,46 @@ pub async fn list_admin_teams_handler(
     bookmark: Option<String>,
 ) -> crate::features::social::Result<crate::common::types::ListResponse<crate::common::TeamItem>> {
     let cli = crate::features::social::config::get().dynamodb();
-    let user_pk = user.pk.clone();
+    let user_pk = user.pk();
 
-    let sk_prefix = crate::common::types::EntityType::UserTeam(String::new()).to_string();
-    let opt = crate::features::auth::UserTeam::opt_with_bookmark(bookmark)
-        .sk(sk_prefix)
-        .limit(20);
-    let (user_teams, next_bookmark): (Vec<crate::features::auth::UserTeam>, _) =
-        crate::features::auth::UserTeam::query(cli, &user_pk, opt).await?;
+    // `bookmark` carries an opaque 1-based page number as a string (same
+    // convention as the DynamoDB `opt_with_bookmark` this replaces).
+    const PAGE_SIZE: i64 = 20;
+    let page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
+
+    let page_result = {
+        use postgres::ops::StringOp;
+        crate::features::auth::UserTeam::repository()
+            .find(
+                crate::features::auth::UserTeam::query()
+                    .user_pk(StringOp::Eq(user_pk.to_string()))
+                    .order_by(
+                        crate::features::auth::UserTeamColumn::LastUsedAt,
+                        postgres::Order::Desc,
+                    )
+                    .page(page)
+                    .page_size(PAGE_SIZE),
+            )
+            .await
+            .map_err(crate::common::Error::from)?
+    };
+    let next_bookmark = if page < page_result.total_pages {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
+    let user_teams = page_result.items;
 
     let mut items: Vec<crate::common::TeamItem> = Vec::new();
     for ut in user_teams {
-        if !ut.role.is_admin_or_owner() {
+        if !ut.role.0.is_admin_or_owner() {
             continue;
         }
-        let team_pk = match ut.sk.clone() {
-            crate::common::types::EntityType::UserTeam(team_pk) => team_pk,
-            _ => String::new(),
-        };
+        let team_pk = ut.team_pk.clone();
         // For each admin/owner team we also fetch the Team row to get
         // `description` + `created_at` and run a paged member count.
         // The apply page's eligibility panel uses `created_at` to evaluate
@@ -193,15 +204,18 @@ pub async fn list_admin_teams_handler(
         } else {
             let team_pk_part: crate::common::types::Partition = team_pk.parse().unwrap_or_default();
             let perms: crate::features::posts::types::TeamGroupPermissions =
-                ut.role.to_legacy_permissions().into();
-            let team_row = crate::features::posts::models::Team::get(
-                cli,
-                &team_pk_part,
-                Some(crate::common::types::EntityType::Team),
-            )
-            .await
-            .ok()
-            .flatten();
+                ut.role.0.to_legacy_permissions().into();
+            let team_row = if let crate::common::types::Partition::Team(id) = &team_pk_part {
+                match uuid::Uuid::parse_str(id) {
+                    Ok(uuid) => crate::features::posts::models::Team::get_by_id(uuid)
+                        .await
+                        .ok()
+                        .flatten(),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
             let description = team_row
                 .as_ref()
                 .map(|t| t.description.clone())

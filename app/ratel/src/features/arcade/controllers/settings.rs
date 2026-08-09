@@ -51,13 +51,14 @@ fn merge_response(mut row: ArcadeSettings, r: ArcadeSettingsResponse) -> ArcadeS
     row.default_buy_in_chips = r.default_buy_in_chips;
     row.min_convert_rp = r.min_convert_rp;
     row.redeem_enabled = r.redeem_enabled;
+    if row.id.is_nil() {
+        row.id = uuid::Uuid::now_v7();
+    }
     if row.created_at == 0 {
         row.created_at = now;
     }
     row.updated_at = now;
-    let (pk, sk) = ArcadeSettings::keys();
-    row.pk = pk;
-    row.sk = sk;
+    row.singleton = crate::features::arcade::models::ARCADE_SETTINGS_SINGLETON.to_string();
     row
 }
 
@@ -65,10 +66,7 @@ fn merge_response(mut row: ArcadeSettings, r: ArcadeSettingsResponse) -> ArcadeS
 
 #[get("/api/arcade/admin/settings", _user: AdminUser)]
 pub async fn get_arcade_settings_handler() -> Result<ArcadeSettingsResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    ArcadeSettings::get_or_default(cli).await.map_err(|e| {
+    ArcadeSettings::get_or_default().await.map_err(|e| {
         crate::error!("get_arcade_settings_handler failed: {e}");
         ArcadeError::StorageFailure.into()
     })
@@ -80,10 +78,7 @@ pub async fn get_arcade_settings_handler() -> Result<ArcadeSettingsResponse> {
 pub async fn update_arcade_settings_handler(
     req: UpdateArcadeSettingsRequest,
 ) -> Result<ArcadeSettingsResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    let current = ArcadeSettings::get_or_default(cli).await.map_err(|e| {
+    let current = ArcadeSettings::get_or_default().await.map_err(|e| {
         crate::error!("update_arcade_settings read failed: {e}");
         ArcadeError::StorageFailure
     })?;
@@ -91,7 +86,7 @@ pub async fn update_arcade_settings_handler(
     validate_settings(&next)?;
 
     let row = merge_response(ArcadeSettings::default(), next.clone());
-    row.upsert(cli).await.map_err(|e| {
+    row.save().await.map_err(|e| {
         crate::error!("update_arcade_settings put failed: {e}");
         ArcadeError::StorageFailure
     })?;

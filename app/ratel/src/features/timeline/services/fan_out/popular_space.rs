@@ -15,17 +15,22 @@ pub async fn fan_out_popular_space(space: crate::common::models::space::SpaceCom
         return Ok(());
     }
 
+    let space_pk = space.partition();
+    let post_pk: Partition = space
+        .post_pk
+        .parse()
+        .unwrap_or_else(|_| Partition::Feed(space.post_pk.clone()));
+    let author_pk: Partition = space
+        .user_pk
+        .parse()
+        .unwrap_or_else(|_| Partition::User(space.user_pk.clone()));
+
     tracing::info!(
         "Popular space fan-out: space_pk={}, participants={}",
-        space.pk,
+        space_pk,
         space.participants
     );
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let space_pk = &space.pk;
-    let post_pk = &space.post_pk;
-    let author_pk = &space.user_pk;
     let created_at = space.created_at;
 
     let mut seen = HashSet::new();
@@ -34,7 +39,7 @@ pub async fn fan_out_popular_space(space: crate::common::models::space::SpaceCom
     // Collect direct followers first (to mark as seen -- they already have it)
     let author_pk_str = author_pk.to_string();
     seen.insert(author_pk_str.clone());
-    collect_follower_pks(cli, author_pk, &mut seen).await?;
+    collect_follower_pks(&author_pk, &mut seen).await?;
 
     // For each direct follower, collect their followers (2nd-degree)
     // Build a stable list of direct follower PKs to iterate over, avoiding a full HashSet clone.
@@ -49,7 +54,6 @@ pub async fn fan_out_popular_space(space: crate::common::models::space::SpaceCom
             Err(_) => continue,
         };
         collect_followers_with_reason(
-            cli,
             &follower_pk,
             &mut seen,
             &mut entries,
@@ -69,7 +73,7 @@ pub async fn fan_out_popular_space(space: crate::common::models::space::SpaceCom
         post_pk
     );
 
-    write_timeline_entries(cli, post_pk, author_pk, created_at, &entries).await
+    write_timeline_entries(&post_pk, &author_pk, created_at, &entries).await
 }
 
 /// Returns true if a space meets the popularity threshold for broader distribution.

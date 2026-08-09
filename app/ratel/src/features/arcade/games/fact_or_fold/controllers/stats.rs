@@ -22,6 +22,8 @@ use crate::common::models::auth::User;
 use crate::features::arcade::games::fact_or_fold::models::{
     FactFoldLeaderboardEntry, FactFoldUserStats,
 };
+#[cfg(feature = "server")]
+use std::str::FromStr;
 
 const LEADERBOARD_PAGE_LIMIT: i32 = 50;
 
@@ -29,10 +31,8 @@ const LEADERBOARD_PAGE_LIMIT: i32 = 50;
 
 #[get("/api/fact-or-fold/me/stats", user: User)]
 pub async fn get_my_stats_handler() -> Result<UserStatsResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let user_id = UserPartition::from(user.pk.clone()).0;
-    let stats = FactFoldUserStats::get_or_default(cli, &user_id)
+    let user_id = UserPartition::from(user.pk().clone()).0;
+    let stats = FactFoldUserStats::get_or_default(&user_id)
         .await
         .map_err(|e| {
             crate::error!("get_my_stats_handler read failed: {e}");
@@ -59,49 +59,64 @@ pub async fn get_my_stats_handler() -> Result<UserStatsResponse> {
 pub async fn get_leaderboard_handler(
     bookmark: Option<String>,
 ) -> Result<ListResponse<LeaderboardEntryResponse>> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    // The DynamoEntity macro's `query()` uses
-    // `scan_index_forward(false)`, i.e. DESC by sk. Our sk
-    // encoding is `{accuracy_bps:010}#{user_id}` so a DESC scan
-    // returns the highest-accuracy users first.
-    let opts = FactFoldLeaderboardEntry::opt_with_bookmark(bookmark)
-        .sk("FACT_FOLD_LEADERBOARD_ENTRY".to_string())
-        .limit(LEADERBOARD_PAGE_LIMIT);
-    let (rows, next_bookmark) =
-        FactFoldLeaderboardEntry::query(cli, FactFoldLeaderboardEntry::anchor_pk(), opts)
-            .await
-            .map_err(|e| {
-                crate::error!("get_leaderboard_handler query failed: {e}");
-                FactOrFoldError::StorageFailure
-            })?;
+    // Offset-based pagination replaces the DynamoDB LEK bookmark.
+    // `bookmark` carries the next row offset (stringified); ordering is
+    // `accuracy_bps DESC` so the highest-accuracy users come first.
+    let offset: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .unwrap_or(0)
+        .max(0);
+    let rows = FactFoldLeaderboardEntry::list_top(LEADERBOARD_PAGE_LIMIT as i64, offset)
+        .await
+        .map_err(|e| {
+            crate::error!("get_leaderboard_handler query failed: {e}");
+            FactOrFoldError::StorageFailure
+        })?;
+    let next_bookmark = if rows.len() as i32 == LEADERBOARD_PAGE_LIMIT {
+        Some((offset + LEADERBOARD_PAGE_LIMIT as i64).to_string())
+    } else {
+        None
+    };
 
     // Enrich each entry with the user's display metadata in a single
-    // BatchGetItem so the response is one RTT regardless of page size.
-    let user_keys: Vec<(Partition, EntityType)> = rows
+    // `WHERE id IN (...)` query so the response is one round-trip
+    // regardless of page size (replaces the DynamoDB BatchGetItem).
+    let user_ids: Vec<uuid::Uuid> = rows
         .iter()
-        .map(|e| (e.user_pk.clone(), EntityType::User))
+        .filter_map(|e| Partition::from_str(&e.user_pk).ok())
+        .filter_map(|pk| User::id_from_partition(&pk))
         .collect();
-    let user_rows = User::batch_get(cli, user_keys).await.map_err(|err| {
-        crate::error!("get_leaderboard_handler user batch load failed: {err}");
-        FactOrFoldError::StorageFailure
-    })?;
-    // Partition doesn't derive Hash so we key on the rendered string.
+    let user_rows = if user_ids.is_empty() {
+        Vec::new()
+    } else {
+        use postgres::PostgresEntity;
+        use postgres::col::UuidCol;
+        User::repository()
+            .find(User::query().filter(|c| c.id.in_(user_ids)))
+            .await
+            .map_err(|err| {
+                crate::error!("get_leaderboard_handler user batch load failed: {err}");
+                FactOrFoldError::StorageFailure
+            })?
+            .items
+    };
+    // Key on the rendered `USER#{id}` string — matches the stored
+    // `entry.user_pk`.
     let user_by_pk: std::collections::HashMap<String, User> = user_rows
         .into_iter()
-        .map(|u| (u.pk.to_string(), u))
+        .map(|u| (u.pk().to_string(), u))
         .collect();
 
     let items: Vec<LeaderboardEntryResponse> = rows
         .into_iter()
         .map(|e| {
             let (username, display_name, profile_url) = user_by_pk
-                .get(&e.user_pk.to_string())
+                .get(&e.user_pk)
                 .map(|u| (u.username.clone(), u.display_name.clone(), u.profile_url.clone()))
                 .unwrap_or_default();
             LeaderboardEntryResponse {
-                user_pk: UserPartition::from(e.user_pk),
+                user_pk: crate::features::arcade::games::fact_or_fold::types::dto::user_partition_from_pk(&e.user_pk),
                 username,
                 display_name,
                 profile_url,

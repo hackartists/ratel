@@ -20,7 +20,7 @@
 use super::*;
 use crate::common::types::*;
 use crate::features::cross_posting::models::{
-    ConnectionStatus, JobState, SocialConnection, SyndicationJob,
+    ConnectionStatus, CredentialCiphertext, JobState, SocialConnection, SyndicationJob,
 };
 use crate::features::cross_posting::types::SocialPlatform;
 
@@ -28,7 +28,7 @@ use crate::features::cross_posting::types::SocialPlatform;
 // connect_bluesky — POST /api/cross-posting/connections/bluesky/connect
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_connect_bluesky_unauthenticated() {
     let TestContext { app, .. } = TestContext::setup().await;
 
@@ -43,7 +43,7 @@ async fn test_connect_bluesky_unauthenticated() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_connect_bluesky_empty_input_rejected() {
     let TestContext { app, test_user, .. } = TestContext::setup().await;
 
@@ -66,7 +66,7 @@ async fn test_connect_bluesky_empty_input_rejected() {
 // list_connections — GET /api/cross-posting/connections
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_connections_unauthenticated() {
     let TestContext { app, .. } = TestContext::setup().await;
 
@@ -77,7 +77,7 @@ async fn test_list_connections_unauthenticated() {
     assert_ne!(status, 200, "unauthenticated list_connections must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_connections_empty_for_new_user() {
     let TestContext { app, test_user, .. } = TestContext::setup().await;
 
@@ -96,7 +96,7 @@ async fn test_list_connections_empty_for_new_user() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_connections_returns_inserted_row() {
     let ctx = TestContext::setup().await;
 
@@ -119,7 +119,7 @@ async fn test_list_connections_returns_inserted_row() {
 // toggle_auto_post — PATCH /api/cross-posting/connections/{platform}
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_toggle_auto_post_unauthenticated() {
     let TestContext { app, .. } = TestContext::setup().await;
 
@@ -131,7 +131,7 @@ async fn test_toggle_auto_post_unauthenticated() {
     assert_ne!(status, 200, "unauthenticated toggle must not succeed");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_toggle_auto_post_flips_value() {
     let ctx = TestContext::setup().await;
     seed_bluesky_connection(&ctx, ConnectionStatus::Connected, true).await;
@@ -161,7 +161,7 @@ async fn test_toggle_auto_post_flips_value() {
 // disconnect — DELETE /api/cross-posting/connections/{platform}
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_disconnect_unauthenticated() {
     let TestContext { app, .. } = TestContext::setup().await;
 
@@ -172,7 +172,7 @@ async fn test_disconnect_unauthenticated() {
     assert_ne!(status, 200, "unauthenticated disconnect must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_disconnect_marks_revoked() {
     let ctx = TestContext::setup().await;
     seed_bluesky_connection(&ctx, ConnectionStatus::Connected, true).await;
@@ -200,7 +200,7 @@ async fn test_disconnect_marks_revoked() {
 // get_syndication_panel — GET /api/cross-posting/posts/{id}/syndication
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_syndication_panel_unauthenticated() {
     let TestContext { app, .. } = TestContext::setup().await;
 
@@ -211,7 +211,7 @@ async fn test_get_syndication_panel_unauthenticated() {
     assert_ne!(status, 200, "unauthenticated request must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_syndication_panel_other_users_post_rejected() {
     let ctx = TestContext::setup().await;
     let post_id = create_draft_post(&ctx, &ctx.test_user.1).await;
@@ -230,7 +230,7 @@ async fn test_get_syndication_panel_other_users_post_rejected() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_syndication_panel_owner_empty_jobs() {
     let ctx = TestContext::setup().await;
     let post_id = create_draft_post(&ctx, &ctx.test_user.1).await;
@@ -245,7 +245,7 @@ async fn test_get_syndication_panel_owner_empty_jobs() {
     assert!(jobs.is_empty(), "fresh draft has no syndication jobs yet");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_syndication_panel_returns_seeded_jobs() {
     let ctx = TestContext::setup().await;
     let post_id = create_draft_post(&ctx, &ctx.test_user.1).await;
@@ -267,7 +267,7 @@ async fn test_get_syndication_panel_returns_seeded_jobs() {
 // retry_job — POST /api/cross-posting/posts/{id}/jobs/{platform}/retry
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_retry_job_unauthenticated() {
     let TestContext { app, .. } = TestContext::setup().await;
 
@@ -278,7 +278,7 @@ async fn test_retry_job_unauthenticated() {
     assert_ne!(status, 200, "unauthenticated retry must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_retry_job_other_user_rejected() {
     let ctx = TestContext::setup().await;
     let post_id = create_draft_post(&ctx, &ctx.test_user.1).await;
@@ -297,7 +297,7 @@ async fn test_retry_job_other_user_rejected() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_retry_job_pending_state_allowed() {
     let ctx = TestContext::setup().await;
     let post_id = create_draft_post(&ctx, &ctx.test_user.1).await;
@@ -315,7 +315,7 @@ async fn test_retry_job_pending_state_allowed() {
     assert_eq!(status, 200, "retry on Pending must succeed: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_retry_job_failed_flips_to_pending() {
     let ctx = TestContext::setup().await;
     let post_id = create_draft_post(&ctx, &ctx.test_user.1).await;
@@ -352,11 +352,11 @@ async fn seed_bluesky_connection(
     status: ConnectionStatus,
     auto_post: bool,
 ) {
-    let user_pk = ctx.test_user.0.pk.clone();
+    let user_id = ctx.test_user.0.id();
     let now = crate::common::utils::time::now();
     let conn = SocialConnection {
-        pk: user_pk,
-        sk: EntityType::SocialConnection(SocialPlatform::Bluesky.to_string()),
+        id: uuid::Uuid::now_v7(),
+        user_id,
         platform_status: format!("bluesky#{}", status),
         platform: SocialPlatform::Bluesky,
         status,
@@ -365,7 +365,7 @@ async fn seed_bluesky_connection(
         // Sentinel ciphertext — these tests never decrypt; if you add a
         // decrypt path, replace with `aead::seal(...)` against
         // `CROSS_POSTING_DATA_KEY`.
-        credential_ciphertext: vec![1, 2, 3, 4],
+        credential_ciphertext: CredentialCiphertext(vec![1, 2, 3, 4]),
         token_expires_at: None,
         auto_post_enabled: auto_post,
         posts_syndicated_count: 0,
@@ -373,7 +373,7 @@ async fn seed_bluesky_connection(
         created_at: now,
         updated_at: now,
     };
-    conn.create(&ctx.ddb).await.expect("seed connection");
+    conn.create().await.expect("seed connection");
 }
 
 /// Seed a `SyndicationJob` row directly in DynamoDB for panel / retry
@@ -386,13 +386,13 @@ async fn seed_syndication_job(
 ) {
     let now = crate::common::utils::time::now();
     let job = SyndicationJob {
-        pk: Partition::Feed(post_id.to_string()),
-        sk: EntityType::SyndicationJob(platform.to_string()),
+        id: uuid::Uuid::now_v7(),
+        post_id: post_id.to_string(),
         dispatch_shard: None,
         engagement_shard: None,
         next_attempt_at: 0,
         engagement_next_at: 0,
-        author_user_id: ctx.test_user.0.pk.clone(),
+        author_user_id: ctx.test_user.0.id(),
         platform,
         state,
         attempts: 0,
@@ -407,7 +407,7 @@ async fn seed_syndication_job(
         created_at: now,
         updated_at: now,
     };
-    job.create(&ctx.ddb).await.expect("seed job");
+    job.create().await.expect("seed job");
 }
 
 /// POST `/api/posts` (creates an empty draft owned by `headers`'s user)

@@ -1,0 +1,6 @@
+error: unique constraints on versioned fields require an explicit migration
+ --> tests/ui/versioned_unique.rs:7:5
+  |
+7 | /     #[postgres(version = 1, unique)]
+8 | |     slug: String,
+  | |________________^

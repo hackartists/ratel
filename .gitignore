@@ -1,5 +1,7 @@
 package-lock.json
 /target/
+/target-linux/
+/target-etl/
 .vscode/*
 /.build/
 .DS_Store
@@ -84,3 +86,7 @@ GoogleService-Info.plist
 
 # Generated NDK tool-name shims for vendored OpenSSL Android build
 /app/ratel-tauri/.ndk-shims/
+/ratel-prod-export
+# Ephemeral Linux build dirs + logs created for the Postgres-migration image builds
+/target-fresh/
+/target-*-build.log

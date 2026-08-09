@@ -14,7 +14,14 @@
       "Bash(pkill -f \"dx serve\")",
       "Bash(lsof -ti:8100)",
       "Bash(xargs kill -9)",
-      "Bash(echo \"stopped. 8100: $\\(lsof -ti:8100 2>&1 && echo busy || echo free\\)\")"
+      "Bash(echo \"stopped. 8100: $\\(lsof -ti:8100 2>&1 && echo busy || echo free\\)\")",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(sed -i '' 's/effort: '\\\\''high'\\\\'' }/effort: '\\\\''high'\\\\'', model: '\\\\''sonnet'\\\\'' }/' /Users/leechanhui/.claude/projects/-Users-leechanhui-Projects-ratel-copy-ratel-app-ratel/4a8f77ff-4383-43b8-ade7-a35fed090628/workflows/scripts/pg-integration-fix-wf_b8d84fda-bd8.js)",
+      "Read(//Users/leechanhui/.claude/projects/-Users-leechanhui-Projects-ratel-copy-ratel-app-ratel/4a8f77ff-4383-43b8-ade7-a35fed090628/workflows/scripts/**)",
+      "Bash(kill -0 36322)",
+      "Bash(exit 0)",
+      "Bash(kill -9 36322)"
     ]
   },
   "hooks": {

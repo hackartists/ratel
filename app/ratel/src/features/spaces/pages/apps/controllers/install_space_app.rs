@@ -14,18 +14,14 @@ pub async fn install_space_app(
 ) -> Result<SpaceApp> {
     SpaceApp::can_edit(role)?;
 
-    let common_config = crate::common::CommonConfig::default();
-    let dynamo = common_config.dynamodb();
     let space_pk_partition: Partition = space_id.clone().into();
 
     let app = SpaceApp::new(space_pk_partition, app_type);
 
-    let items = vec![app.create_transact_write_item()];
-    crate::transact_write_items!(dynamo, items)
-        .map_err(|e| {
-            crate::error!("Failed to install app: {e}");
-            SpaceAppError::InstallFailed
-        })?;
+    let app = SpaceApp::repository().insert(&app).await.map_err(|e| {
+        crate::error!("Failed to install app: {e}");
+        SpaceAppError::InstallFailed
+    })?;
 
     Ok(app)
 }

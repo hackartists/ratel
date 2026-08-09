@@ -44,13 +44,10 @@ fn split_description(description: Option<String>) -> Option<String> {
 /// `get_wall_by_username` uses) so user/team disambiguation stays in
 /// one place.
 #[cfg(feature = "server")]
-async fn resolve_target_pk(
-    cli: &crate::common::aws_sdk_dynamodb::Client,
-    username: &str,
-) -> Result<Partition> {
+async fn resolve_target_pk(username: &str) -> Result<Partition> {
     use crate::features::social::controllers::WallUser;
 
-    let candidates = WallUser::find_by_username(cli, username.to_string())
+    let candidates = WallUser::find_by_username(username.to_string())
         .await
         .map_err(|e| {
             crate::error!("WallUser::find_by_username failed for {username}: {e}");
@@ -61,8 +58,8 @@ async fn resolve_target_pk(
         .into_iter()
         .next()
         .map(|w| match w {
-            WallUser::User(u) => u.pk,
-            WallUser::Team(t) => t.pk,
+            WallUser::User(u) => u.pk(),
+            WallUser::Team(t) => t.partition(),
         })
         .ok_or_else(|| {
             Error::NotFound(format!("no user or team found for username: {username}"))
@@ -75,33 +72,33 @@ pub async fn list_reward_history_handler(
     bookmark: Option<String>,
 ) -> Result<ListRewardHistoryResponse> {
     use crate::common::models::reward::UserRewardHistory;
-    use crate::common::types::CompositePartition;
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
+    let target_pk = resolve_target_pk(&username).await?;
 
-    let target_pk = resolve_target_pk(cli, &username).await?;
+    // `bookmark` carries an opaque 1-based page number as a string (same
+    // convention as the DynamoDB `opt_with_bookmark` this replaces).
+    const PAGE_SIZE: i64 = 10;
+    let page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
 
-    // GSI1: pk = URH_BY_TARGET#{target_pk}##REWARD, sk = created_at desc.
-    // Works for both `Partition::User` and `Partition::Team` — the GSI
-    // composes the prefix the same way for either kind, so this single
-    // query serves both user and team reward histories.
-    let pk_key = CompositePartition(target_pk, Partition::Reward);
-    let gsi1_pk = UserRewardHistory::compose_gsi1_pk(pk_key);
+    let page_result = UserRewardHistory::find_by_target(&target_pk, page, PAGE_SIZE)
+        .await
+        .map_err(|e| {
+            crate::error!("failed to query UserRewardHistory by user: {e}");
+            Error::NotFound("failed to list reward history".to_string())
+        })?;
 
-    let opts = UserRewardHistory::opt_with_bookmark(bookmark)
-        .limit(10)
-        .scan_index_forward(false);
+    let next_bookmark = if page < page_result.total_pages {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
 
-    let (items, next_bookmark) =
-        UserRewardHistory::find_reward_by_user(cli, &gsi1_pk, opts)
-            .await
-            .map_err(|e| {
-                crate::error!("failed to query UserRewardHistory by user: {e}");
-                Error::NotFound("failed to list reward history".to_string())
-            })?;
-
-    let items: Vec<RewardHistoryItem> = items
+    let items: Vec<RewardHistoryItem> = page_result
+        .items
         .into_iter()
         .map(|h| RewardHistoryItem {
             created_at: h.created_at,

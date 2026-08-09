@@ -57,12 +57,13 @@ pub async fn create_analyze_report(
         return Err(Error::InvalidFormat);
     }
 
-    if !is_enterprise_owner(cli, &space.user_pk).await? {
-        let limit = AnalyzeQuotaConfig::get_limit(cli).await.map_err(|e| {
+    let owner_pk: Partition = space.user_pk.parse().unwrap_or_default();
+    if !is_enterprise_owner(&owner_pk).await? {
+        let limit = AnalyzeQuotaConfig::get_limit().await.map_err(|e| {
             crate::error!("create_analyze_report: failed to read quota config: {e}");
             Error::Internal
         })?;
-        let used = count_reports_in_space(cli, &space_pk, limit).await?;
+        let used = SpaceAnalyzeReport::count_by_space(&space_pk).await?;
         if used >= limit {
             return Err(SpaceAppError::AnalyzeQuotaExceeded.into());
         }
@@ -86,15 +87,24 @@ pub async fn create_analyze_report(
         req.filters,
         matched_records,
     );
-    let report_id = match &report.sk {
-        EntityType::SpaceAnalyzeReport(id) => id.clone(),
-        _ => String::new(),
-    };
+    let report_id = report.report_id();
 
-    report.create(cli).await.map_err(|e| {
-        crate::error!("failed to create analyze report: {e}");
-        Error::Internal
-    })?;
+    SpaceAnalyzeReport::repository()
+        .insert(&report)
+        .await
+        .map_err(|e| {
+            crate::error!("failed to create analyze report: {e}");
+            Error::Internal
+        })?;
+
+    // Emit outbox event (Phase 5) — AnalyzeReportInProgress rule on
+    // SPACE_ANALYZE_REPORT# INSERT.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_ANALYZE_REPORT,
+        &report,
+    )
+    .await
+    .ok();
 
     Ok(CreateAnalyzeReportResponse { report_id })
 }
@@ -110,53 +120,22 @@ pub async fn create_analyze_report(
 /// (defensive — `SpaceCommon.user_pk` should only ever be one of those
 /// two) returns `false` so the quota still applies.
 #[cfg(feature = "server")]
-async fn is_enterprise_owner(
-    cli: &aws_sdk_dynamodb::Client,
-    owner_pk: &Partition,
-) -> Result<bool> {
-    use crate::features::membership::models::{TeamMembership, UserMembership};
+async fn is_enterprise_owner(owner_pk: &Partition) -> Result<bool> {
+    use crate::features::membership::models::{MembershipTier, TeamMembership, UserMembership};
     match owner_pk {
         Partition::User(_) => {
-            let row = UserMembership::get(cli, owner_pk, Some(EntityType::UserMembership)).await?;
+            let row = UserMembership::find_by_user(&owner_pk.to_string()).await?;
             Ok(row
-                .map(|m| m.membership_pk.0.contains("Enterprise"))
+                .map(|m| matches!(m.membership_pk, MembershipTier::Enterprise(_)))
                 .unwrap_or(false))
         }
         Partition::Team(_) => {
-            let row = TeamMembership::get(cli, owner_pk, Some(EntityType::TeamMembership)).await?;
+            let row = TeamMembership::find_by_team(&owner_pk.to_string()).await?;
             Ok(row
-                .map(|m| m.membership_pk.0.contains("Enterprise"))
+                .map(|m| matches!(m.membership_pk, MembershipTier::Enterprise(_)))
                 .unwrap_or(false))
         }
         _ => Ok(false),
     }
 }
 
-/// Walk the space's analyze-report rows and count, stopping as soon as
-/// we've seen `limit + 1` (we only need to know whether the user is at
-/// or over the quota — exact counts above that don't matter).
-#[cfg(feature = "server")]
-async fn count_reports_in_space(
-    cli: &aws_sdk_dynamodb::Client,
-    space_pk: &Partition,
-    limit: i64,
-) -> Result<i64> {
-    let prefix = EntityType::SpaceAnalyzeReport(String::default()).to_string();
-    let mut bookmark: Option<String> = None;
-    let mut count: i64 = 0;
-    loop {
-        let mut opt = SpaceAnalyzeReport::opt().sk(prefix.clone()).limit(50);
-        if let Some(b) = bookmark.clone() {
-            opt = opt.bookmark(b);
-        }
-        let (rows, next) = SpaceAnalyzeReport::query(cli, space_pk.clone(), opt).await?;
-        count += rows.len() as i64;
-        if count > limit {
-            return Ok(count);
-        }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => return Ok(count),
-        }
-    }
-}

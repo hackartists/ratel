@@ -42,20 +42,11 @@ pub async fn verify_code_handler(req: VerifyCodeRequest) -> Result<VerifyCodeRes
 /// otherwise. Honors the `bypass` test code "000000". Does NOT consume the
 /// code (so login→signup can reuse the same code within its window).
 #[cfg(feature = "server")]
-pub async fn verify_email_code(
-    cli: &aws_sdk_dynamodb::Client,
-    email: &str,
-    code: &str,
-) -> Result<()> {
+pub async fn verify_email_code(email: &str, code: &str) -> Result<()> {
     use crate::features::auth::constants::MAX_ATTEMPT_COUNT;
 
     let now = crate::common::utils::time::get_now_timestamp();
-    let (verification_list, _) = EmailVerification::find_by_email(
-        cli,
-        email,
-        EmailVerificationQueryOption::builder().limit(1),
-    )
-    .await?;
+    let verification = EmailVerification::find_by_email(email).await?;
 
     // Honor the test bypass code BEFORE requiring a stored verification
     // record. Test setup logs in without first calling send-verification-code,
@@ -71,17 +62,12 @@ pub async fn verify_email_code(
     // the compile-time `bypass` feature (which never ships to production). The
     // email is admin-managed (see admin test-accounts), so this is scoped to a
     // known allowlist and skips the EmailVerification record requirement.
-    if code.eq("000000")
-        && crate::common::models::auth::TestAccount::is_test_account(cli, email).await
+    if code.eq("000000") && crate::common::models::auth::TestAccount::is_test_account(email).await
     {
         return Ok(());
     }
 
-    if verification_list.is_empty() {
-        return Err(Error::NotFoundVerificationCode);
-    }
-
-    let email_verification = verification_list[0].clone();
+    let email_verification = verification.ok_or(Error::NotFoundVerificationCode)?;
 
     if email_verification.attempt_count >= MAX_ATTEMPT_COUNT {
         return Err(Error::ExceededAttemptEmailVerification);
@@ -90,10 +76,7 @@ pub async fn verify_email_code(
         return Err(Error::ExpiredVerification);
     }
     if email_verification.value != code {
-        EmailVerification::updater(email_verification.pk, email_verification.sk)
-            .increase_attempt_count(1)
-            .execute(cli)
-            .await?;
+        email_verification.increase_attempt_count().await?;
         return Err(Error::InvalidVerificationCode);
     }
 
@@ -102,7 +85,7 @@ pub async fn verify_email_code(
 
 #[cfg(feature = "server")]
 async fn verify_email_code_handler(email: String, code: String) -> Result<VerifyCodeResponse> {
-    verify_email_code(crate::features::auth::config::get().dynamodb(), &email, &code).await?;
+    verify_email_code(&email, &code).await?;
     Ok(VerifyCodeResponse { success: true })
 }
 
@@ -113,16 +96,10 @@ async fn verify_phone_code_handler(
 ) -> Result<VerifyCodeResponse> {
     use crate::features::auth::constants::MAX_ATTEMPT_COUNT;
 
-    let cli = crate::features::auth::config::get().dynamodb();
     let now = crate::common::utils::time::get_now_timestamp();
-    let (verification_list, _) = PhoneVerification::find_by_phone(
-        cli,
-        &phone,
-        PhoneVerificationQueryOption::builder().limit(1),
-    )
-    .await?;
+    let verification = PhoneVerification::find_by_phone(&phone).await?;
 
-    if verification_list.is_empty() {
+    if verification.is_none() {
         return Err(Error::NotFoundVerificationCode);
     }
 
@@ -133,7 +110,7 @@ async fn verify_phone_code_handler(
         return Ok(VerifyCodeResponse { success: true });
     }
 
-    let phone_verification = verification_list[0].clone();
+    let phone_verification = verification.ok_or(Error::NotFoundVerificationCode)?;
 
     if phone_verification.attempt_count >= MAX_ATTEMPT_COUNT {
         return Err(Error::ExceededAttemptPhoneVerification);
@@ -144,10 +121,7 @@ async fn verify_phone_code_handler(
     }
 
     if phone_verification.value != code {
-        PhoneVerification::updater(phone_verification.pk, phone_verification.sk)
-            .increase_attempt_count(1)
-            .execute(cli)
-            .await?;
+        phone_verification.increase_attempt_count().await?;
         return Err(Error::InvalidVerificationCode);
     }
 

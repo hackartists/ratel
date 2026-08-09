@@ -41,12 +41,8 @@ pub async fn connect_bluesky_handler(req: ConnectBlueskyRequest) -> Result<Conne
     // and upsert the SocialConnection row via the shared helper. App-
     // password sessions don't expire on Bluesky's side, so no
     // token_expires_at.
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let row = seal_and_upsert_connection(
-        cli,
-        ConnectionUpsert {
-            user_pk: user.pk.clone(),
+    let row = seal_and_upsert_connection(ConnectionUpsert {
+            user_id: crate::features::cross_posting::services::user_id_of(&user.pk()),
             platform: SocialPlatform::Bluesky,
             decrypted: DecryptedCredentials::Bluesky {
                 did: session.did.clone(),
@@ -57,8 +53,7 @@ pub async fn connect_bluesky_handler(req: ConnectBlueskyRequest) -> Result<Conne
             external_handle: session.handle,
             external_user_id: session.did,
             token_expires_at: None,
-        },
-    )
+    })
     .await?;
 
     Ok(row.into())

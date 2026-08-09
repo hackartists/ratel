@@ -9,6 +9,7 @@ use rmcp::schemars;
 use crate::features::membership::services::portone::PortOne;
 use crate::features::membership::services::portone::VerifiedCustomer;
 use crate::features::membership::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 use serde::{Deserialize, Serialize};
@@ -31,19 +32,20 @@ pub async fn identify_team_handler(
         }
 
         let conf = crate::features::membership::config::get();
-        let cli = conf.common.dynamodb();
         let portone = PortOne::new(conf.portone.api_secret);
 
         let result = portone.identify(&req.id).await?;
         let verified = result.verified_customer.clone();
 
+        // Natural-key upsert preserves the former DynamoDB PutItem overwrite
+        // semantics (one payment profile per team, re-verify replaces it).
         TeamPayment::new(
-            team.pk,
+            team.partition(),
             verified.id.clone(),
             verified.name.clone(),
             verified.birth_date.clone(),
         )
-        .create(cli)
+        .save()
         .await?;
 
         Ok(verified)

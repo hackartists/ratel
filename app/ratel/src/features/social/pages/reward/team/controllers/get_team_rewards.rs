@@ -1,6 +1,7 @@
 use super::super::{dto::TeamRewardsResponse, *};
 use crate::features::social::types::SocialError;
 
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 

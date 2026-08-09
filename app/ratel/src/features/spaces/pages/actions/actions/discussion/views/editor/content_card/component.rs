@@ -35,7 +35,7 @@ pub fn ContentCard() -> Element {
     let initial_post = ctx.discussion().post.clone();
     let initial_html = initial_post.html_contents.clone();
     let initial_title = initial_post.title.clone();
-    let initial_files = initial_post.files.clone();
+    let initial_files = initial_post.files.0.clone();
 
     let mut html_contents = use_signal(|| initial_html.clone());
     let mut last_saved_html = use_signal(|| initial_html);

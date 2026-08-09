@@ -3,6 +3,7 @@ use crate::common::models::{OptionalUser, User};
 use crate::common::*;
 use crate::features::posts::models::Post;
 use crate::features::posts::types::{BoosterType, SpaceType, TeamGroupPermission};
+#[cfg(feature = "server")]
 use crate::spaces::{InvitationStatus, SpaceInvitationMember};
 
 #[mcp_tool(
@@ -17,13 +18,21 @@ pub async fn get_space(
     let config = crate::features::spaces::space_common::config::get();
     let dynamo = config.common.dynamodb();
 
+    let space_id_partition = space_id.clone();
     let space_pk_partition: Partition = space_id.into();
-    let space =
-        SpaceCommon::get(dynamo, &space_pk_partition, Some(&EntityType::SpaceCommon)).await?;
+    let space = SpaceCommon::get_by_partition(&space_pk_partition).await?;
     let space = space.ok_or_else(|| Error::NotFound("Space Not Found".to_string()))?;
+    let space_pk = space.partition();
 
-    let post_pk = space.pk.clone().to_post_key()?;
-    let post = Post::get(dynamo, &post_pk, Some(EntityType::Post)).await?;
+    let post_pk = space_pk.clone().to_post_key()?;
+    let post_uuid = match &post_pk {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).ok(),
+        _ => None,
+    };
+    let post = match post_uuid {
+        Some(id) => Post::get_by_feed_id(id).await?,
+        None => None,
+    };
     let post = post.ok_or_else(|| Error::NotFound("Post Not Found".to_string()))?;
     let user: Option<User> = user.into();
 
@@ -32,12 +41,13 @@ pub async fn get_space(
     // broadcast's audience. The extension method is a no-op for ordinary
     // posts. Defined in `sub_team::services::broadcast_access`.
     use crate::features::sub_team::services::broadcast_access::PostBroadcastAccessExt;
-    post.assert_broadcast_access(dynamo, user.as_ref().map(|u| &u.pk))
+    let user_pk = user.as_ref().map(|u| u.pk());
+    post.assert_broadcast_access(dynamo, user_pk.as_ref())
         .await?;
 
     let permissions = post.get_permissions(dynamo, user.clone()).await?;
     let liked = if let Some(ref user) = user {
-        post.is_liked(dynamo, &user.pk).await?
+        post.is_liked(&user.pk()).await?
     } else {
         false
     };
@@ -71,23 +81,17 @@ pub async fn get_space(
         if is_admin {
             (None, false)
         } else {
-            let (participant_pk, participant_sk) =
-                SpaceParticipant::keys(space.pk.clone(), user.pk.clone());
-            let participant =
-                SpaceParticipant::get(dynamo, &participant_pk, Some(&participant_sk)).await?;
+            let user_pk = user.pk();
+            let participant = SpaceParticipant::get_participant(&space_pk, &user_pk).await?;
             let invited = if space.visibility != SpaceVisibility::Public {
-                let (invitation_pk, invitation_sk) =
-                    SpaceInvitationMember::keys(&space.pk, &user.pk);
-                let invitation =
-                    SpaceInvitationMember::get(dynamo, &invitation_pk, Some(&invitation_sk))
-                        .await?;
+                let invitation = SpaceInvitationMember::get_for(&space_pk, &user_pk).await?;
                 let explicit = matches!(
                     invitation.as_ref().map(|member| member.status),
                     Some(InvitationStatus::Invited) | Some(InvitationStatus::Accepted)
                 );
                 explicit
                     || crate::features::sub_team::services::broadcast_access::is_broadcast_audience(
-                        dynamo, &post, &user.pk,
+                        dynamo, &post, &user_pk,
                     )
                     .await
             } else {
@@ -115,31 +119,30 @@ pub async fn get_space(
     // Check if any action has prerequisite flag
     let has_prerequisite = {
         use crate::features::spaces::pages::actions::models::SpaceAction;
-        let opt = SpaceAction::opt_all();
-        let (actions, _) = SpaceAction::find_by_space(dynamo, space_pk_partition.clone(), opt)
+        let actions = SpaceAction::list_by_space(&space_id_partition)
             .await
             .unwrap_or_default();
         actions.iter().any(|a| a.prerequisite)
     };
 
     Ok(SpaceResponse {
-        id: space.pk.clone().into(),
+        id: space_pk.clone().into(),
         post_id: post_pk.into(),
-        sk: space.sk,
+        sk: EntityType::SpaceCommon,
         title: post.title,
         content: if space.content.is_empty() {
-            strip_color_styles(&post.body.to_html())
+            strip_color_styles(&post.body.0.to_html())
         } else {
             space.content
         },
         created_at: space.created_at,
         updated_at: space.updated_at,
-        urls: post.urls,
+        urls: post.urls.into(),
         space_type: post.space_type.unwrap_or_default(),
         features: vec![],
         status: space.status,
         permissions: permissions.into(),
-        author_type: post.author_type,
+        author_type: post.author_type.into(),
         author_display_name: post.author_display_name,
         author_username: post.author_username,
         author_profile_url: post.author_profile_url,

@@ -262,7 +262,7 @@ mod tests {
         assert_eq!(c2.0, "user:alice");
     }
 
-    #[tokio::test]
+    #[by_macros::pg_test]
     async fn handler_resolution_by_kind() {
         let hub = InProcessChannel::new();
         hub.register(EchoChannel).await;
@@ -280,7 +280,7 @@ mod tests {
         assert!(err);
     }
 
-    #[tokio::test]
+    #[by_macros::pg_test]
     async fn publish_assigns_monotonic_ids_and_fans_out() {
         let hub = InProcessChannel::new();
         let ch = ChannelId("echo:room1".into());

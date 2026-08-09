@@ -1,4 +1,5 @@
 use crate::common::models::space::SpaceCommon;
+#[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::follow::models::SpaceFollowUser;
 use crate::features::spaces::pages::actions::actions::follow::*;
 use crate::features::spaces::pages::actions::actions::follow::types::SpaceFollowError;
@@ -6,26 +7,27 @@ use crate::features::spaces::pages::actions::actions::follow::types::SpaceFollow
 #[delete("/api/spaces/{space_id}/follows/users", role: SpaceUserRole)]
 pub async fn delete_follow_user(space_id: SpacePartition, user_pk: Partition) -> Result<()> {
     SpaceFollowAction::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
 
     let space_pk: Partition = space_id.clone().into();
-    let space = SpaceCommon::get(cli, &space_pk, Some(EntityType::SpaceCommon))
+    let space = SpaceCommon::get_by_partition(&space_pk)
         .await?
         .ok_or(Error::SpaceNotFound)?;
 
-    if user_pk == space.user_pk {
+    use std::str::FromStr;
+    let space_user_pk =
+        Partition::from_str(&space.user_pk).unwrap_or(Partition::User(space.user_pk.clone()));
+    if user_pk == space_user_pk {
         return Err(SpaceFollowError::CreatorCannotBeRemoved.into());
     }
 
-    let (pk, sk) = SpaceFollowUser::keys(&space_id, &user_pk);
-    if SpaceFollowUser::get(cli, &pk, Some(sk.clone()))
-        .await?
-        .is_none()
-    {
+    let existing = SpaceFollowUser::get_one(&space_id, &user_pk).await?;
+    let Some(existing) = existing else {
         return Ok(());
-    }
+    };
 
-    SpaceFollowUser::delete(cli, &pk, Some(sk)).await?;
+    SpaceFollowUser::repository()
+        .delete(existing.id)
+        .await
+        .map_err(crate::common::Error::from)?;
     Ok(())
 }

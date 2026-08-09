@@ -1,4 +1,5 @@
 use crate::common::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 use crate::features::sub_team::types::{
@@ -9,15 +10,12 @@ use crate::features::sub_team::types::{
 use crate::features::sub_team::models::{SubTeamApplication, SubTeamApplicationStatus, SubTeamLink};
 #[cfg(feature = "server")]
 use crate::features::sub_team::services::termination::{
-    build_parent_sub_teams_url, build_sub_team_parent_url, detach_sub_team_link,
-    notify_team_admins,
+    build_parent_sub_teams_url, build_sub_team_parent_url, detach_sub_team_link, notify_team_admins,
 };
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 // ── POST /api/teams/:team_pk/sub-teams/:sub_team_id/deregister ──────
-//
-// Parent-side action. The admin/owner of the parent removes the link to a
-// recognized sub-team. Child team content (posts, members, spaces, messages)
-// stays intact — only `parent_team_id` and the `SubTeamLink` row are touched.
 #[post(
     "/api/teams/:team_pk/sub-teams/:sub_team_id/deregister",
     user: crate::features::auth::User,
@@ -42,8 +40,7 @@ pub async fn deregister_sub_team_handler(
     let cli = cfg.dynamodb();
 
     // 1. Confirm SubTeamLink exists under parent pk.
-    let link_sk = EntityType::SubTeamLink(sub_team_id.clone());
-    let link = SubTeamLink::get(cli, &team.pk, Some(link_sk.clone()))
+    let link = SubTeamLink::find_link(&team.partition(), &sub_team_id)
         .await
         .map_err(|e| {
             crate::error!("deregister_sub_team link lookup failed: {e}");
@@ -54,22 +51,13 @@ pub async fn deregister_sub_team_handler(
 
     let child_pk: Partition = Partition::Team(sub_team_id.clone());
 
-    // 2. Transact-write: delete link + clear child parent_team_id.
-    detach_sub_team_link(cli, &team.pk, &child_pk, &sub_team_id).await?;
+    // 2. Delete link + clear child parent_team_id.
+    detach_sub_team_link(cli, &team.partition(), &child_pk, &sub_team_id).await?;
 
-    // 3. Cancel every application the (now former) sub-team submitted to
-    //    this parent. Without this an Approved application row lingers
-    //    on the child's status page and shows "이미 등록되어 있음" even
-    //    though the parent just removed them. Mirrors the same logic in
-    //    `leave_parent_handler`.
-    let former_parent_team_id = match &team.pk {
-        Partition::Team(id) => id.clone(),
-        _ => String::new(),
-    };
+    // 3. Cancel every application the (now former) sub-team submitted here.
+    let former_parent_team_id = team.id.to_string();
     if !former_parent_team_id.is_empty() {
-        if let Err(e) =
-            cancel_applications_for_parent(cli, &child_pk, &former_parent_team_id).await
-        {
+        if let Err(e) = cancel_applications_for_parent(&child_pk, &former_parent_team_id).await {
             crate::error!("deregister_sub_team: cancel applications failed: {e:?}");
         }
     }
@@ -93,10 +81,6 @@ pub async fn deregister_sub_team_handler(
 }
 
 // ── POST /api/teams/:team_pk/parent/leave ───────────────────────────
-//
-// Child-side action. The admin/owner of the applying team severs its
-// relationship with its recognized parent. Content stays intact; the child
-// returns to standalone.
 #[post(
     "/api/teams/:team_pk/parent/leave",
     user: crate::features::auth::User,
@@ -117,36 +101,26 @@ pub async fn leave_parent_handler(
     let cli = cfg.dynamodb();
 
     // 1. Must currently be a recognized sub-team.
-    let parent_team_id = team
-        .parent_team_id
-        .clone()
-        .ok_or(SubTeamError::NotASubTeam)?;
+    let parent_team_id = team.parent_team_id.clone().ok_or(SubTeamError::NotASubTeam)?;
 
-    let sub_team_id = match &team.pk {
-        Partition::Team(id) => id.clone(),
-        _ => {
-            crate::error!("leave_parent_handler: unexpected child pk");
-            return Err(SubTeamError::ApplicationStateMismatch.into());
-        }
-    };
+    let sub_team_id = team.id.to_string();
     let parent_pk: Partition = Partition::Team(parent_team_id.clone());
 
-    // 2. Best-effort: confirm SubTeamLink exists — if missing, this is data
-    //    drift, but we still want to clear the child's dangling parent_team_id.
-    let link_sk = EntityType::SubTeamLink(sub_team_id.clone());
-    let maybe_link = SubTeamLink::get(cli, &parent_pk, Some(link_sk))
+    // 2. Best-effort: confirm SubTeamLink exists.
+    let maybe_link = SubTeamLink::find_link(&parent_pk, &sub_team_id)
         .await
         .unwrap_or(None);
 
     if maybe_link.is_some() {
-        detach_sub_team_link(cli, &parent_pk, &team.pk, &sub_team_id).await?;
+        detach_sub_team_link(cli, &parent_pk, &team.partition(), &sub_team_id).await?;
     } else {
         // Clear the orphan parent_team_id on the child without touching a link.
         let now = crate::common::utils::time::get_now_timestamp_millis();
-        Team::updater(&team.pk, EntityType::Team)
-            .remove_parent_team_id()
-            .with_updated_at(now)
-            .execute(cli)
+        Team::repository()
+            .update(
+                team.id,
+                Team::update().parent_team_id(None).updated_at(now),
+            )
             .await
             .map_err(|e| {
                 crate::error!("leave_parent orphan-clear failed: {e}");
@@ -155,15 +129,7 @@ pub async fn leave_parent_handler(
     }
 
     // 3. Cancel every application this team submitted to the parent.
-    //    Without this, an Approved application row lingers and the
-    //    applicant's status page keeps showing "정식 하위팀으로
-    //    등록되었습니다" even though they've already left. We mark the
-    //    rows `Cancelled` (instead of deleting) so the audit trail
-    //    stays — `find_my_application_for_parent_handler` filters
-    //    `Cancelled`/`Draft` out of the status view.
-    if let Err(e) =
-        cancel_applications_for_parent(cli, &team.pk, &parent_team_id).await
-    {
+    if let Err(e) = cancel_applications_for_parent(&team.partition(), &parent_team_id).await {
         crate::error!("leave_parent_handler: cancel applications failed: {e:?}");
     }
 
@@ -187,51 +153,41 @@ pub async fn leave_parent_handler(
     Ok(TerminationAck { ok: true })
 }
 
-/// Walks every application this team has ever submitted and flips
-/// those targeting `parent_team_id` to `Cancelled` so the relationship
-/// teardown removes them from the applicant's status view. Best-effort
-/// — per-row failures are logged and don't block the leave flow. The
-/// underlying `SubTeamApplication` rows live under the parent's pk, so
-/// we query the gsi1 (`find_by_applicant`) to enumerate them.
+/// Flips every application this team submitted to `parent_team_id` to
+/// `Cancelled` so the relationship teardown removes them from the applicant's
+/// status view. Best-effort — per-row failures are logged. The applicant's
+/// application history is the `applicant_team_pk` index.
 #[cfg(feature = "server")]
 async fn cancel_applications_for_parent(
-    cli: &aws_sdk_dynamodb::Client,
     applicant_pk: &Partition,
     parent_team_id: &str,
 ) -> Result<()> {
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut bookmark: Option<String> = None;
-    for _ in 0..5 {
-        let opts = SubTeamApplication::opt_with_bookmark(bookmark.clone()).limit(50);
-        let (apps, next) =
-            SubTeamApplication::find_by_applicant(cli, applicant_pk.clone(), opts).await?;
-        for app in apps {
-            if app.parent_team_id != parent_team_id {
-                continue;
-            }
-            // Skip rows that are already in a terminal state we don't
-            // want to overwrite. Approved/Pending/Returned all flip.
-            if matches!(
-                app.status,
-                SubTeamApplicationStatus::Cancelled | SubTeamApplicationStatus::Draft
-            ) {
-                continue;
-            }
-            if let Err(e) = SubTeamApplication::updater(&app.pk, &app.sk)
-                .with_status(SubTeamApplicationStatus::Cancelled)
-                .with_updated_at(now)
-                .execute(cli)
-                .await
-            {
-                crate::error!(
-                    "cancel_applications_for_parent: update failed for {}: {e:?}",
-                    app.application_id
-                );
-            }
+    let apps = SubTeamApplication::find_by_applicant_all(applicant_pk).await?;
+    for app in apps {
+        if app.parent_team_id != parent_team_id {
+            continue;
         }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
+        // Skip rows already in a terminal state we don't want to overwrite.
+        if matches!(
+            app.status,
+            SubTeamApplicationStatus::Cancelled | SubTeamApplicationStatus::Draft
+        ) {
+            continue;
+        }
+        if let Err(e) = SubTeamApplication::repository()
+            .update(
+                app.id,
+                SubTeamApplication::update()
+                    .status(SubTeamApplicationStatus::Cancelled)
+                    .updated_at(now),
+            )
+            .await
+        {
+            crate::error!(
+                "cancel_applications_for_parent: update failed for {}: {e:?}",
+                app.application_id
+            );
         }
     }
     Ok(())

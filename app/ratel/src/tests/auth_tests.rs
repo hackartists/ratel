@@ -29,7 +29,7 @@ async fn signup_email_user(app: &axum::Router) -> String {
     email
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_email_code_login_existing_user() {
     let ctx = TestContext::setup().await;
 
@@ -44,7 +44,7 @@ async fn test_email_code_login_existing_user() {
     assert_eq!(s, 200, "email-code login: {:?}", body);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_email_code_login_unknown_user_returns_not_found() {
     let ctx = TestContext::setup().await;
 
@@ -65,7 +65,7 @@ async fn test_email_code_login_unknown_user_returns_not_found() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_email_code_signup_no_password_creates_user() {
     let ctx = TestContext::setup().await;
 
@@ -96,7 +96,7 @@ async fn test_email_code_signup_no_password_creates_user() {
 /// stored password (i.e. created before this change) must still log in via the
 /// new email+code flow, with the password ignored. `find_by_email` keys off the
 /// email index only, so the legacy `password` attribute is irrelevant.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_legacy_password_user_logs_in_with_email_code() {
     let ctx = TestContext::setup().await;
 
@@ -117,7 +117,7 @@ async fn test_legacy_password_user_logs_in_with_email_code() {
         username,
         Some("legacy-sha3-hash".to_string()),
     );
-    legacy.create(&ctx.ddb).await.expect("create legacy user");
+    legacy.create().await.expect("create legacy user");
 
     // Request a fresh code (no pre-existing verification record needed) ...
     let (s, _, _) = crate::test_post! {
@@ -144,7 +144,7 @@ async fn test_legacy_password_user_logs_in_with_email_code() {
 /// in App Store review still sends password-based signup + login). The
 /// restored `EmailPassword` variants must keep working alongside the new
 /// email-code flow: sign up WITH a password, then log in WITH that password.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_password_signup_and_login_backward_compat() {
     let ctx = TestContext::setup().await;
 

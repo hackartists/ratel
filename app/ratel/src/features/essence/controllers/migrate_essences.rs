@@ -36,22 +36,19 @@ pub struct MigrateEssencesResponse {
     pub errors: u32,
 }
 
-/// Admin-only backfill. Scans every source entity type directly via the
-/// `type-index` GSI (for unit-sk entities) or by iterating parent partitions
-/// (for nested entities), and idempotently upserts an Essence row per
-/// source. Attribution (`user_pk` on the Essence row) is copied from each
-/// source row's own author field, so team-authored content stays attributed
-/// to the team and user-authored content to the user.
+/// Admin-only backfill. Scans every source entity type directly (a full
+/// table scan per entity, since this endpoint runs rarely and off the hot
+/// path), and idempotently upserts an Essence row per source. Attribution
+/// (`user_pk` on the Essence row) is copied from each source row's own
+/// author field, so team-authored content stays attributed to the team and
+/// user-authored content to the user.
 #[post("/api/admin/essences/migrate", _user: AdminUser)]
 pub async fn migrate_essences_handler() -> Result<MigrateEssencesResponse> {
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
-
     let mut out = MigrateEssencesResponse::default();
 
-    migrate_posts_and_comments(cli, &mut out).await;
-    migrate_spaces_content(cli, &mut out).await;
-    rebuild_user_essence_stats(cli, &mut out).await;
+    migrate_posts_and_comments(&mut out).await;
+    migrate_spaces_content(&mut out).await;
+    rebuild_user_essence_stats(&mut out).await;
 
     Ok(out)
 }
@@ -63,18 +60,9 @@ pub async fn migrate_essences_handler() -> Result<MigrateEssencesResponse> {
 /// write). It also populates the new `total_{kind}` fields for users who
 /// predate them.
 #[cfg(feature = "server")]
-async fn rebuild_user_essence_stats(
-    cli: &aws_sdk_dynamodb::Client,
-    out: &mut MigrateEssencesResponse,
-) {
-    let essences = match Essence::find_all(
-        cli,
-        EntityType::Essence(String::new()),
-        Essence::opt_all(),
-    )
-    .await
-    {
-        Ok((v, _)) => v,
+async fn rebuild_user_essence_stats(out: &mut MigrateEssencesResponse) {
+    let essences = match Essence::find_all_rows().await {
+        Ok(v) => v,
         Err(e) => {
             crate::error!("migrate: scan essences for stats rebuild failed: {e}");
             out.errors += 1;
@@ -84,7 +72,7 @@ async fn rebuild_user_essence_stats(
 
     let mut totals_by_user: HashMap<String, UserEssenceStats> = HashMap::new();
     for row in essences {
-        let key = row.pk.to_string();
+        let key = row.owner_pk.clone();
         let entry = totals_by_user
             .entry(key)
             .or_insert_with(UserEssenceStats::default);
@@ -103,15 +91,7 @@ async fn rebuild_user_essence_stats(
     }
 
     for (user_pk_str, totals) in totals_by_user {
-        let user_pk: Partition = match user_pk_str.parse() {
-            Ok(p) => p,
-            Err(e) => {
-                crate::error!("migrate: skip stats rebuild — bad user pk {user_pk_str}: {e}");
-                out.errors += 1;
-                continue;
-            }
-        };
-        if let Err(e) = Essence::replace_stats(cli, &user_pk, totals).await {
+        if let Err(e) = Essence::replace_stats(&user_pk_str, totals).await {
             crate::error!("migrate: replace stats failed for {user_pk_str}: {e}");
             out.errors += 1;
             continue;
@@ -121,14 +101,13 @@ async fn rebuild_user_essence_stats(
 }
 
 #[cfg(feature = "server")]
-async fn migrate_posts_and_comments(
-    cli: &aws_sdk_dynamodb::Client,
-    out: &mut MigrateEssencesResponse,
-) {
+async fn migrate_posts_and_comments(out: &mut MigrateEssencesResponse) {
     use crate::features::posts::models::{Post, PostComment};
+    use postgres::PostgresEntity;
+    use postgres::ops::UuidOp;
 
-    let (posts, _) = match Post::find_all(cli, EntityType::Post, Post::opt_all()).await {
-        Ok(v) => v,
+    let posts = match Post::repository().find(Post::query()).await {
+        Ok(page) => page.items,
         Err(e) => {
             crate::error!("migrate: list posts failed: {e}");
             out.errors += 1;
@@ -137,19 +116,26 @@ async fn migrate_posts_and_comments(
     };
     out.posts_scanned = posts.len() as u32;
 
-    let comment_sk_prefix = EntityType::PostComment(String::new()).to_string();
-
     for post in posts {
-        if let Err(e) = essence_services::index_post(cli, &post).await {
+        if let Err(e) = essence_services::index_post(&post).await {
             crate::error!("migrate: upsert post essence failed: {e}");
             out.errors += 1;
         } else {
             out.posts_migrated += 1;
         }
 
-        let opts = PostComment::opt_all().sk(comment_sk_prefix.clone());
-        let (comments, _) = match PostComment::query(cli, post.pk.clone(), opts).await {
-            Ok(v) => v,
+        // Only top-level comments — mirrors the original DynamoDB scan, which
+        // walked the post's `Feed` partition (top-level comments) and never
+        // reached replies (stored under the separate `PostReply` partition).
+        let comments = match PostComment::repository()
+            .find(
+                PostComment::query()
+                    .post_id(UuidOp::Eq(post.id))
+                    .filter(|c| c.parent_comment_id.is_null()),
+            )
+            .await
+        {
+            Ok(page) => page.items,
             Err(e) => {
                 crate::error!("migrate: list post comments failed: {e}");
                 out.errors += 1;
@@ -158,7 +144,7 @@ async fn migrate_posts_and_comments(
         };
 
         for c in comments {
-            if let Err(e) = essence_services::index_post_comment(cli, &c).await {
+            if let Err(e) = essence_services::index_post_comment(&c).await {
                 crate::error!("migrate: upsert post comment essence failed: {e}");
                 out.errors += 1;
                 continue;
@@ -169,40 +155,38 @@ async fn migrate_posts_and_comments(
 }
 
 #[cfg(feature = "server")]
-async fn migrate_spaces_content(
-    cli: &aws_sdk_dynamodb::Client,
-    out: &mut MigrateEssencesResponse,
-) {
+async fn migrate_spaces_content(out: &mut MigrateEssencesResponse) {
     use crate::common::models::space::SpaceCommon;
     use crate::features::spaces::pages::actions::actions::discussion::{
         SpacePost, SpacePostComment,
     };
     use crate::features::spaces::pages::actions::actions::poll::SpacePoll;
     use crate::features::spaces::pages::actions::actions::quiz::SpaceQuiz;
+    use postgres::PostgresEntity;
+    use postgres::ops::StringOp;
 
-    let (spaces, _) =
-        match SpaceCommon::find_all(cli, EntityType::SpaceCommon, SpaceCommon::opt_all()).await {
-            Ok(v) => v,
-            Err(e) => {
-                crate::error!("migrate: list spaces failed: {e}");
-                out.errors += 1;
-                return;
-            }
-        };
+    let conf = crate::common::config::ServerConfig::default();
+    let cli = conf.dynamodb();
+
+    let spaces = match SpaceCommon::repository().find(SpaceCommon::query()).await {
+        Ok(page) => page.items,
+        Err(e) => {
+            crate::error!("migrate: list spaces failed: {e}");
+            out.errors += 1;
+            return;
+        }
+    };
     out.spaces_scanned = spaces.len() as u32;
 
-    let poll_sk_prefix = EntityType::SpacePoll(String::new()).to_string();
-    let quiz_sk_prefix = EntityType::SpaceQuiz(String::new()).to_string();
-    let discussion_sk_prefix = EntityType::SpacePost(String::new()).to_string();
-    let discussion_comment_sk_prefix = EntityType::SpacePostComment(String::new()).to_string();
-
     for space in spaces {
-        let space_pk = space.pk.clone();
+        let space_id: SpacePartition = space.partition().into();
 
-        let opts = SpacePoll::opt_all().sk(poll_sk_prefix.clone());
-        match SpacePoll::query(cli, space_pk.clone(), opts).await {
-            Ok((polls, _)) => {
-                for poll in polls {
+        match SpacePoll::repository()
+            .find(SpacePoll::query().space_id(StringOp::Eq(space_id.0.clone())))
+            .await
+        {
+            Ok(page) => {
+                for poll in page.items {
                     if let Err(e) = essence_services::index_poll(cli, &poll).await {
                         crate::error!("migrate: upsert poll essence failed: {e}");
                         out.errors += 1;
@@ -217,10 +201,12 @@ async fn migrate_spaces_content(
             }
         }
 
-        let opts = SpaceQuiz::opt_all().sk(quiz_sk_prefix.clone());
-        match SpaceQuiz::query(cli, space_pk.clone(), opts).await {
-            Ok((quizzes, _)) => {
-                for quiz in quizzes {
+        match SpaceQuiz::repository()
+            .find(SpaceQuiz::query().space_id(StringOp::Eq(space_id.0.clone())))
+            .await
+        {
+            Ok(page) => {
+                for quiz in page.items {
                     if let Err(e) = essence_services::index_quiz(cli, &quiz).await {
                         crate::error!("migrate: upsert quiz essence failed: {e}");
                         out.errors += 1;
@@ -235,9 +221,11 @@ async fn migrate_spaces_content(
             }
         }
 
-        let opts = SpacePost::opt_all().sk(discussion_sk_prefix.clone());
-        let discussions = match SpacePost::query(cli, space_pk.clone(), opts).await {
-            Ok((v, _)) => v,
+        let discussions = match SpacePost::repository()
+            .find(SpacePost::query().space_id(StringOp::Eq(space_id.0.clone())))
+            .await
+        {
+            Ok(page) => page.items,
             Err(e) => {
                 crate::error!("migrate: list discussions for space failed: {e}");
                 out.errors += 1;
@@ -247,24 +235,18 @@ async fn migrate_spaces_content(
         out.discussions_scanned += discussions.len() as u32;
 
         for discussion in discussions {
-            let discussion_id = match &discussion.sk {
-                EntityType::SpacePost(id) => id.clone(),
-                _ => continue,
-            };
-            let discussion_pk = Partition::SpacePost(discussion_id);
-
-            let opts = SpacePostComment::opt_all().sk(discussion_comment_sk_prefix.clone());
-            match SpacePostComment::query(cli, discussion_pk, opts).await {
-                Ok((comments, _)) => {
-                    for mut c in comments {
-                        // Backfill space_pk if missing on legacy rows so the
+            match SpacePostComment::repository()
+                .find(SpacePostComment::query().post_id(StringOp::Eq(discussion.post_id.clone())))
+                .await
+            {
+                Ok(page) => {
+                    for mut c in page.items {
+                        // Backfill space_id if missing on legacy rows so the
                         // essence row gets the right "open in space" link.
-                        if c.space_pk.is_none() {
-                            c.space_pk = Some(space_pk.clone());
+                        if c.space_id.is_none() {
+                            c.space_id = Some(space_id.0.clone());
                         }
-                        if let Err(e) =
-                            essence_services::index_discussion_comment(cli, &c).await
-                        {
+                        if let Err(e) = essence_services::index_discussion_comment(&c).await {
                             crate::error!(
                                 "migrate: upsert discussion comment essence failed: {e}"
                             );

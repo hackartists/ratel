@@ -99,11 +99,8 @@ pub struct SettleRoundInput<'a> {
     pub settings: &'a FactOrFoldSettingsResponse,
 }
 
-fn user_id_of(pk: &crate::common::types::Partition) -> String {
-    pk.to_string()
-        .strip_prefix("USER#")
-        .unwrap_or(&pk.to_string())
-        .to_string()
+fn user_id_of(pk: &str) -> String {
+    pk.strip_prefix("USER#").unwrap_or(pk).to_string()
 }
 
 /// Run the §FR-28~30 formula over a round's snapshot. Returns one
@@ -201,7 +198,7 @@ pub fn settle_round(input: SettleRoundInput<'_>) -> Vec<SettlementOutcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::types::{EntityType, Partition};
+    use crate::common::types::Partition;
 
     fn settings() -> FactOrFoldSettingsResponse {
         FactOrFoldSettingsResponse::default() // 16_000 / 5_000 / 3_000
@@ -209,11 +206,12 @@ mod tests {
 
     fn bet(user_id: &str, side: BetSide, amount: i64) -> FactFoldBet {
         FactFoldBet {
-            pk: Partition::FactFold("r".into()),
-            sk: EntityType::FactFoldBet(user_id.into()),
+            id: uuid::Uuid::now_v7(),
+            round_id: "r".into(),
+            user_id: user_id.into(),
             created_at: 0,
             updated_at: 0,
-            user_pk: Partition::User(user_id.into()),
+            user_pk: Partition::User(user_id.into()).to_string(),
             side,
             amount_rp: amount,
             locked_at: 0,
@@ -224,11 +222,12 @@ mod tests {
 
     fn participant(user_id: &str, is_insider: bool) -> FactFoldParticipant {
         FactFoldParticipant {
-            pk: Partition::FactFold("r".into()),
-            sk: EntityType::FactFoldParticipant(user_id.into()),
+            id: uuid::Uuid::now_v7(),
+            round_id: "r".into(),
+            user_id: user_id.into(),
             created_at: 0,
             updated_at: 0,
-            user_pk: Partition::User(user_id.into()),
+            user_pk: Partition::User(user_id.into()).to_string(),
             joined_at: 0,
             is_insider,
             last_seen_at: 0,
@@ -238,11 +237,12 @@ mod tests {
 
     fn rationale(user_id: &str) -> FactFoldRationale {
         FactFoldRationale {
-            pk: Partition::FactFold("r".into()),
-            sk: EntityType::FactFoldRationale(user_id.into()),
+            id: uuid::Uuid::now_v7(),
+            round_id: "r".into(),
+            user_id: user_id.into(),
             created_at: 0,
             updated_at: 0,
-            user_pk: Partition::User(user_id.into()),
+            user_pk: Partition::User(user_id.into()).to_string(),
             text: "rationale".into(),
             submitted_at: 0,
             essence_eligible: true,
@@ -305,7 +305,7 @@ mod tests {
         // b should get +30 (a.stake × 30%) influence_bonus.
         let mut a_bet = bet("a", BetSide::Fake, 100);
         a_bet.flipped_to = Some(BetSide::Real);
-        a_bet.flip_cite_user_pk = Some(Partition::User("b".into()));
+        a_bet.flip_cite_user_pk = Some(Partition::User("b".into()).to_string());
         let bets = vec![a_bet, bet("b", BetSide::Real, 100), bet("c", BetSide::Fake, 100)];
         let participants = vec![
             participant("a", false),
@@ -328,7 +328,7 @@ mod tests {
         // Cited user b never submitted a rationale → influence_bonus = 0.
         let mut a_bet = bet("a", BetSide::Fake, 100);
         a_bet.flipped_to = Some(BetSide::Real);
-        a_bet.flip_cite_user_pk = Some(Partition::User("b".into()));
+        a_bet.flip_cite_user_pk = Some(Partition::User("b".into()).to_string());
         let bets = vec![a_bet, bet("b", BetSide::Real, 100), bet("c", BetSide::Fake, 100)];
         let participants = vec![
             participant("a", false),

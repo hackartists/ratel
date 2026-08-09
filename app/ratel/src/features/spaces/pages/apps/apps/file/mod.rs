@@ -1,10 +1,8 @@
 pub mod components;
-#[cfg(feature = "server")]
-mod config;
 mod controllers;
 mod hooks;
 mod i18n;
-mod models;
+pub mod models;
 mod types;
 mod views;
 

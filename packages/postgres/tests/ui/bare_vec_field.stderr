@@ -1,0 +1,5 @@
+error: field `tags`: a bare `Vec<_>`/`Option<Vec<_>>` field is not a column. Wrap the inner type in a #[derive(PostgresJson)] newtype (jsonb), or annotate the field with #[postgres(one_to_many)] / #[postgres(many_to_many)] (relation).
+  --> tests/ui/bare_vec_field.rs:12:15
+   |
+12 |     pub tags: Vec<String>,
+   |               ^^^^^^^^^^^

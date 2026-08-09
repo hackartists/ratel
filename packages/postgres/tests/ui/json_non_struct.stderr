@@ -1,0 +1,8 @@
+error: PostgresJson supports named-field structs, single-field tuple newtypes, or enums
+  --> tests/ui/json_non_struct.rs:8:1
+   |
+ 8 | / pub union NotAStruct {
+ 9 | |     a: u32,
+10 | |     b: f32,
+11 | | }
+   | |_^

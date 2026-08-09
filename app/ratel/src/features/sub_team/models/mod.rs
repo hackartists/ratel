@@ -1,3 +1,5 @@
+pub mod json;
+
 mod sub_team_announcement;
 mod sub_team_announcement_fanout;
 mod sub_team_application;
