@@ -71,7 +71,7 @@ mod imp {
         PostSyndicationDirective, SocialConnection, SyndicationJob,
     };
     use app_shell::features::membership::models::{
-        Membership, TeamMembership, UserMembership, UserPurchase,
+        Membership, TeamMembership, TeamPurchase, UserMembership, UserPurchase,
     };
     use app_shell::features::sub_team::models::{
         SubTeamAnnouncement, SubTeamAnnouncementFanout, SubTeamApplication, SubTeamFormField,
@@ -98,6 +98,7 @@ mod imp {
     use app_shell::features::spaces::pages::apps::apps::analyzes::{
         SpaceAnalyzeDiscussionResult, SpaceAnalyzeReport, SpaceAnalyzeReportResult,
     };
+    use app_shell::features::spaces::pages::report::models::SpaceReport;
     use app_shell::features::timeline::models::TimelineEntry;
     // NOTE: `SpacePanelParticipant` (features/spaces/models/), `FileLink` and
     // `SpaceApp` (features/spaces/pages/apps/**/models/) are NOT reachable from
@@ -1131,6 +1132,62 @@ mod imp {
         Value::Object(obj)
     }
 
+    /// SPACE_REPORT: pk="SPACE#<space>", sk="SPACE_REPORT#<uuid>". The surrogate
+    /// `id` is the report's own uuid (natural v7, kept raw). `space_id` is
+    /// derived from the pk (bare) and remapped to the space's migrated id by
+    /// ID_REF_FIELDS. `status` ("DRAFT"/"PUBLISHED") round-trips via
+    /// `ReportStatus`'s DeserializeFromStr, so no normalization is needed.
+    fn prep_space_report(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let report_uuid = strip1(sk, "SPACE_REPORT#");
+        let id =
+            Uuid::parse_str(report_uuid).unwrap_or_else(|_| key_to_uuid(&format!("{pk}#{sk}")));
+        obj.insert("id".into(), json!(id.to_string()));
+        let space_id = strip1(pk, "SPACE#");
+        obj.entry("space_id".to_string()).or_insert(json!(space_id));
+        Value::Object(obj)
+    }
+
+    /// TEAM_PURCHASE: pk="TEAM#<team>##PURCHASE", sk="TEAM_PURCHASE#<uuid>".
+    /// Mirrors `prep_user_purchase`. `team_pk` (the full `TEAM#…` string) is a
+    /// prefixed FK reference remapped by FK_REF_FIELDS. `tx_type` drifted from a
+    /// `TransactionType` enum (stored as a DynamoDB map, unwrapped here to a JSON
+    /// object) to a plain `String`; rebuild the `Display` form the app's
+    /// `TransactionType::from_str` expects (e.g. `"PURCHASE_MEMBERSHIP#PRO"`).
+    fn prep_team_purchase(pk: &str, sk: &str, mut obj: Map<String, Value>) -> Value {
+        let purchase_uuid = strip1(sk, "TEAM_PURCHASE#");
+        let id =
+            Uuid::parse_str(purchase_uuid).unwrap_or_else(|_| key_to_uuid(&format!("{pk}#{sk}")));
+        obj.insert("id".into(), json!(id.to_string()));
+        let team_pk = pk.strip_suffix("##PURCHASE").unwrap_or(pk);
+        obj.entry("team_pk".to_string()).or_insert(json!(team_pk));
+        // PurchaseStatus expects PascalCase; normalize whatever casing prod stored.
+        if let Some(Value::String(s)) = obj.get("status") {
+            let norm = match s.to_ascii_uppercase().as_str() {
+                "SUCCESS" => "Success",
+                "SCHEDULED" => "Scheduled",
+                "CANCELED" | "CANCELLED" => "Canceled",
+                _ => "Success",
+            };
+            obj.insert("status".into(), json!(norm));
+        }
+        // tx_type drift: object {"<Variant>": "<inner>"} → "<UPPER_SNAKE>#<inner>";
+        // a bare string (unit variant, e.g. "None") → its UpperSnake form.
+        match obj.get("tx_type").cloned() {
+            Some(Value::Object(m)) => {
+                if let Some((variant, inner)) = m.into_iter().next() {
+                    let key = camel_to_upper_snake(&variant);
+                    let inner_s = inner.as_str().unwrap_or_default();
+                    obj.insert("tx_type".into(), json!(format!("{key}#{inner_s}")));
+                }
+            }
+            Some(Value::String(s)) => {
+                obj.insert("tx_type".into(), json!(camel_to_upper_snake(&s)));
+            }
+            _ => {}
+        }
+        Value::Object(obj)
+    }
+
     // ── AI moderator ──────────────────────────────────────────────────────
     fn prep_ai_moderator_config(pk: &str, mut obj: Map<String, Value>) -> Value {
         // pk = "<space_id>##<discussion_id>" (both bare), sk = "AI_MODERATOR_CONFIG".
@@ -2050,6 +2107,12 @@ mod imp {
         } else if sk.starts_with("USER_PURCHASE#") {
             let val = prep_user_purchase(pk, sk, obj);
             finish!(report, "USER_PURCHASE", dry_run, pk, sk, UserPurchase, val);
+        } else if sk.starts_with("TEAM_PURCHASE#") {
+            let val = prep_team_purchase(pk, sk, obj);
+            finish!(report, "TEAM_PURCHASE", dry_run, pk, sk, TeamPurchase, val);
+        } else if sk.starts_with("SPACE_REPORT#") {
+            let val = prep_space_report(pk, sk, obj);
+            finish!(report, "SPACE_REPORT", dry_run, pk, sk, SpaceReport, val);
         } else if sk == "AI_MODERATOR_CONFIG" {
             let val = prep_ai_moderator_config(pk, obj);
             finish!(
@@ -2081,6 +2144,12 @@ mod imp {
             report.skip_intentional(
                 "PHONE_VERIFICATION",
                 "one-time TTL'd phone verification code, security-sensitive — not migrated",
+            );
+        } else if pk.starts_with("CDC_CHECKPOINT#") || sk.starts_with("SHARD#") {
+            report.skip_intentional(
+                "SHARD",
+                "CDC stream checkpoint (per-shard cursor, CDC_CHECKPOINT_SK_PREFIX) \
+                 — infra bookkeeping, no PostgresEntity model, not app data",
             );
         } else if sk.starts_with("POST_COMMENT#") {
             let val = prep_post_comment(pk, sk, obj);

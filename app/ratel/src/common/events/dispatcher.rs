@@ -211,11 +211,13 @@ static RULES: &[Rule] = &[
     Rule {
         name: "NotificationSend",
         class: EventClass::Default,
-        filter: |e| {
-            is_insert(e)
-                && new_sk_starts(e, "NOTIFICATION#")
-                && new_str(e, "pk").is_some_and(|s| s.starts_with("NOTIFICATION#"))
-        },
+        // NOTE: matches on `sk` only. The DynamoDB path set both pk and sk to
+        // "NOTIFICATION#<id>", but the Postgres outbox (`EventOutbox::to_cdc_event`)
+        // reconstructs only `sk` from the topic — it never emits a `pk`. An extra
+        // `new_str(e, "pk")…` guard here therefore never matched on Postgres, so
+        // every notification email (verification code, invitation, mention, …) was
+        // silently dropped. `sk` alone uniquely identifies the event on both paths.
+        filter: |e| is_insert(e) && new_sk_starts(e, "NOTIFICATION#"),
     },
     Rule {
         name: "InboxPushFanout",
