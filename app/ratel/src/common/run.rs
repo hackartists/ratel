@@ -206,6 +206,12 @@ fn serve(app: fn() -> Element) {
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
         .layer(cors_layer)
         .layer(session_layer)
+        // OUTSIDE the session layer: an anonymous `/spaces/**` GET that hits the
+        // SSR shell cache is replayed from memory without a session lookup or a
+        // re-render. Logged-in (…_sid cookie) and non-page requests bypass it.
+        .layer(axum::middleware::from_fn(
+            crate::common::middlewares::ssr_cache::ssr_cache,
+        ))
         .layer(axum::middleware::from_fn(log_request));
 
     crate::common::mcp::set_app_router(app.clone());
