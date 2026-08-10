@@ -840,7 +840,7 @@ jobs:
   #         retention-days: 14
 
   create-release-pr:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: github.ref == 'refs/heads/dev'
     needs: [deploy]
     steps:
@@ -864,264 +864,288 @@ jobs:
   # (b) uploads the x86 app-shell-image artifact usable for local compose
   # debugging of the dev tree.
   # ────────────────────────────────────────────────────────────────────────
-  ratel-app:
-    runs-on: ubuntu-latest
+  # ────────────────────────────────────────────────────────────────────
+  # DISABLED 2026-08-10 — moved off GitHub-hosted runners to stop
+  # consuming the org's 3,000 free Actions minutes/month (they were
+  # exhausted, blocking CI). This job cannot run on the current
+  # self-hosted runners (k3s pods in the Lima Linux VM: no docker CLI,
+  # no macOS/Xcode, no /dev/kvm).
+  # WHY: Builds & `docker save`s the app-shell image artifact; runner pods have no docker CLI.
+  # RE-ENABLE: register a native macOS self-hosted runner on the host
+  # Mac (Xcode for iOS, Hypervisor.framework for the Android emulator),
+  # then strip the leading "  # " from this block. (Or wait for the
+  # monthly Actions-minutes reset / enable an Actions spending budget.)
+  # ────────────────────────────────────────────────────────────────────
+  # ratel-app:
+  #   runs-on: ubuntu-latest
 
-    outputs:
-      image: ${{ steps.build.outputs.image }}
+  #   outputs:
+  #     image: ${{ steps.build.outputs.image }}
 
-    steps:
-      - uses: actions/checkout@v6
+  #   steps:
+  #     - uses: actions/checkout@v6
 
-      - name: Free disk space
-        # Same mitigation as pr-workflow's ratel-app: cold builds fill the
-        # runner disk alongside the restored cache.
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
-          sudo docker image prune --all --force 2>/dev/null || true
-          df -h / /mnt
+  #     - name: Free disk space
+  #       # Same mitigation as pr-workflow's ratel-app: cold builds fill the
+  #       # runner disk alongside the restored cache.
+  #       run: |
+  #         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+  #           /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+  #         sudo docker image prune --all --force 2>/dev/null || true
+  #         df -h / /mnt
 
-      - name: Add swap memory
-        # exit 143 (OOM kill) ~15 min into a cold build on run 30897339573 —
-        # same fix as pr-workflow's ratel-app.
-        run: |
-          sudo swapoff -a
-          sudo rm -f /swapfile /mnt/swapfile
-          sudo fallocate -l 12G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
-          free -h
+  #     - name: Add swap memory
+  #       # exit 143 (OOM kill) ~15 min into a cold build on run 30897339573 —
+  #       # same fix as pr-workflow's ratel-app.
+  #       run: |
+  #         sudo swapoff -a
+  #         sudo rm -f /swapfile /mnt/swapfile
+  #         sudo fallocate -l 12G /mnt/swapfile
+  #         sudo chmod 600 /mnt/swapfile
+  #         sudo mkswap /mnt/swapfile
+  #         sudo swapon /mnt/swapfile
+  #         free -h
 
-      - name: Restore cache
-        id: app-shell-build-cache
-        uses: actions/cache/restore@v5
-        with:
-          key: app-shell-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            app-shell-build-${{ runner.os }}-rust-
-          path: |
-            ~/.cargo/bin
-            target
+  #     - name: Restore cache
+  #       id: app-shell-build-cache
+  #       uses: actions/cache/restore@v5
+  #       with:
+  #         key: app-shell-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+  #         restore-keys: |
+  #           app-shell-build-${{ runner.os }}-rust-
+  #         path: |
+  #           ~/.cargo/bin
+  #           target
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: clippy, rustfmt
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          cache: false
+  #     - uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         components: clippy, rustfmt
+  #         toolchain: stable
+  #         target: wasm32-unknown-unknown
+  #         cache: false
 
-      - uses: cargo-bins/cargo-binstall@main
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            lld
+  #     - uses: cargo-bins/cargo-binstall@main
+  #     - name: Install system dependencies
+  #       run: |
+  #         sudo apt update
+  #         sudo apt install -y libwebkit2gtk-4.1-dev \
+  #           build-essential \
+  #           curl \
+  #           wget \
+  #           file \
+  #           libxdo-dev \
+  #           libssl-dev \
+  #           libayatana-appindicator3-dev \
+  #           librsvg2-dev \
+  #           lld
 
-      - name: Install Dioxus-cli
-        run: |
-          # `--locked` makes the `cargo install` fallback (when binstall
-          # can't find a prebuilt binary) honor dioxus-cli's published
-          # Cargo.lock. Without it, fresh transitive resolution picks up
-          # `git2 0.21`, which breaks `auth-git2 0.5.8`'s
-          # `Cred::credential_helper` call → dioxus-cli build fails.
-          cargo binstall dioxus-cli --force --locked
+  #     - name: Install Dioxus-cli
+  #       run: |
+  #         # `--locked` makes the `cargo install` fallback (when binstall
+  #         # can't find a prebuilt binary) honor dioxus-cli's published
+  #         # Cargo.lock. Without it, fresh transitive resolution picks up
+  #         # `git2 0.21`, which breaks `auth-git2 0.5.8`'s
+  #         # `Cred::credential_helper` call → dioxus-cli build fails.
+  #         cargo binstall dioxus-cli --force --locked
 
-      - name: Building test
-        id: build
-        env:
-          DYNAMO_TABLE_PREFIX: ratel-local
-          ENV: local
-          RUSTFLAGS: "-D warnings"
-          RUST_LOG: error
-          DYNAMO_ENDPOINT: http://localstack:4566
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_REGION: ap-northeast-2
-          AWS_ACCOUNT_ID: test
-          COMMIT: pr-${{ github.sha }}
-          ECR: ratel/app-shell
-          # Bound rustc parallelism — 4 concurrent rustc peaks past the 7 GB
-          # runner even with swap (see "Add swap memory" above).
-          CARGO_BUILD_JOBS: "2"
-        run: |
-          npm i
-          rm -rf target/dx
+  #     - name: Building test
+  #       id: build
+  #       env:
+  #         DYNAMO_TABLE_PREFIX: ratel-local
+  #         ENV: local
+  #         RUSTFLAGS: "-D warnings"
+  #         RUST_LOG: error
+  #         DYNAMO_ENDPOINT: http://localstack:4566
+  #         AWS_ACCESS_KEY_ID: test
+  #         AWS_SECRET_ACCESS_KEY: test
+  #         AWS_REGION: ap-northeast-2
+  #         AWS_ACCOUNT_ID: test
+  #         COMMIT: pr-${{ github.sha }}
+  #         ECR: ratel/app-shell
+  #         # Bound rustc parallelism — 4 concurrent rustc peaks past the 7 GB
+  #         # runner even with swap (see "Add swap memory" above).
+  #         CARGO_BUILD_JOBS: "2"
+  #       run: |
+  #         npm i
+  #         rm -rf target/dx
 
-          cd app/ratel
-          make build-testing
-          make docker
+  #         cd app/ratel
+  #         make build-testing
+  #         make docker
 
-          # Save image for artifact upload
-          docker save $ECR:$COMMIT | gzip > /tmp/app-shell-image.tar.gz
-          echo "image=$ECR:$COMMIT" >> $GITHUB_OUTPUT
+  #         # Save image for artifact upload
+  #         docker save $ECR:$COMMIT | gzip > /tmp/app-shell-image.tar.gz
+  #         echo "image=$ECR:$COMMIT" >> $GITHUB_OUTPUT
 
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-shell-image-${{ github.sha }}
-          path: /tmp/app-shell-image.tar.gz
-          retention-days: 7
+  #     - name: Upload Docker image artifact
+  #       uses: actions/upload-artifact@v7
+  #       with:
+  #         name: app-shell-image-${{ github.sha }}
+  #         path: /tmp/app-shell-image.tar.gz
+  #         retention-days: 7
 
-      - name: Delete Previous Cache
-        if: ${{ steps.app-shell-build-cache.outputs.cache-hit }}
-        continue-on-error: true
-        run: |
-          gh extension install actions/gh-actions-cache
-          gh actions-cache delete "${{ steps.app-shell-build-cache.outputs.cache-primary-key }}" --confirm
+  #     - name: Delete Previous Cache
+  #       if: ${{ steps.app-shell-build-cache.outputs.cache-hit }}
+  #       continue-on-error: true
+  #       run: |
+  #         gh extension install actions/gh-actions-cache
+  #         gh actions-cache delete "${{ steps.app-shell-build-cache.outputs.cache-primary-key }}" --confirm
 
-      - name: Save cache
-        if: always()
-        uses: actions/cache/save@v5
-        with:
-          key: ${{ steps.app-shell-build-cache.outputs.cache-primary-key }}
-          path: |
-            ~/.cargo/bin
-            target
+  #     - name: Save cache
+  #       if: always()
+  #       uses: actions/cache/save@v5
+  #       with:
+  #         key: ${{ steps.app-shell-build-cache.outputs.cache-primary-key }}
+  #         path: |
+  #           ~/.cargo/bin
+  #           target
 
-  # ────────────────────────────────────────────────────────────────────────
-  # Tauri Android (dev): builds the arm64 APK pointed at the live dev
-  # backend and uploads it as a workflow artifact for manual download
-  # onto physical devices. Debug-signed (not production-signed) — when
-  # the prod track is added later, that workflow will use a release
-  # keystore instead.
-  # ────────────────────────────────────────────────────────────────────────
-  tauri-android-dev:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+  # # ────────────────────────────────────────────────────────────────────────
+  # # Tauri Android (dev): builds the arm64 APK pointed at the live dev
+  # # backend and uploads it as a workflow artifact for manual download
+  # # onto physical devices. Debug-signed (not production-signed) — when
+  # # the prod track is added later, that workflow will use a release
+  # # keystore instead.
+  # # ────────────────────────────────────────────────────────────────────────
+  # ────────────────────────────────────────────────────────────────────
+  # DISABLED 2026-08-10 — moved off GitHub-hosted runners to stop
+  # consuming the org's 3,000 free Actions minutes/month (they were
+  # exhausted, blocking CI). This job cannot run on the current
+  # self-hosted runners (k3s pods in the Lima Linux VM: no docker CLI,
+  # no macOS/Xcode, no /dev/kvm).
+  # WHY: Builds the dev Android APK (Android SDK/NDK/tauri-cli); needs the Android SDK toolchain.
+  # RE-ENABLE: register a native macOS self-hosted runner on the host
+  # Mac (Xcode for iOS, Hypervisor.framework for the Android emulator),
+  # then strip the leading "  # " from this block. (Or wait for the
+  # monthly Actions-minutes reset / enable an Actions spending budget.)
+  # ────────────────────────────────────────────────────────────────────
+  # tauri-android-dev:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 60
 
-    steps:
-      # Default-token checkout — the repo has no submodules (.gitmodules is
-      # empty) and the old PULL_KEY_REPO deploy key no longer authenticates
-      # (Permission denied, run 30897339573; same fix as pr-workflow).
-      - uses: actions/checkout@v6
+  #   steps:
+  #     # Default-token checkout — the repo has no submodules (.gitmodules is
+  #     # empty) and the old PULL_KEY_REPO deploy key no longer authenticates
+  #     # (Permission denied, run 30897339573; same fix as pr-workflow).
+  #     - uses: actions/checkout@v6
 
-      - name: Restore cache
-        id: tauri-android-dev-cache
-        uses: actions/cache/restore@v5
-        with:
-          key: tauri-android-dev-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            tauri-android-dev-${{ runner.os }}-rust-
-          path: |
-            ~/.cargo/bin
-            target
-            app/ratel-tauri/dx-tauri-target
+  #     - name: Restore cache
+  #       id: tauri-android-dev-cache
+  #       uses: actions/cache/restore@v5
+  #       with:
+  #         key: tauri-android-dev-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+  #         restore-keys: |
+  #           tauri-android-dev-${{ runner.os }}-rust-
+  #         path: |
+  #           ~/.cargo/bin
+  #           target
+  #           app/ratel-tauri/dx-tauri-target
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown,aarch64-linux-android
-          cache: false
+  #     - uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #         target: wasm32-unknown-unknown,aarch64-linux-android
+  #         cache: false
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
+  #     - uses: actions/setup-java@v4
+  #       with:
+  #         distribution: temurin
+  #         java-version: "21"
 
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: "platforms;android-34 build-tools;34.0.0 ndk;29.0.14206865"
+  #     - uses: android-actions/setup-android@v3
+  #       with:
+  #         packages: "platforms;android-34 build-tools;34.0.0 ndk;29.0.14206865"
 
-      - uses: cargo-bins/cargo-binstall@main
+  #     - uses: cargo-bins/cargo-binstall@main
 
-      - name: Install dioxus-cli + tauri-cli
-        run: |
-          # See companion `--locked` notes above: dioxus-cli's source-build
-          # fallback otherwise grabs `git2 0.21`, which kills
-          # `auth-git2 0.5.8` (`Cred::credential_helper` was removed in
-          # the new git2). `--locked` pins to the lockfile shipped with
-          # the published crate, which used `git2 0.20`.
-          # `--force`: when binstall falls back to a source build (e.g. GitHub
-          # 403 rate-limits the prebuilt fetch), it must overwrite the `dx`/
-          # `cargo-tauri` binaries restored from cache, else `cargo install`
-          # aborts with "binary already exists in destination".
-          cargo binstall -y --locked --force dioxus-cli
-          cargo binstall -y --locked --force --version "^2.0.0" tauri-cli
+  #     - name: Install dioxus-cli + tauri-cli
+  #       run: |
+  #         # See companion `--locked` notes above: dioxus-cli's source-build
+  #         # fallback otherwise grabs `git2 0.21`, which kills
+  #         # `auth-git2 0.5.8` (`Cred::credential_helper` was removed in
+  #         # the new git2). `--locked` pins to the lockfile shipped with
+  #         # the published crate, which used `git2 0.20`.
+  #         # `--force`: when binstall falls back to a source build (e.g. GitHub
+  #         # 403 rate-limits the prebuilt fetch), it must overwrite the `dx`/
+  #         # `cargo-tauri` binaries restored from cache, else `cargo install`
+  #         # aborts with "binary already exists in destination".
+  #         cargo binstall -y --locked --force dioxus-cli
+  #         cargo binstall -y --locked --force --version "^2.0.0" tauri-cli
 
-      # google-services.json is gitignored (Firebase client config), so it is
-      # absent on a clean checkout. The google-services Gradle plugin (FCM push)
-      # reads it via the Makefile's `gs-copy`, so decode it from a secret first.
-      - name: Write google-services.json (Android Firebase client config)
-        working-directory: app/ratel-tauri
-        env:
-          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
-        run: |
-          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
-            echo "::error::GOOGLE_SERVICES_JSON_BASE64 secret not set — Android build needs google-services.json (gitignored). Add it in Settings → Secrets and variables → Actions."
-            exit 1
-          fi
-          echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > google-services.json
-          echo "Wrote google-services.json ($(wc -c < google-services.json) bytes)"
+  #     # google-services.json is gitignored (Firebase client config), so it is
+  #     # absent on a clean checkout. The google-services Gradle plugin (FCM push)
+  #     # reads it via the Makefile's `gs-copy`, so decode it from a secret first.
+  #     - name: Write google-services.json (Android Firebase client config)
+  #       working-directory: app/ratel-tauri
+  #       env:
+  #         GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+  #       run: |
+  #         if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+  #           echo "::error::GOOGLE_SERVICES_JSON_BASE64 secret not set — Android build needs google-services.json (gitignored). Add it in Settings → Secrets and variables → Actions."
+  #           exit 1
+  #         fi
+  #         echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > google-services.json
+  #         echo "Wrote google-services.json ($(wc -c < google-services.json) bytes)"
 
-      - name: Build arm64 debug APK (dev)
-        working-directory: app/ratel-tauri
-        env:
-          MOBILE_API_URL: https://dev.ratel.foundation
-          ENV: dev
-          ANDROID_TARGET: aarch64-linux-android
-          DYNAMO_TABLE_PREFIX: ratel-dev
-          RUSTFLAGS: "-D warnings"
-          # Populate this secret in repo settings to enable Google sign-in
-          # in the dev APK; the build still succeeds with an empty value
-          # (Google-auth flow just fails at runtime).
-          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID_DEV }}
+  #     - name: Build arm64 debug APK (dev)
+  #       working-directory: app/ratel-tauri
+  #       env:
+  #         MOBILE_API_URL: https://dev.ratel.foundation
+  #         ENV: dev
+  #         ANDROID_TARGET: aarch64-linux-android
+  #         DYNAMO_TABLE_PREFIX: ratel-dev
+  #         RUSTFLAGS: "-D warnings"
+  #         # Populate this secret in repo settings to enable Google sign-in
+  #         # in the dev APK; the build still succeeds with an empty value
+  #         # (Google-auth flow just fails at runtime).
+  #         GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID_DEV }}
 
-          # See PR build job: app/ratel/Makefile's BUILD_ENV defaults
-          # AWS_ACCOUNT_ID via `aws sts ...` which needs creds.
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_REGION: ap-northeast-2
-          AWS_ACCOUNT_ID: test
-        run: |
-          # setup-android exports ANDROID_HOME; the NDK we installed lives
-          # under ndk/29.0.14206865 of that. The Makefile defaults
-          # NDK_HOME=/opt/android-ndk on Linux which doesn't exist on
-          # GH runners, so override here.
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
-          export NDK_HOME="$ANDROID_NDK_HOME"
-          make dx-build
-          make build-android-debug
+  #         # See PR build job: app/ratel/Makefile's BUILD_ENV defaults
+  #         # AWS_ACCOUNT_ID via `aws sts ...` which needs creds.
+  #         AWS_ACCESS_KEY_ID: test
+  #         AWS_SECRET_ACCESS_KEY: test
+  #         AWS_REGION: ap-northeast-2
+  #         AWS_ACCOUNT_ID: test
+  #       run: |
+  #         # setup-android exports ANDROID_HOME; the NDK we installed lives
+  #         # under ndk/29.0.14206865 of that. The Makefile defaults
+  #         # NDK_HOME=/opt/android-ndk on Linux which doesn't exist on
+  #         # GH runners, so override here.
+  #         export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
+  #         export NDK_HOME="$ANDROID_NDK_HOME"
+  #         make dx-build
+  #         make build-android-debug
 
-      - name: Locate APK
-        id: locate
-        working-directory: app/ratel-tauri
-        run: |
-          APK=$(find src-tauri/gen/android -name 'app-*-debug.apk' | head -1)
-          if [ -z "$APK" ]; then
-            echo "::error::no APK produced"
-            find src-tauri/gen/android -name '*.apk' || true
-            exit 1
-          fi
-          echo "apk=$APK" >> $GITHUB_OUTPUT
-          ls -la "$APK"
+  #     - name: Locate APK
+  #       id: locate
+  #       working-directory: app/ratel-tauri
+  #       run: |
+  #         APK=$(find src-tauri/gen/android -name 'app-*-debug.apk' | head -1)
+  #         if [ -z "$APK" ]; then
+  #           echo "::error::no APK produced"
+  #           find src-tauri/gen/android -name '*.apk' || true
+  #           exit 1
+  #         fi
+  #         echo "apk=$APK" >> $GITHUB_OUTPUT
+  #         ls -la "$APK"
 
-      - name: Upload dev APK artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ratel-tauri-dev-${{ github.sha }}.apk
-          path: app/ratel-tauri/${{ steps.locate.outputs.apk }}
-          retention-days: 30
+  #     - name: Upload dev APK artifact
+  #       uses: actions/upload-artifact@v7
+  #       with:
+  #         name: ratel-tauri-dev-${{ github.sha }}.apk
+  #         path: app/ratel-tauri/${{ steps.locate.outputs.apk }}
+  #         retention-days: 30
 
-      - name: Save cache
-        if: always()
-        uses: actions/cache/save@v5
-        with:
-          key: tauri-android-dev-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          path: |
-            ~/.cargo/bin
-            target
-            app/ratel-tauri/dx-tauri-target
+  #     - name: Save cache
+  #       if: always()
+  #       uses: actions/cache/save@v5
+  #       with:
+  #         key: tauri-android-dev-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+  #         path: |
+  #           ~/.cargo/bin
+  #           target
+  #           app/ratel-tauri/dx-tauri-target
