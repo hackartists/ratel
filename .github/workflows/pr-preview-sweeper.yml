@@ -1,0 +1,191 @@
+name: PR preview sweeper
+
+# Periodic reconciler for the per-PR e2e previews that pr-workflow.yml's e2e
+# job creates (namespace ratel-pr-<num> + report webroot ratel-report-<num> on
+# the pr-webroot PVC).
+#
+# Why a sweeper exists at all: teardown is event-driven (pr-preview-cleanup.yml
+# on `closed`) and therefore racy by construction — the PR can close at any
+# point in the ~40 min a run takes, including before the e2e job has started.
+# Every event-time guard is a window narrowed, not a window closed. This job is
+# the one piece that does not care about timing: it compares what is ACTUALLY
+# on the cluster against the live PR states and deletes whatever no longer has
+# an open PR behind it. Four namespaces (#1735/#1736/#1739/#1740) leaked
+# unnoticed before it existed.
+#
+# State is read from the GitHub API, never inferred. A namespace is deleted
+# only on a definite non-open answer (a 200 saying closed, or a 404 saying the
+# PR does not exist). Any other response — rate limit, 5xx, network blip —
+# leaves the preview untouched and the next hourly pass retries.
+#
+# Registry tags (ratel-app-shell:pr-<num>) are out of scope here, same as in
+# pr-preview-cleanup.yml — deleting those needs digest lookups plus an offline
+# GC pass, which is home-infra's job.
+
+on:
+  schedule:
+    - cron: "25 * * * *" # hourly, off the top of the hour
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List what would be deleted without deleting it"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sweep:
+    # Self-hosted: needs in-cluster kubectl credentials and the pr-webroot PVC
+    # mounted at /root/nginx — same pool as e2e and cleanup.
+    runs-on: self-hosted
+    timeout-minutes: 30
+    env:
+      DRY_RUN: "${{ inputs.dry_run && 'true' || 'false' }}"
+
+    steps:
+      - name: Sweep preview namespaces with no open PR
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          api="https://api.github.com"
+          repo="${{ github.repository }}"
+          auth="Authorization: Bearer ${GITHUB_TOKEN}"
+          acc="Accept: application/vnd.github+json"
+
+          # Resolve a PR number to one of: open | closed | missing | unknown.
+          # "unknown" is the fail-safe bucket — anything we could not read for
+          # certain is treated as still in use.
+          pr_state() {
+            local num="$1" body code state
+            body=$(mktemp)
+            code=$(curl -s -o "${body}" -w '%{http_code}' \
+              -H "${auth}" -H "${acc}" \
+              "${api}/repos/${repo}/pulls/${num}" 2>/dev/null || echo 000)
+            case "${code}" in
+              200)
+                state=$(jq -r '.state // empty' < "${body}" 2>/dev/null)
+                [ "${state}" = "open" ] && echo open || echo closed
+                ;;
+              404) echo missing ;;
+              *)   echo unknown ;;
+            esac
+            rm -f "${body}"
+          }
+
+          # Matched by NAME, not by the app.kubernetes.io/part-of label the
+          # manifests set: a half-applied or hand-made namespace can be missing
+          # the label, and those are exactly the ones that go unnoticed. The
+          # `^ratel-pr-[0-9]+$` anchor keeps ratel-dev / ratel-prod out.
+          swept=0 kept=0 skipped=0
+          {
+            echo "## PR preview sweep"
+            echo
+            echo "| namespace | PR state | action |"
+            echo "| --- | --- | --- |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          for ns in $(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\n' | grep -E '^ratel-pr-[0-9]+$' || true); do
+            num="${ns#ratel-pr-}"
+            state=$(pr_state "${num}")
+            case "${state}" in
+              open)
+                kept=$((kept + 1))
+                echo "keep    ${ns} (PR #${num} open)"
+                echo "| \`${ns}\` | open | kept |" >> "${GITHUB_STEP_SUMMARY}"
+                ;;
+              closed|missing)
+                swept=$((swept + 1))
+                echo "sweep   ${ns} (PR #${num} ${state})"
+                if [ "${DRY_RUN}" = "true" ]; then
+                  echo "| \`${ns}\` | ${state} | would delete (dry run) |" >> "${GITHUB_STEP_SUMMARY}"
+                else
+                  kubectl delete namespace "${ns}" --ignore-not-found --wait=false || true
+                  rm -rf "/root/nginx/ratel-report-${num}" || true
+                  echo "| \`${ns}\` | ${state} | deleted |" >> "${GITHUB_STEP_SUMMARY}"
+                fi
+                ;;
+              *)
+                skipped=$((skipped + 1))
+                echo "::warning::could not resolve PR #${num} — leaving ${ns} for the next pass"
+                echo "| \`${ns}\` | unknown | skipped |" >> "${GITHUB_STEP_SUMMARY}"
+                ;;
+            esac
+          done
+
+          echo "swept=${swept} kept=${kept} skipped=${skipped}"
+          printf '\nswept **%s**, kept **%s**, skipped **%s**\n' "${swept}" "${kept}" "${skipped}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Unwedge namespaces stuck in Terminating
+        if: ${{ !inputs.dry_run }}
+        # A namespace whose finalizers never resolve sits in Terminating
+        # forever and still holds its Ingress host, so the next run for the
+        # same PR number cannot bind ratel-<num>.pr.biyard.co. Clearing the
+        # finalizers via /finalize is the standard unwedge and is safe here —
+        # everything in a ratel-pr-* namespace is disposable PR scratch.
+        # Only touches namespaces that have been Terminating for 10+ minutes,
+        # so an in-progress delete is never cut short.
+        run: |
+          set -uo pipefail
+          now=$(date -u +%s)
+          for ns in $(kubectl get namespaces -o jsonpath='{range .items[?(@.status.phase=="Terminating")]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -E '^ratel-pr-[0-9]+$' || true); do
+            ts=$(kubectl get namespace "${ns}" -o jsonpath='{.metadata.deletionTimestamp}' 2>/dev/null || true)
+            [ -n "${ts}" ] || continue
+            # BSD date (macOS runners) does not take -d; the runners are Linux,
+            # but fall back to sweeping anyway rather than skipping silently.
+            started=$(date -u -d "${ts}" +%s 2>/dev/null || echo 0)
+            age=$(( now - started ))
+            if [ "${started}" -ne 0 ] && [ "${age}" -lt 600 ]; then
+              echo "skip    ${ns} (Terminating for ${age}s — still draining)"
+              continue
+            fi
+            echo "::warning::${ns} wedged in Terminating — clearing finalizers"
+            kubectl get namespace "${ns}" -o json 2>/dev/null \
+              | jq '.spec.finalizers = [] | .metadata.finalizers = []' \
+              | kubectl replace --raw "/api/v1/namespaces/${ns}/finalize" -f - >/dev/null 2>&1 \
+              || echo "::warning::finalize call failed for ${ns}"
+          done
+
+      - name: Sweep orphaned report webroots
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        # The report webroot outlives the namespace on purpose (reviewers read
+        # it after the run), so it gets its own pass: a report dir is orphaned
+        # once its PR is no longer open, regardless of whether the namespace
+        # was already swept above.
+        run: |
+          set -uo pipefail
+          test -d /root/nginx || {
+            echo "::warning::/root/nginx (pr-webroot mount) missing on this runner — skipping report sweep"
+            exit 0
+          }
+          api="https://api.github.com"
+          repo="${{ github.repository }}"
+          auth="Authorization: Bearer ${GITHUB_TOKEN}"
+          acc="Accept: application/vnd.github+json"
+
+          for dir in /root/nginx/ratel-report-*; do
+            [ -d "${dir}" ] || continue
+            num="${dir##*/ratel-report-}"
+            case "${num}" in ''|*[!0-9]*) continue ;; esac
+            body=$(mktemp)
+            code=$(curl -s -o "${body}" -w '%{http_code}' -H "${auth}" -H "${acc}" \
+              "${api}/repos/${repo}/pulls/${num}" 2>/dev/null || echo 000)
+            state=$(jq -r '.state // empty' < "${body}" 2>/dev/null)
+            rm -f "${body}"
+            if [ "${code}" = "200" ] && [ "${state}" = "open" ]; then
+              continue
+            fi
+            if [ "${code}" != "200" ] && [ "${code}" != "404" ]; then
+              echo "::warning::could not resolve PR #${num} (HTTP ${code}) — keeping ${dir}"
+              continue
+            fi
+            if [ "${DRY_RUN}" = "true" ]; then
+              echo "would remove ${dir} (PR #${num} not open)"
+            else
+              rm -rf "${dir}" && echo "removed ${dir} (PR #${num} not open)"
+            fi
+          done

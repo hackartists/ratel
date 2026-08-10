@@ -63,10 +63,44 @@ baked into the binary keeps resolving in-cluster without a rebuild.
    (`<!-- e2e-preview -->`) with the **live preview URL**
    (`https://ratel-<num>.pr.biyard.co`) and the report URL. The namespace is
    NOT torn down — the preview stays clickable for the PR's lifetime
-   (asset pattern; each new run still starts from a clean recreate).
-3. **PR close** → `pr-preview-cleanup.yml` (primary teardown): deletes the
-   namespace, removes the report webroot, updates the sticky comment. No
-   database step — the preview is fully namespace-contained.
+   (asset pattern; each new run still starts from a clean recreate). The
+   exception is a run that outlived its own PR: the last step re-reads the
+   PR state and, if it is already closed, deletes the namespace it just
+   created (see "Namespace leak" below).
+3. **PR close** → `pr-preview-cleanup.yml` (primary teardown): cancels the
+   PR's in-flight runs and waits for them to stop, then deletes the
+   namespace, removes the report webroot, updates the sticky comment, and
+   **verifies** the namespace is gone (clearing wedged finalizers, failing
+   loudly if it survives). No database step — the preview is fully
+   namespace-contained.
+4. **Hourly** → `pr-preview-sweeper.yml` (backstop reconciler): deletes every
+   `ratel-pr-<num>` namespace and `ratel-report-<num>` webroot whose PR is no
+   longer open, and unwedges namespaces stuck in `Terminating` for 10+ min.
+   It deletes only on a definite non-open answer from the API — any error
+   response leaves the preview alone for the next pass. `workflow_dispatch`
+   with `dry_run: true` lists what it would remove.
+
+### Namespace leak (fixed 2026-08-10)
+
+Close-time teardown alone was racy: e2e queues behind `build-image` for
+20-30 min on the self-hosted pool, so a PR merged the moment its required
+checks go green fires `pr-preview-cleanup.yml` **before e2e has even
+started**. The delete hit a namespace that did not exist yet (a 37 ms no-op
+that reported success), e2e created `ratel-pr-<num>` minutes later, and
+nothing was left to remove it. Four namespaces leaked this way
+(#1735/#1736/#1739/#1740 — e2e started 20-28 min after the merge in every
+case) and had to be deleted by hand.
+
+The teardown is now defence in depth, because no event-time hook can close
+the window on its own:
+
+| Guard | Covers |
+|---|---|
+| `concurrency: pr-testing-<num>` on `pr-workflow.yml` | a second push leaving two runs fighting over one namespace |
+| e2e's last step (self-teardown when the PR is closed) | a run that outlived its PR |
+| cleanup cancelling in-flight runs before deleting | a run about to recreate the namespace behind cleanup's back |
+| cleanup verifying the delete + clearing finalizers | a namespace wedged in `Terminating` passing as success |
+| `pr-preview-sweeper.yml` (hourly) | everything else, including runs cancelled too late to self-clean |
 
 The e2e job is `continue-on-error: true` (non-blocking) while the new path
 stabilizes; promote it to a required check once it has green history.
@@ -94,7 +128,18 @@ stabilizes; promote it to a required check once it has green history.
 
 Previews persist until PR close: the e2e job leaves the namespace running so
 the sticky comment's preview URL stays clickable; `pr-preview-cleanup.yml`
-is the primary teardown at close time.
+is the primary teardown at close time, with `pr-preview-sweeper.yml` as the
+hourly reconciler that makes the leak self-healing.
+
+Auditing what is actually up:
+
+```bash
+kubectl get ns -l app.kubernetes.io/part-of=ratel-pr-preview
+```
+
+Anything there whose PR is closed means every guard missed — check the
+sweeper's most recent run first (its job summary tables each namespace with
+the PR state it read).
 
 Cost of persistence: one localstack + qdrant + app-shell set per open PR
 (~1 GB RAM each), and LocalStack state lives in the pod (PERSISTENCE=0) —

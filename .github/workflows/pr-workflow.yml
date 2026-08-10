@@ -29,10 +29,12 @@ name: PR Testing
 #                          via E2E_HOST_RESOLVER_RULES. The HTML report is
 #                          published to the pr-webroot at
 #                          ratel-report-<num>.pr.biyard.co and linked from a
-#                          sticky PR comment. UNLIKE asset, the preview
-#                          namespace is TORN DOWN when the tests finish (the
-#                          report webroot stays); pr-preview-cleanup.yml is
-#                          only the safety net for cancelled/crashed runs.
+#                          sticky PR comment. Like asset, the namespace stays
+#                          up for the PR's lifetime so the preview URL keeps
+#                          working; pr-preview-cleanup.yml tears it down when
+#                          the PR closes, and the job's own last step tears it
+#                          down early if the PR was ALREADY closed by the time
+#                          this run got here (see "namespace leak" below).
 #                          NON-BLOCKING (`continue-on-error: true`) while the
 #                          new infra path stabilizes — promote to a required
 #                          check once a run of green history backs it.
@@ -43,11 +45,35 @@ name: PR Testing
 # never save) with ratel-cargo-* / ratel-target-* keys — same policy as
 # asset's pr-workflow: PR runs restore warmed caches but never write their
 # own entries, keeping the repo cache store from filling per-PR.
+#
+# ── namespace leak (fixed 2026-08-10) ──────────────────────────────────────
+# This workflow owns the k8s namespace `ratel-pr-<num>` and, by design, leaves
+# it running after the run so the preview URL stays clickable. That made the
+# teardown racy: PRs merge while the run is still queued behind the build, so
+# pr-preview-cleanup.yml (fires on `closed`) deleted a namespace that did not
+# exist yet, and the e2e job created it MINUTES LATER with nothing left to
+# remove it. Observed on #1735/#1736/#1739/#1740 — e2e started 20-28 min AFTER
+# the merge every time. Three guards now close it:
+#   1. `concurrency` below — a new push cancels the superseded run instead of
+#      letting two runs fight over the same namespace.
+#   2. e2e's last step ("Tear down if this PR is no longer open") — a run that
+#      outlives its PR cleans up after itself.
+#   3. pr-preview-cleanup.yml cancels in-flight runs before deleting, and
+#      pr-preview-sweeper.yml reconciles anything that still slips through.
+# ───────────────────────────────────────────────────────────────────────────
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [dev]
+
+# One run per PR. Without this a rapid second push leaves the first run alive,
+# and both races to `kubectl delete/create namespace ratel-pr-<num>` — the
+# newer run wipes the older one's stack mid-test, and whichever finishes last
+# owns the leftover namespace.
+concurrency:
+  group: pr-testing-${{ github.event.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -780,17 +806,48 @@ jobs:
             echo "<!doctype html><title>no report</title><h1>No Playwright report produced</h1>" > "${dest}/index.html"
           fi
 
-      # NOTE: no teardown here — the preview namespace (ratel-pr-<num>) and
-      # its exact-host Ingress stay RUNNING so the preview URL in the sticky
-      # comment stays clickable for the PR's lifetime (asset pattern).
-      # pr-preview-cleanup.yml tears the namespace + report webroot down when
-      # the PR closes. Each run's "Recreate" step still starts from a clean
-      # namespace.
+      # The preview namespace (ratel-pr-<num>) and its exact-host Ingress
+      # normally stay RUNNING so the preview URL in the sticky comment keeps
+      # working for the PR's lifetime (asset pattern) — pr-preview-cleanup.yml
+      # tears them down on close. The one case that leaked is a run that
+      # OUTLIVES its own PR: the merge fires cleanup while this run is still
+      # queued, then "Recreate the per-PR namespace" above creates a namespace
+      # nothing will ever delete. Resolve the PR's state once here; the two
+      # steps below (comment, teardown) both key off it so they cannot
+      # disagree — the old ordering had the comment re-advertising a preview
+      # that had just been deleted.
+      - name: Is this PR still open?
+        id: prstate
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        # `always()` so this also runs when the job is cancelled (the
+        # `concurrency` group cancels superseded runs, and a cancelled run
+        # would otherwise strand the namespace it just created).
+        # Emits exactly one of: open | closed | unknown. "unknown" (API error,
+        # rate limit, fork token) is the fail-safe bucket — treated as open.
+        run: |
+          set -uo pipefail
+          state=$(curl -sf \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUM}" \
+            2>/dev/null | jq -r '.state // empty' 2>/dev/null || true)
+          case "${state}" in
+            open|closed) ;;
+            *)
+              echo "::warning::could not read PR #${PR_NUM} state — assuming open, pr-preview-sweeper will reconcile"
+              state=unknown
+              ;;
+          esac
+          echo "state=${state}" >> "${GITHUB_OUTPUT}"
+          echo "PR #${PR_NUM} state: ${state}"
 
       - name: Sticky PR comment with the preview + report URLs
         if: always()
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PR_STATE: ${{ steps.prstate.outputs.state }}
         # Update ONE marker-tagged comment in place (no per-run spam). The
         # runner image has no `gh`, so use curl + jq (both present) against
         # the REST API. Comment failures (e.g. a fork PR's read-only token)
@@ -803,8 +860,16 @@ jobs:
           app="https://ratel-${PR_NUM}.pr.biyard.co"
           report="https://ratel-report-${PR_NUM}.pr.biyard.co"
           run_url="https://github.com/${repo}/actions/runs/${{ github.run_id }}"
-          body="$(printf '%s\n### 🔎 PR preview (k3s e2e)\n\n- **App preview:** %s\n- **Playwright report:** %s\n\n<sub>updated by [run](%s) · namespace `ratel-pr-%s` and the report stay up until this PR closes</sub>\n' \
-            "$marker" "$app" "$report" "$run_url" "$PR_NUM")"
+          if [ "${PR_STATE:-unknown}" = "closed" ]; then
+            # This run outlived its PR — the teardown step below deletes both,
+            # so do not re-advertise dead links (pr-preview-cleanup already
+            # posted the torn-down text; this run must not undo it).
+            body="$(printf '%s\n### 🔎 PR preview (k3s e2e)\n\n🧹 This PR closed while [run](%s) was still in flight — the preview namespace `ratel-pr-%s` and the report have been torn down.\n' \
+              "$marker" "$run_url" "$PR_NUM")"
+          else
+            body="$(printf '%s\n### 🔎 PR preview (k3s e2e)\n\n- **App preview:** %s\n- **Playwright report:** %s\n\n<sub>updated by [run](%s) · namespace `ratel-pr-%s` and the report stay up until this PR closes</sub>\n' \
+              "$marker" "$app" "$report" "$run_url" "$PR_NUM")"
+          fi
           payload=$(jq -nc --arg b "$body" '{body:$b}')
           auth="Authorization: Bearer ${GITHUB_TOKEN}"
           acc="Accept: application/vnd.github+json"
@@ -820,6 +885,17 @@ jobs:
               "${api}/repos/${repo}/issues/${PR_NUM}/comments" -d "$payload" >/dev/null \
               && echo "created sticky comment" || echo "::warning::sticky comment create failed (non-fatal)"
           fi
+
+      # LAST step in the job on purpose: everything above still needs the
+      # namespace (report copy-out, pod logs), and the sticky comment above has
+      # already been switched to its torn-down wording for this case.
+      - name: Tear down the preview if this run outlived its PR
+        if: always() && steps.prstate.outputs.state == 'closed'
+        run: |
+          set -uo pipefail
+          echo "::warning::PR #${PR_NUM} closed while this run was in flight — tearing ${NS} down"
+          kubectl delete namespace "${NS}" --ignore-not-found --wait=false || true
+          rm -rf "/root/nginx/ratel-report-${PR_NUM}" || true
 
   # ────────────────────────────────────────────────────────────────────────
   # Tauri Android build: produces a debuggable x86_64 APK that the smoke
