@@ -23,8 +23,12 @@
 //!   (per-user) shell, and vice-versa.
 //! - Stores ONLY `200 text/html` bodies. Non-200, non-HTML, and every `/api/**`
 //!   or streaming response flow straight through untouched (never buffered).
+//! - Replays the render's ORIGINAL headers (Content-Type, Strict-Transport-
+//!   Security, Vary, …) on every hit, minus per-connection / per-response ones
+//!   (Set-Cookie, Content-Length, hop-by-hop) — so a cache hit is not stripped
+//!   of the security headers the live render carried.
 //! - Sits OUTSIDE the session layer, so a cache hit skips session lookup; it
-//!   emits `x-ssr-cache: HIT | STALE | REFRESH | MISS` for verification.
+//!   emits `x-ssr-cache: HIT | STALE | MISS` for verification.
 
 #[cfg(feature = "server")]
 use std::collections::HashMap;
@@ -35,11 +39,14 @@ use std::sync::{OnceLock, RwLock};
 #[cfg(feature = "server")]
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "server")]
+use crate::axum::http::{HeaderName, HeaderValue};
+
 /// Fresh window: within this a request gets the cached bytes verbatim (`HIT`).
 #[cfg(feature = "server")]
 const TTL: Duration = Duration::from_secs(10);
-/// Stale window past `TTL`: bytes are still served (`STALE`/`REFRESH`) while one
-/// request re-renders. Beyond `TTL + STALE_GRACE` the entry is treated as cold.
+/// Stale window past `TTL`: bytes are still served (`STALE`) while one request
+/// re-renders. Beyond `TTL + STALE_GRACE` the entry is treated as cold.
 #[cfg(feature = "server")]
 const STALE_GRACE: Duration = Duration::from_secs(300);
 /// Soft cap on distinct cached paths; on overflow we sweep hard-expired entries.
@@ -49,13 +56,31 @@ const MAX_ENTRIES: usize = 2_000;
 #[cfg(feature = "server")]
 const MAX_BODY: usize = 4 * 1024 * 1024;
 
+/// Headers we must NOT replay from a stored response: `Set-Cookie` (never cache
+/// a per-response cookie), `Content-Length` (axum recomputes it from the body),
+/// the hop-by-hop headers, `Age`, and our own marker.
+#[cfg(feature = "server")]
+fn skip_header(name: &HeaderName) -> bool {
+    // HeaderName always stores its name lowercased, so a str compare is exact.
+    matches!(
+        name.as_str(),
+        "set-cookie"
+            | "content-length"
+            | "transfer-encoding"
+            | "connection"
+            | "age"
+            | "x-ssr-cache"
+    )
+}
+
 #[cfg(feature = "server")]
 struct Entry {
     /// Fresh until this instant; stale-servable until `soft_expires + STALE_GRACE`.
     soft_expires: Instant,
     /// True while exactly one request is re-rendering this key.
     refreshing: AtomicBool,
-    content_type: Option<String>,
+    /// The render's replayable headers (see [`skip_header`]).
+    headers: Vec<(HeaderName, HeaderValue)>,
     body: Vec<u8>,
 }
 
@@ -83,8 +108,8 @@ fn is_anonymous(req: &crate::axum::extract::Request) -> bool {
 /// What the cache lookup decided for this request.
 #[cfg(feature = "server")]
 enum Decision {
-    /// Serve these bytes immediately with the given `x-ssr-cache` label.
-    Serve(&'static str, Option<String>, Vec<u8>),
+    /// Serve these bytes + headers immediately with the given `x-ssr-cache` label.
+    Serve(&'static str, Vec<(HeaderName, HeaderValue)>, Vec<u8>),
     /// Render via the inner handler and store the result (this request either
     /// won the single-flight refresh, or the key is cold/hard-expired).
     Render,
@@ -96,7 +121,7 @@ pub async fn ssr_cache(
     next: crate::axum::middleware::Next,
 ) -> crate::axum::response::Response {
     use crate::axum::body::{to_bytes, Body};
-    use crate::axum::http::{header, HeaderValue, Method, StatusCode};
+    use crate::axum::http::{header, HeaderValue as HV, Method, StatusCode};
     use crate::axum::response::Response;
 
     let cacheable = req.method() == Method::GET
@@ -119,7 +144,7 @@ pub async fn ssr_cache(
         match cache().read() {
             Ok(store) => match store.get(&key) {
                 Some(e) if now < e.soft_expires => {
-                    Decision::Serve("HIT", e.content_type.clone(), e.body.clone())
+                    Decision::Serve("HIT", e.headers.clone(), e.body.clone())
                 }
                 Some(e) if now < e.soft_expires + STALE_GRACE => {
                     // Stale but usable. Exactly one request flips `refreshing`
@@ -131,7 +156,7 @@ pub async fn ssr_cache(
                     {
                         Decision::Render
                     } else {
-                        Decision::Serve("STALE", e.content_type.clone(), e.body.clone())
+                        Decision::Serve("STALE", e.headers.clone(), e.body.clone())
                     }
                 }
                 // Absent or hard-expired → cold render.
@@ -142,20 +167,19 @@ pub async fn ssr_cache(
     };
 
     match decision {
-        Decision::Serve(label, ct, body) => {
-            let mut builder = Response::builder()
-                .status(StatusCode::OK)
-                .header("x-ssr-cache", label);
-            if let Some(ct) = &ct {
-                builder = builder.header(header::CONTENT_TYPE, ct);
+        Decision::Serve(label, headers, body) => {
+            let mut builder = Response::builder().status(StatusCode::OK);
+            for (name, value) in headers {
+                builder = builder.header(name, value);
             }
+            builder = builder.header("x-ssr-cache", label);
             if let Ok(resp) = builder.body(Body::from(body)) {
                 return resp;
             }
-            return Response::builder()
+            Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Body::empty())
-                .unwrap_or_default();
+                .unwrap_or_default()
         }
         Decision::Render => {
             // Render. On failure, clear any `refreshing` flag we may have set so
@@ -167,26 +191,31 @@ pub async fn ssr_cache(
                     .get(header::CONTENT_TYPE)
                     .and_then(|v| v.to_str().ok())
                     .map(|ct| ct.contains("text/html"))
-                    .unwrap_or(false); //캐시해도 되는 응답인지?
+                    .unwrap_or(false);
             if !ok_html {
                 if let Ok(store) = cache().read() {
                     if let Some(e) = store.get(&key) {
-                        e.refreshing.store(false, Ordering::Release); // 갱신 해제, 캐시 안하고 통과
+                        e.refreshing.store(false, Ordering::Release);
                     }
                 }
                 return resp;
             }
-            let content_type = resp
-                .headers()
-                .get(header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .map(str::to_owned);
+
             let (mut parts, body) = resp.into_parts();
             let bytes = match to_bytes(body, MAX_BODY).await {
                 Ok(bytes) => bytes,
                 Err(_) => return Response::from_parts(parts, Body::empty()),
             };
-            // Store the fresh render (a full replacement resets `refreshing`).
+            // Snapshot the replayable headers BEFORE we stamp our own marker, so
+            // the stored entry carries the render's own headers (incl. security
+            // headers like Strict-Transport-Security) and no `x-ssr-cache`.
+            let headers: Vec<(HeaderName, HeaderValue)> = parts
+                .headers
+                .iter()
+                .filter(|(name, _)| !skip_header(name))
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect();
+
             if let Ok(mut store) = cache().write() {
                 if store.len() >= MAX_ENTRIES && !store.contains_key(&key) {
                     let now = Instant::now();
@@ -197,14 +226,14 @@ pub async fn ssr_cache(
                     Entry {
                         soft_expires: Instant::now() + TTL,
                         refreshing: AtomicBool::new(false),
-                        content_type,
+                        headers,
                         body: bytes.to_vec(),
                     },
                 );
             }
             parts
                 .headers
-                .insert("x-ssr-cache", HeaderValue::from_static("MISS"));
+                .insert("x-ssr-cache", HV::from_static("MISS"));
             Response::from_parts(parts, Body::from(bytes))
         }
     }
