@@ -2206,6 +2206,24 @@ mod imp {
         // the missing composite UNIQUE indexes and is a no-op for everything
         // migrate() already built.
         schema.create(&pool).await?;
+
+        // Activity dedup guard. `record_activity` keeps at most one activity per
+        // (space_id, author_pk, dedup_key) via a check-then-insert, which races
+        // when two event pipelines process the same action within milliseconds
+        // (observed: a quiz recorded twice → doubled `quiz_score`). This uniqueness
+        // is intentionally NOT declared as `#[postgres(unique(...))]` on the model:
+        // a struct-level composite unique lands in the v0 baseline and changes the
+        // entity's schema checksum, which makes `migrate()` abort with "schema
+        // checksum mismatch" on every already-deployed DB. Create it explicitly
+        // here so migrated environments get the atomic guard without perturbing the
+        // checksum. IF NOT EXISTS keeps it idempotent across re-runs.
+        postgres::sqlx::query(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_space_activities_space_author_dedup \
+             ON space_activities (space_id, author_pk, dedup_key)",
+        )
+        .execute(&pool)
+        .await?;
+
         println!("etl_migrate: postgres schema migrated + indexes ensured ({database_url})");
 
         // ── Read + parse every line once ───────────────────────────────────
