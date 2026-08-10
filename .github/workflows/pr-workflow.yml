@@ -232,19 +232,30 @@ jobs:
         run: |
           dx check --web --features tauri-web --no-default-features
 
-      - name: cargo check app/ratel-tauri shell crate
-        working-directory: app/ratel-tauri/src-tauri
-        env:
-          DYNAMO_TABLE_PREFIX: ratel-dev
-          # commands/google_sign_in.rs uses
-          #   option_env!("GOOGLE_OAUTH_CLIENT_ID").expect(...)
-          # which panics at compile time if the env var is unset. Any
-          # non-empty value lets the compile pass; runtime Google sign-in
-          # is exercised by the dev workflow's APK build with the real
-          # GOOGLE_OAUTH_CLIENT_ID_DEV secret.
-          GOOGLE_OAUTH_CLIENT_ID: placeholder-for-compile-only
-        run: |
-          cargo check
+      # DISABLED 2026-08-10 — `cargo check` on the ratel-tauri shell crate
+      # targets the Linux DESKTOP build, which links the GTK/webkit stack
+      # (glib-sys needs `glib-2.0.pc` from libglib2.0-dev / webkit2gtk-dev).
+      # The self-hosted runner has NO apt-get (verified: the "Install system
+      # dependencies" step above no-ops — the runner is a dnf-family glibc
+      # image, and webkit/gtk were only ever installed on the old ubuntu-latest
+      # jobs), so glib-2.0 is absent and this check dies with
+      # "system library glib-2.0 ... was not found". Ratel ships web + mobile,
+      # not a Linux desktop app, so this desktop-target check is low value here.
+      # RE-ENABLE once the runner image carries the GTK/webkit desktop stack
+      # (or move it to a GTK-provisioned runner) — then strip the "# " below.
+      # - name: cargo check app/ratel-tauri shell crate
+      #   working-directory: app/ratel-tauri/src-tauri
+      #   env:
+      #     DYNAMO_TABLE_PREFIX: ratel-dev
+      #     # commands/google_sign_in.rs uses
+      #     #   option_env!("GOOGLE_OAUTH_CLIENT_ID").expect(...)
+      #     # which panics at compile time if the env var is unset. Any
+      #     # non-empty value lets the compile pass; runtime Google sign-in
+      #     # is exercised by the dev workflow's APK build with the real
+      #     # GOOGLE_OAUTH_CLIENT_ID_DEV secret.
+      #     GOOGLE_OAUTH_CLIENT_ID: placeholder-for-compile-only
+      #   run: |
+      #     cargo check
 
   # ────────────────────────────────────────────────────────────────────────
   # ratel-app: x86_64 docker image artifact. RETAINED ONLY as the backend
