@@ -58,10 +58,10 @@ fn cache() -> &'static RwLock<HashMap<String, Entry>> {
 
 /// Anonymous = no `…_sid` session cookie on the request.
 #[cfg(feature = "server")]
-fn is_anonymous(req: &axum::extract::Request) -> bool {
+fn is_anonymous(req: &crate::axum::extract::Request) -> bool {
     match req
         .headers()
-        .get(axum::http::header::COOKIE)
+        .get(crate::axum::http::header::COOKIE)
         .and_then(|v| v.to_str().ok())
     {
         Some(cookie) => !cookie.contains("_sid="),
@@ -71,12 +71,12 @@ fn is_anonymous(req: &axum::extract::Request) -> bool {
 
 #[cfg(feature = "server")]
 pub async fn ssr_cache(
-    req: axum::extract::Request,
-    next: axum::middleware::Next,
-) -> axum::response::Response {
-    use axum::body::{to_bytes, Body};
-    use axum::http::{header, HeaderValue, Method, StatusCode};
-    use axum::response::Response;
+    req: crate::axum::extract::Request,
+    next: crate::axum::middleware::Next,
+) -> crate::axum::response::Response {
+    use crate::axum::body::{to_bytes, Body};
+    use crate::axum::http::{header, HeaderValue, Method, StatusCode};
+    use crate::axum::response::Response;
 
     let cacheable = req.method() == Method::GET
         && req.uri().path().starts_with("/spaces/")
