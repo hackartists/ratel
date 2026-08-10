@@ -127,6 +127,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # app/ratel/build.rs unconditionally runs `npm install` + `npm run build`
+      # in app/ratel/js (vite bundles the JS assets the `asset!()` macros load),
+      # so `cargo check`/`dx check` need node present. Self-hosted runner pods
+      # don't ship node (see contracts-test) — install it, matching build-image.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Restore cache
         id: dx-check-cache
         uses: actions/cache/restore@v5
@@ -188,14 +197,17 @@ jobs:
           RUSTFLAGS: "-D warnings"
         run: |
           dx check --web
-          # `dx check --ios` / `--android` need the mobile toolchains (Android
-          # NDK, iOS SDK) that the self-hosted Linux runner pods don't carry —
-          # `dx check --android` fails with "Android not installed properly /
-          # set ANDROID_NDK_HOME". These mobile compile-checks belong on the
-          # native macOS self-hosted runner (Xcode + Android SDK); the `--web`
-          # check above already covers the shared Rust/RSX code. Re-enable the
-          # two lines below once that runner is registered.
-          # dx check --ios
+          # `dx check --ios` is a cargo-check for the iOS target with no Xcode
+          # link step, so it runs fine on this Linux runner (verified: "No
+          # issues found").
+          dx check --ios
+          # `dx check --android` needs the Android NDK, whose host toolchain
+          # Google ships only for x86_64 (`linux-x86_64` — there is no
+          # `linux-aarch64` NDK). This runner is arm64 Linux (Apple Silicon
+          # Lima VM), so the NDK clang can't execute here and the check dies
+          # with "Android not installed properly / set ANDROID_NDK_HOME". The
+          # android compile-check belongs on the native macOS self-hosted
+          # runner (darwin NDK runs via Rosetta); re-enable the line below there.
           # dx check --android
 
       # The `asset!("/assets/tailwind.css")` macro in app.rs checks the
