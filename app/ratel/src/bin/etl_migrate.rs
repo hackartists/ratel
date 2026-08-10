@@ -2193,8 +2193,20 @@ mod imp {
             .connect(&database_url)
             .await?;
         postgres::set_global_pool(pool.clone());
-        postgres::Schema::from_inventory().migrate(&pool).await?;
-        println!("etl_migrate: postgres schema migrated ({database_url})");
+        let schema = postgres::Schema::from_inventory();
+        schema.migrate(&pool).await?;
+        // `migrate()` registers the DB at baseline v0 but DELIBERATELY skips index
+        // creation (see schema.rs: "인덱스는 … 실행하지 않는다"). Table-level
+        // `#[postgres(unique(a, b))]` composite UNIQUE indexes therefore never get
+        // emitted on the migrate path, so every composite-key `upsert_on`
+        // (user_oauths(provider,uid) for Google login, post/space likes, rewards,
+        // participants, …) fails at runtime with "no unique or exclusion constraint
+        // matching the ON CONFLICT specification". `create()` re-runs the fully
+        // idempotent DDL (every statement is `IF NOT EXISTS`), which adds exactly
+        // the missing composite UNIQUE indexes and is a no-op for everything
+        // migrate() already built.
+        schema.create(&pool).await?;
+        println!("etl_migrate: postgres schema migrated + indexes ensured ({database_url})");
 
         // ── Read + parse every line once ───────────────────────────────────
         let file = std::fs::File::open(&path)
