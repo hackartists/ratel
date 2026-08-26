@@ -125,9 +125,25 @@ kubectl -n infra port-forward svc/icp 4100:4100
 docker build -f deploy/dev/Dockerfile.icp -t ratel-icp:dev .
 ```
 
-## 남은 검증 항목
+## 검증 결과 (2026-08-26)
 
-1. arm64 빌드 성공 여부 — 가장 먼저
-2. 단일 파드에서 `/api/v4/height` 응답
-3. 4노드 합의 형성 (위 P2P bind 문제)
-4. TPS 측정 → 리소스 사양 산정 (현재 값은 EC2 실측의 load average ~0.9 근거로 잡은 추정치)
+클러스터(`dev-victor`, 4노드)에 실제로 배포해 확인했습니다.
+
+| 항목 | 결과 |
+|---|---|
+| arm64 빌드 | replica 4분 20초, 생성기 1분 10초 |
+| 4노드 합의 | height 동기 상승, 각 노드 peer 3개 (풀메시) |
+| 고정 ClusterIP 주소 | `10.43.100.11~14` 로 서로 연결 — kube-proxy NAT 통과 |
+| 재시작 후 체인 유지 | 파드 삭제 → 재기동 시 height 1343 → 1431 (0 아님) |
+| 투표 주입 | 100건 주입 → **100건 전부 finalized 블록 반영** |
+| `/api/v4/blocks` | tc2 도구가 `upsert_count` 판독 성공 |
+
+배포 과정에서 드러나 고친 것들 — `useradd` uid 1000 충돌, `tar -C` 와 셸 glob,
+`rancher/kubectl` 에 셸 없음, `exec` 로 실행 시 PID 1 이 되어 `setpgid` EPERM.
+
+## 아직 안 한 것
+
+- **2,000 TPS 실측** — 공유 클러스터라 부하를 걸지 않았습니다. 전용 환경 필요
+- **`infra` 네임스페이스 배포** — 권한이 없어 `dev-victor` 에서만 확인
+- **이미지 자동 빌드** — 현재는 수동. `dev-workflow.yml` 에 잡이 없습니다
+- **helm 배포 파이프라인** — ratel 저장소는 `kubectl apply` 방식이라 helm 단계가 없습니다

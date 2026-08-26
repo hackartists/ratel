@@ -49,6 +49,16 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: "8080"
+            # ICP replica. config/server/icp.rs checks std::env::var("IC_URL")
+            # before the option_env! value baked at build time, so pointing the
+            # app at the in-cluster subnet needs no rebuild — the image keeps
+            # its compile-time default and this simply wins at runtime.
+            #
+            # Served by the `icp` chart (infra/helm/icp). That Service
+            # load-balances across the replicas: every node in a subnet holds
+            # the same state, so any of them can answer.
+            - name: IC_URL
+              value: http://icp.infra.svc.cluster.local:4100
             # Postgres migration: the app resolves its global pool from
             # DATABASE_URL and migrates the inventory schema on boot (with retry;
             # see common/run.rs). Reuses the shared infra Postgres — a dedicated
