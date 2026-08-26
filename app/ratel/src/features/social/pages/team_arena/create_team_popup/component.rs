@@ -1,4 +1,4 @@
-use crate::auth::UserType;
+use crate::common::types::UserType;
 use crate::common::*;
 use crate::common::{use_popup, use_team_context, TeamCreationForm, TeamCreationPayload, TeamItem};
 use crate::features::social::controllers::{create_team_handler, CreateTeamRequest};
