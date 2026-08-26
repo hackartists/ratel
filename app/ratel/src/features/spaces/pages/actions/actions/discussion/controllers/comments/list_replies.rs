@@ -31,6 +31,19 @@ pub async fn list_replies(
     let (replies, next_bookmark) =
         SpacePostComment::list_by_comment(cli, comment_sk_entity, opt).await?;
 
+    // Moderation: drop hidden replies (req #2) and blocked authors (req #4).
+    let blocked = crate::common::models::moderation::blocked_author_set(
+        cli,
+        user.0.as_ref().map(|u| &u.pk),
+    )
+    .await;
+    let replies = crate::common::models::moderation::retain_visible(
+        replies,
+        &blocked,
+        |c| c.hidden,
+        |c| &c.author_pk,
+    );
+
     let space_post_pk: Partition = space_post_pk.into();
     let liked_set: HashSet<String> = if let Some(ref u) = user.0 {
         let keys: Vec<_> = replies.iter().map(|r| r.like_keys(&u.pk)).collect();
@@ -38,6 +51,22 @@ pub async fn list_replies(
             .await
             .unwrap_or_default();
         likes.into_iter().map(|l| l.sk.to_string()).collect()
+    } else {
+        HashSet::new()
+    };
+
+    // Which replies the current user has already reported (UI hides "Report").
+    let reported_set: HashSet<String> = if let Some(ref u) = user.0 {
+        let keys: Vec<_> = replies
+            .iter()
+            .filter_map(|r| SpacePostCommentReport::keys(&space_post_pk, &r.sk, &u.pk))
+            .collect();
+        SpacePostCommentReport::batch_get(cli, keys)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|r| r.comment_sk.to_string())
+            .collect()
     } else {
         HashSet::new()
     };

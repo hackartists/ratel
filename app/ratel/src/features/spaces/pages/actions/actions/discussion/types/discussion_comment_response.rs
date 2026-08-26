@@ -23,11 +23,23 @@ pub struct DiscussionCommentResponse {
     pub author_profile_url: String,
 
     pub liked: bool,
+    /// True when the current viewer has already reported this comment — the UI
+    /// hides the "Report" action so a second (server-deduped) report is blocked
+    /// on the client too.
+    #[serde(default)]
+    pub reported: bool,
 }
 
 #[cfg(feature = "server")]
 impl From<(SpacePostComment, bool)> for DiscussionCommentResponse {
     fn from((comment, liked): (SpacePostComment, bool)) -> Self {
+        (comment, liked, false).into()
+    }
+}
+
+#[cfg(feature = "server")]
+impl From<(SpacePostComment, bool, bool)> for DiscussionCommentResponse {
+    fn from((comment, liked, reported): (SpacePostComment, bool, bool)) -> Self {
         Self {
             pk: comment.pk,
             sk: comment.sk,
@@ -43,6 +55,7 @@ impl From<(SpacePostComment, bool)> for DiscussionCommentResponse {
             author_username: comment.author_username,
             author_profile_url: comment.author_profile_url,
             liked,
+            reported,
         }
     }
 }
@@ -65,6 +78,7 @@ impl From<SpacePostComment> for DiscussionCommentResponse {
             author_username: comment.author_username,
             author_profile_url: comment.author_profile_url,
             liked: false,
+            reported: false,
         }
     }
 }

@@ -19,6 +19,12 @@ pub async fn reply_comment(
     SpacePost::can_view(&role)?;
     let common_config = crate::common::CommonConfig::default();
     let cli = common_config.dynamodb();
+
+    // Moderation soft-ban (App Store req #5): a blocked user cannot reply.
+    if crate::common::models::moderation::is_user_soft_banned(cli, &user.pk).await {
+        return Err(Error::NoPermission);
+    }
+
     let discussion_sk_entity: EntityType = discussion_sk.clone().into();
     let space_action = SpaceAction::get(
         cli,

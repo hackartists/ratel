@@ -33,6 +33,11 @@ pub enum Partition {
     InboxDedupMarker(String),      // user_pk
     SpaceStatusChangeEvent(String), // uuid_v7
 
+    // Moderation (App Store UGC compliance — comment reports & user blocks)
+    UserModeration(String), // user_pk — per-user moderation flag/tally
+    UserBlock(String),      // blocker user_pk — personal block list
+    ModerationSetting,      // singleton — configurable report threshold
+
     // Spaces
     Space(String),
     SurveySpace(String),
