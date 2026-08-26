@@ -1,0 +1,143 @@
+# icp — ICP replica subnet (victor138128/ic @ feature/v4-block-api)
+#
+# Defaults deploy a SINGLE node into ns `infra`, internal-only. That is what
+# the app needs. Flip replicaCount to 4 (see environments/tc2.yaml) when you
+# need consensus — i.e. for the IITP tc2 measurement.
+
+nameOverride: ""
+namespace: infra
+
+# Nodes in the subnet. 1 = app integration, 4 = real consensus (n=3f+1, f=1).
+replicaCount: 1
+
+image:
+  # Built by the dev-workflow build-images job from deploy/dev/Dockerfile.icp
+  # and pushed to the in-cluster registry, same as ratel-app-shell.
+  repository: registry.infra.svc.cluster.local:5000/ratel-icp
+  tag: "dev"
+  pullPolicy: IfNotPresent
+
+replicaVersion: "0.9.0"
+
+# One-shot subnet bootstrap (templates/genconfig-job.yaml).
+#
+# genconfig mints fresh keys and a fresh subnet id every run, so it must run
+# exactly once for the whole subnet — never per pod. The Job stores its output
+# in the `<name>-subnet` Secret and each replica unpacks the same copy.
+#
+# It runs as a pre-install hook only. `helm upgrade` will NOT regenerate,
+# because a new registry means a new chain from height 0 and a redeployed
+# canister. To rebuild deliberately:
+#   kubectl -n infra delete secret icp-subnet
+#   kubectl -n infra delete pvc -l app.kubernetes.io/name=icp
+genconfig:
+  # Needs kubectl only; kept off the replica image on purpose. alpine/k8s
+  # ships arm64 AND a shell — rancher/kubectl has no /bin/sh, so the publish
+  # step there dies with "stat /bin/sh: no such file or directory".
+  kubectlImage: alpine/k8s:1.31.2
+
+ports:
+  # Public HTTP API + the fork-only /api/v4/* block endpoints. The tc2
+  # injector and app-shell both talk to this port.
+  http: 4100
+  # XNet (inter-subnet message routing). Single-subnet setups still bind it.
+  xnet: 4101
+  # P2P is QUIC over UDP on the same number as http (the ic-testnet
+  # generator's convention: TCP 4100 = HTTP, UDP 4100 = QUIC).
+  p2pUdp: 4100
+
+# ── Node addressing ────────────────────────────────────────────────────────
+#
+# The replica binds sockets to addresses taken from its config file
+# (rs/config: http_handler.listen_addr, message_routing.xnet_ip_addr), so
+# those are set to 0.0.0.0 and pod IPs never matter for binding.
+#
+# What DOES need a stable address is the registry: peers dial each other at
+# whatever the subnet registry recorded. Pod IPs change on every restart, so
+# each pod gets its own Service with a PINNED ClusterIP and the registry is
+# generated against those. Pick free addresses inside the cluster's Service
+# CIDR (k3s default 10.43.0.0/16) — same idea as the fixed private IPs the
+# EC2 testbed uses.
+#
+# ⚠️ VERIFY ON FIRST DEPLOY: XNet and the HTTP API take their bind address
+# from the config file, but P2P/QUIC appears to bind the address the registry
+# advertises. If pod startup panics with
+#   "failed to bind ... Cannot assign requested address"
+# then the ClusterIP cannot be bound inside the pod, and the fallback is to
+# regenerate the subnet config from live pod IPs at startup instead
+# (set addressing.mode: podIp — see templates/entrypoint-configmap.yaml).
+addressing:
+  # clusterIp = pinned Service ClusterIPs (stable across restarts)
+  # podIp     = regenerate config from live pod IPs on every start (ephemeral
+  #             subnet; state is discarded, canister must be redeployed)
+  mode: clusterIp
+  # One entry per replica. Must be free in the Service CIDR.
+  clusterIPs:
+    - 10.43.100.11
+    - 10.43.100.12
+    - 10.43.100.13
+    - 10.43.100.14
+
+persistence:
+  enabled: true
+  # k3s ships local-path as the default StorageClass.
+  storageClass: local-path
+  # The replica keeps its consensus pool (LMDB) + state checkpoints here.
+  size: 40Gi
+
+resources:
+  # Deliberately modest. During the EC2 tc2 run (100k votes, 4,275 TPS
+  # inclusion) node-1 sat at load average ~0.9 on a 64-vCPU box, so the
+  # 64 vCPU / 256 GB sizing that testbed inherited was heavily over-spec.
+  # Start here, watch, and raise if the subnet stalls under injection.
+  requests:
+    cpu: "2"
+    memory: 4Gi
+  limits:
+    cpu: "8"
+    memory: 16Gi
+
+# The cluster's Pi node runs a 16K-page kernel that jemalloc-based services
+# abort on; every ratel/asset pod is pinned to the 4K-page main node.
+nodeSelector:
+  biyard.io/node-class: main
+
+tolerations: []
+affinity: {}
+
+# ── Exposure ───────────────────────────────────────────────────────────────
+#
+# OFF by default, and that is a security decision rather than a convenience
+# one. A local ICP replica has NO authentication: the provisional management
+# API is enabled, so anyone who can reach it may create canisters and install
+# arbitrary wasm — free compute for whoever finds the host. Publishing it
+# under *.biyard.co also records the name in certificate-transparency logs.
+#
+# The canister's own methods are safer than the replica around them:
+# upsert_vote calls require_controller(), so votes cannot be forged. But
+# run_sampling has no such guard and every query method is open.
+#
+# If you do need laptop access, prefer whitelisting over opening it up:
+#   kubectl -n infra port-forward svc/icp 4100:4100
+ingress:
+  enabled: false
+  host: ""
+  clusterIssuer: letsencrypt-route53
+  # ingress-nginx source-IP allowlist. Works with dfx (basic auth does not —
+  # dfx sends no Authorization header, so auth-type: basic breaks deploys).
+  whitelistSourceRange: ""
+
+# Deny-by-default egress/ingress for the pods. The replica sits next to
+# postgres/minio/registry in `infra`; without a policy a canister running
+# arbitrary wasm shares that network.
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to reach the API port.
+  allowedNamespaces:
+    - ratel-dev
+    - infra
+
+serviceAccount:
+  create: true
+  # The replica never talks to the k8s API.
+  automountServiceAccountToken: false

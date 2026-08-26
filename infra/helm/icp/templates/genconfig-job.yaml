@@ -1,0 +1,138 @@
+{{- if eq .Values.addressing.mode "clusterIp" }}
+# One-shot subnet bootstrap.
+#
+# genconfig mints fresh node keys and a fresh subnet id on every run, so it
+# must run EXACTLY ONCE for the whole subnet — if each pod ran it against its
+# own volume, the four replicas would end up in four different subnets and
+# consensus would never form. (Confirmed on the EC2 testbed: two consecutive
+# genconfig runs produced completely different node ids.)
+#
+# It can run before any pod exists because the peer addresses are the pinned
+# ClusterIPs from values.yaml, not pod IPs. The output is tarred into a Secret
+# that every replica mounts and unpacks on first start.
+#
+# Runs as a pre-install hook only. `helm upgrade` deliberately does NOT
+# regenerate: a new registry means a new chain from height 0 and a redeployed
+# canister. To rebuild the subnet on purpose, delete the Secret and the PVCs.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "icp.name" . }}-genconfig
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "icp.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "icp.name" . }}-genconfig
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "icp.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  # Only the one Secret this chart owns.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "icp.name" . }}-genconfig
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "icp.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "icp.name" . }}-genconfig
+    namespace: {{ .Values.namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "icp.name" . }}-genconfig
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "icp.name" . }}-genconfig
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "icp.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels: {{- include "icp.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "icp.name" . }}-genconfig
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Step 1 — generate. Uses the replica image because that is where the
+      # ic-testnet generator lives.
+      initContainers:
+        - name: genconfig
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              NODES="{{ include "icp.peerAddrs" . }}"
+              echo "[genconfig] subnet nodes: $NODES"
+              mkdir -p /work
+              cd /work
+              # genconfig writes its output to $PWD/tmp, but stamps BASE_DIR
+              # into the config files as the paths the replica will later read.
+              # Those must be the PODS' paths (/data/tmp), not this Job's —
+              # otherwise every replica dies with
+              # "Crypto state directory does not exist".
+              NODES="$NODES" BASE_DIR=/data/tmp /usr/local/bin/ic-testnet-genconfig
+              # Ship only `state` and the per-node json5 files; the
+              # state-10X copies are made by each pod from `state`, so
+              # duplicating them here would just bloat the Secret.
+              # cd first — `tar -C` moves tar's working directory, not the
+              # shell's, so a glob written here would expand against /work.
+              (cd /work/tmp && tar czf /work/subnet.tar.gz state ic-*.json5)
+              ls -lh /work/subnet.tar.gz
+          volumeMounts:
+            - name: work
+              mountPath: /work
+      # Step 2 — publish. Separate image so the replica image does not have
+      # to carry kubectl.
+      containers:
+        - name: publish
+          image: "{{ .Values.genconfig.kubectlImage }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              SECRET={{ include "icp.name" . }}-subnet
+              if kubectl -n {{ .Values.namespace }} get secret "$SECRET" >/dev/null 2>&1; then
+                echo "[genconfig] $SECRET already exists — keeping the existing subnet."
+                echo "[genconfig] delete the Secret and the PVCs to rebuild from scratch."
+                exit 0
+              fi
+              kubectl -n {{ .Values.namespace }} create secret generic "$SECRET" \
+                --from-file=subnet.tar.gz=/work/subnet.tar.gz
+              echo "[genconfig] published $SECRET"
+          volumeMounts:
+            - name: work
+              mountPath: /work
+      volumes:
+        - name: work
+          emptyDir: {}
+{{- end }}

@@ -1,0 +1,19 @@
+# tc2 — IITP 투표 TPS 측정용. 4노드(n=3f+1, f=1) 서브넷.
+replicaCount: 4
+addressing:
+  mode: clusterIp
+# ⚠️ 60Gi 도 추정치다. EC2 는 128GB 볼륨이었지만 거기엔 IC 소스와 빌드 캐시
+# (21GB)가 함께 들어 있었다. 체인 상태(합의 풀 LMDB + 체크포인트)만이면 훨씬
+# 작을 수 있으니, 며칠 운영하며 증가율을 보고 정하라.
+persistence:
+  enabled: true
+  size: 60Gi
+resources:
+  # 정하는 방법: 아래 값으로 띄우고 주입 중 실제 사용량을 재라.
+  #   kubectl -n infra top pod --containers        # 또는
+  #   pidstat -p $(pgrep -x replica) 1             # 노드에서 1초 간격
+  # 관측된 피크의 1.5~2배로 limits 를 잡으면 된다.
+  requests: { cpu: "4", memory: 8Gi }
+  limits: { cpu: "16", memory: 32Gi }
+ingress:
+  enabled: false
