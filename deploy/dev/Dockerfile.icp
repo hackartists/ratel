@@ -24,12 +24,13 @@ FROM ubuntu:24.04 AS builder
 
 # Both branches carry a patch this deployment needs:
 #   ic         XNET_BIND_ADDR — bind XNet somewhere other than the address the
-#              registry advertises (a ClusterIP cannot be bound in a pod)
+#              registry advertises (a ClusterIP cannot be bound in a pod).
+#              Merged into feature/v4-block-api (victor138128/ic#1).
 #   ic-testnet NODES read at runtime — it used to be option_env!, so a prebuilt
 #              binary silently kept generating the 10.5.0.x default subnet.
 #              Merged to main (biyard/ic-testnet#1), so main is enough here.
 ARG IC_REPO=https://github.com/victor138128/ic.git
-ARG IC_BRANCH=feature/xnet-bind-addr
+ARG IC_BRANCH=feature/v4-block-api
 ARG TESTNET_REPO=https://github.com/biyard/ic-testnet.git
 ARG TESTNET_BRANCH=main
 
