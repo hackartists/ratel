@@ -56,9 +56,9 @@ const TERMS_SECTIONS_EN: &[Section] = &[
             "All content, trademarks, and data on this platform, including software, databases, text, graphics, icons, and hyperlinks, are the property of Ratel or its licensors and are protected by applicable intellectual property laws.",
     },
     Section {
-        title: "6. User-Generated Content",
+        title: "6. User-Generated Content & Content Moderation",
         content:
-            "You retain ownership of content you post on the platform. By posting content, you grant Ratel a worldwide, non-exclusive, royalty-free license to use, reproduce, modify, and distribute your content in connection with the service.",
+            "You retain ownership of content you post on the platform. By posting content, you grant Ratel a worldwide, non-exclusive, royalty-free license to use, reproduce, modify, and distribute your content in connection with the service.\n\nRatel has zero tolerance for objectionable content and for abusive users. You agree not to post content that is offensive, harassing, threatening, defamatory, obscene, hateful, or otherwise objectionable. Any user may report any comment, and you may block any user so that their content is hidden from you. When a comment reaches our report threshold it is automatically hidden pending review. We review reported content and, upon a valid report, remove the objectionable content and eject the responsible user within 24 hours. By using the service you agree to these safeguards.",
     },
     Section {
         title: "7. Privacy Policy",
@@ -119,9 +119,9 @@ const TERMS_SECTIONS_KO: &[Section] = &[
             "소프트웨어, 데이터베이스, 텍스트, 그래픽, 아이콘 및 하이퍼링크를 포함한 이 플랫폼의 모든 콘텐츠, 상표 및 데이터는 Ratel 또는 그 라이선스 제공자의 재산이며 관련 지적 재산권법에 의해 보호됩니다.",
     },
     Section {
-        title: "6. 사용자 생성 콘텐츠",
+        title: "6. 사용자 생성 콘텐츠 및 콘텐츠 관리",
         content:
-            "귀하는 플랫폼에 게시한 콘텐츠의 소유권을 보유합니다. 콘텐츠를 게시함으로써 귀하는 Ratel에 서비스와 관련하여 귀하의 콘텐츠를 사용, 복제, 수정 및 배포할 수 있는 전 세계적이고 비독점적이며 로열티가 없는 라이선스를 부여합니다.",
+            "귀하는 플랫폼에 게시한 콘텐츠의 소유권을 보유합니다. 콘텐츠를 게시함으로써 귀하는 Ratel에 서비스와 관련하여 귀하의 콘텐츠를 사용, 복제, 수정 및 배포할 수 있는 전 세계적이고 비독점적이며 로열티가 없는 라이선스를 부여합니다.\n\nRatel은 부적절한 콘텐츠와 악의적인 사용자에 대해 무관용 원칙을 적용합니다. 귀하는 모욕적이거나 괴롭히거나 위협적이거나 명예를 훼손하거나 외설적이거나 혐오적이거나 기타 부적절한 콘텐츠를 게시하지 않는 데 동의합니다. 모든 사용자는 어떤 댓글이든 신고할 수 있으며, 귀하는 어떤 사용자든 차단하여 해당 사용자의 콘텐츠가 귀하에게 보이지 않도록 할 수 있습니다. 댓글이 신고 기준치에 도달하면 검토 시까지 자동으로 숨겨집니다. 당사는 신고된 콘텐츠를 검토하며, 유효한 신고가 접수되면 24시간 이내에 해당 부적절한 콘텐츠를 삭제하고 책임 있는 사용자를 추방합니다. 서비스를 이용함으로써 귀하는 이러한 보호 조치에 동의합니다.",
     },
     Section {
         title: "7. 개인정보처리방침",
