@@ -51,6 +51,15 @@ pub struct SpacePostComment {
     #[serde(default)]
     pub replies: u64,
 
+    /// Auto-hidden once `report_count` reaches the moderation threshold, or
+    /// hidden by an admin. Hidden comments are excluded from listings.
+    #[serde(default)]
+    pub hidden: bool,
+
+    /// Distinct reporters of this comment (see `SpacePostCommentReport`).
+    #[serde(default)]
+    pub report_count: u64,
+
     pub parent_comment_sk: Option<EntityType>,
 
     #[dynamo(prefix = "USER_PK", name = "find_by_user_pk", index = "gsi1", pk)]
@@ -93,6 +102,8 @@ impl SpacePostComment {
             updated_at_align: format!("{:020}", now),
             parent_id_for_likes: ROOT_PARENT.to_string(),
             replies: 0,
+            hidden: false,
+            report_count: 0,
             parent_comment_sk: None,
         }
     }

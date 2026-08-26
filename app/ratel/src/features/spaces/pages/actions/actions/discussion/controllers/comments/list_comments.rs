@@ -61,6 +61,20 @@ pub async fn list_comments(
             SpacePostComment::query(cli, space_post_pk_p.clone(), opt).await?
         };
 
+    // Moderation: drop auto-hidden comments (App Store req #2) and comments
+    // authored by someone the viewer personally blocked (req #4).
+    let blocked = crate::common::models::moderation::blocked_author_set(
+        cli,
+        user.0.as_ref().map(|u| &u.pk),
+    )
+    .await;
+    let comments = crate::common::models::moderation::retain_visible(
+        comments,
+        &blocked,
+        |c| c.hidden,
+        |c| &c.author_pk,
+    );
+
     // Check which comments the current user has liked
     let liked_set: HashSet<String> = if let Some(ref u) = user.0 {
         let keys: Vec<_> = comments.iter().map(|c| c.like_keys(&u.pk)).collect();
@@ -68,6 +82,23 @@ pub async fn list_comments(
             .await
             .unwrap_or_default();
         likes.into_iter().map(|l| l.sk.to_string()).collect()
+    } else {
+        HashSet::new()
+    };
+
+    // Check which comments the current user has already reported (dedup shown
+    // in the UI so the "Report" action is hidden after the first report).
+    let reported_set: HashSet<String> = if let Some(ref u) = user.0 {
+        let keys: Vec<_> = comments
+            .iter()
+            .filter_map(|c| SpacePostCommentReport::keys(&space_post_pk_p, &c.sk, &u.pk))
+            .collect();
+        SpacePostCommentReport::batch_get(cli, keys)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|r| r.comment_sk.to_string())
+            .collect()
     } else {
         HashSet::new()
     };
@@ -86,7 +117,8 @@ pub async fn list_comments(
                 String::new()
             };
             let liked = liked_set.contains(&like_key);
-            (c, liked).into()
+            let reported = reported_set.contains(&c.sk.to_string());
+            (c, liked, reported).into()
         })
         .collect();
 

@@ -2,12 +2,13 @@ use crate::common::components::mention_autocomplete::MentionCandidate;
 use crate::common::hooks::{use_infinite_query, use_interval, InfiniteQuery};
 use crate::common::*;
 use crate::features::spaces::pages::actions::actions::discussion::controllers::{
-    add_comment, delete_comment, get_comment, get_discussion_detail, like_comment, list_comments,
-    list_replies, reply_comment, subscribe_discussion, unsubscribe_discussion, update_comment,
-    AddCommentRequest, LikeCommentRequest, ReplyCommentRequest, UpdateCommentRequest,
+    add_comment, block_user, delete_comment, get_comment, get_discussion_detail, like_comment,
+    list_comments, list_replies, reply_comment, report_comment, subscribe_discussion,
+    unsubscribe_discussion, update_comment, AddCommentRequest, LikeCommentRequest,
+    ReplyCommentRequest, ReportCommentRequest, UpdateCommentRequest,
 };
 use crate::features::spaces::pages::actions::actions::discussion::{
-    DiscussionCommentResponse, DiscussionResponse, SpacePostCommentTargetEntityType,
+    DiscussionCommentResponse, DiscussionResponse, ReportReason, SpacePostCommentTargetEntityType,
 };
 use crate::features::spaces::space_common::controllers::{list_space_members, SpaceMemberResponse};
 use std::str::FromStr;
@@ -112,11 +113,25 @@ pub struct UseDiscussionArena {
     /// the next `comments_query.refresh()` drops them for real.
     pub deleted_sks: Signal<std::collections::HashSet<String>>,
 
+    /// Comments the viewer optimistically reported this session — the UI hides
+    /// "Report" immediately, before the server round-trip / refetch.
+    pub reported_sks: Signal<std::collections::HashSet<String>>,
+    /// Authors the viewer optimistically blocked — their comments vanish from
+    /// the list right away, before the refetch drops them for real.
+    pub blocked_authors: Signal<std::collections::HashSet<String>>,
+
     pub like_comment: Action<(String, bool), ()>,
     pub update_comment: Action<(String, String), ()>,
     pub delete_comment: Action<(String,), ()>,
     pub add_comment: Action<(String, Vec<String>), ()>,
     pub reply_comment: Action<(String, String, Vec<String>), ()>,
+
+    /// Report a comment as objectionable (App Store UGC req #3):
+    /// `(comment_sk, reason, detail)`.
+    pub report_comment: Action<(String, ReportReason, String), ()>,
+    /// Personally block a user (req #4): `(author_pk)`. On success the arena
+    /// refreshes so the blocked author's comments disappear immediately.
+    pub block_user: Action<(String,), ()>,
 
     /// Bumped whenever a reply successfully posts. CommentItem watches this
     /// to reload its local `replies` signal — the global composer submits
@@ -178,6 +193,20 @@ impl UseDiscussionArena {
 
     pub fn is_deleted(&self, comment: &DiscussionCommentResponse) -> bool {
         self.deleted_sks.read().contains(&comment.sk.to_string())
+    }
+
+    /// Whether the viewer has already reported this comment (server-persisted
+    /// `reported` OR an optimistic in-session report). Drives hiding "Report".
+    pub fn is_reported(&self, comment: &DiscussionCommentResponse) -> bool {
+        comment.reported || self.reported_sks.read().contains(&comment.sk.to_string())
+    }
+
+    /// Whether the viewer optimistically blocked this comment's author — the
+    /// list hides their comments immediately (the refetch also drops them).
+    pub fn is_author_blocked(&self, comment: &DiscussionCommentResponse) -> bool {
+        self.blocked_authors
+            .read()
+            .contains(&comment.author_pk.to_string())
     }
 }
 
@@ -446,6 +475,10 @@ pub fn use_discussion_arena(
         use_signal(std::collections::HashMap::new);
     let mut deleted_sks: Signal<std::collections::HashSet<String>> =
         use_signal(std::collections::HashSet::new);
+    let mut reported_sks: Signal<std::collections::HashSet<String>> =
+        use_signal(std::collections::HashSet::new);
+    let mut blocked_authors: Signal<std::collections::HashSet<String>> =
+        use_signal(std::collections::HashSet::new);
     let mut reply_refresh_tick: Signal<u32> = use_signal(|| 0);
 
     let mut toast = use_toast();
@@ -599,6 +632,49 @@ pub fn use_discussion_arena(
         },
     );
 
+    let report_comment_action = use_action(
+        move |sk_str: String, reason: ReportReason, detail: String| async move {
+            let target_sk = match SpacePostCommentTargetEntityType::from_str(&sk_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!("report: invalid sk: {:?}", e);
+                    toast.error(e);
+                    return Ok::<(), crate::common::Error>(());
+                }
+            };
+            // Optimistic: hide "Report" for this comment immediately.
+            reported_sks.write().insert(sk_str.clone());
+            let req = ReportCommentRequest { reason, detail };
+            if let Err(e) = report_comment(space_id(), discussion_id(), target_sk, req).await {
+                reported_sks.write().remove(&sk_str);
+                tracing::error!("report failed: {:?}", e);
+                toast.error(e);
+            } else {
+                // Server-side threshold may auto-hide the comment; refresh to reflect it.
+                comments_query.refresh();
+            }
+            Ok::<(), crate::common::Error>(())
+        },
+    );
+
+    let block_user_action = use_action(move |author_pk: String| async move {
+        let user_id = author_pk
+            .strip_prefix("USER#")
+            .unwrap_or(&author_pk)
+            .to_string();
+        // Optimistic: hide this author's comments from the feed immediately.
+        blocked_authors.write().insert(author_pk.clone());
+        if let Err(e) = block_user(UserPartition(user_id)).await {
+            blocked_authors.write().remove(&author_pk);
+            tracing::error!("block failed: {:?}", e);
+            toast.error(e);
+        } else {
+            // Blocked author's comments drop out on the next fetch too.
+            comments_query.refresh();
+        }
+        Ok::<(), crate::common::Error>(())
+    });
+
     Ok(use_context_provider(|| UseDiscussionArena {
         active_reply_thread,
         sheet_expanded,
@@ -618,11 +694,15 @@ pub fn use_discussion_arena(
         like_overlays,
         content_overlays,
         deleted_sks,
+        reported_sks,
+        blocked_authors,
         like_comment,
         update_comment,
         delete_comment,
         add_comment: add_comment_action,
         reply_comment: reply_comment_action,
+        report_comment: report_comment_action,
+        block_user: block_user_action,
         reply_refresh_tick,
         pending_mention,
     }))
