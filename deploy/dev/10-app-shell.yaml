@@ -54,11 +54,17 @@ spec:
             # app at the in-cluster subnet needs no rebuild — the image keeps
             # its compile-time default and this simply wins at runtime.
             #
-            # Served by the `icp` chart (infra/helm/icp). That Service
+            # Served by the `icp` chart (infra/helm/icp), deployed into THIS
+            # namespace by the deploy job — hence the short name. That Service
             # load-balances across the replicas: every node in a subnet holds
             # the same state, so any of them can answer.
+            #
+            # It lives here rather than in `infra` because the dev pipeline
+            # already owns this namespace; moving it to the shared one would
+            # need RBAC the runner does not have, and nothing outside ratel
+            # uses the subnet yet.
             - name: IC_URL
-              value: http://icp.infra.svc.cluster.local:4100
+              value: http://icp:4100
             # Postgres migration: the app resolves its global pool from
             # DATABASE_URL and migrates the inventory schema on boot (with retry;
             # see common/run.rs). Reuses the shared infra Postgres — a dedicated

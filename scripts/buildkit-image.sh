@@ -29,6 +29,9 @@ set -euo pipefail
 #                  SAME name: the k3s nodes' registries.yaml maps it to the
 #                  Service IP endpoint, since node containerd cannot resolve
 #                  cluster DNS itself.
+#   BUILD_ARGS     optional, space-separated KEY=VALUE pairs forwarded as
+#                  --opt build-arg (the icp image pins its two source
+#                  branches this way)
 #   PLATFORM       default linux/arm64 (both cluster nodes are arm64; the
 #                  runner's native cargo/dx build already produced arm64
 #                  binaries, so no cross-compile happens here — this is just
@@ -58,12 +61,20 @@ echo "building ${image} (${PLATFORM}, context=${CONTEXT}, buildkitd=${BUILDKIT_H
 # ratel's app Dockerfile (app/ratel/Dockerfile) declares no ARGs; every
 # compile-time knob was already baked by the native `make build-testing`
 # that produced the context directory.
+# BUILD_ARGS: space-separated KEY=VALUE pairs, each forwarded as a
+# --opt build-arg. Values themselves may not contain spaces.
+build_arg_opts=()
+for kv in ${BUILD_ARGS:-}; do
+  build_arg_opts+=(--opt "build-arg:${kv}")
+done
+
 buildctl build \
   --frontend dockerfile.v0 \
   --local context="${CONTEXT}" \
   --local dockerfile="$(dirname "${DOCKERFILE}")" \
   --opt "filename=$(basename "${DOCKERFILE}")" \
   --opt "platform=${PLATFORM}" \
+  "${build_arg_opts[@]}" \
   --output "type=image,name=${image},push=true,registry.insecure=true"
 
 echo "pushed ${image}"

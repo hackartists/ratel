@@ -385,6 +385,29 @@ jobs:
             echo "FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 not set — push disabled (graceful skip)"
           fi
 
+      - name: Deploy the ICP subnet (helm)
+        # Runs BEFORE the app manifests: app-shell carries
+        # IC_URL=http://icp:4100, so the Service has to exist first or the
+        # first IC call after a rollout hits nothing.
+        #
+        # Idempotent. The subnet registry is generated once by a pre-install
+        # hook and kept in the `icp-subnet` Secret; upgrades deliberately do
+        # not regenerate it, since a new registry means a new chain from
+        # height 0 and a redeployed canister. To rebuild the subnet on
+        # purpose, delete that Secret and the PVCs.
+        #
+        # The image comes from the separate `ICP image` workflow — the
+        # replica is compiled from the ic fork and rebuilding it on every
+        # push to dev would add ~5 minutes for a byte-identical result.
+        run: |
+          set -euo pipefail
+          helm upgrade --install icp infra/helm/icp \
+            --namespace "${NAMESPACE}" \
+            -f infra/helm/icp/environments/dev.yaml \
+            --set namespace="${NAMESPACE}" \
+            --set networkPolicy.allowedNamespaces="{${NAMESPACE}}" \
+            --wait --timeout 10m
+
       - name: Apply the dev manifests (envsubst → kubectl apply)
         # Substitution restricted to ${SHA_TAG} (image pin) and
         # ${WORKER_DRY_RUN} (events shadow-mode switch — see the workflow

@@ -1,0 +1,57 @@
+name: ICP image
+
+# Builds the ICP replica image (deploy/dev/Dockerfile.icp) and pushes it to
+# the in-cluster registry.
+#
+# Kept out of dev-workflow on purpose: the image compiles the IC replica from
+# source (~5 min on the arm64 runner) and its inputs — the `ic` fork and the
+# `ic-testnet` generator — change on their own schedule, not with every push
+# to `dev`. Rebuilding it on each deploy would spend five minutes producing a
+# byte-identical image.
+#
+# So it runs when the Dockerfile changes, and on demand when one of the two
+# upstream branches moves.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - deploy/dev/Dockerfile.icp
+      - .github/workflows/icp-image.yml
+  workflow_dispatch:
+    inputs:
+      ic_branch:
+        description: "victor138128/ic branch to build the replica from"
+        default: feature/v4-block-api
+        required: false
+      testnet_branch:
+        description: "biyard/ic-testnet branch for the subnet-config generator"
+        default: main
+        required: false
+
+concurrency:
+  group: icp-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push icp image (buildkit → :dev-<sha> and :dev)
+        # The Dockerfile clones both repos itself, so the build context is
+        # empty — nothing from the working tree is needed.
+        run: |
+          set -euo pipefail
+          SHA_TAG="dev-$(git rev-parse --short HEAD)"
+          mkdir -p .build/icp-empty
+
+          export NAME=ratel-icp
+          export CONTEXT=.build/icp-empty
+          export DOCKERFILE=deploy/dev/Dockerfile.icp
+          export BUILD_ARGS="IC_BRANCH=${{ inputs.ic_branch || 'feature/v4-block-api' }} TESTNET_BRANCH=${{ inputs.testnet_branch || 'main' }}"
+
+          IMAGE_TAG="${SHA_TAG}" bash scripts/buildkit-image.sh
+          IMAGE_TAG=dev bash scripts/buildkit-image.sh
