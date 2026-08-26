@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
-          ssh-key: ${{ secrets.PULL_KEY_REPO }}
+          ssh-key: ${{ secrets.PULL_KEY_REPO_V2 }}
 
       - uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -89,7 +89,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
-          ssh-key: ${{ secrets.PULL_KEY_REPO }}
+          ssh-key: ${{ secrets.PULL_KEY_REPO_V2 }}
 
       - uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -280,7 +280,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
-          ssh-key: ${{ secrets.PULL_KEY_REPO }}
+          ssh-key: ${{ secrets.PULL_KEY_REPO_V2 }}
 
       - name: Restore cache
         uses: actions/cache/restore@v5
@@ -448,7 +448,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
-          ssh-key: ${{ secrets.PULL_KEY_REPO }}
+          ssh-key: ${{ secrets.PULL_KEY_REPO_V2 }}
 
       # Apple now requires the iOS 26 SDK (Xcode 26+) for App Store uploads.
       - uses: maxim-lobanov/setup-xcode@v1
