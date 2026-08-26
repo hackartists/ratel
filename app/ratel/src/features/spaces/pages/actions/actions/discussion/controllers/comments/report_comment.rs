@@ -94,20 +94,19 @@ pub async fn report_comment(
         crate::error!("failed to bump comment report_count: {e}");
     }
 
-    // Bump the author's moderation tally; flag for admin review at threshold.
-    bump_author_flag(cli, &comment, threshold).await;
+    // Bump the author's moderation tally and surface them in the admin queue.
+    bump_author_flag(cli, &comment).await;
 
     Ok(())
 }
 
-/// Upsert the reported author's `UserModerationFlag`, flagging `PendingReview`
-/// when their accumulated report count crosses the threshold.
+/// Upsert the reported author's `UserModerationFlag`. A reported user enters the
+/// admin review queue (`PendingReview`) on their FIRST report so an admin can
+/// review and decide immediately — the report threshold governs the automated
+/// comment auto-hide (above), not when the admin sees the user. An existing
+/// admin decision (`Blocked` / `Dismissed`) is never overridden.
 #[cfg(feature = "server")]
-async fn bump_author_flag(
-    cli: &aws_sdk_dynamodb::Client,
-    comment: &SpacePostComment,
-    threshold: u64,
-) {
+async fn bump_author_flag(cli: &aws_sdk_dynamodb::Client, comment: &SpacePostComment) {
     use crate::common::utils::time::get_now_timestamp;
 
     let (flag_pk, flag_sk) = match UserModerationFlag::keys(&comment.author_pk) {
@@ -117,13 +116,12 @@ async fn bump_author_flag(
 
     match UserModerationFlag::get(cli, &flag_pk, Some(flag_sk)).await {
         Ok(Some(flag)) => {
-            let new_count = flag.report_count + 1;
             let mut updater = UserModerationFlag::updater(&flag.pk, &flag.sk)
                 .increase_report_count(1)
                 .with_updated_at(get_now_timestamp());
-            // Only auto-escalate an otherwise-untouched user. Never override an
+            // Surface an otherwise-untouched user for review. Never override an
             // admin decision (Blocked / Dismissed).
-            if new_count >= threshold && flag.status == ModerationStatus::None {
+            if flag.status == ModerationStatus::None {
                 updater = updater.with_status(ModerationStatus::PendingReview);
             }
             if let Err(e) = updater.execute(cli).await {
@@ -140,9 +138,7 @@ async fn bump_author_flag(
                 None => return,
             };
             flag.report_count = 1;
-            if 1 >= threshold {
-                flag.status = ModerationStatus::PendingReview;
-            }
+            flag.status = ModerationStatus::PendingReview;
             if let Err(e) = flag.create(cli).await {
                 crate::error!("failed to create author moderation flag: {e}");
             }
