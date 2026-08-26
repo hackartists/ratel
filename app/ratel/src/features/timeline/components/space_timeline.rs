@@ -1,5 +1,5 @@
 use crate::common::hooks::use_infinite_query;
-use crate::features::auth::UserType;
+use crate::common::types::UserType;
 use crate::features::posts::components::FeedCard;
 use crate::features::posts::controllers::dto::PostResponse;
 use crate::features::posts::types::{BoosterType, PostStatus};
