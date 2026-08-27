@@ -131,13 +131,19 @@ kubectl -n infra port-forward svc/icp 4100:4100
 
 `deploy/dev/Dockerfile.icp`가 replica와 ic-testnet 설정 생성기를 함께 빌드합니다.
 
-**클러스터가 arm64이고, 이 포크는 Rust 1.80 고정의 2024년대 코드입니다.** aarch64-linux
-빌드가 되는지는 아직 검증되지 않았습니다. DFINITY가 dfx에 aarch64 replica를 넣고 있으니
-가능성은 있지만, **이미지 빌드부터 성공시켜야 나머지가 의미가 있습니다.**
+클러스터가 arm64이고 이 포크는 Rust 1.80 고정의 2024년대 코드라 빌드가 최대 관문이었지만,
+**arm64 네이티브 빌드가 확인됐습니다** — replica 4분 20초, 생성기 1분 10초.
+
+평소에는 `ICP image` 워크플로가 만듭니다. 로컬에서 확인하려면:
 
 ```bash
-docker build -f deploy/dev/Dockerfile.icp -t ratel-icp:dev .
+docker build --platform linux/arm64 -f deploy/dev/Dockerfile.icp -t ratel-icp:dev .
 ```
+
+이미지 태그는 **변하는 `:dev`** 입니다(app-shell 의 `:dev-<sha>` 와 다름). replica 는
+ratel 커밋과 무관하게 다시 빌드되므로 ratel sha 를 박는 게 의미가 없기 때문입니다.
+그래서 `pullPolicy: Always` 여야 합니다 — `IfNotPresent` 면 `:dev` 를 이미 캐시한 노드가
+옛 replica 를 계속 돌리고, 새 이미지가 조용히 반영되지 않습니다.
 
 ## 검증 결과 (2026-08-26)
 

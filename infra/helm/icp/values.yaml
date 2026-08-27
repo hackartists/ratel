@@ -11,11 +11,19 @@ namespace: infra
 replicaCount: 1
 
 image:
-  # Built by the dev-workflow build-images job from deploy/dev/Dockerfile.icp
-  # and pushed to the in-cluster registry, same as ratel-app-shell.
+  # Built by the `ICP image` workflow from deploy/dev/Dockerfile.icp and
+  # pushed to the in-cluster registry as :dev-<sha> AND :dev.
   repository: registry.infra.svc.cluster.local:5000/ratel-icp
+  # A MUTABLE tag, unlike app-shell's :dev-<sha>. That is deliberate — the
+  # image is rebuilt on its own schedule, not per ratel commit, so pinning a
+  # ratel sha here would be meaningless.
+  #
+  # It does mean pullPolicy has to be Always: with IfNotPresent a node that
+  # already cached :dev would keep running the old replica forever, and a
+  # rebuilt image would silently never reach the cluster. Pin a :dev-<sha>
+  # tag here instead if you want IfNotPresent back.
   tag: "dev"
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 replicaVersion: "0.9.0"
 
