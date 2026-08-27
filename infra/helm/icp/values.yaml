@@ -132,7 +132,10 @@ ingress:
 # arbitrary wasm shares that network.
 networkPolicy:
   enabled: true
-  # Namespaces allowed to reach the API port.
+  # Namespaces allowed to reach the API port. PR-preview namespaces
+  # (ratel-pr-<num>) are NOT listed: their app-shell has no IC_URL yet, so it
+  # still uses the compile-time default. Add them here when previews start
+  # pointing at this subnet.
   allowedNamespaces:
     - ratel-dev
     - infra

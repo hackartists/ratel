@@ -385,10 +385,20 @@ jobs:
             echo "FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 not set — push disabled (graceful skip)"
           fi
 
-      - name: Deploy the ICP subnet (helm)
+      - name: Deploy the ICP subnet (helm → namespace `infra`)
         # Runs BEFORE the app manifests: app-shell carries
-        # IC_URL=http://icp:4100, so the Service has to exist first or the
-        # first IC call after a rollout hits nothing.
+        # IC_URL=http://icp.infra.svc.cluster.local:4100, so the Service has
+        # to exist first or the first IC call after a rollout hits nothing.
+        #
+        # Lands in `infra`, not `ratel-dev`, for the same reason postgres and
+        # minio do: it is a shared backing service. A 4-node subnet is four
+        # pods and four PVCs — too heavy to copy per namespace — and its chain
+        # has to outlive any single app deployment (a PR-preview namespace is
+        # torn down; its chain should not be).
+        #
+        # Ratel's pipeline drives it because ratel is the only consumer today.
+        # If another service starts using the subnet, ownership should move
+        # out of this workflow.
         #
         # Idempotent. The subnet registry is generated once by a pre-install
         # hook and kept in the `icp-subnet` Secret; upgrades deliberately do
@@ -402,10 +412,8 @@ jobs:
         run: |
           set -euo pipefail
           helm upgrade --install icp infra/helm/icp \
-            --namespace "${NAMESPACE}" \
+            --namespace infra \
             -f infra/helm/icp/environments/dev.yaml \
-            --set namespace="${NAMESPACE}" \
-            --set networkPolicy.allowedNamespaces="{${NAMESPACE}}" \
             --wait --timeout 10m
 
       - name: Apply the dev manifests (envsubst → kubectl apply)

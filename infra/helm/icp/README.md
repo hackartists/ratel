@@ -10,15 +10,29 @@
 
 ## 사용
 
-```bash
-# 앱 연동용 (단일 노드)
-helm upgrade --install icp infra/helm/icp -n infra --create-namespace \
-  -f infra/helm/icp/environments/dev.yaml
+**dev 배포는 자동입니다.** `dev-workflow.yml` 의 deploy 잡이 앱 매니페스트보다 먼저
+아래를 실행합니다 — app-shell 이 `IC_URL` 을 들고 뜨는데 Service 가 없으면 첫 IC 호출이
+실패하기 때문입니다.
 
-# tc2 측정용 (4노드 서브넷)
+```bash
+helm upgrade --install icp infra/helm/icp -n infra \
+  -f infra/helm/icp/environments/dev.yaml --wait --timeout 10m
+```
+
+tc2 측정처럼 4노드가 필요할 때만 수동으로 바꿉니다.
+
+```bash
 helm upgrade --install icp infra/helm/icp -n infra \
   -f infra/helm/icp/environments/tc2.yaml
 ```
+
+이미지는 별도 워크플로(`ICP image`)가 만듭니다. replica 를 소스에서 컴파일해 약 5분이
+걸리고, 그 입력(ic 포크·ic-testnet)은 ratel 푸시와 무관하게 움직이므로 배포마다 다시
+빌드하지 않습니다. Dockerfile 이 바뀔 때와 수동 실행 시에만 돕니다.
+
+`infra` 에 두는 이유는 postgres·minio 와 같습니다 — 공용 백킹 서비스이고, 4노드 서브넷은
+파드 4개 + PVC 4개라 네임스페이스마다 복제하기엔 무거우며, 체인은 앱 배포 주기보다 오래
+살아야 합니다(PR 프리뷰 네임스페이스는 삭제되지만 체인은 남아야 합니다).
 
 앱 연결은 코드 수정 없이 env 하나면 됩니다. `config/server/icp.rs`가 런타임 `IC_URL`을
 컴파일 타임 값보다 우선합니다.
