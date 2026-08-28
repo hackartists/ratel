@@ -38,6 +38,16 @@ replicaVersion: "0.9.0"
 # canister. To rebuild deliberately:
 #   kubectl -n infra delete secret icp-subnet
 #   kubectl -n infra delete pvc -l app.kubernetes.io/name=icp
+subnet:
+  # Rebuilding the subnet — which is what changing replicaCount forces, since
+  # the registry fixes membership when it is generated — discards the chain
+  # and every canister on it. The genconfig Job refuses to do that implicitly:
+  # it compares replicaCount against the node count recorded on the
+  # `<name>-subnet` Secret and fails if they disagree.
+  #
+  # Set true for ONE deploy to go through with it.
+  allowRebuild: false
+
 genconfig:
   # Needs kubectl only; kept off the replica image on purpose. alpine/k8s
   # ships arm64 AND a shell — rancher/kubectl has no /bin/sh, so the publish

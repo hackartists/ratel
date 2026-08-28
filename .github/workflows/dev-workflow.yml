@@ -41,6 +41,15 @@ on:
   push:
     branches:
       - dev
+  workflow_dispatch:
+    inputs:
+      icp_allow_rebuild:
+        description: >-
+          Rebuild the ICP subnet from scratch. Needed when replicaCount
+          changes, because the registry fixes subnet membership when it is
+          generated. DISCARDS the chain and every canister on it.
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -396,15 +405,22 @@ jobs:
         # has to outlive any single app deployment (a PR-preview namespace is
         # torn down; its chain should not be).
         #
+        # Four nodes, not one: the same subnet serves the app AND the IITP
+        # tc2 throughput measurement, whose metric is "votes included in
+        # FINALIZED blocks". A single replica has no consensus, so that
+        # number does not exist there — it has to be a real subnet
+        # (n = 3f + 1, f = 1) for the measurement to mean anything.
+        #
         # Ratel's pipeline drives it because ratel is the only consumer today.
         # If another service starts using the subnet, ownership should move
         # out of this workflow.
         #
-        # Idempotent. The subnet registry is generated once by a pre-install
-        # hook and kept in the `icp-subnet` Secret; upgrades deliberately do
-        # not regenerate it, since a new registry means a new chain from
-        # height 0 and a redeployed canister. To rebuild the subnet on
-        # purpose, delete that Secret and the PVCs.
+        # Idempotent. The subnet registry is generated once and kept in the
+        # `icp-subnet` Secret; the hook compares replicaCount against the node
+        # count recorded there and refuses to regenerate silently, because a
+        # new registry means a new chain from height 0 and every canister
+        # redeployed. Changing the subnet size is therefore deliberate:
+        #   ICP_ALLOW_REBUILD=true  for the one deploy that does it.
         #
         # The image comes from the separate `ICP image` workflow — the
         # replica is compiled from the ic fork and rebuilding it on every
@@ -413,8 +429,9 @@ jobs:
           set -euo pipefail
           helm upgrade --install icp infra/helm/icp \
             --namespace infra \
-            -f infra/helm/icp/environments/dev.yaml \
-            --wait --timeout 10m
+            -f infra/helm/icp/environments/tc2.yaml \
+            --set subnet.allowRebuild=${{ inputs.icp_allow_rebuild || false }} \
+            --wait --timeout 15m
 
       - name: Apply the dev manifests (envsubst → kubectl apply)
         # Substitution restricted to ${SHA_TAG} (image pin) and
