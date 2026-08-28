@@ -143,51 +143,17 @@ affinity: {}
 # For a one-off look from a laptop:
 #   kubectl -n infra port-forward svc/icp 4100:4100
 
-# ── tc2 throughput injector ────────────────────────────────────────────────
+# ── tc2 측정 ───────────────────────────────────────────────────────
 #
-# Off by default: this is a measurement, not part of the service. Turn it on
-# for one run through the `ICP subnet` workflow, which is also what makes it
-# runnable by anyone with repo access rather than by whoever happens to hold a
-# kubeconfig.
+# 측정 도구는 이 차트에 없다. biyard/iitp-verification 의 tc2 가 자기
+# 네임스페이스에 파드를 띄워 쏜다(`make k8s.measure`).
 #
-# It runs here, in `infra`, for two reasons. The NetworkPolicy admits callers
-# by podSelector, which only ever matches pods in this namespace — the
-# namespaceSelector form does not work on this cluster, so a personal
-# namespace cannot be admitted. And the numbers are better: the injector lands
-# on the same node as the replicas, so a request is a sub-millisecond hop
-# instead of crossing a network. Measuring from outside would have measured
-# the link.
-injector:
-  enabled: false
-  # Built and pushed from biyard/iitp-verification (`cd tc2 && make image`),
-  # which is where the injector and the rest of the IITP verification work
-  # live. It carries the canister wasm as well as the binary: the injector
-  # installs that canister and then attributes a TPS figure to it, so a
-  # separately supplied wasm would eventually describe a different build than
-  # the number claims.
-  image: ""
-  imagePullPolicy: Always
-  # An override, and empty on purpose.
-  #
-  # The measurement's conditions — target rate, duration, in-flight depth,
-  # settle window — live in the image, in iitp-verification's
-  # tc2/measure.args. They belong there because they are part of the result: a
-  # throughput figure means nothing without the conditions it was taken under,
-  # and conditions that exist only as text typed into a dispatch form leave no
-  # record in any repository. Changing them for good is a commit.
-  #
-  # Anything set here is appended after the baked values, and clap takes the
-  # last occurrence of a flag, so this overrides them — for a one-off probe,
-  # not for how the measurement is defined.
-  args: ""
-  # A measurement should fail loudly rather than silently repeat itself: a
-  # retry would inject a second batch into a chain that already holds the
-  # first, and the resulting TPS would describe neither run.
-  backoffLimit: 0
-  ttlSecondsAfterFinished: 86400
-  resources:
-    requests: { cpu: "1", memory: 1Gi }
-    limits: { cpu: "4", memory: 8Gi }
+# 한동안은 여기에 주입기 Job 템플릿이 있었다. NetworkPolicy 가 infra 안의
+# 파드만 허용했고 infra 는 CI 밖에서 쓰기가 안 돼서, 워크플로를 거치는 것이
+# 유일한 길이었기 때문이다. 그 정책의 허용 규칙이 이 클러스터에서 작동하지
+# 않아 ingress 제한을 걷어냈고, 그 시점에 이유가 사라졌다. 같은 측정을 두
+# 곳에서 할 수 있게 두면 어느 쪽이 정본인지 흐려진다.
+
 
 # Deny-by-default egress/ingress for the pods. The replica sits next to
 # postgres/minio/registry in `infra`; without a policy a canister running

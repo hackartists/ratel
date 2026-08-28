@@ -17,21 +17,6 @@ name: ICP subnet
 on:
   workflow_dispatch:
     inputs:
-      run_injector:
-        description: >-
-          Run the tc2 throughput measurement as a Job in `infra`. Off leaves
-          the subnet alone — that is the resting state.
-        type: boolean
-        default: false
-      injector_args:
-        description: >-
-          Leave empty. The measurement's conditions live in the image, in
-          iitp-verification's tc2/measure.args, because they are part of the
-          result and belong in a repository rather than in a form. Anything
-          here overrides them for one run — for a probe, not for redefining
-          the measurement.
-        type: string
-        default: ""
       replicas:
         description: >-
           Nodes in the subnet. 4 is a real subnet (n = 3f+1, f = 1); 1 has no
@@ -78,35 +63,7 @@ jobs:
             --set "subnet.allowRebuild=${{ inputs.allow_rebuild }}"
             --wait --timeout 20m
           )
-          if [ "${{ inputs.run_injector }}" = "true" ]; then
-            args+=(
-              --set injector.enabled=true
-              --set injector.image=registry.infra.svc.cluster.local:5000/ratel-vote-tps:dev
-              --set-string "injector.args=${{ inputs.injector_args }}"
-
-              # --wait alone does not wait for Jobs. Without this the release
-              # is "deployed" while the injector pod is still
-              # ContainerCreating, and the log step reads nothing.
-              --wait-for-jobs
-            )
-          fi
           helm "${args[@]}"
-
-      - name: Measurement result
-        # always(): the injector failing is a result too, and its log is the
-        # only place that says why.
-        if: ${{ always() && inputs.run_injector }}
-        run: |
-          set -euo pipefail
-          job=$(kubectl -n infra get jobs -l app.kubernetes.io/name=icp \
-                  --sort-by=.metadata.creationTimestamp \
-                  -o jsonpath='{.items[-1:].metadata.name}')
-          echo "Job: $job"
-          echo
-          kubectl -n infra logs "job/$job" --tail=200 || true
-          echo
-          kubectl -n infra get pods -l app.kubernetes.io/component=injector \
-            -o custom-columns=NAME:.metadata.name,STATUS:.status.phase
 
       - name: Subnet state
         run: |
