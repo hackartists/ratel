@@ -1,0 +1,105 @@
+# Reconfigure the ICP subnet without redeploying the app.
+#
+# `Dev deploy` also runs this chart, but it builds every app image first, so
+# reaching the helm step takes ~40 minutes. Turning the tc2 Ingress on before
+# a measurement and off after it is a pair of one-line changes, and paying
+# forty minutes twice is the reason it would quietly stay on instead.
+#
+# The image tag lives in the chart (`image.tag: dev`) and `Dev deploy` does
+# not override it, so running helm from here produces the same release that
+# workflow would.
+name: ICP subnet
+
+on:
+  workflow_dispatch:
+    inputs:
+      ingress:
+        description: >-
+          Expose icp-0..3.<domain> to `whitelist_cidr`. Leave off unless a
+          measurement is actually running — off is the resting state.
+        type: choice
+        options: ["off", "on"]
+        default: "off"
+      whitelist_cidr:
+        description: >-
+          Required when ingress=on. The injector host and nothing else,
+          e.g. 203.0.113.9/32. This is the only thing in front of the read
+          API; writes are already controller-only in the canister.
+        type: string
+        default: ""
+      domain:
+        description: Hosts are <name>-<ordinal>.<domain>.
+        type: string
+        default: dev.ratel.foundation
+      allow_rebuild:
+        description: >-
+          Regenerate the subnet registry. Needed only when replicaCount
+          changes — it starts a new chain from height 0 and every canister
+          has to be redeployed.
+        type: boolean
+        default: false
+
+jobs:
+  configure:
+    runs-on: self-hosted
+    # Shared with `Dev deploy` so two helm operations never race on the same
+    # release.
+    concurrency:
+      group: ratel-dev-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify cluster access
+        run: |
+          set -euo pipefail
+          kubectl get ns >/dev/null || {
+            echo "::error::runner has no cluster access — is this a k3s runner pod?"
+            exit 1
+          }
+
+      - name: Refuse an Ingress with no allowlist
+        # The chart's own `fail` catches this too, but it does so after helm
+        # has already started, and the message reads better here.
+        if: ${{ inputs.ingress == 'on' && inputs.whitelist_cidr == '' }}
+        run: |
+          echo "::error::ingress=on needs whitelist_cidr — the replica's read API has no authentication of its own."
+          exit 1
+
+      - name: Apply
+        run: |
+          set -euo pipefail
+          args=(
+            upgrade --install icp infra/helm/icp
+            --namespace infra
+            -f infra/helm/icp/environments/tc2.yaml
+            --set "subnet.allowRebuild=${{ inputs.allow_rebuild }}"
+            --wait --timeout 15m
+          )
+          if [ "${{ inputs.ingress }}" = "on" ]; then
+            args+=(
+              --set ingress.enabled=true
+              --set "ingress.domain=${{ inputs.domain }}"
+              --set "ingress.whitelistSourceRange=${{ inputs.whitelist_cidr }}"
+            )
+          fi
+          helm "${args[@]}"
+
+      - name: Report
+        run: |
+          set -euo pipefail
+          kubectl -n infra get statefulset icp
+          if [ "${{ inputs.ingress }}" = "on" ]; then
+            kubectl -n infra get ingress icp
+            echo
+            echo "Exposed to ${{ inputs.whitelist_cidr }}:"
+            for i in 0 1 2 3; do
+              echo "  https://icp-$i.${{ inputs.domain }}/api/v4/height"
+            done
+            echo
+            echo "::warning::The subnet is on the internet. Re-run this workflow with ingress=off when the measurement finishes."
+          else
+            kubectl -n infra get ingress icp 2>/dev/null && \
+              echo "::error::Ingress still present after ingress=off" && exit 1
+            echo "No Ingress. The subnet is reachable only from inside the cluster network."
+          fi
