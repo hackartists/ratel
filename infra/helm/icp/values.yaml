@@ -139,10 +139,22 @@ affinity: {}
 #   kubectl -n infra port-forward svc/icp 4100:4100
 ingress:
   enabled: false
-  host: ""
+  # Hosts are derived per node: icp-0.<domain> … icp-3.<domain>. On this
+  # cluster *.dev.ratel.foundation already resolves and ratel.foundation is on
+  # Route53, so DNS-01 issuance through `letsencrypt-route53` needs no new
+  # records — setting this and turning `enabled` on is the whole change.
+  domain: ""
   clusterIssuer: letsencrypt-route53
   # ingress-nginx source-IP allowlist. Works with dfx (basic auth does not —
   # dfx sends no Authorization header, so auth-type: basic breaks deploys).
+  #
+  # The template refuses to render without it, because this is the only thing
+  # standing in front of the read API once the subnet is on the internet.
+  # Writes are already safe without it: every `#[ic_cdk::update]` in
+  # packages/ratel-canister calls `require_controller()`, so an ingress
+  # message from any other principal traps. What is left open is reading
+  # (`get_vote_counts`, `get_ballot_by_tag` — ballots are ciphertext) and
+  # load. Set it to the injector host's address and nothing else.
   whitelistSourceRange: ""
 
 # Deny-by-default egress/ingress for the pods. The replica sits next to
@@ -150,19 +162,33 @@ ingress:
 # arbitrary wasm shares that network.
 networkPolicy:
   enabled: true
-  # Namespaces allowed to reach the API port.
+  # No in-cluster caller is admitted. Only the subnet's own pods talk to the
+  # subnet, and that peer rule is the one thing here known to work — the four
+  # nodes reach consensus through it.
   #
-  # dev-victor is here for the tc2 measurement: the injector has to reach each
-  # node's own ClusterIP (it reads per-node block heights), and it runs from a
-  # personal namespace because `infra` is not writable outside CI.
+  # This started as a namespaceSelector list (ratel-dev, infra, dev-victor).
+  # It did not work: a caller in an admitted namespace got `Connection
+  # refused` in under a millisecond, while services in the same namespace
+  # with no policy answered fine and the replica's own readiness probe kept
+  # passing. The admitted port and an un-admitted one failed identically, so
+  # the rule was not taking effect at all. This cluster's policy controller
+  # appears to honour podSelector peers and not namespaceSelector ones.
   #
-  # PR-preview namespaces (ratel-pr-<num>) are NOT listed: their app-shell has
-  # no IC_URL yet, so it still uses the compile-time default. Add them when
-  # previews start pointing at this subnet.
-  allowedNamespaces:
-    - ratel-dev
-    - infra
-    - dev-victor
+  # The list is gone rather than widened. It existed for the tc2 injector,
+  # which now runs from a dedicated EC2 instance over the cluster VPN — and
+  # traffic arriving that way is not pod-sourced, so this policy never sees
+  # it. That is already demonstrated: a workstation on the VPN reads
+  # /api/v4/height today, with nothing admitted here.
+  #
+  # app-shell in `ratel-dev` is the one genuinely cross-namespace caller, and
+  # it is not admitted either. Nothing is blocked on that today — IC upload is
+  # opt-in per poll (`canister_upload_enabled`, default false), so no poll
+  # calls the subnet yet. When one does, it needs its own decision rather than
+  # a rule widened here in advance.
+  #
+  # The shape matches the one other chart in the org that has a NetworkPolicy:
+  # asset's litellm admits `app-server` and `evaluation` by podSelector and
+  # keeps every caller in one namespace.
 
 serviceAccount:
   create: true

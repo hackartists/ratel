@@ -19,21 +19,22 @@ spec:
     - from:
         - podSelector:
             matchLabels: {{- include "icp.selectorLabels" . | nindent 14 }}
-    # API callers.
+    {{- if .Values.ingress.enabled }}
+    # ingress-nginx terminates the per-node hosts and proxies in here, so it
+    # is a pod-sourced caller and does need admitting. It runs in this
+    # namespace, which is what makes a podSelector rule reach it — the one
+    # peer type this cluster's policy controller actually honours.
     - from:
-        {{- range .Values.networkPolicy.allowedNamespaces }}
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ . }}
-        {{- end }}
-        {{- if .Values.ingress.enabled }}
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
-        {{- end }}
+              app.kubernetes.io/name: ingress-nginx
       ports:
         - port: {{ .Values.ports.http }}
           protocol: TCP
+    {{- else }}
+    # No second rule: with the Ingress off, no in-cluster caller is admitted.
+    # See the note in values.yaml.
+    {{- end }}
   egress:
     - to:
         - podSelector:
