@@ -16,14 +16,34 @@
 
 ```bash
 helm upgrade --install icp infra/helm/icp -n infra \
-  -f infra/helm/icp/environments/dev.yaml --wait --timeout 10m
+  -f infra/helm/icp/environments/tc2.yaml --wait --timeout 15m
 ```
 
-tc2 측정처럼 4노드가 필요할 때만 수동으로 바꿉니다.
+**4노드(`tc2.yaml`)로 띄우는 이유**는 같은 서브넷이 앱과 IITP tc2 측정을 겸하기
+때문입니다. tc2 지표가 "finalized 블록에 포함된 투표 수"인데, 단일 노드에는 합의가 없어
+그 수가 성립하지 않습니다. 앱만 쓸 거라면 `dev.yaml`(1노드)로 충분합니다.
+
+### 노드 수를 바꿀 때
+
+레지스트리는 **생성 시점에 서브넷 구성원을 고정**합니다. 그래서 `replicaCount` 를 바꾸면
+레지스트리를 다시 만들어야 하고, 그건 **height 0 부터의 새 체인 + 캐니스터 전부 재배포**를
+뜻합니다.
+
+genconfig Job 이 Secret 에 기록해 둔 노드 수와 `replicaCount` 를 비교해, 어긋나면
+**배포를 실패시킵니다.** 조용히 깨진 서브넷(파드는 뜨는데 구성원이 아닌 상태)이 되는 것을
+막기 위해서입니다.
+
+일부러 바꾸려면 한 번만 켜세요.
+
+```
+Actions → Dev deploy → Run workflow → icp_allow_rebuild ✓
+```
+
+수동으로 한다면:
 
 ```bash
-helm upgrade --install icp infra/helm/icp -n infra \
-  -f infra/helm/icp/environments/tc2.yaml
+kubectl -n infra delete secret icp-subnet
+kubectl -n infra delete pvc -l app.kubernetes.io/name=icp
 ```
 
 이미지는 별도 워크플로(`ICP image`)가 만듭니다. replica 를 소스에서 컴파일해 약 5분이
