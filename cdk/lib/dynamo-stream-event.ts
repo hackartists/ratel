@@ -33,9 +33,16 @@ export interface DynamoStreamEventStackProps extends StackProps {
   /// fan-out to a non-VPC Lambda that can reach Google's FCM endpoints
   /// (oauth2.googleapis.com / fcm.googleapis.com); the default
   /// `lambdaFunction` lives in a VPC without NAT, so the FCM OAuth
-  /// token request fails ("error sending request") and no push is sent
-  /// (emails still work — SES is reachable via a VPC endpoint).
+  /// token request fails ("error sending request") and no push is sent.
   pushLambda?: lambda.Function;
+  /// Optional dedicated Lambda for the `NotificationSendRule` (email
+  /// delivery via SESv2 `SendBulkEmail`). When omitted it falls back to
+  /// `lambdaFunction`. Route it to the non-VPC svc Lambda: the default
+  /// `lambdaFunction` lives in a VPC without NAT AND without an SES VPC
+  /// endpoint, so every SES call times out and verification/notification
+  /// emails never send. (The pushLambda docstring's old claim that "SES is
+  /// reachable via a VPC endpoint" was wrong — no such endpoint is deployed.)
+  notificationLambda?: lambda.Function;
 }
 
 export class DynamoStreamEventStack extends Stack {
@@ -58,6 +65,11 @@ export class DynamoStreamEventStack extends Stack {
     // Resolves to the non-VPC svc Lambda when provided, otherwise
     // reuses the default. FCM needs public internet egress. See docstring.
     const pushLambdaFunction = props.pushLambda ?? props.lambdaFunction;
+    // Resolves to the non-VPC svc Lambda when provided, otherwise reuses the
+    // default. SES needs public egress the VPC lambdaFunction lacks (no NAT,
+    // no SES VPC endpoint), so notification emails must go here. See docstring.
+    const notificationLambdaFunction =
+      props.notificationLambda ?? props.lambdaFunction;
 
     // Import the existing EventBridge bus
     const eventBus = events.EventBus.fromEventBusName(
@@ -476,12 +488,12 @@ export class DynamoStreamEventStack extends Stack {
     new events.Rule(this, "NotificationSendRule", {
       eventBus,
       description:
-        "Route notification events to app-shell for email/SMS delivery",
+        "Route notification events to the non-VPC svc Lambda for email delivery (SES needs public egress the VPC Lambda lacks)",
       eventPattern: {
         source: ["ratel.dynamodb.stream"],
         detailType: ["NotificationSend"],
       },
-      targets: [new eventsTargets.LambdaFunction(props.lambdaFunction)],
+      targets: [new eventsTargets.LambdaFunction(notificationLambdaFunction)],
     });
 
     // ── Pipe: UserInboxNotification Insert → InboxPushFanout ───────

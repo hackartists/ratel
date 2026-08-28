@@ -199,8 +199,13 @@ new DynamoStreamEventStack(app, `ratel-${env}-stream-ap-northeast-2`, {
   crossPostingLambda: ap_northeast_2_svc.lambdaFunction,
   // Push fan-out (FCM) needs internet egress to Google's APIs, which
   // the VPC `lambdaFunction` lacks (no NAT) — the FCM OAuth token
-  // request fails and no push is delivered (emails still send via the
-  // SES VPC endpoint). Route it to the non-VPC svc Lambda. Remove once
-  // NAT is added to the shared VPC.
+  // request fails and no push is delivered. Route it to the non-VPC svc
+  // Lambda. Remove once NAT is added to the shared VPC.
   pushLambda: ap_northeast_2_svc.lambdaFunction,
+  // Email delivery (SES SendBulkEmail) also needs public egress. The VPC
+  // `lambdaFunction` has no NAT and no SES VPC endpoint, so every send times
+  // out and verification/notification emails never arrive. Route the
+  // NotificationSend rule to the non-VPC svc Lambda too. Remove once NAT (or
+  // an SES VPC endpoint) is added to the shared VPC.
+  notificationLambda: ap_northeast_2_svc.lambdaFunction,
 });

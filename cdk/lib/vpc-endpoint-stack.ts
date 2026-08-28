@@ -37,7 +37,7 @@ export class VpcEndpointStack extends Stack {
     this.sharedSecurityGroup.addIngressRule(
       this.sharedSecurityGroup,
       ec2.Port.allTraffic(),
-      "Intra-SG traffic between shared services",
+      "Intra-SG traffic between shared services"
     );
 
     // DynamoDB gateway endpoint — free, uses route tables (no ENIs).
@@ -56,7 +56,7 @@ export class VpcEndpointStack extends Stack {
     bedrockEndpointSg.addIngressRule(
       this.sharedSecurityGroup,
       ec2.Port.allTraffic(),
-      "Shared services to Bedrock runtime",
+      "Shared services to Bedrock runtime"
     );
 
     new ec2.InterfaceVpcEndpoint(this, "BedrockRuntimeEndpoint", {
@@ -69,23 +69,23 @@ export class VpcEndpointStack extends Stack {
 
     // SES interface endpoint — dedicated SG that only accepts 443 from
     // the shared SG. Private DNS lets the SDK use the default endpoint URL.
-    const sesEndpointSg = new ec2.SecurityGroup(this, "SesEndpointSG", {
-      vpc: this.vpc,
-      description: "SES VPC interface endpoint",
-      allowAllOutbound: false,
-    });
-    sesEndpointSg.addIngressRule(
-      this.sharedSecurityGroup,
-      ec2.Port.allTraffic(),
-      "Shared services to SES",
-    );
+    // const sesEndpointSg = new ec2.SecurityGroup(this, "SesEndpointSG", {
+    //   vpc: this.vpc,
+    //   description: "SES VPC interface endpoint",
+    //   allowAllOutbound: false,
+    // });
+    // sesEndpointSg.addIngressRule(
+    //   this.sharedSecurityGroup,
+    //   ec2.Port.allTraffic(),
+    //   "Shared services to SES",
+    // );
 
-    new ec2.InterfaceVpcEndpoint(this, "SesEmailEndpoint", {
-      vpc: this.vpc,
-      service: ec2.InterfaceVpcEndpointAwsService.EMAIL,
-      subnets: { subnetType: ec2.SubnetType.PUBLIC },
-      privateDnsEnabled: true,
-      securityGroups: [sesEndpointSg],
-    });
+    // new ec2.InterfaceVpcEndpoint(this, "SesEmailEndpoint", {
+    //   vpc: this.vpc,
+    //   service: ec2.InterfaceVpcEndpointAwsService.EMAIL,
+    //   subnets: { subnetType: ec2.SubnetType.PUBLIC },
+    //   privateDnsEnabled: true,
+    //   securityGroups: [sesEndpointSg],
+    // });
   }
 }
