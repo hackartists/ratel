@@ -195,16 +195,39 @@ injector:
 networkPolicy:
   enabled: true
 
-  # Two switches, because the policy's two halves are not worth the same.
+  # Off, because ingress rules do not work on this cluster.
   #
-  # `enabled: false` drops both, and the egress half is the one that keeps the
-  # replica away from postgres, minio and the registry sharing this namespace.
-  # A measurement needs the ingress half out of the way and has no reason to
-  # touch egress, so it turns this off instead and the egress rules stay.
+  # Not an inference from the subnet's own behaviour — measured in isolation.
+  # A plain server pod in a personal namespace, a policy admitting exactly one
+  # label on one port, and two clients:
   #
-  # Off means `policyTypes: [Egress]` — the ingress rules below are not
-  # rendered at all, rather than rendered wider.
-  restrictIngress: true
+  #   with the policy, client labelled to match      → refused
+  #   with the policy, client labelled not to match  → refused
+  #   policy deleted, same client                    → 200
+  #
+  # A `policyTypes: [Ingress]` policy blocks everything that reaches the pods
+  # it selects, whatever its rules say. podSelector and namespaceSelector both
+  # behave this way; earlier evidence that podSelector worked was peer traffic
+  # on UDP, which the peer rule admits without a port restriction and which
+  # says nothing about TCP.
+  #
+  # So the choice is not between a tight rule and a loose one. It is between
+  # no ingress restriction and a subnet nothing can call — including
+  # app-shell, once a poll actually enables IC upload. Moving the subnet into
+  # the app's namespace would not change this; that was checked before it was
+  # attempted.
+  #
+  # Egress stays on, and that is the half that carries the weight: the replica
+  # reaches its peers and DNS and nothing else, so postgres, minio and the
+  # registry beside it stay out of reach even from a canister someone installs
+  # through the open provisional API.
+  #
+  # What is left exposed, and is not fixable here: anything in the cluster can
+  # call the replica, and `ic-testnet` builds the registry with
+  # `ProvisionalWhitelist::All`, so anything in the cluster can create a
+  # canister on it. Closing that belongs in the registry — a specific
+  # principal instead of All — not in a network rule that does not fire.
+  restrictIngress: false
   # No in-cluster caller is admitted. Only the subnet's own pods talk to the
   # subnet, and that peer rule is the one thing here known to work — the four
   # nodes reach consensus through it.
