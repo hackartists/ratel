@@ -385,6 +385,37 @@ jobs:
             echo "FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 not set — push disabled (graceful skip)"
           fi
 
+      - name: Deploy the ICP subnet (helm → namespace `infra`)
+        # Runs BEFORE the app manifests: app-shell carries
+        # IC_URL=http://icp.infra.svc.cluster.local:4100, so the Service has
+        # to exist first or the first IC call after a rollout hits nothing.
+        #
+        # Lands in `infra`, not `ratel-dev`, for the same reason postgres and
+        # minio do: it is a shared backing service. A 4-node subnet is four
+        # pods and four PVCs — too heavy to copy per namespace — and its chain
+        # has to outlive any single app deployment (a PR-preview namespace is
+        # torn down; its chain should not be).
+        #
+        # Ratel's pipeline drives it because ratel is the only consumer today.
+        # If another service starts using the subnet, ownership should move
+        # out of this workflow.
+        #
+        # Idempotent. The subnet registry is generated once by a pre-install
+        # hook and kept in the `icp-subnet` Secret; upgrades deliberately do
+        # not regenerate it, since a new registry means a new chain from
+        # height 0 and a redeployed canister. To rebuild the subnet on
+        # purpose, delete that Secret and the PVCs.
+        #
+        # The image comes from the separate `ICP image` workflow — the
+        # replica is compiled from the ic fork and rebuilding it on every
+        # push to dev would add ~5 minutes for a byte-identical result.
+        run: |
+          set -euo pipefail
+          helm upgrade --install icp infra/helm/icp \
+            --namespace infra \
+            -f infra/helm/icp/environments/dev.yaml \
+            --wait --timeout 10m
+
       - name: Apply the dev manifests (envsubst → kubectl apply)
         # Substitution restricted to ${SHA_TAG} (image pin) and
         # ${WORKER_DRY_RUN} (events shadow-mode switch — see the workflow
