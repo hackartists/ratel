@@ -83,14 +83,37 @@ jobs:
               --set injector.enabled=true
               --set injector.image=registry.infra.svc.cluster.local:5000/ratel-vote-tps:dev
               --set-string "injector.args=${{ inputs.injector_args }}"
+
+              # The NetworkPolicy comes off for the length of the run, and the
+              # step after this puts it back.
+              #
+              # Not a preference — nothing reaches the subnet through it. Two
+              # separate callers named explicitly in the policy, one by
+              # namespaceSelector and one by podSelector, were both refused in
+              # under a millisecond, while `adminer` next door with no policy
+              # answered 200. The allow rules do not take effect on this
+              # cluster, so the only reachable state is the one with no policy.
+              #
+              # It reopens more than the API: this replica has the provisional
+              # management API enabled, so for those minutes anything in the
+              # cluster could create a canister on it. That is why the window
+              # is a workflow step rather than a values change someone leaves
+              # switched on — and why the restore below runs even when the
+              # measurement fails.
+              --set networkPolicy.enabled=false
+
+              # --wait alone does not wait for Jobs. Without this the release
+              # is "deployed" while the injector pod is still
+              # ContainerCreating, and the log step reads nothing.
+              --wait-for-jobs
             )
           fi
           helm "${args[@]}"
 
       - name: Measurement result
-        if: ${{ inputs.run_injector }}
-        # helm --wait already blocked until the Job finished, so the log is
-        # complete by the time this runs.
+        # always(): the injector failing is a result too, and its log is the
+        # only place that says why.
+        if: ${{ always() && inputs.run_injector }}
         run: |
           set -euo pipefail
           job=$(kubectl -n infra get jobs -l app.kubernetes.io/name=icp \
@@ -98,10 +121,25 @@ jobs:
                   -o jsonpath='{.items[-1:].metadata.name}')
           echo "Job: $job"
           echo
-          kubectl -n infra logs "job/$job" --tail=200
+          kubectl -n infra logs "job/$job" --tail=200 || true
           echo
           kubectl -n infra get pods -l app.kubernetes.io/component=injector \
             -o custom-columns=NAME:.metadata.name,STATUS:.status.phase
+
+      - name: Close the measurement window
+        # Read the log first, then close: this removes the Job along with the
+        # policy exception, and a deleted Job takes its pod's log with it.
+        if: ${{ always() && inputs.run_injector }}
+        run: |
+          set -euo pipefail
+          helm upgrade --install icp infra/helm/icp \
+            --namespace infra \
+            -f infra/helm/icp/environments/tc2.yaml \
+            --set "replicaCount=${{ inputs.replicas }}" \
+            --wait --timeout 20m
+          echo
+          kubectl -n infra get networkpolicy icp \
+            -o jsonpath='{.metadata.name} restored{"\n"}'
 
       - name: Subnet state
         run: |
