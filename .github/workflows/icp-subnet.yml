@@ -25,10 +25,13 @@ on:
         default: false
       injector_args:
         description: >-
-          Passed to ratel-vote-tps. Node addresses come from the chart, so
-          this is the shape of the run only.
+          Leave empty. The measurement's conditions live in the image, in
+          iitp-verification's tc2/measure.args, because they are part of the
+          result and belong in a repository rather than in a form. Anything
+          here overrides them for one run — for a probe, not for redefining
+          the measurement.
         type: string
-        default: "--target-tps 2000 --duration 50 --inflight 300 --settle 60"
+        default: ""
       replicas:
         description: >-
           Nodes in the subnet. 4 is a real subnet (n = 3f+1, f = 1); 1 has no
