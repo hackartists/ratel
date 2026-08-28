@@ -20,14 +20,6 @@ spec:
     - from:
         - podSelector:
             matchLabels: {{- include "icp.selectorLabels" . | nindent 14 }}
-    # The tc2 injector, on the API port only.
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/component: injector
-      ports:
-        - port: {{ .Values.ports.http }}
-          protocol: TCP
   {{- else }}
   # Ingress unrestricted for this release. Nothing in the cluster gets through
   # the rules above — two callers named explicitly, one by namespaceSelector
