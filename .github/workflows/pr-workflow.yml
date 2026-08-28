@@ -129,7 +129,7 @@ jobs:
       #   could not rename 'component' file ...: Invalid cross-device link (os error 18)
       # and rolls the whole install back.
       #
-      # Pointing RUSTUP_HOME at the runner temp puts toolchains/ and tmp/ on
+      # Pointing RUSTUP_HOME inside the workspace puts toolchains/ and tmp/ on
       # one filesystem, so the rename stays within a device. The cost is a
       # fresh toolchain download per run (~1 min); the cache above only holds
       # ~/.cargo/bin and target/, so nothing else changes. Rustup proxies in
@@ -138,7 +138,9 @@ jobs:
       # dx-check is the only self-hosted job that still calls
       # setup-rust-toolchain — the others build with the preinstalled
       # toolchain, which is why none of them hit this.
-      RUSTUP_HOME: ${{ runner.temp }}/rustup
+      # (github.workspace, not runner.temp — the `runner` context is not
+      # available in a job-level env block.)
+      RUSTUP_HOME: ${{ github.workspace }}/.rustup-dx-check
 
     defaults:
       run:
