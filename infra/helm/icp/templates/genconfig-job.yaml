@@ -45,6 +45,12 @@ rules:
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "delete"]
+  # And the StatefulSet itself — most of its spec is immutable once created
+  # (volumeClaimTemplates above all), so a rebuild that changes any of those
+  # has to recreate it rather than patch it. Helm makes it again right after.
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -77,6 +83,8 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 2
+  # The completed pod otherwise lingers in `infra` forever, one per install.
+  ttlSecondsAfterFinished: 3600
   template:
     metadata:
       labels: {{- include "icp.labels" . | nindent 8 }}
@@ -167,6 +175,10 @@ spec:
 
               echo "[genconfig] allowRebuild=true — discarding the old subnet and its chain"
               kubectl -n {{ .Values.namespace }} delete secret "$SECRET"
+              # --cascade=orphan would leave the pods holding the old volumes;
+              # let them go with it.
+              kubectl -n {{ .Values.namespace }} delete statefulset {{ include "icp.name" . }} \
+                --ignore-not-found --wait=true
               kubectl -n {{ .Values.namespace }} delete pvc \
                 -l app.kubernetes.io/name={{ include "icp.name" . }} --ignore-not-found
               create
