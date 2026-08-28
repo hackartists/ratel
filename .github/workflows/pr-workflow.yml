@@ -120,6 +120,26 @@ jobs:
   dx-check:
     runs-on: self-hosted
 
+    env:
+      # rustup swaps components by staging them in $RUSTUP_HOME/tmp and
+      # finishing with rename(2). The runner image ships a toolchain already,
+      # and on these pods its directory sits on a different mount from the
+      # default tmp, so `rustup toolchain install stable` — which replaces the
+      # existing rust-std/cargo — dies with
+      #   could not rename 'component' file ...: Invalid cross-device link (os error 18)
+      # and rolls the whole install back.
+      #
+      # Pointing RUSTUP_HOME at the runner temp puts toolchains/ and tmp/ on
+      # one filesystem, so the rename stays within a device. The cost is a
+      # fresh toolchain download per run (~1 min); the cache above only holds
+      # ~/.cargo/bin and target/, so nothing else changes. Rustup proxies in
+      # CARGO_HOME read this variable, so cargo/dx resolve the same toolchain.
+      #
+      # dx-check is the only self-hosted job that still calls
+      # setup-rust-toolchain — the others build with the preinstalled
+      # toolchain, which is why none of them hit this.
+      RUSTUP_HOME: ${{ runner.temp }}/rustup
+
     defaults:
       run:
         working-directory: app/ratel
