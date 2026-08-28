@@ -87,7 +87,22 @@ spec:
   ttlSecondsAfterFinished: 3600
   template:
     metadata:
-      labels: {{- include "icp.labels" . | nindent 8 }}
+      # Deliberately NOT `icp.labels`: those carry `icp.selectorLabels`, which
+      # is exactly what the NetworkPolicy's podSelector matches. A hook pod
+      # wearing them inherits the node egress rules — icp peers and DNS only —
+      # so the `publish` step cannot reach the API server to write the
+      # `icp-subnet` Secret. This survived the first install because
+      # pre-install hooks run before the NetworkPolicy exists; the first
+      # pre-upgrade after it failed with
+      #   dial tcp 10.43.0.1:443: connect: connection refused
+      #
+      # The generator is not a subnet node and never talks to one, so it has
+      # no business matching that selector. Same ownership, different name.
+      labels:
+        app.kubernetes.io/name: {{ include "icp.name" . }}-genconfig
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/component: genconfig
     spec:
       restartPolicy: Never
       serviceAccountName: {{ include "icp.name" . }}-genconfig
