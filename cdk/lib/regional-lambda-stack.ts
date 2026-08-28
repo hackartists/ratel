@@ -135,6 +135,19 @@ export class RegionalLambdaStack extends Stack {
       }),
     );
 
+    // Grant SES send permissions so the EventBridge-driven notification
+    // handler (the `NotificationSend` rule) can deliver verification-code and
+    // notification emails via SESv2 `SendBulkEmail`. The rule is routed to the
+    // non-VPC svc Lambda (this stack, when no `vpc` is supplied); without this
+    // grant the send fails with AccessDenied even once the network path is
+    // fixed.
+    apiLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ses:SendEmail", "ses:SendBulkEmail"],
+        resources: ["*"],
+      }),
+    );
+
     // ── Arcade SSE Function URL ──────────────────────────────────────
     //
     // Lambda Function URL with `RESPONSE_STREAM` so the arcade chat

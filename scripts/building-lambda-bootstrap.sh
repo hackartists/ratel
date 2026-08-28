@@ -20,7 +20,15 @@ rustup target add wasm32-unknown-unknown
 # to the workflow `cargo binstall dioxus-cli --locked` calls (commit 41c41f228);
 # this docker-internal build path was missed, so the lambda build silently
 # failed and left `target/dx/app-shell/release/web/public` uncreated.
-cargo install dioxus-cli --locked
+#
+# `--version 0.7.9` PINS dioxus-cli to the workspace's dioxus version
+# (Cargo.toml: dioxus = "0.7.9"). Without it, `cargo install` grabs the latest
+# published dioxus-cli (0.7.10+), which is INCOMPATIBLE with dioxus 0.7.9 — dx
+# wraps every rustc call, so a version-mismatched dx aborts the @server build
+# ("dx and dioxus versions are incompatible!"), leaving no `.../web/server`
+# binary and failing the packaging step's `cp`. Keep this in lockstep with the
+# workspace dioxus version on every bump.
+cargo install dioxus-cli --locked --version 0.7.9
 
 # Install node.js
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
