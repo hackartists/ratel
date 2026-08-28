@@ -167,9 +167,19 @@ injector:
   # the number claims.
   image: ""
   imagePullPolicy: Always
-  # Passed to ratel-vote-tps. `--nodes` is filled in from the subnet's own
-  # addresses, so give the rest here.
-  args: "--target-tps 2000 --duration 50 --inflight 300 --settle 60"
+  # An override, and empty on purpose.
+  #
+  # The measurement's conditions — target rate, duration, in-flight depth,
+  # settle window — live in the image, in iitp-verification's
+  # tc2/measure.args. They belong there because they are part of the result: a
+  # throughput figure means nothing without the conditions it was taken under,
+  # and conditions that exist only as text typed into a dispatch form leave no
+  # record in any repository. Changing them for good is a commit.
+  #
+  # Anything set here is appended after the baked values, and clap takes the
+  # last occurrence of a flag, so this overrides them — for a one-off probe,
+  # not for how the measurement is defined.
+  args: ""
   # A measurement should fail loudly rather than silently repeat itself: a
   # retry would inject a second batch into a chain that already holds the
   # first, and the resulting TPS would describe neither run.
