@@ -194,6 +194,17 @@ injector:
 # arbitrary wasm shares that network.
 networkPolicy:
   enabled: true
+
+  # Two switches, because the policy's two halves are not worth the same.
+  #
+  # `enabled: false` drops both, and the egress half is the one that keeps the
+  # replica away from postgres, minio and the registry sharing this namespace.
+  # A measurement needs the ingress half out of the way and has no reason to
+  # touch egress, so it turns this off instead and the egress rules stay.
+  #
+  # Off means `policyTypes: [Egress]` — the ingress rules below are not
+  # rendered at all, rather than rendered wider.
+  restrictIngress: true
   # No in-cluster caller is admitted. Only the subnet's own pods talk to the
   # subnet, and that peer rule is the one thing here known to work — the four
   # nodes reach consensus through it.
