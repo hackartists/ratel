@@ -427,9 +427,34 @@ jobs:
         # push to dev would add ~5 minutes for a byte-identical result.
         run: |
           set -euo pipefail
+
+          # Keep whatever size the subnet is already running at.
+          #
+          # tc2.yaml pins replicaCount to 4, and a plain deploy used to impose
+          # that on every push. So a tc2 measurement at one node left the next
+          # merge to dev to fail: the genconfig hook saw a subnet built for 1
+          # against a request for 4, refused to discard the chain without
+          # `allowRebuild`, and took the whole deploy down with it. That
+          # happened once, and it would keep happening — a measurement and an
+          # unrelated merge were fighting over a value neither cared about.
+          #
+          # Changing the subnet's size is the `ICP subnet` workflow's business,
+          # deliberately and with allow_rebuild. A deploy of the app has no
+          # opinion about it, so it reads what is there and passes it back.
+          size="$(kubectl -n infra get statefulset icp \
+                    -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+          if [ -n "$size" ]; then
+            echo "subnet is at ${size} node(s) — keeping it"
+            keep_size=(--set "replicaCount=${size}")
+          else
+            echo "no subnet yet — taking the size from tc2.yaml"
+            keep_size=()
+          fi
+
           helm upgrade --install icp infra/helm/icp \
             --namespace infra \
             -f infra/helm/icp/environments/tc2.yaml \
+            "${keep_size[@]}" \
             --set subnet.allowRebuild=${{ inputs.icp_allow_rebuild || false }} \
             --wait --timeout 15m
 
