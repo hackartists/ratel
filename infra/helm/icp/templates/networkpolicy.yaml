@@ -19,22 +19,29 @@ spec:
     - from:
         - podSelector:
             matchLabels: {{- include "icp.selectorLabels" . | nindent 14 }}
-    {{- if .Values.ingress.enabled }}
-    # ingress-nginx terminates the per-node hosts and proxies in here, so it
-    # is a pod-sourced caller and does need admitting. It runs in this
-    # namespace, which is what makes a podSelector rule reach it — the one
-    # peer type this cluster's policy controller actually honours.
+    # The tc2 injector, on the API port only.
+    #
+    # podSelector matches pods in this namespace and nowhere else, which is
+    # exactly the intent: the injector is a Job in `infra`, not something a
+    # personal namespace can stand in for. The namespaceSelector form would
+    # have allowed that, but it does not work on this cluster — a caller in an
+    # admitted namespace got `Connection refused` in under a millisecond while
+    # unpolicied services in the same namespace answered fine, and the
+    # admitted port failed exactly like an un-admitted one. The peer rule
+    # above is podSelector too, and that one demonstrably works: the subnet
+    # reaches consensus through it.
+    #
+    # The rule stands whether or not the Job exists. A label selector that
+    # matches nothing admits nothing, and making it conditional would mean the
+    # policy changes shape on a measurement run — a worse thing to reason
+    # about than a rule that is simply always there.
     - from:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: ingress-nginx
+              app.kubernetes.io/component: injector
       ports:
         - port: {{ .Values.ports.http }}
           protocol: TCP
-    {{- else }}
-    # No second rule: with the Ingress off, no in-cluster caller is admitted.
-    # See the note in values.yaml.
-    {{- end }}
   egress:
     - to:
         - podSelector:

@@ -1,41 +1,47 @@
-# Reconfigure the ICP subnet without redeploying the app.
+# Reconfigure the ICP subnet, and run the tc2 measurement, without a full
+# app deploy.
 #
 # `Dev deploy` also runs this chart, but it builds every app image first, so
-# reaching the helm step takes ~40 minutes. Turning the tc2 Ingress on before
-# a measurement and off after it is a pair of one-line changes, and paying
-# forty minutes twice is the reason it would quietly stay on instead.
+# reaching the helm step takes ~40 minutes. A measurement run is a values
+# change; paying forty minutes for it is the reason it would not get run.
 #
 # The image tag lives in the chart (`image.tag: dev`) and `Dev deploy` does
 # not override it, so running helm from here produces the same release that
 # workflow would.
+#
+# This is also how the measurement stays available to the team rather than to
+# whoever holds a kubeconfig: `infra` is not writable from a personal
+# namespace, but anyone with repo access can start this.
 name: ICP subnet
 
 on:
   workflow_dispatch:
     inputs:
-      ingress:
+      run_injector:
         description: >-
-          Expose icp-0..3.<domain> to `whitelist_cidr`. Leave off unless a
-          measurement is actually running — off is the resting state.
+          Run the tc2 throughput measurement as a Job in `infra`. Off leaves
+          the subnet alone — that is the resting state.
+        type: boolean
+        default: false
+      injector_args:
+        description: >-
+          Passed to ratel-vote-tps. Node addresses come from the chart, so
+          this is the shape of the run only.
+        type: string
+        default: "--target-tps 2000 --duration 50 --inflight 300 --settle 60"
+      replicas:
+        description: >-
+          Nodes in the subnet. 4 is a real subnet (n = 3f+1, f = 1); 1 has no
+          consensus, so a throughput figure from it describes execution rather
+          than a chain. Changing this needs allow_rebuild.
         type: choice
-        options: ["off", "on"]
-        default: "off"
-      whitelist_cidr:
-        description: >-
-          Required when ingress=on. The injector host and nothing else,
-          e.g. 203.0.113.9/32. This is the only thing in front of the read
-          API; writes are already controller-only in the canister.
-        type: string
-        default: ""
-      domain:
-        description: Hosts are <name>-<ordinal>.<domain>.
-        type: string
-        default: dev.ratel.foundation
+        options: ["4", "1"]
+        default: "4"
       allow_rebuild:
         description: >-
-          Regenerate the subnet registry. Needed only when replicaCount
-          changes — it starts a new chain from height 0 and every canister
-          has to be redeployed.
+          Regenerate the subnet registry. Required when `replicas` changes —
+          it starts a new chain from height 0 and every canister has to be
+          redeployed.
         type: boolean
         default: false
 
@@ -58,14 +64,6 @@ jobs:
             exit 1
           }
 
-      - name: Refuse an Ingress with no allowlist
-        # The chart's own `fail` catches this too, but it does so after helm
-        # has already started, and the message reads better here.
-        if: ${{ inputs.ingress == 'on' && inputs.whitelist_cidr == '' }}
-        run: |
-          echo "::error::ingress=on needs whitelist_cidr — the replica's read API has no authentication of its own."
-          exit 1
-
       - name: Apply
         run: |
           set -euo pipefail
@@ -73,33 +71,41 @@ jobs:
             upgrade --install icp infra/helm/icp
             --namespace infra
             -f infra/helm/icp/environments/tc2.yaml
+            --set "replicaCount=${{ inputs.replicas }}"
             --set "subnet.allowRebuild=${{ inputs.allow_rebuild }}"
-            --wait --timeout 15m
+            --wait --timeout 20m
           )
-          if [ "${{ inputs.ingress }}" = "on" ]; then
+          if [ "${{ inputs.run_injector }}" = "true" ]; then
             args+=(
-              --set ingress.enabled=true
-              --set "ingress.domain=${{ inputs.domain }}"
-              --set "ingress.whitelistSourceRange=${{ inputs.whitelist_cidr }}"
+              --set injector.enabled=true
+              --set injector.image=registry.infra.svc.cluster.local:5000/ratel-vote-tps:dev
+              --set-string "injector.args=${{ inputs.injector_args }}"
             )
           fi
           helm "${args[@]}"
 
-      - name: Report
+      - name: Measurement result
+        if: ${{ inputs.run_injector }}
+        # helm --wait already blocked until the Job finished, so the log is
+        # complete by the time this runs.
+        run: |
+          set -euo pipefail
+          job=$(kubectl -n infra get jobs -l app.kubernetes.io/name=icp \
+                  --sort-by=.metadata.creationTimestamp \
+                  -o jsonpath='{.items[-1:].metadata.name}')
+          echo "Job: $job"
+          echo
+          kubectl -n infra logs "job/$job" --tail=200
+          echo
+          kubectl -n infra get pods -l app.kubernetes.io/component=injector \
+            -o custom-columns=NAME:.metadata.name,STATUS:.status.phase
+
+      - name: Subnet state
         run: |
           set -euo pipefail
           kubectl -n infra get statefulset icp
-          if [ "${{ inputs.ingress }}" = "on" ]; then
-            kubectl -n infra get ingress icp
-            echo
-            echo "Exposed to ${{ inputs.whitelist_cidr }}:"
-            for i in 0 1 2 3; do
-              echo "  https://icp-$i.${{ inputs.domain }}/api/v4/height"
-            done
-            echo
-            echo "::warning::The subnet is on the internet. Re-run this workflow with ingress=off when the measurement finishes."
-          else
-            kubectl -n infra get ingress icp 2>/dev/null && \
-              echo "::error::Ingress still present after ingress=off" && exit 1
-            echo "No Ingress. The subnet is reachable only from inside the cluster network."
-          fi
+          kubectl -n infra get ingress icp 2>/dev/null && {
+            echo "::error::an Ingress exists — the subnet is not supposed to be reachable from outside the cluster"
+            exit 1
+          }
+          echo "No Ingress. The subnet is reachable only from inside the cluster network."

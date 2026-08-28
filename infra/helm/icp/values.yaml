@@ -125,37 +125,59 @@ affinity: {}
 
 # ── Exposure ───────────────────────────────────────────────────────────────
 #
-# OFF by default, and that is a security decision rather than a convenience
-# one. A local ICP replica has NO authentication: the provisional management
-# API is enabled, so anyone who can reach it may create canisters and install
-# arbitrary wasm — free compute for whoever finds the host. Publishing it
-# under *.biyard.co also records the name in certificate-transparency logs.
+# There is none, and there is no switch for one.
 #
-# The canister's own methods are safer than the replica around them:
-# upsert_vote calls require_controller(), so votes cannot be forged. But
-# run_sampling has no such guard and every query method is open.
+# A local ICP replica has NO authentication of its own: the provisional
+# management API is enabled, so anyone who reaches it may create canisters and
+# install arbitrary wasm. The canister's own methods are the only guard —
+# every `#[ic_cdk::update]` in packages/ratel-canister calls
+# require_controller() — but every query method is open.
 #
-# If you do need laptop access, prefer whitelisting over opening it up:
+# The one thing that wanted the subnet exposed was the tc2 throughput
+# measurement, back when the injector was going to run from EC2. It runs in
+# this namespace now (see `injector` below), so the reason is gone and the
+# Ingress went with it. Nothing outside the cluster network reaches the
+# subnet, and adding a host back would be a deliberate change with its own
+# review rather than a values flag someone can flip.
+#
+# For a one-off look from a laptop:
 #   kubectl -n infra port-forward svc/icp 4100:4100
-ingress:
+
+# ── tc2 throughput injector ────────────────────────────────────────────────
+#
+# Off by default: this is a measurement, not part of the service. Turn it on
+# for one run through the `ICP subnet` workflow, which is also what makes it
+# runnable by anyone with repo access rather than by whoever happens to hold a
+# kubeconfig.
+#
+# It runs here, in `infra`, for two reasons. The NetworkPolicy admits callers
+# by podSelector, which only ever matches pods in this namespace — the
+# namespaceSelector form does not work on this cluster, so a personal
+# namespace cannot be admitted. And the numbers are better: the injector lands
+# on the same node as the replicas, so a request is a sub-millisecond hop
+# instead of crossing a network. Measuring from outside would have measured
+# the link.
+injector:
   enabled: false
-  # Hosts are derived per node: icp-0.<domain> … icp-3.<domain>. On this
-  # cluster *.dev.ratel.foundation already resolves and ratel.foundation is on
-  # Route53, so DNS-01 issuance through `letsencrypt-route53` needs no new
-  # records — setting this and turning `enabled` on is the whole change.
-  domain: ""
-  clusterIssuer: letsencrypt-route53
-  # ingress-nginx source-IP allowlist. Works with dfx (basic auth does not —
-  # dfx sends no Authorization header, so auth-type: basic breaks deploys).
-  #
-  # The template refuses to render without it, because this is the only thing
-  # standing in front of the read API once the subnet is on the internet.
-  # Writes are already safe without it: every `#[ic_cdk::update]` in
-  # packages/ratel-canister calls `require_controller()`, so an ingress
-  # message from any other principal traps. What is left open is reading
-  # (`get_vote_counts`, `get_ballot_by_tag` — ballots are ciphertext) and
-  # load. Set it to the injector host's address and nothing else.
-  whitelistSourceRange: ""
+  # Built and pushed from biyard/iitp-verification (`cd tc2 && make image`),
+  # which is where the injector and the rest of the IITP verification work
+  # live. It carries the canister wasm as well as the binary: the injector
+  # installs that canister and then attributes a TPS figure to it, so a
+  # separately supplied wasm would eventually describe a different build than
+  # the number claims.
+  image: ""
+  imagePullPolicy: Always
+  # Passed to ratel-vote-tps. `--nodes` is filled in from the subnet's own
+  # addresses, so give the rest here.
+  args: "--target-tps 2000 --duration 50 --inflight 300 --settle 60"
+  # A measurement should fail loudly rather than silently repeat itself: a
+  # retry would inject a second batch into a chain that already holds the
+  # first, and the resulting TPS would describe neither run.
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  resources:
+    requests: { cpu: "1", memory: 1Gi }
+    limits: { cpu: "4", memory: 8Gi }
 
 # Deny-by-default egress/ingress for the pods. The replica sits next to
 # postgres/minio/registry in `infra`; without a policy a canister running
@@ -175,10 +197,7 @@ networkPolicy:
   # appears to honour podSelector peers and not namespaceSelector ones.
   #
   # The list is gone rather than widened. It existed for the tc2 injector,
-  # which now runs from a dedicated EC2 instance over the cluster VPN — and
-  # traffic arriving that way is not pod-sourced, so this policy never sees
-  # it. That is already demonstrated: a workstation on the VPN reads
-  # /api/v4/height today, with nothing admitted here.
+  # which is a Job in this namespace now and is admitted by podSelector.
   #
   # app-shell in `ratel-dev` is the one genuinely cross-namespace caller, and
   # it is not admitted either. Nothing is blocked on that today — IC upload is
@@ -189,6 +208,15 @@ networkPolicy:
   # The shape matches the one other chart in the org that has a NetworkPolicy:
   # asset's litellm admits `app-server` and `evaluation` by podSelector and
   # keeps every caller in one namespace.
+  #
+  # Note for anyone reading the history: this policy does apply to traffic
+  # arriving over the cluster VPN, not only to pod-sourced traffic. Removing
+  # the old namespaceSelector rule showed it — a workstation that had been
+  # reading /api/v4/height started getting `Connection refused` in 0 ms while
+  # `adminer`, unpolicied in the same namespace, kept answering 200. Nothing
+  # here depends on VPN reach any more, since the injector runs in-cluster,
+  # but a laptop can no longer poke the subnet directly. Use
+  # `kubectl -n infra port-forward svc/icp 4100:4100`.
 
 serviceAccount:
   create: true
