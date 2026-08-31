@@ -212,6 +212,30 @@ fn serve(app: fn() -> Element) {
         .layer(axum::middleware::from_fn(
             crate::common::middlewares::ssr_cache::ssr_cache,
         ))
+        // Compress text responses here rather than at the proxy.
+        //
+        // dev sits behind the shared ingress-nginx, whose ConfigMap is empty,
+        // so `use-gzip` keeps its upstream default of false and the 17 KB SSR
+        // shell goes out uncompressed. It cannot be fixed from this repo: there
+        // is no gzip Ingress annotation, and `configuration-snippet` has been
+        // refused by default since controller 1.9. Setting it in that ConfigMap
+        // would also turn compression on for every other service sharing the
+        // controller. prod fronts the app with CloudFront, which does compress
+        // at the edge — but the origin fetch behind it still carries the full
+        // body, and the plan is to move prod onto k3s, where there is no edge
+        // left to fall back on. Compressing here covers all three cases and
+        // travels with the deploy rather than with cluster state.
+        //
+        // gzip only. `compression-br` was tried and dropped: on this page it
+        // produced the same size (3479 vs 3500 bytes) for 2.5x the CPU (+24%
+        // per request against +9%), and since browsers send `gzip, deflate, br,
+        // zstd` with no q-values, tower-http breaks the tie by enum order — so
+        // brotli would have been the path nearly every real request took.
+        //
+        // OUTSIDE ssr_cache on purpose: the cache then holds one plain copy and
+        // each response is encoded for its own Accept-Encoding, so a client
+        // that sent none is never handed a gzip body out of the cache.
+        .layer(tower_http::compression::CompressionLayer::new())
         .layer(axum::middleware::from_fn(log_request));
 
     crate::common::mcp::set_app_router(app.clone());
