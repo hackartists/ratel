@@ -451,6 +451,42 @@ jobs:
             keep_size=()
           fi
 
+          # Skip entirely when the subnet is already up.
+          #
+          # The chart's genconfig hook is `pre-install,pre-upgrade`, so a plain
+          # `helm upgrade` schedules a Job pod on every app deploy. On a subnet
+          # that already exists at the requested size that pod does nothing —
+          # it reads the `icp-subnet` Secret, sees the node count matches, and
+          # exits 0. But helm still waits for it, so when the node has no pod
+          # slots left the Job stays Pending and takes the whole app deploy
+          # down with it. That happened on 2026-08-31: the deploy sat on this
+          # step while `icp-0` had been Running untouched since 2026-08-28.
+          #
+          # The subnet is a backing service like postgres or minio. Its
+          # lifecycle is not the app's, so an app deploy should not be able to
+          # fail on it. Create it when missing, leave it alone when healthy.
+          #
+          # Trade-off: chart edits no longer reach the cluster from a push to
+          # dev. That is the `ICP subnet` workflow's job — run it (it takes
+          # `replicas` and `allow_rebuild`), or dispatch this workflow with
+          # icp_allow_rebuild, which forces the upgrade path below.
+          ready="$(kubectl -n infra get statefulset icp \
+                     -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)"
+          # `if` rather than `cmd && var=yes`: under `set -e` the latter's
+          # non-zero status on a missing Secret is exactly the fresh-install
+          # case, and aborting there would break the one path that must work.
+          has_secret=no
+          if kubectl -n infra get secret icp-subnet >/dev/null 2>&1; then
+            has_secret=yes
+          fi
+          force="${{ inputs.icp_allow_rebuild || false }}"
+
+          if [ "$force" != "true" ] && [ -n "$size" ] && [ "$ready" = "$size" ] \
+             && [ "$has_secret" = yes ]; then
+            echo "subnet is healthy (${ready}/${size} ready, registry present) — skipping helm"
+            exit 0
+          fi
+
           helm upgrade --install icp infra/helm/icp \
             --namespace infra \
             -f infra/helm/icp/environments/tc2.yaml \
