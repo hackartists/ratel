@@ -50,6 +50,7 @@ jobs:
       PR_NUM: "${{ github.event.number }}"
       NS: "ratel-pr-${{ github.event.number }}"
       HEAD_REF: "${{ github.event.pull_request.head.ref }}"
+      CURRENT_RUN_ID: "${{ github.run_id }}"
     steps:
       - name: Cancel this PR's in-flight runs
         env:
@@ -69,9 +70,11 @@ jobs:
           in_flight() {
             curl -sf -H "$auth" -H "$acc" \
               "${api}/repos/${repo}/actions/runs?event=pull_request&per_page=100" 2>/dev/null \
-              | jq -r --argjson n "${PR_NUM}" --arg ref "${HEAD_REF}" '
+              | jq -r --argjson n "${PR_NUM}" --arg ref "${HEAD_REF}" \
+                  --argjson current "${CURRENT_RUN_ID}" '
                   .workflow_runs[]
                   | select(.status != "completed")
+                  | select(.id != $current)
                   | select((([.pull_requests[]?.number] | index($n)) != null)
                            or (.head_branch == $ref))
                   | .id' 2>/dev/null
@@ -101,6 +104,7 @@ jobs:
           fi
 
       - name: Tear down the PR namespace and report webroot
+        id: teardown
         run: |
           set -uo pipefail
           # Playwright report webroot on the pr-webroot PVC.
@@ -115,10 +119,14 @@ jobs:
             sleep 15
           done
 
-          kubectl get namespace "${NS}" >/dev/null 2>&1 || {
+          namespace=$(kubectl get namespace "${NS}" --ignore-not-found -o name) || {
+            echo "::error::could not verify whether ${NS} was deleted"
+            exit 1
+          }
+          if [ -z "${namespace}" ]; then
             echo "cleaned up PR ${PR_NUM} preview leftovers"
             exit 0
-          }
+          fi
 
           # Still here: almost always a namespace wedged in Terminating on a
           # finalizer. Clear the finalizers through the /finalize subresource —
@@ -132,7 +140,11 @@ jobs:
             || echo "::warning::finalize call failed"
           sleep 10
 
-          if kubectl get namespace "${NS}" >/dev/null 2>&1; then
+          namespace=$(kubectl get namespace "${NS}" --ignore-not-found -o name) || {
+            echo "::error::could not verify ${NS} after clearing finalizers"
+            exit 1
+          }
+          if [ -n "${namespace}" ]; then
             # Loud on purpose. The old `|| true` turned exactly this state into
             # a green check, which is how four namespaces survived unnoticed.
             echo "::error::${NS} could not be deleted — pr-preview-sweeper will retry hourly"
@@ -145,6 +157,7 @@ jobs:
         if: always()
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TEARDOWN_OUTCOME: ${{ steps.teardown.outcome }}
         # Runner image has no `gh`; use curl + jq against the REST API.
         run: |
           set -uo pipefail
@@ -157,7 +170,11 @@ jobs:
             "${api}/repos/${repo}/issues/${PR_NUM}/comments?per_page=100" 2>/dev/null \
             | jq -r --arg m "$marker" 'map(select(.body | startswith($m))) | .[0].id // empty' 2>/dev/null || true)
           if [ -n "${existing}" ]; then
-            body="$(printf '%s\n🧹 PR closed — the preview namespace `ratel-pr-%s` and the Playwright report webroot have been torn down.\n' "$marker" "$PR_NUM")"
+            if [ "${TEARDOWN_OUTCOME}" = "success" ]; then
+              body="$(printf '%s\n🧹 PR closed — the preview namespace `ratel-pr-%s` and the Playwright report webroot have been torn down.\n' "$marker" "$PR_NUM")"
+            else
+              body="$(printf '%s\n⚠️ PR closed, but cleanup could not verify that preview namespace `ratel-pr-%s` was removed. Check the cleanup run and the hourly sweeper.\n' "$marker" "$PR_NUM")"
+            fi
             payload=$(jq -nc --arg b "$body" '{body:$b}')
             curl -sf -X PATCH -H "$auth" -H "$acc" \
               "${api}/repos/${repo}/issues/comments/${existing}" -d "$payload" >/dev/null \

@@ -1,0 +1,35 @@
+# tc2 — IITP 투표 TPS 측정용. 4노드(n=3f+1, f=1) 서브넷.
+replicaCount: 4
+addressing:
+  mode: clusterIp
+# dev.yaml 과 같은 20Gi 로 맞춘다. volumeClaimTemplates 는 StatefulSet 생성 후
+# 변경할 수 없어서, 환경마다 크기가 다르면 dev ↔ tc2 전환이 그 자체로 실패한다
+# (Forbidden: updates to statefulset spec for fields other than replicas...).
+#
+# 20Gi 로 충분한지도 아직 실측 전이다. EC2 는 128GB 볼륨이었지만 거기엔 IC 소스와
+# 빌드 캐시(21GB)가 함께 있었고, 체인 상태(합의 풀 LMDB + 체크포인트)만이면 훨씬
+# 작다. 4노드면 노드 디스크에서 80Gi 를 가져가므로, 공유 클러스터에서는 크게
+# 잡는 것 자체가 이웃에 대한 위험이다.
+persistence:
+  enabled: true
+  size: 20Gi
+resources:
+  # Sized so four pods actually SCHEDULE on the home cluster. The earlier
+  # guess (requests cpu 4) did not: with two pods placed the third sat in
+  # Pending with "Insufficient cpu", and only dropping requests got all four
+  # running. Requests are a scheduling floor, not a cap — limits are what
+  # bound actual usage.
+  #
+  # This is enough to run the subnet and prove the tc2 path end to end (a
+  # 100-vote injection landed 100/100 in finalized blocks here). It is NOT
+  # sized for a real 2,000 TPS measurement — that wants a dedicated node, and
+  # the numbers should come from `kubectl -n <ns> top pod --containers` taken
+  # during an actual injection rather than from a guess.
+  # 300m 이 아니라 1 코어씩 예약한다. requests 는 스케줄링 하한이자, 노드가
+  # 붐빌 때 CPU 를 나누는 가중치다 — 300m 로 두면 부하 중에 ICP 파드가 밀려
+  # 측정값이 실제 능력보다 낮게 나온다. 4개면 4코어 예약이고, 예전에 4코어씩
+  # (=16) 잡았을 때 스케줄링이 실패했던 것과 달리 이 정도는 들어간다.
+  requests: { cpu: "1",    memory: 1Gi }
+  limits:   { cpu: "4",    memory: 8Gi }
+ingress:
+  enabled: false

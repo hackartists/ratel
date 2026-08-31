@@ -68,7 +68,11 @@ jobs:
             case "${code}" in
               200)
                 state=$(jq -r '.state // empty' < "${body}" 2>/dev/null)
-                [ "${state}" = "open" ] && echo open || echo closed
+                case "${state}" in
+                  open)   echo open ;;
+                  closed) echo closed ;;
+                  *)      echo unknown ;;
+                esac
                 ;;
               404) echo missing ;;
               *)   echo unknown ;;
@@ -176,13 +180,14 @@ jobs:
               "${api}/repos/${repo}/pulls/${num}" 2>/dev/null || echo 000)
             state=$(jq -r '.state // empty' < "${body}" 2>/dev/null)
             rm -f "${body}"
-            if [ "${code}" = "200" ] && [ "${state}" = "open" ]; then
-              continue
-            fi
-            if [ "${code}" != "200" ] && [ "${code}" != "404" ]; then
-              echo "::warning::could not resolve PR #${num} (HTTP ${code}) — keeping ${dir}"
-              continue
-            fi
+            case "${code}:${state}" in
+              200:open) continue ;;
+              200:closed|404:*) ;;
+              *)
+                echo "::warning::could not resolve PR #${num} (HTTP ${code}, state ${state:-empty}) — keeping ${dir}"
+                continue
+                ;;
+            esac
             if [ "${DRY_RUN}" = "true" ]; then
               echo "would remove ${dir} (PR #${num} not open)"
             else

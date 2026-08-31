@@ -1,0 +1,47 @@
+{{- if .Values.networkPolicy.enabled }}
+# The replica executes arbitrary canister wasm, and it sits in the same
+# namespace as postgres/minio/registry. Without a policy anything installed
+# on it can reach those. Ingress is limited to the namespaces that legitimately
+# call the API plus the subnet's own peer traffic; egress is limited to DNS
+# and peers.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "icp.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "icp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "icp.selectorLabels" . | nindent 6 }}
+  {{- if .Values.networkPolicy.restrictIngress }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Peer-to-peer inside the subnet.
+    - from:
+        - podSelector:
+            matchLabels: {{- include "icp.selectorLabels" . | nindent 14 }}
+  {{- else }}
+  # Ingress unrestricted for this release. Nothing in the cluster gets through
+  # the rules above — two callers named explicitly, one by namespaceSelector
+  # and one by podSelector, were both refused in under a millisecond while an
+  # unpolicied Service next door answered 200 — so a measurement has to run
+  # with them off.
+  #
+  # Egress stays. That is the half that matters: the replica sits beside
+  # postgres, minio and the registry, and with it in place it reaches its own
+  # peers and DNS and nothing else. Dropping the whole policy would open that
+  # too, which is a much larger thing than opening the API port.
+  policyTypes: [Egress]
+  {{- end }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {{- include "icp.selectorLabels" . | nindent 14 }}
+    # DNS only. The replica has no reason to reach the internet; canister
+    # HTTP outcalls would need an explicit rule added here.
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+{{- end }}

@@ -1,5 +1,14 @@
 name: PR Testing
 
+# ⚠️ DISABLED 2026-08-10 (GitHub-hosted-runner jobs): ratel-app,
+# ratel-app-testing, tauri-android-build, tauri-android-smoke-test are
+# commented out below — they required GitHub-hosted runners (docker CLI /
+# Android SDK / emulator) that the self-hosted k8s runner pods don't provide,
+# and the org's free Actions minutes were exhausted. Only the self-hosted
+# jobs (contracts-test, docs-build, dx-check, build-image, e2e) run now.
+# Re-enable per the NOTE above each disabled block (native macOS runner, or
+# — for ratel-app-testing — rewrite its infra to kubectl like the e2e job).
+#
 # Runs on every pull request against dev. Jobs:
 #   1. contracts-test    — smart contract tests (contracts/).
 #   2. docs-build        — Docusaurus site builds (docs/).
@@ -85,7 +94,7 @@ env:
 
 jobs:
   contracts-test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     defaults:
       run:
@@ -93,6 +102,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
 
       - name: Install dependencies
         run: |
@@ -103,7 +119,7 @@ jobs:
           make test
 
   docs-build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     defaults:
       run:
@@ -128,7 +144,29 @@ jobs:
         run: npm run build
 
   dx-check:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+
+    env:
+      # rustup swaps components by staging them in $RUSTUP_HOME/tmp and
+      # finishing with rename(2). The runner image ships a toolchain already,
+      # and on these pods its directory sits on a different mount from the
+      # default tmp, so `rustup toolchain install stable` — which replaces the
+      # existing rust-std/cargo — dies with
+      #   could not rename 'component' file ...: Invalid cross-device link (os error 18)
+      # and rolls the whole install back.
+      #
+      # Pointing RUSTUP_HOME inside the workspace puts toolchains/ and tmp/ on
+      # one filesystem, so the rename stays within a device. The cost is a
+      # fresh toolchain download per run (~1 min); the cache above only holds
+      # ~/.cargo/bin and target/, so nothing else changes. Rustup proxies in
+      # CARGO_HOME read this variable, so cargo/dx resolve the same toolchain.
+      #
+      # dx-check is the only self-hosted job that still calls
+      # setup-rust-toolchain — the others build with the preinstalled
+      # toolchain, which is why none of them hit this.
+      # (github.workspace, not runner.temp — the `runner` context is not
+      # available in a job-level env block.)
+      RUSTUP_HOME: ${{ github.workspace }}/.rustup-dx-check
 
     defaults:
       run:
@@ -136,6 +174,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+
+      # app/ratel/build.rs unconditionally runs `npm install` + `npm run build`
+      # in app/ratel/js (vite bundles the JS assets the `asset!()` macros load),
+      # so `cargo check`/`dx check` need node present. Self-hosted runner pods
+      # don't ship node (see contracts-test) — install it, matching build-image.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Restore cache
         id: dx-check-cache
@@ -158,26 +205,39 @@ jobs:
       - uses: cargo-bins/cargo-binstall@main
       - name: Install system dependencies
         run: |
-          sudo apt update
-          sudo apt install -y libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            lld
+          SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+          if command -v apt-get >/dev/null 2>&1; then
+            $SUDO apt-get update -qq
+            $SUDO apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
+              build-essential \
+              curl \
+              wget \
+              file \
+              libxdo-dev \
+              libssl-dev \
+              libayatana-appindicator3-dev \
+              librsvg2-dev \
+              lld
+          fi
 
-      - name: Install Dioxus-cli
+      - name: Install Dioxus-cli (source build — binstall binaries need newer glibc)
         run: |
-          # `--locked` makes the `cargo install` fallback (when binstall
-          # can't find a prebuilt binary) honor dioxus-cli's published
-          # Cargo.lock. Without it, fresh transitive resolution picks up
-          # `git2 0.21`, which breaks `auth-git2 0.5.8`'s
-          # `Cred::credential_helper` call → dioxus-cli build fails.
-          cargo binstall dioxus-cli --force --locked
+          # binstall's prebuilt dx targets a newer glibc than the self-hosted
+          # runner image ships (observed on `dx check --web`:
+          # `GLIBC_2.35 / GLIBC_2.39 not found`), so build from source.
+          # Pin to the project's dioxus version — a mismatched dx (binstall
+          # gives 0.7.10) makes `dx check` print "dx and dioxus versions are
+          # incompatible". `--locked` honors dioxus-cli's published Cargo.lock
+          # (fresh resolution picks git2 0.21 which breaks auth-git2 0.5.8's
+          # `Cred::credential_helper`). ~/.cargo/bin persists on the runner
+          # disk, so this compiles once; the version-aware check makes reruns a
+          # no-op while replacing a wrong-version or glibc-broken earlier binary.
+          WANT=0.7.9
+          if dx --version 2>/dev/null | grep -q "$WANT"; then
+            echo "dx $WANT already present: $(dx --version)"
+          else
+            cargo install dioxus-cli --version "$WANT" --locked --force
+          fi
 
       - name: Building test
         id: build
@@ -185,8 +245,18 @@ jobs:
           RUSTFLAGS: "-D warnings"
         run: |
           dx check --web
+          # `dx check --ios` is a cargo-check for the iOS target with no Xcode
+          # link step, so it runs fine on this Linux runner (verified: "No
+          # issues found").
           dx check --ios
-          dx check --android
+          # `dx check --android` needs the Android NDK, whose host toolchain
+          # Google ships only for x86_64 (`linux-x86_64` — there is no
+          # `linux-aarch64` NDK). This runner is arm64 Linux (Apple Silicon
+          # Lima VM), so the NDK clang can't execute here and the check dies
+          # with "Android not installed properly / set ANDROID_NDK_HOME". The
+          # android compile-check belongs on the native macOS self-hosted
+          # runner (darwin NDK runs via Rosetta); re-enable the line below there.
+          # dx check --android
 
       # The `asset!("/assets/tailwind.css")` macro in app.rs checks the
       # file exists at compile time. `dx check --web` above runs through
@@ -210,19 +280,30 @@ jobs:
         run: |
           dx check --web --features tauri-web --no-default-features
 
-      - name: cargo check app/ratel-tauri shell crate
-        working-directory: app/ratel-tauri/src-tauri
-        env:
-          DYNAMO_TABLE_PREFIX: ratel-dev
-          # commands/google_sign_in.rs uses
-          #   option_env!("GOOGLE_OAUTH_CLIENT_ID").expect(...)
-          # which panics at compile time if the env var is unset. Any
-          # non-empty value lets the compile pass; runtime Google sign-in
-          # is exercised by the dev workflow's APK build with the real
-          # GOOGLE_OAUTH_CLIENT_ID_DEV secret.
-          GOOGLE_OAUTH_CLIENT_ID: placeholder-for-compile-only
-        run: |
-          cargo check
+      # DISABLED 2026-08-10 — `cargo check` on the ratel-tauri shell crate
+      # targets the Linux DESKTOP build, which links the GTK/webkit stack
+      # (glib-sys needs `glib-2.0.pc` from libglib2.0-dev / webkit2gtk-dev).
+      # The self-hosted runner has NO apt-get (verified: the "Install system
+      # dependencies" step above no-ops — the runner is a dnf-family glibc
+      # image, and webkit/gtk were only ever installed on the old ubuntu-latest
+      # jobs), so glib-2.0 is absent and this check dies with
+      # "system library glib-2.0 ... was not found". Ratel ships web + mobile,
+      # not a Linux desktop app, so this desktop-target check is low value here.
+      # RE-ENABLE once the runner image carries the GTK/webkit desktop stack
+      # (or move it to a GTK-provisioned runner) — then strip the "# " below.
+      # - name: cargo check app/ratel-tauri shell crate
+      #   working-directory: app/ratel-tauri/src-tauri
+      #   env:
+      #     DYNAMO_TABLE_PREFIX: ratel-dev
+      #     # commands/google_sign_in.rs uses
+      #     #   option_env!("GOOGLE_OAUTH_CLIENT_ID").expect(...)
+      #     # which panics at compile time if the env var is unset. Any
+      #     # non-empty value lets the compile pass; runtime Google sign-in
+      #     # is exercised by the dev workflow's APK build with the real
+      #     # GOOGLE_OAUTH_CLIENT_ID_DEV secret.
+      #     GOOGLE_OAUTH_CLIENT_ID: placeholder-for-compile-only
+      #   run: |
+      #     cargo check
 
   # ────────────────────────────────────────────────────────────────────────
   # ratel-app: x86_64 docker image artifact. RETAINED ONLY as the backend
@@ -233,246 +314,251 @@ jobs:
   # consumes this artifact. If the smoke test ever moves off docker compose,
   # delete this job.
   # ────────────────────────────────────────────────────────────────────────
-  ratel-app:
-    runs-on: ubuntu-latest
+  # ────────────────────────────────────────────────────────────────────
+  # DISABLED 2026-08-10 — moved off GitHub-hosted runners to stop
+  # consuming the org's 3,000 free Actions minutes/month (they were
+  # exhausted, blocking CI). This job cannot run on the current
+  # self-hosted runners (k3s pods in the Lima Linux VM: no docker CLI,
+  # no macOS/Xcode, no /dev/kvm).
+  # WHY: Builds & `docker save`s the app-shell image artifact consumed ONLY by the Android emulator smoke-test; runner pods have no docker CLI.
+  # RE-ENABLE: register a native macOS self-hosted runner on the host
+  # Mac (Xcode for iOS, Hypervisor.framework for the Android emulator),
+  # then strip the leading "  # " from this block. (Or wait for the
+  # monthly Actions-minutes reset / enable an Actions spending budget.)
+  # ────────────────────────────────────────────────────────────────────
+  # ratel-app:
+  #   runs-on: ubuntu-latest
 
-    outputs:
-      image: ${{ steps.build.outputs.image }}
+  #   outputs:
+  #     image: ${{ steps.build.outputs.image }}
 
-    steps:
-      - uses: actions/checkout@v6
+  #   steps:
+  #     - uses: actions/checkout@v6
 
-      - name: Free disk space
-        # Cold cache (Cargo.lock changed) makes this dx build fill the runner
-        # disk alongside the restored cache; drop unused preinstalled
-        # toolchains first (same mitigation as ratel-app-testing).
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
-          sudo docker image prune --all --force 2>/dev/null || true
-          df -h / /mnt
+  #     - name: Free disk space
+  #       # Cold cache (Cargo.lock changed) makes this dx build fill the runner
+  #       # disk alongside the restored cache; drop unused preinstalled
+  #       # toolchains first (same mitigation as ratel-app-testing).
+  #       run: |
+  #         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+  #           /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+  #         sudo docker image prune --all --force 2>/dev/null || true
+  #         df -h / /mnt
 
-      - name: Add swap memory
-        # The job died with "runner lost communication" ~80 min into a cold
-        # `make build-testing` — the classic OOM kill on the 7 GB runner. Same
-        # 12G /mnt swap ratel-app-testing uses.
-        run: |
-          sudo swapoff -a
-          sudo rm -f /swapfile /mnt/swapfile
-          sudo fallocate -l 12G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
-          free -h
+  #     - name: Add swap memory
+  #       # The job died with "runner lost communication" ~80 min into a cold
+  #       # `make build-testing` — the classic OOM kill on the 7 GB runner. Same
+  #       # 12G /mnt swap ratel-app-testing uses.
+  #       run: |
+  #         sudo swapoff -a
+  #         sudo rm -f /swapfile /mnt/swapfile
+  #         sudo fallocate -l 12G /mnt/swapfile
+  #         sudo chmod 600 /mnt/swapfile
+  #         sudo mkswap /mnt/swapfile
+  #         sudo swapon /mnt/swapfile
+  #         free -h
 
-      - name: Restore cache
-        id: app-shell-build-cache
-        uses: actions/cache/restore@v5
-        with:
-          key: app-shell-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            app-shell-build-${{ runner.os }}-rust-
-          path: |
-            ~/.cargo/bin
-            target
+  #     - name: Restore cache
+  #       id: app-shell-build-cache
+  #       uses: actions/cache/restore@v5
+  #       with:
+  #         key: app-shell-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+  #         restore-keys: |
+  #           app-shell-build-${{ runner.os }}-rust-
+  #         path: |
+  #           ~/.cargo/bin
+  #           target
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: clippy, rustfmt
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          cache: false
+  #     - uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         components: clippy, rustfmt
+  #         toolchain: stable
+  #         target: wasm32-unknown-unknown
+  #         cache: false
 
-      - uses: cargo-bins/cargo-binstall@main
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            lld
+  #     - uses: cargo-bins/cargo-binstall@main
+  #     - name: Install system dependencies
+  #       run: |
+  #         sudo apt update
+  #         sudo apt install -y libwebkit2gtk-4.1-dev \
+  #           build-essential \
+  #           curl \
+  #           wget \
+  #           file \
+  #           libxdo-dev \
+  #           libssl-dev \
+  #           libayatana-appindicator3-dev \
+  #           librsvg2-dev \
+  #           lld
 
-      - name: Install Dioxus-cli
-        run: |
-          # `--locked` makes the `cargo install` fallback (when binstall
-          # can't find a prebuilt binary) honor dioxus-cli's published
-          # Cargo.lock. Without it, fresh transitive resolution picks up
-          # `git2 0.21`, which breaks `auth-git2 0.5.8`'s
-          # `Cred::credential_helper` call → dioxus-cli build fails.
-          cargo binstall dioxus-cli --force --locked
+  #     - name: Install Dioxus-cli
+  #       run: |
+  #         # `--locked` makes the `cargo install` fallback (when binstall
+  #         # can't find a prebuilt binary) honor dioxus-cli's published
+  #         # Cargo.lock. Without it, fresh transitive resolution picks up
+  #         # `git2 0.21`, which breaks `auth-git2 0.5.8`'s
+  #         # `Cred::credential_helper` call → dioxus-cli build fails.
+  #         cargo binstall dioxus-cli --force --locked
 
-      - name: Building test
-        id: build
-        env:
-          DYNAMO_TABLE_PREFIX: ratel-local
-          ENV: local
-          RUSTFLAGS: "-D warnings"
-          RUST_LOG: error
-          DYNAMO_ENDPOINT: http://localstack:4566
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_REGION: ap-northeast-2
-          AWS_ACCOUNT_ID: test
-          COMMIT: pr-${{ github.sha }}
-          ECR: ratel/app-shell
-          # Bound rustc parallelism on cold builds — 4 concurrent rustc peaks
-          # past the 7 GB runner even with swap (see "Add swap memory" above).
-          CARGO_BUILD_JOBS: "2"
-        run: |
-          npm i
-          rm -rf target/dx
+  #     - name: Building test
+  #       id: build
+  #       env:
+  #         DYNAMO_TABLE_PREFIX: ratel-local
+  #         ENV: local
+  #         RUSTFLAGS: "-D warnings"
+  #         RUST_LOG: error
+  #         DYNAMO_ENDPOINT: http://localstack:4566
+  #         AWS_ACCESS_KEY_ID: test
+  #         AWS_SECRET_ACCESS_KEY: test
+  #         AWS_REGION: ap-northeast-2
+  #         AWS_ACCOUNT_ID: test
+  #         COMMIT: pr-${{ github.sha }}
+  #         ECR: ratel/app-shell
+  #         # Bound rustc parallelism on cold builds — 4 concurrent rustc peaks
+  #         # past the 7 GB runner even with swap (see "Add swap memory" above).
+  #         CARGO_BUILD_JOBS: "2"
+  #       run: |
+  #         npm i
+  #         rm -rf target/dx
 
-          cd app/ratel
-          make build-testing
-          make docker
+  #         cd app/ratel
+  #         make build-testing
+  #         make docker
 
-          # Save image for artifact upload
-          docker save $ECR:$COMMIT | gzip > /tmp/app-shell-image.tar.gz
-          echo "image=$ECR:$COMMIT" >> $GITHUB_OUTPUT
+  #         # Save image for artifact upload
+  #         docker save $ECR:$COMMIT | gzip > /tmp/app-shell-image.tar.gz
+  #         echo "image=$ECR:$COMMIT" >> $GITHUB_OUTPUT
 
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-shell-image-${{ github.sha }}
-          path: /tmp/app-shell-image.tar.gz
-          retention-days: 7
+  #     - name: Upload Docker image artifact
+  #       uses: actions/upload-artifact@v7
+  #       with:
+  #         name: app-shell-image-${{ github.sha }}
+  #         path: /tmp/app-shell-image.tar.gz
+  #         retention-days: 7
 
-  ratel-app-testing:
-    runs-on: ubuntu-latest
+  # ────────────────────────────────────────────────────────────────────
+  # DISABLED 2026-08-10 — moved off GitHub-hosted runners to stop
+  # consuming the org's 3,000 free Actions minutes/month (they were
+  # exhausted, blocking CI). This job cannot run on the current
+  # self-hosted runners (k3s pods in the Lima Linux VM: no docker CLI,
+  # no macOS/Xcode, no /dev/kvm).
+  # WHY: Server-function integration tests bring up localstack+postgres via `docker compose`; runner pods have no docker CLI. Needs rewrite to start infra via kubectl (like the e2e job).
+  # RE-ENABLE: register a native macOS self-hosted runner on the host
+  # Mac (Xcode for iOS, Hypervisor.framework for the Android emulator),
+  # then strip the leading "  # " from this block. (Or wait for the
+  # monthly Actions-minutes reset / enable an Actions spending budget.)
+  # ────────────────────────────────────────────────────────────────────
+  # ratel-app-testing:
+  #   runs-on: self-hosted
 
-    steps:
-      - uses: actions/checkout@v6
+  #   steps:
+  #     - uses: actions/checkout@v6
 
-      # Cold-cache compile of `cargo test --features server,bypass --tests`
-      # peaks above the ubuntu-latest 7 GB RAM budget and OOM-kills the
-      # runner agent (manifests as exit 143 / "runner shutdown signal"
-      # during the link phase). Replace the runner's default 4 GB swap
-      # with 12 GB on /mnt (the larger data disk) to absorb the spike.
-      - name: Free disk space
-        # The job died with "No space left on device" on /home/runner while
-        # restoring the multi-GB cargo/target cache (observed on run
-        # 30881118844 and the run before it). ubuntu-latest ships ~25 GB of
-        # preinstalled toolchains this job never uses — drop them so the
-        # cache extraction + cold build fit.
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
-          sudo docker image prune --all --force 2>/dev/null || true
-          df -h / /mnt
+  #     # Cold-cache compile of `cargo test --features server,bypass --tests`
+  #     # peaks above the ubuntu-latest 7 GB RAM budget and OOM-kills the
+  #     # runner agent (manifests as exit 143 / "runner shutdown signal"
+  #     # during the link phase). Replace the runner's default 4 GB swap
+  #     # with 12 GB on /mnt (the larger data disk) to absorb the spike.
+  #     - name: Restore cache
+  #       id: app-shell-build-cache
+  #       uses: actions/cache/restore@v5
+  #       with:
+  #         key: app-shell-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+  #         restore-keys: |
+  #           app-shell-build-${{ runner.os }}-rust-
+  #         path: |
+  #           ~/.cargo/bin
+  #           target
 
-      - name: Add swap memory
-        run: |
-          sudo swapoff -a
-          sudo rm -f /swapfile /mnt/swapfile
-          sudo fallocate -l 12G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
-          free -h
+  #     - uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         components: clippy, rustfmt
+  #         toolchain: stable
+  #         target: wasm32-unknown-unknown
+  #         cache: false
 
-      - name: Restore cache
-        id: app-shell-build-cache
-        uses: actions/cache/restore@v5
-        with:
-          key: app-shell-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            app-shell-build-${{ runner.os }}-rust-
-          path: |
-            ~/.cargo/bin
-            target
+  #     - uses: cargo-bins/cargo-binstall@main
+  #     - name: Install system dependencies
+  #       run: |
+  #         SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+  #         if command -v apt-get >/dev/null 2>&1; then
+  #           $SUDO apt-get update -qq
+  #           $SUDO apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
+  #             build-essential \
+  #             curl \
+  #             wget \
+  #             file \
+  #             libxdo-dev \
+  #             libssl-dev \
+  #             libayatana-appindicator3-dev \
+  #             librsvg2-dev \
+  #             lld
+  #         fi
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: clippy, rustfmt
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          cache: false
+  #     - name: Install Dioxus-cli
+  #       run: |
+  #         # `--locked` makes the `cargo install` fallback (when binstall
+  #         # can't find a prebuilt binary) honor dioxus-cli's published
+  #         # Cargo.lock. Without it, fresh transitive resolution picks up
+  #         # `git2 0.21`, which breaks `auth-git2 0.5.8`'s
+  #         # `Cred::credential_helper` call → dioxus-cli build fails.
+  #         cargo binstall dioxus-cli --force --locked
 
-      - uses: cargo-bins/cargo-binstall@main
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            lld
+  #     - name: Start infrastructure
+  #       run: |
+  #         docker compose --profile infra up -d localstack qdrant
+  #         echo "Waiting for LocalStack to be healthy..."
+  #         timeout 120 bash -c 'until curl -sf http://localhost:4566/_localstack/health > /dev/null 2>&1; do sleep 5; done'
+  #         echo "LocalStack is healthy, starting remaining services..."
+  #         docker compose --profile infra up -d --remove-orphans
 
-      - name: Install Dioxus-cli
-        run: |
-          # `--locked` makes the `cargo install` fallback (when binstall
-          # can't find a prebuilt binary) honor dioxus-cli's published
-          # Cargo.lock. Without it, fresh transitive resolution picks up
-          # `git2 0.21`, which breaks `auth-git2 0.5.8`'s
-          # `Cred::credential_helper` call → dioxus-cli build fails.
-          cargo binstall dioxus-cli --force --locked
+  #     - name: Run tests
+  #       working-directory: app/ratel
+  #       env:
+  #         # Postgres migration: the server-function tests now run against
+  #         # Postgres (the `postgres` service the infra profile brings up, mapped
+  #         # to host 55432 in docker-compose). Without this the tests fall back to
+  #         # the asset:asset@5433 dev DSN, fail to connect, and every test after
+  #         # the first panics "global pool not set".
+  #         DATABASE_URL: postgres://ratel:ratel@127.0.0.1:55432/ratel
+  #         DYNAMO_TABLE_PREFIX: ratel-local
+  #         DYNAMO_ENDPOINT: http://localhost:4566
+  #         AWS_ACCESS_KEY_ID: test
+  #         AWS_SECRET_ACCESS_KEY: test
+  #         AWS_REGION: ap-northeast-2
+  #         AWS_ACCOUNT_ID: test
+  #         RUST_LOG: info
+  #         ENV: local
+  #         # ubuntu-latest has 7 GB RAM and 4 vCPUs. The full server+bypass
+  #         # compile peaks above the runner budget and OOM-kills the runner
+  #         # agent during the link phase (exit 143 / "runner shutdown
+  #         # signal"). Combined with the 10 GB swap added at job start,
+  #         # cap parallelism at 1 to keep peak RSS well under budget. The
+  #         # cost is ~1.5-2x compile wall time on cold cache; warm cache
+  #         # is unaffected.
+  #         CARGO_BUILD_JOBS: "1"
+  #       run: |
+  #         npm i
+  #         make test
 
-      - name: Start infrastructure
-        run: |
-          docker compose --profile infra up -d localstack qdrant
-          echo "Waiting for LocalStack to be healthy..."
-          timeout 120 bash -c 'until curl -sf http://localhost:4566/_localstack/health > /dev/null 2>&1; do sleep 5; done'
-          echo "LocalStack is healthy, starting remaining services..."
-          docker compose --profile infra up -d --remove-orphans
-
-      - name: Run tests
-        working-directory: app/ratel
-        env:
-          # Postgres migration: the server-function tests now run against
-          # Postgres (the `postgres` service the infra profile brings up, mapped
-          # to host 55432 in docker-compose). Without this the tests fall back to
-          # the asset:asset@5433 dev DSN, fail to connect, and every test after
-          # the first panics "global pool not set".
-          DATABASE_URL: postgres://ratel:ratel@127.0.0.1:55432/ratel
-          DYNAMO_TABLE_PREFIX: ratel-local
-          DYNAMO_ENDPOINT: http://localhost:4566
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_REGION: ap-northeast-2
-          AWS_ACCOUNT_ID: test
-          RUST_LOG: info
-          ENV: local
-          # ubuntu-latest has 7 GB RAM and 4 vCPUs. The full server+bypass
-          # compile peaks above the runner budget and OOM-kills the runner
-          # agent during the link phase (exit 143 / "runner shutdown
-          # signal"). Combined with the 10 GB swap added at job start,
-          # cap parallelism at 1 to keep peak RSS well under budget. The
-          # cost is ~1.5-2x compile wall time on cold cache; warm cache
-          # is unaffected.
-          CARGO_BUILD_JOBS: "1"
-        run: |
-          npm i
-          make test
-
-  # ────────────────────────────────────────────────────────────────────────
-  # build-image: build the arm64 app-shell image ON the self-hosted runner
-  # and push it to the in-cluster registry as ratel-app-shell:pr-<num>.
-  #
-  # The runners are biyard org-level k8s pods on the home k3s cluster
-  # (kubectl + helm + buildctl preinstalled, BUILDKIT_HOST preset, NO docker
-  # CLI). Both cluster nodes are arm64, so a native `make build-testing`
-  # here already produces arm64 binaries — the buildkit step only packages
-  # the dx output (app/ratel/Dockerfile copies target/dx/app-shell/release/
-  # web) and pushes; no compile happens inside the Dockerfile.
-  #
-  # The compile-time env block is IDENTICAL to the ratel-app job above —
-  # DYNAMO_ENDPOINT=http://localstack:4566 etc. are baked into the binary,
-  # and stay valid in-cluster because deploy/pr-preview names its k8s
-  # Services after the docker-compose hostnames (localstack, qdrant).
-  #
-  # PR-only: the image tag needs github.event.number.
-  # ────────────────────────────────────────────────────────────────────────
+  # # ────────────────────────────────────────────────────────────────────────
+  # # build-image: build the arm64 app-shell image ON the self-hosted runner
+  # # and push it to the in-cluster registry as ratel-app-shell:pr-<num>.
+  # #
+  # # The runners are biyard org-level k8s pods on the home k3s cluster
+  # # (kubectl + helm + buildctl preinstalled, BUILDKIT_HOST preset, NO docker
+  # # CLI). Both cluster nodes are arm64, so a native `make build-testing`
+  # # here already produces arm64 binaries — the buildkit step only packages
+  # # the dx output (app/ratel/Dockerfile copies target/dx/app-shell/release/
+  # # web) and pushes; no compile happens inside the Dockerfile.
+  # #
+  # # The compile-time env block is IDENTICAL to the ratel-app job above —
+  # # DYNAMO_ENDPOINT=http://localstack:4566 etc. are baked into the binary,
+  # # and stay valid in-cluster because deploy/pr-preview names its k8s
+  # # Services after the docker-compose hostnames (localstack, qdrant).
+  # #
+  # # PR-only: the image tag needs github.event.number.
+  # # ────────────────────────────────────────────────────────────────────────
   build-image:
     runs-on: self-hosted
     timeout-minutes: 90
@@ -904,339 +990,363 @@ jobs:
   # x86_64 because GitHub-hosted Linux runners can't accelerate arm64
   # Android emulators.
   # ────────────────────────────────────────────────────────────────────────
-  tauri-android-build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+  # ────────────────────────────────────────────────────────────────────
+  # DISABLED 2026-08-10 — moved off GitHub-hosted runners to stop
+  # consuming the org's 3,000 free Actions minutes/month (they were
+  # exhausted, blocking CI). This job cannot run on the current
+  # self-hosted runners (k3s pods in the Lima Linux VM: no docker CLI,
+  # no macOS/Xcode, no /dev/kvm).
+  # WHY: Android APK build (Android SDK/NDK); part of the emulator smoke-test chain.
+  # RE-ENABLE: register a native macOS self-hosted runner on the host
+  # Mac (Xcode for iOS, Hypervisor.framework for the Android emulator),
+  # then strip the leading "  # " from this block. (Or wait for the
+  # monthly Actions-minutes reset / enable an Actions spending budget.)
+  # ────────────────────────────────────────────────────────────────────
+  # tauri-android-build:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 45
 
-    steps:
-      - uses: actions/checkout@v6
+  #   steps:
+  #     - uses: actions/checkout@v6
 
-      - name: Restore cache
-        uses: actions/cache/restore@v5
-        with:
-          key: tauri-android-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            tauri-android-build-${{ runner.os }}-rust-
-          path: |
-            ~/.cargo/bin
-            target
-            app/ratel-tauri/dx-tauri-target
+  #     - name: Restore cache
+  #       uses: actions/cache/restore@v5
+  #       with:
+  #         key: tauri-android-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+  #         restore-keys: |
+  #           tauri-android-build-${{ runner.os }}-rust-
+  #         path: |
+  #           ~/.cargo/bin
+  #           target
+  #           app/ratel-tauri/dx-tauri-target
 
-      # Rust toolchain + the two targets the Tauri build needs: wasm32 for
-      # the dx-build step (web bundle that gets shipped inside the APK)
-      # and x86_64-linux-android for the native Tauri shell that the
-      # emulator can actually run.
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown,x86_64-linux-android
-          cache: false
+  #     # Rust toolchain + the two targets the Tauri build needs: wasm32 for
+  #     # the dx-build step (web bundle that gets shipped inside the APK)
+  #     # and x86_64-linux-android for the native Tauri shell that the
+  #     # emulator can actually run.
+  #     - uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #         target: wasm32-unknown-unknown,x86_64-linux-android
+  #         cache: false
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
 
-      # Java 21 + Android SDK + NDK — `cargo tauri android build` invokes
-      # Gradle which needs all three. `android-actions/setup-android` pulls
-      # the SDK; the NDK comes via `ndkmanager` in the same image.
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
+  #     # Java 21 + Android SDK + NDK — `cargo tauri android build` invokes
+  #     # Gradle which needs all three. `android-actions/setup-android` pulls
+  #     # the SDK; the NDK comes via `ndkmanager` in the same image.
+  #     - uses: actions/setup-java@v4
+  #       with:
+  #         distribution: temurin
+  #         java-version: "21"
 
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: "platforms;android-34 build-tools;34.0.0 ndk;29.0.14206865"
+  #     - uses: android-actions/setup-android@v3
+  #       with:
+  #         packages: "platforms;android-34 build-tools;34.0.0 ndk;29.0.14206865"
 
-      - uses: cargo-bins/cargo-binstall@main
+  #     - uses: cargo-bins/cargo-binstall@main
 
-      - name: Install dioxus-cli + tauri-cli
-        run: |
-          # See companion `--locked` notes above: dioxus-cli's source-build
-          # fallback otherwise grabs `git2 0.21`, which kills
-          # `auth-git2 0.5.8` (`Cred::credential_helper` was removed in
-          # the new git2). `--locked` pins to the lockfile shipped with
-          # the published crate, which used `git2 0.20`.
-          # `--force`: when binstall falls back to a source build (e.g. GitHub
-          # 403 rate-limits the prebuilt fetch), it must overwrite the `dx`/
-          # `cargo-tauri` binaries restored from cache, else `cargo install`
-          # aborts with "binary already exists in destination".
-          cargo binstall -y --locked --force dioxus-cli
-          cargo binstall -y --locked --force --version "^2.0.0" tauri-cli
+  #     - name: Install dioxus-cli + tauri-cli
+  #       run: |
+  #         # See companion `--locked` notes above: dioxus-cli's source-build
+  #         # fallback otherwise grabs `git2 0.21`, which kills
+  #         # `auth-git2 0.5.8` (`Cred::credential_helper` was removed in
+  #         # the new git2). `--locked` pins to the lockfile shipped with
+  #         # the published crate, which used `git2 0.20`.
+  #         # `--force`: when binstall falls back to a source build (e.g. GitHub
+  #         # 403 rate-limits the prebuilt fetch), it must overwrite the `dx`/
+  #         # `cargo-tauri` binaries restored from cache, else `cargo install`
+  #         # aborts with "binary already exists in destination".
+  #         cargo binstall -y --locked --force dioxus-cli
+  #         cargo binstall -y --locked --force --version "^2.0.0" tauri-cli
 
-      # google-services.json is gitignored (Firebase client config) and absent
-      # on a clean checkout, but `make build-android-debug` → `gs-copy` copies
-      # it for the google-services Gradle plugin, which fails the build if it's
-      # missing. This APK is a smoke-test build that never sends a push, so
-      # write a minimal valid placeholder (the plugin only requires the
-      # structure + a client whose package_name matches applicationId
-      # `co.biyard.ratel`) instead of pulling the real secret — keeps the job
-      # working on forks / without secrets.
-      - name: Write placeholder google-services.json (smoke build, no push)
-        working-directory: app/ratel-tauri
-        run: |
-          cat > google-services.json <<'JSON'
-          {
-            "project_info": {
-              "project_number": "000000000000",
-              "project_id": "ratel-ci-placeholder"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
-                  "android_client_info": {
-                    "package_name": "co.biyard.ratel"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [
-                  { "current_key": "AIzaSyPLACEHOLDER0000000000000000000000000" }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "other_platform_oauth_client": []
-                  }
-                }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          JSON
-          echo "Wrote placeholder google-services.json ($(wc -c < google-services.json) bytes)"
+  #     # google-services.json is gitignored (Firebase client config) and absent
+  #     # on a clean checkout, but `make build-android-debug` → `gs-copy` copies
+  #     # it for the google-services Gradle plugin, which fails the build if it's
+  #     # missing. This APK is a smoke-test build that never sends a push, so
+  #     # write a minimal valid placeholder (the plugin only requires the
+  #     # structure + a client whose package_name matches applicationId
+  #     # `co.biyard.ratel`) instead of pulling the real secret — keeps the job
+  #     # working on forks / without secrets.
+  #     - name: Write placeholder google-services.json (smoke build, no push)
+  #       working-directory: app/ratel-tauri
+  #       run: |
+  #         cat > google-services.json <<'JSON'
+  #         {
+  #           "project_info": {
+  #             "project_number": "000000000000",
+  #             "project_id": "ratel-ci-placeholder"
+  #           },
+  #           "client": [
+  #             {
+  #               "client_info": {
+  #                 "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+  #                 "android_client_info": {
+  #                   "package_name": "co.biyard.ratel"
+  #                 }
+  #               },
+  #               "oauth_client": [],
+  #               "api_key": [
+  #                 { "current_key": "AIzaSyPLACEHOLDER0000000000000000000000000" }
+  #               ],
+  #               "services": {
+  #                 "appinvite_service": {
+  #                   "other_platform_oauth_client": []
+  #                 }
+  #               }
+  #             }
+  #           ],
+  #           "configuration_version": "1"
+  #         }
+  #         JSON
+  #         echo "Wrote placeholder google-services.json ($(wc -c < google-services.json) bytes)"
 
-      - name: Build x86_64 debug APK
-        working-directory: app/ratel-tauri
-        env:
-          # The smoke-test job below brings up the same `app-shell-testing`
-          # docker stack the regular playwright job uses (built with the
-          # `bypass` feature so `000000` is accepted as a verification
-          # code) and exposes it via `adb reverse tcp:8080 tcp:8080`.
-          # Emulator-side `http://localhost:8080` therefore reaches the
-          # host docker container.
-          #
-          # Hosting at `localhost` is critical: the WebView origin is
-          # `http://tauri.localhost`, eTLD+1 = `localhost`, same-site
-          # with `http://localhost:8080`. That lets the SameSite=Lax
-          # session cookie issued by the local backend (ENV=local) ride
-          # across the cross-origin fetch.
-          MOBILE_API_URL: http://localhost:8080
-          ENV: dev
-          ANDROID_TARGET: x86_64-linux-android
-          # Match dev profile of the workspace; release wasm so the bundle
-          # under dist/ is shaped the way real users see it.
-          DYNAMO_TABLE_PREFIX: ratel-dev
-          RUSTFLAGS: "-D warnings"
+  #     - name: Build x86_64 debug APK
+  #       working-directory: app/ratel-tauri
+  #       env:
+  #         # The smoke-test job below brings up the same `app-shell-testing`
+  #         # docker stack the regular playwright job uses (built with the
+  #         # `bypass` feature so `000000` is accepted as a verification
+  #         # code) and exposes it via `adb reverse tcp:8080 tcp:8080`.
+  #         # Emulator-side `http://localhost:8080` therefore reaches the
+  #         # host docker container.
+  #         #
+  #         # Hosting at `localhost` is critical: the WebView origin is
+  #         # `http://tauri.localhost`, eTLD+1 = `localhost`, same-site
+  #         # with `http://localhost:8080`. That lets the SameSite=Lax
+  #         # session cookie issued by the local backend (ENV=local) ride
+  #         # across the cross-origin fetch.
+  #         MOBILE_API_URL: http://localhost:8080
+  #         ENV: dev
+  #         ANDROID_TARGET: x86_64-linux-android
+  #         # Match dev profile of the workspace; release wasm so the bundle
+  #         # under dist/ is shaped the way real users see it.
+  #         DYNAMO_TABLE_PREFIX: ratel-dev
+  #         RUSTFLAGS: "-D warnings"
 
-          # `commands/google_sign_in.rs` panics at compile time if this
-          # is unset. Smoke uses email/password signup so the runtime
-          # value doesn't matter — any non-empty string satisfies the
-          # compile-time `option_env!().expect()` chain.
-          GOOGLE_OAUTH_CLIENT_ID: placeholder-for-compile-only
+  #         # `commands/google_sign_in.rs` panics at compile time if this
+  #         # is unset. Smoke uses email/password signup so the runtime
+  #         # value doesn't matter — any non-empty string satisfies the
+  #         # compile-time `option_env!().expect()` chain.
+  #         GOOGLE_OAUTH_CLIENT_ID: placeholder-for-compile-only
 
-          # `app/ratel/Makefile`'s BUILD_ENV interpolates these and the
-          # default for AWS_ACCOUNT_ID is `$(shell aws sts ...)` which
-          # fails without credentials. We don't actually need AWS for the
-          # web/tauri-web bundle, so any non-empty value satisfies it.
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_REGION: ap-northeast-2
-          AWS_ACCOUNT_ID: test
-        run: |
-          # The setup-android action exports ANDROID_HOME at job scope.
-          # Re-point the Makefile's NDK_HOME at the version we just
-          # installed (Makefile defaults to /opt/android-ndk which doesn't
-          # exist on GH runners).
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
-          export NDK_HOME="$ANDROID_NDK_HOME"
-          make dx-build
-          make build-android-debug
+  #         # `app/ratel/Makefile`'s BUILD_ENV interpolates these and the
+  #         # default for AWS_ACCOUNT_ID is `$(shell aws sts ...)` which
+  #         # fails without credentials. We don't actually need AWS for the
+  #         # web/tauri-web bundle, so any non-empty value satisfies it.
+  #         AWS_ACCESS_KEY_ID: test
+  #         AWS_SECRET_ACCESS_KEY: test
+  #         AWS_REGION: ap-northeast-2
+  #         AWS_ACCOUNT_ID: test
+  #       run: |
+  #         # The setup-android action exports ANDROID_HOME at job scope.
+  #         # Re-point the Makefile's NDK_HOME at the version we just
+  #         # installed (Makefile defaults to /opt/android-ndk which doesn't
+  #         # exist on GH runners).
+  #         export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
+  #         export NDK_HOME="$ANDROID_NDK_HOME"
+  #         make dx-build
+  #         make build-android-debug
 
-      - name: Locate APK
-        id: locate
-        working-directory: app/ratel-tauri
-        run: |
-          APK=$(find src-tauri/gen/android -name 'app-*-debug.apk' | head -1)
-          if [ -z "$APK" ]; then
-            echo "::error::no debug APK produced under src-tauri/gen/android"
-            find src-tauri/gen/android -name '*.apk' || true
-            exit 1
-          fi
-          echo "apk=$APK" >> $GITHUB_OUTPUT
-          ls -la "$APK"
+  #     - name: Locate APK
+  #       id: locate
+  #       working-directory: app/ratel-tauri
+  #       run: |
+  #         APK=$(find src-tauri/gen/android -name 'app-*-debug.apk' | head -1)
+  #         if [ -z "$APK" ]; then
+  #           echo "::error::no debug APK produced under src-tauri/gen/android"
+  #           find src-tauri/gen/android -name '*.apk' || true
+  #           exit 1
+  #         fi
+  #         echo "apk=$APK" >> $GITHUB_OUTPUT
+  #         ls -la "$APK"
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: tauri-android-apk-${{ github.sha }}
-          path: app/ratel-tauri/${{ steps.locate.outputs.apk }}
-          retention-days: 7
+  #     - name: Upload APK artifact
+  #       uses: actions/upload-artifact@v7
+  #       with:
+  #         name: tauri-android-apk-${{ github.sha }}
+  #         path: app/ratel-tauri/${{ steps.locate.outputs.apk }}
+  #         retention-days: 7
 
-      - name: Save cache
-        if: always()
-        uses: actions/cache/save@v5
-        with:
-          key: tauri-android-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          path: |
-            ~/.cargo/bin
-            target
-            app/ratel-tauri/dx-tauri-target
+  #     - name: Save cache
+  #       if: always()
+  #       uses: actions/cache/save@v5
+  #       with:
+  #         key: tauri-android-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
+  #         path: |
+  #           ~/.cargo/bin
+  #           target
+  #           app/ratel-tauri/dx-tauri-target
 
-  # ────────────────────────────────────────────────────────────────────────
-  # Tauri Android smoke test: boots an x86_64 Android emulator, brings up
-  # the same `app-shell-testing` docker stack the regular playwright job
-  # uses (so we get the `bypass` feature for `000000` verification codes
-  # against a backend built from this PR's commit), installs the APK from
-  # `tauri-android-build`, exposes the WebView's CDP socket via
-  # `adb forward`, exposes the host backend inside the emulator via
-  # `adb reverse`, and runs the Playwright spec at
-  # `playwright/tests/tauri/create-space.spec.js`.
-  #
-  # Needs `ratel-app` because the APK is built with
-  # `MOBILE_API_URL=http://localhost:8080` and we have to stand up that
-  # backend somewhere reachable. Pointing at the live dev backend was a
-  # dead end — dev has no `bypass`, and any wire-format drift between the
-  # PR's tauri-web client and dev's deployed app-shell shows up as opaque
-  # 500s.
-  # ────────────────────────────────────────────────────────────────────────
-  tauri-android-smoke-test:
-    runs-on: ubuntu-latest
-    needs: [tauri-android-build, ratel-app]
-    timeout-minutes: 60
+  # # ────────────────────────────────────────────────────────────────────────
+  # # Tauri Android smoke test: boots an x86_64 Android emulator, brings up
+  # # the same `app-shell-testing` docker stack the regular playwright job
+  # # uses (so we get the `bypass` feature for `000000` verification codes
+  # # against a backend built from this PR's commit), installs the APK from
+  # # `tauri-android-build`, exposes the WebView's CDP socket via
+  # # `adb forward`, exposes the host backend inside the emulator via
+  # # `adb reverse`, and runs the Playwright spec at
+  # # `playwright/tests/tauri/create-space.spec.js`.
+  # #
+  # # Needs `ratel-app` because the APK is built with
+  # # `MOBILE_API_URL=http://localhost:8080` and we have to stand up that
+  # # backend somewhere reachable. Pointing at the live dev backend was a
+  # # dead end — dev has no `bypass`, and any wire-format drift between the
+  # # PR's tauri-web client and dev's deployed app-shell shows up as opaque
+  # # 500s.
+  # # ────────────────────────────────────────────────────────────────────────
+  # ────────────────────────────────────────────────────────────────────
+  # DISABLED 2026-08-10 — moved off GitHub-hosted runners to stop
+  # consuming the org's 3,000 free Actions minutes/month (they were
+  # exhausted, blocking CI). This job cannot run on the current
+  # self-hosted runners (k3s pods in the Lima Linux VM: no docker CLI,
+  # no macOS/Xcode, no /dev/kvm).
+  # WHY: Runs the Android emulator — needs hardware accel: KVM on Linux (verified absent in the Lima VM) or Hypervisor.framework on macOS.
+  # RE-ENABLE: register a native macOS self-hosted runner on the host
+  # Mac (Xcode for iOS, Hypervisor.framework for the Android emulator),
+  # then strip the leading "  # " from this block. (Or wait for the
+  # monthly Actions-minutes reset / enable an Actions spending budget.)
+  # ────────────────────────────────────────────────────────────────────
+  # tauri-android-smoke-test:
+  #   runs-on: ubuntu-latest
+  #   needs: [tauri-android-build, ratel-app]
+  #   timeout-minutes: 60
 
-    steps:
-      # Default-token checkout like every other job. The repo has no
-      # submodules (.gitmodules is empty), and the old
-      # `ssh-key: PULL_KEY_REPO` deploy key no longer authenticates
-      # (Permission denied on runs 30888104007 + rerun) — it was the only
-      # remaining user of that key.
-      - uses: actions/checkout@v6
+  #   steps:
+  #     # Default-token checkout like every other job. The repo has no
+  #     # submodules (.gitmodules is empty), and the old
+  #     # `ssh-key: PULL_KEY_REPO` deploy key no longer authenticates
+  #     # (Permission denied on runs 30888104007 + rerun) — it was the only
+  #     # remaining user of that key.
+  #     - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
 
-      # Required for the Android SDK + emulator that
-      # reactivecircus/android-emulator-runner provisions.
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
+  #     # Required for the Android SDK + emulator that
+  #     # reactivecircus/android-emulator-runner provisions.
+  #     - uses: actions/setup-java@v4
+  #       with:
+  #         distribution: temurin
+  #         java-version: "21"
 
-      # `enable-hw-accel: true` requires KVM. ubuntu-latest doesn't expose
-      # /dev/kvm by default, so the action falls back to software
-      # emulation — slower but works without extra setup.
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+  #     # `enable-hw-accel: true` requires KVM. ubuntu-latest doesn't expose
+  #     # /dev/kvm by default, so the action falls back to software
+  #     # emulation — slower but works without extra setup.
+  #     - name: Enable KVM
+  #       run: |
+  #         echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+  #           | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+  #         sudo udevadm control --reload-rules
+  #         sudo udevadm trigger --name-match=kvm
 
-      - name: Download APK artifact
-        uses: actions/download-artifact@v5
-        with:
-          name: tauri-android-apk-${{ github.sha }}
-          path: /tmp/apk
+  #     - name: Download APK artifact
+  #       uses: actions/download-artifact@v5
+  #       with:
+  #         name: tauri-android-apk-${{ github.sha }}
+  #         path: /tmp/apk
 
-      - name: Locate downloaded APK
-        id: apk
-        run: |
-          APK=$(find /tmp/apk -name '*.apk' | head -1)
-          if [ -z "$APK" ]; then
-            echo "::error::no APK in downloaded artifact"
-            ls -la /tmp/apk
-            exit 1
-          fi
-          echo "path=$APK" >> $GITHUB_OUTPUT
-          ls -la "$APK"
+  #     - name: Locate downloaded APK
+  #       id: apk
+  #       run: |
+  #         APK=$(find /tmp/apk -name '*.apk' | head -1)
+  #         if [ -z "$APK" ]; then
+  #           echo "::error::no APK in downloaded artifact"
+  #           ls -la /tmp/apk
+  #           exit 1
+  #         fi
+  #         echo "path=$APK" >> $GITHUB_OUTPUT
+  #         ls -la "$APK"
 
-      - name: Download Docker image artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: app-shell-image-${{ github.sha }}
-          path: /tmp
+  #     - name: Download Docker image artifact
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: app-shell-image-${{ github.sha }}
+  #         path: /tmp
 
-      - name: Load Docker image
-        run: |
-          docker load < /tmp/app-shell-image.tar.gz
-          docker images
+  #     - name: Load Docker image
+  #       run: |
+  #         docker load < /tmp/app-shell-image.tar.gz
+  #         docker images
 
-      - name: Bring up testing infra
-        env:
-          COMMIT: pr-${{ github.sha }}
-          RESET_DB: "true"
-        run: |
-          docker compose --profile testing up -d localstack qdrant
-          echo "Waiting for LocalStack to be healthy..."
-          timeout 120 bash -c 'until curl -sf http://localhost:4566/_localstack/health > /dev/null 2>&1; do sleep 5; done'
-          echo "LocalStack is healthy, starting remaining services..."
-          docker compose --profile testing up -d
+  #     - name: Bring up testing infra
+  #       env:
+  #         COMMIT: pr-${{ github.sha }}
+  #         RESET_DB: "true"
+  #       run: |
+  #         docker compose --profile testing up -d localstack qdrant
+  #         echo "Waiting for LocalStack to be healthy..."
+  #         timeout 120 bash -c 'until curl -sf http://localhost:4566/_localstack/health > /dev/null 2>&1; do sleep 5; done'
+  #         echo "LocalStack is healthy, starting remaining services..."
+  #         docker compose --profile testing up -d
 
-      - name: Wait for app-shell
-        run: |
-          echo "🔄 Checking app-shell..."
-          timeout=180
-          interval=10
-          elapsed=0
-          while [ $elapsed -lt $timeout ]; do
-            if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
-              echo "✅ app-shell is responding (took ${elapsed}s)"
-              break
-            fi
-            echo "⏳ app-shell not ready yet... (${elapsed}/${timeout}s)"
-            sleep $interval
-            elapsed=$((elapsed + interval))
-          done
-          if [ $elapsed -ge $timeout ]; then
-            echo "❌ app-shell failed to respond within ${timeout}s"
-            docker compose ps
-            docker compose logs app-shell-testing
-            exit 1
-          fi
+  #     - name: Wait for app-shell
+  #       run: |
+  #         echo "🔄 Checking app-shell..."
+  #         timeout=180
+  #         interval=10
+  #         elapsed=0
+  #         while [ $elapsed -lt $timeout ]; do
+  #           if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
+  #             echo "✅ app-shell is responding (took ${elapsed}s)"
+  #             break
+  #           fi
+  #           echo "⏳ app-shell not ready yet... (${elapsed}/${timeout}s)"
+  #           sleep $interval
+  #           elapsed=$((elapsed + interval))
+  #         done
+  #         if [ $elapsed -ge $timeout ]; then
+  #           echo "❌ app-shell failed to respond within ${timeout}s"
+  #           docker compose ps
+  #           docker compose logs app-shell-testing
+  #           exit 1
+  #         fi
 
-      - name: Install Playwright dependencies
-        working-directory: playwright
-        run: npm i
+  #     - name: Install Playwright dependencies
+  #       working-directory: playwright
+  #       run: npm i
 
-      # Boot emulator, install APK, set up adb forward (WebView CDP) +
-      # adb reverse (emulator→host backend), run the smoke spec. The
-      # whole flow lives inside the action's `script:` block so the
-      # emulator stays alive for the entire test run.
-      - name: Run Tauri smoke test
-        uses: reactivecircus/android-emulator-runner@v2
-        env:
-          TAURI_API_BASE: http://localhost:8080
-        with:
-          api-level: 34
-          target: default
-          arch: x86_64
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: true
-          # The action's inline script: feeds each line to a separate
-          # `sh -c` invocation, so multi-line for/if/while blocks break.
-          # We use a one-line invocation of a script file so the entire
-          # smoke test runs in a single bash process.
-          script: bash .github/scripts/run-tauri-smoke-test.sh '${{ steps.apk.outputs.path }}'
+  #     # Boot emulator, install APK, set up adb forward (WebView CDP) +
+  #     # adb reverse (emulator→host backend), run the smoke spec. The
+  #     # whole flow lives inside the action's `script:` block so the
+  #     # emulator stays alive for the entire test run.
+  #     - name: Run Tauri smoke test
+  #       uses: reactivecircus/android-emulator-runner@v2
+  #       env:
+  #         TAURI_API_BASE: http://localhost:8080
+  #       with:
+  #         api-level: 34
+  #         target: default
+  #         arch: x86_64
+  #         force-avd-creation: false
+  #         emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+  #         disable-animations: true
+  #         # The action's inline script: feeds each line to a separate
+  #         # `sh -c` invocation, so multi-line for/if/while blocks break.
+  #         # We use a one-line invocation of a script file so the entire
+  #         # smoke test runs in a single bash process.
+  #         script: bash .github/scripts/run-tauri-smoke-test.sh '${{ steps.apk.outputs.path }}'
 
-      - name: Capture app-shell logs
-        if: always()
-        run: |
-          docker compose --profile testing logs app-shell-testing > /tmp/app-shell-testing.log 2>&1 || true
-          docker compose --profile testing ps > /tmp/docker-compose-ps.txt 2>&1 || true
+  #     - name: Capture app-shell logs
+  #       if: always()
+  #       run: |
+  #         docker compose --profile testing logs app-shell-testing > /tmp/app-shell-testing.log 2>&1 || true
+  #         docker compose --profile testing ps > /tmp/docker-compose-ps.txt 2>&1 || true
 
-      - name: Upload smoke test artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: tauri-smoke-artifacts-${{ github.sha }}
-          path: |
-            playwright/playwright-report/
-            playwright/test-results/
-            /tmp/tauri-logcat.txt
-            /tmp/tauri-devtools-list.json
-            /tmp/tauri-devtools-version.json
-            /tmp/app-shell-testing.log
-            /tmp/docker-compose-ps.txt
-          retention-days: 7
+  #     - name: Upload smoke test artifacts
+  #       if: always()
+  #       uses: actions/upload-artifact@v7
+  #       with:
+  #         name: tauri-smoke-artifacts-${{ github.sha }}
+  #         path: |
+  #           playwright/playwright-report/
+  #           playwright/test-results/
+  #           /tmp/tauri-logcat.txt
+  #           /tmp/tauri-devtools-list.json
+  #           /tmp/tauri-devtools-version.json
+  #           /tmp/app-shell-testing.log
+  #           /tmp/docker-compose-ps.txt
+  #         retention-days: 7
