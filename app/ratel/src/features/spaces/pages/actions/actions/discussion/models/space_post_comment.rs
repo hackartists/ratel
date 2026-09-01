@@ -70,6 +70,14 @@ pub struct SpacePostComment {
     #[serde(default)]
     pub replies: i64,
 
+    /// Moderation: auto-hidden (report threshold reached) or admin-hidden.
+    /// Excluded from every listing. Defaults false so existing rows load.
+    #[serde(default)]
+    pub hidden: bool,
+    /// Distinct reporters of this comment — drives the auto-hide threshold.
+    #[serde(default)]
+    pub report_count: i64,
+
     /// Author as full `Partition` string (`USER#…`).
     #[cfg_attr(feature = "server", postgres(index))]
     pub author_pk: String,
@@ -129,6 +137,8 @@ impl SpacePostComment {
             author_profile_url: author.profile_url.clone(),
             likes: 0,
             replies: 0,
+            hidden: false,
+            report_count: 0,
         }
     }
 
