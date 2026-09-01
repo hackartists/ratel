@@ -108,8 +108,25 @@ jobs:
             --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          envsubst '${RUN_ID} ${NAMESPACE} ${SHA_TAG} ${DRY_RUN_FLAG} ${AWS_REGION} ${TABLE_ARN} ${EXPORT_BUCKET} ${DATABASE_URL}' \
-            < deploy/migration/etl-migrate-job.yaml | tee /tmp/job.yaml | kubectl apply -f -
+          # The self-hosted runner image has no gettext, so `envsubst` may be
+          # absent — same sed fallback prod-workflow.yml and pr-workflow.yml
+          # already use. The substitution list is explicit so nothing else in
+          # the manifest can be clobbered by an unrelated runner env var.
+          render() {
+            if command -v envsubst >/dev/null 2>&1; then
+              envsubst '${RUN_ID} ${NAMESPACE} ${SHA_TAG} ${DRY_RUN_FLAG} ${AWS_REGION} ${TABLE_ARN} ${EXPORT_BUCKET} ${DATABASE_URL}'
+            else
+              sed -e "s|\${RUN_ID}|${RUN_ID}|g" \
+                  -e "s|\${NAMESPACE}|${NAMESPACE}|g" \
+                  -e "s|\${SHA_TAG}|${SHA_TAG}|g" \
+                  -e "s|\${DRY_RUN_FLAG}|${DRY_RUN_FLAG}|g" \
+                  -e "s|\${AWS_REGION}|${AWS_REGION}|g" \
+                  -e "s|\${TABLE_ARN}|${TABLE_ARN}|g" \
+                  -e "s|\${EXPORT_BUCKET}|${EXPORT_BUCKET}|g" \
+                  -e "s|\${DATABASE_URL}|${DATABASE_URL}|g"
+            fi
+          }
+          render < deploy/migration/etl-migrate-job.yaml | tee /tmp/job.yaml | kubectl apply -f -
 
       - name: Wait for the Job and stream its logs
         run: |
