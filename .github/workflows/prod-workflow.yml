@@ -348,6 +348,9 @@ jobs:
       LAUNCHPAD_PARTNER_SECRET: ${{ secrets.LAUNCHPAD_PARTNER_SECRET }}
       LAUNCHPAD_POINT_SYMBOL: RT
       QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+      # Route53 access for the apex DNS sync CronJob's Secret (below).
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       # FCM service-account JSON (base64) — mounted as a Secret volume at
       # the path GOOGLE_APPLICATION_CREDENTIALS points to; missing secret
       # just disables push (fcm.rs skips gracefully), same as the lambda
@@ -383,6 +386,19 @@ jobs:
           add QDRANT_API_KEY "${QDRANT_API_KEY}"
           kubectl -n "${NAMESPACE}" create secret generic ratel-prod-secrets \
             "${args[@]}" --dry-run=client -o yaml | kubectl apply -f -
+
+          # Route53 credentials for the apex DNS sync CronJob
+          # (deploy/prod/50-apex-dns-sync.yaml). The Secret is referenced as
+          # optional, so an unset GitHub secret just leaves the CronJob unable
+          # to call Route53 — it logs and exits rather than failing the deploy.
+          dns_args=()
+          add_dns() { if [ -n "$2" ]; then dns_args+=(--from-literal="$1=$2"); fi; }
+          add_dns AWS_ACCESS_KEY_ID "${AWS_ACCESS_KEY_ID:-}"
+          add_dns AWS_SECRET_ACCESS_KEY "${AWS_SECRET_ACCESS_KEY:-}"
+          if [ ${#dns_args[@]} -gt 0 ]; then
+            kubectl -n "${NAMESPACE}" create secret generic apex-dns-sync-aws \
+              "${dns_args[@]}" --dry-run=client -o yaml | kubectl apply -f -
+          fi
 
           # FCM service account → Secret with the single JSON file the
           # firebase volume mounts. Skipped (and any stale copy removed) when
