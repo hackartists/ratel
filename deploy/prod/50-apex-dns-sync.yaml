@@ -44,7 +44,20 @@ spec:
             biyard.io/node-class: main
           containers:
             - name: sync
-              image: amazon/aws-cli:latest
+              # Pinned, NOT :latest. Two reasons, both about this job failing
+              # silently rather than loudly:
+              #   1. k8s defaults imagePullPolicy to Always for the :latest
+              #      tag, so a */5 schedule hit the registry 288×/day — ~72
+              #      per 6h against Docker Hub's 100/6h anonymous pull limit.
+              #      One noisy neighbour on the same IP and this job starts
+              #      dying with TooManyRequests while DNS quietly drifts.
+              #   2. The script below depends on `getent` because this image
+              #      ships neither nslookup nor dig. :latest can change that
+              #      out from under us on any AWS rebuild.
+              # Verified on 2.36.36 (Amazon Linux 2023): getent/awk/grep/aws
+              # all present and `getent hosts` resolves.
+              image: amazon/aws-cli:2.36.36
+              imagePullPolicy: IfNotPresent
               envFrom:
                 - secretRef:
                     name: apex-dns-sync-aws
