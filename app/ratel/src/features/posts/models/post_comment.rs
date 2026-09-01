@@ -27,6 +27,9 @@ use super::Post;
 /// server-gated. `author_pk` holds the full `Partition` string (wire-identical
 /// to the old `Partition` field). `images` is JSONB via `StringVec`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+// Serialize through `PostCommentWire` so the shipped mobile build still finds
+// the legacy `pk`/`sk`/`parent_comment_sk` keys. See `PostCommentWire`.
+#[serde(into = "PostCommentWire")]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
 #[cfg_attr(feature = "server", postgres(table = "post_comments"))]
@@ -206,5 +209,142 @@ impl PostComment {
         })?;
 
         Ok(comment)
+    }
+}
+
+/// Wire form of [`PostComment`] — identical plus the keys the shipped mobile
+/// build requires.
+///
+/// Same reason as `UserWire`/`PostWire`. That build declares `pk: Partition` and
+/// `sk: EntityType` as REQUIRED, so a payload without them fails to parse and
+/// every comment thread dies. It wrote `pk` as the parent post's partition
+/// (`Partition::Feed(post_id)`) and `sk` as `EntityType::PostComment(id)`, so
+/// both are recomputed from `post_id`/`id` rather than stored.
+///
+/// `parent_comment_sk` is a third bridge, and a softer one: it is `Option` in
+/// that build, so its absence parses fine — but every reply would come back
+/// detached and render as a top-level comment. It is the old spelling of
+/// `parent_comment_id`, so it is re-emitted in the `EntityType` form.
+///
+/// `images` needs no bridging (`StringVec` is `#[serde(transparent)]`), nor do
+/// `likes`/`replies` (`u64`→`i64` is the same JSON number for these counters),
+/// nor `author_pk`, which holds the same prefixed string a `Partition`
+/// serializes to.
+#[derive(Serialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+pub struct PostCommentWire {
+    /// The parent post's partition — renders as `FEED#{post_id}`.
+    pub pk: Partition,
+    /// `EntityType::PostComment(id)` — renders as `POST_COMMENT#{id}`.
+    pub sk: EntityType,
+    /// Old spelling of `parent_comment_id`, in `POST_COMMENT#{id}` form.
+    pub parent_comment_sk: Option<EntityType>,
+
+    pub id: Uuid,
+    pub post_id: Uuid,
+    pub parent_comment_id: Option<Uuid>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub content: String,
+    pub images: StringVec,
+    pub likes: i64,
+    pub reports: i64,
+    pub replies: i64,
+    pub author_pk: String,
+    pub author_display_name: String,
+    pub author_username: String,
+    pub author_profile_url: String,
+}
+
+impl From<PostComment> for PostCommentWire {
+    fn from(c: PostComment) -> Self {
+        Self {
+            pk: Partition::Feed(c.post_id.to_string()),
+            sk: EntityType::PostComment(c.id.to_string()),
+            parent_comment_sk: c
+                .parent_comment_id
+                .map(|p| EntityType::PostComment(p.to_string())),
+
+            id: c.id,
+            post_id: c.post_id,
+            parent_comment_id: c.parent_comment_id,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+            content: c.content,
+            images: c.images,
+            likes: c.likes,
+            reports: c.reports,
+            replies: c.replies,
+            author_pk: c.author_pk,
+            author_display_name: c.author_display_name,
+            author_username: c.author_username,
+            author_profile_url: c.author_profile_url,
+        }
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on `PostComment`,
+    /// copied verbatim from commit 38ac1fcd8.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedCommentKeys {
+        pk: Partition,
+        sk: EntityType,
+        #[serde(default)]
+        parent_comment_sk: Option<EntityType>,
+        content: String,
+    }
+
+    fn sample(parent: Option<Uuid>) -> PostComment {
+        PostComment {
+            id: Uuid::now_v7(),
+            post_id: Uuid::now_v7(),
+            parent_comment_id: parent,
+            content: "hi".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_comment() {
+        let c = sample(None);
+        let json = serde_json::to_value(&c).expect("serialize");
+
+        assert_eq!(json["pk"], serde_json::json!(format!("FEED#{}", c.post_id)));
+        assert_eq!(
+            json["sk"],
+            serde_json::json!(format!("POST_COMMENT#{}", c.id))
+        );
+
+        serde_json::from_value::<ShippedCommentKeys>(json).expect("shipped build must parse this");
+    }
+
+    /// A reply must keep its parent link under the old field name, or the shipped
+    /// build renders it detached as a top-level comment.
+    #[test]
+    fn reply_keeps_its_parent_under_the_legacy_name() {
+        let parent = Uuid::now_v7();
+        let json = serde_json::to_value(sample(Some(parent))).expect("serialize");
+
+        assert_eq!(
+            json["parent_comment_sk"],
+            serde_json::json!(format!("POST_COMMENT#{parent}"))
+        );
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(sample(None)).expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+
+        let err = serde_json::from_value::<ShippedCommentKeys>(json).expect_err("must fail");
+        assert!(
+            err.to_string().contains("missing field `pk`"),
+            "expected missing-`pk`, got: {err}"
+        );
     }
 }
