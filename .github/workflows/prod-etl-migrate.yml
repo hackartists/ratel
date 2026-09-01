@@ -62,15 +62,35 @@ jobs:
       - name: Verify cluster access
         run: kubectl -n "${NAMESPACE}" get deploy app-shell -o name
 
-      - name: Preflight — schema must already carry the ETL's target tables
+      - name: Preflight — the ETL's target tables must already exist
         # The ETL writes through the migrated PostgresEntity models. If the
-        # deploy that introduces a new table/column has not run yet, the insert
-        # fails partway and leaves a half-loaded table. Fail here instead.
+        # deploy that introduces a new table has not run yet, the load fails
+        # partway and leaves a half-populated database — so verify the schema
+        # BEFORE any write. The list is every model `etl_migrate` dispatches
+        # to (derived from its `finish!` call sites); regenerate it when the
+        # ETL learns a new entity.
+        #
+        # Runs psql from a throwaway pod: the app-shell image has no psql, and
+        # postgres.infra is only reachable in-cluster.
         run: |
           set -euo pipefail
-          MISSING=$(kubectl -n "${NAMESPACE}" exec deploy/app-shell -- sh -c '
-            command -v psql >/dev/null 2>&1 || exit 0' 2>/dev/null || true)
-          echo "schema preflight is advisory; the ETL itself fails loudly on a missing column"
+          EXPECTED="attribute_codes','character_xps','essences','file_links','memberships','notifications','post_categories','post_comments','post_likes','posts','space_actions','space_activities','space_admins','space_apps','space_categories','space_commons','space_files','space_polls','space_posts','space_quiz_answers','space_quizzes','space_reports','space_scores','sub_team_links','syndication_jobs','team_groups','team_memberships','team_owners','team_purchases','teams','timeline_entries','user_essence_stats','user_follows','user_memberships','user_principals','user_purchases','user_teams','users"
+          MISSING=$(kubectl -n "${NAMESPACE}" run etl-preflight-${GITHUB_RUN_ID} \
+            --rm -i --restart=Never --quiet \
+            --image=postgres:16-alpine \
+            --env="PGCONNECT_TIMEOUT=10" \
+            --command -- psql "${DATABASE_URL}" -tAc "
+              SELECT string_agg(t, ', ' ORDER BY t)
+              FROM unnest(ARRAY['attribute_codes','character_xps','essences','file_links','memberships','notifications','post_categories','post_comments','post_likes','posts','space_actions','space_activities','space_admins','space_apps','space_categories','space_commons','space_files','space_polls','space_posts','space_quiz_answers','space_quizzes','space_reports','space_scores','sub_team_links','syndication_jobs','team_groups','team_memberships','team_owners','team_purchases','teams','timeline_entries','user_essence_stats','user_follows','user_memberships','user_principals','user_purchases','user_teams','users']) AS t
+              WHERE to_regclass('public.' || t) IS NULL" 2>/dev/null | tr -d '\r' | head -1)
+
+          if [ -n "${MISSING}" ]; then
+            echo "::error::schema is behind the ETL — missing tables: ${MISSING}"
+            echo "Deploy the current image to ${NAMESPACE} first; app-shell runs"
+            echo "Schema::from_inventory().migrate() at boot and creates them."
+            exit 1
+          fi
+          echo "✓ all $(echo "${EXPECTED}" | tr ',' '\n' | wc -l | tr -d ' ') ETL target tables present"
 
       - name: Render + apply the migration Job
         run: |
