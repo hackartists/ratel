@@ -1,25 +1,59 @@
 use crate::features::spaces::pages::actions::actions::discussion::*;
-
-use crate::features::spaces::pages::actions::actions::discussion::macros::DynamoEntity;
-use crate::features::spaces::pages::actions::actions::discussion::models::SpacePostCommentLike;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use postgres::ops::StringOp;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
 
-/// Value for `parent_id_for_likes` indicating a top-level comment (not a reply).
+/// Value for `parent_comment_id` indicating a top-level comment (kept for
+/// wire/back-compat; top-level comments store `None`).
 pub const ROOT_PARENT: &str = "ROOT";
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, DynamoEntity)]
+/// jsonb wrapper for the embedded `Vec<String>` image list. Cross-platform
+/// because `SpacePostComment` is returned to the web client.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
+#[serde(transparent)]
+pub struct CommentImages(pub Vec<String>);
+
+impl std::ops::Deref for CommentImages {
+    type Target = Vec<String>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// A comment (or reply) on a discussion.
+///
+/// Postgres migration: the DynamoDB identity was `pk = SpacePost(post_id)` +
+/// `sk = SpacePostComment#{uuid}` (or `SpacePostCommentReply#{parent}#{uuid}`),
+/// with GSIs ordering by likes. It becomes a surrogate `id` PK plus
+/// `(post_id, comment_id)` natural key and a nullable `parent_comment_id`
+/// (set for replies). The likes-ordering GSIs become `ORDER BY likes DESC`.
+/// Stays cross-platform (returned raw by `update_comment`).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
+#[cfg_attr(feature = "server", postgres(table = "space_post_comments", unique(post_id, comment_id)))]
 pub struct SpacePostComment {
-    #[dynamo(index = "gsi2", pk, name = "find_by_post_order_by_likes")]
-    pub pk: Partition,
+    #[serde(default)]
+    pub id: uuid::Uuid,
 
-    #[dynamo(index = "gsi1", sk)]
-    pub sk: EntityType,
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub post_id: String,
+    pub comment_id: String,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub space_pk: Option<Partition>,
+    /// The parent comment's leaf id when this row is a reply; empty string for
+    /// a top-level comment (avoids a nullable column — the ORM's string ops
+    /// have no `IS NULL`).
+    #[serde(default)]
+    pub parent_comment_id: String,
+
+    #[serde(default)]
+    pub space_id: Option<String>,
 
     #[serde(default)]
     pub created_at: i64,
@@ -29,44 +63,56 @@ pub struct SpacePostComment {
     pub content: String,
 
     #[serde(default)]
-    pub images: Vec<String>,
+    pub images: CommentImages,
 
     #[serde(default)]
-    pub likes: u64,
-
+    pub likes: i64,
     #[serde(default)]
-    #[dynamo(index = "gsi2", sk, order = 0)]
-    #[dynamo(index = "gsi3", sk, order = 0)]
-    pub likes_align: String,
+    pub replies: i64,
 
+    /// Moderation: auto-hidden (report threshold reached) or admin-hidden.
+    /// Excluded from every listing.
+    ///
+    /// `version = 1`: added after the v0 baseline, so an EXISTING database gets
+    /// `ALTER TABLE ... ADD COLUMN` instead of a v0 checksum mismatch (which
+    /// would abort startup). `bool` gets an automatic `DEFAULT FALSE`, so rows
+    /// written by an older server still satisfy the NOT NULL constraint.
     #[serde(default)]
-    #[dynamo(index = "gsi2", sk, order = 1)]
-    #[dynamo(index = "gsi3", sk, order = 1)]
-    pub updated_at_align: String,
-
-    #[serde(default)]
-    #[dynamo(index = "gsi3", pk, name = "find_replies_by_likes")]
-    pub parent_id_for_likes: String,
-
-    #[serde(default)]
-    pub replies: u64,
-
-    /// Auto-hidden once `report_count` reaches the moderation threshold, or
-    /// hidden by an admin. Hidden comments are excluded from listings.
-    #[serde(default)]
+    #[cfg_attr(feature = "server", postgres(version = 1))]
     pub hidden: bool,
-
-    /// Distinct reporters of this comment (see `SpacePostCommentReport`).
+    /// Distinct reporters of this comment — drives the auto-hide threshold.
+    /// `version = 1` for the same reason; integers default to `0`.
     #[serde(default)]
-    pub report_count: u64,
+    #[cfg_attr(feature = "server", postgres(version = 1))]
+    pub report_count: i64,
 
-    pub parent_comment_sk: Option<EntityType>,
-
-    #[dynamo(prefix = "USER_PK", name = "find_by_user_pk", index = "gsi1", pk)]
-    pub author_pk: Partition,
+    /// Author as full `Partition` string (`USER#…`).
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub author_pk: String,
     pub author_display_name: String,
     pub author_username: String,
     pub author_profile_url: String,
+}
+
+/// Leaf id of a comment `EntityType` (the reply id for replies).
+#[cfg(feature = "server")]
+pub(crate) fn comment_leaf_of(sk: &EntityType) -> Option<String> {
+    match sk {
+        EntityType::SpacePostComment(id) => Some(id.clone()),
+        EntityType::SpacePostCommentReply(_, reply) => Some(reply.clone()),
+        _ => None,
+    }
+}
+
+/// Composite "like key" of a comment `EntityType` — `id` for comments,
+/// `{parent}#{reply}` for replies (mirrors the old like sort-key inner).
+#[cfg(feature = "server")]
+pub(crate) fn comment_key_of(sk: &EntityType) -> Option<String> {
+    match sk {
+        EntityType::SpacePostComment(id) => Some(id.clone()),
+        EntityType::SpacePostCommentReply(parent, reply) => Some(format!("{parent}#{reply}")),
+        _ => None,
+    }
 }
 
 #[cfg(feature = "server")]
@@ -80,57 +126,241 @@ impl SpacePostComment {
     ) -> Self {
         use crate::common::utils::time::get_now_timestamp;
 
-        let uuid = uuid::Uuid::now_v7().to_string();
+        let comment_id = uuid::Uuid::now_v7().to_string();
         let now = get_now_timestamp();
 
-        let pk: Partition = space_post_sk.into();
-
         Self {
-            pk,
-            sk: EntityType::SpacePostComment(uuid),
-            space_pk: Some(space_pk.into()),
+            id: uuid::Uuid::now_v7(),
+            post_id: space_post_sk.0,
+            comment_id,
+            parent_comment_id: String::new(),
+            space_id: Some(space_pk.0),
             created_at: now,
             updated_at: now,
             content,
-            images,
-            author_pk: author.pk.clone(),
+            images: CommentImages(images),
+            author_pk: author.pk.to_string(),
             author_display_name: author.display_name.clone(),
             author_username: author.username.clone(),
             author_profile_url: author.profile_url.clone(),
             likes: 0,
-            likes_align: format!("{:020}", 0),
-            updated_at_align: format!("{:020}", now),
-            parent_id_for_likes: ROOT_PARENT.to_string(),
             replies: 0,
             hidden: false,
             report_count: 0,
-            parent_comment_sk: None,
         }
     }
 
+    /// The comment's `EntityType` (comment vs reply) reconstructed from columns.
+    pub fn comment_entity(&self) -> EntityType {
+        if self.parent_comment_id.is_empty() {
+            EntityType::SpacePostComment(self.comment_id.clone())
+        } else {
+            EntityType::SpacePostCommentReply(
+                self.parent_comment_id.clone(),
+                self.comment_id.clone(),
+            )
+        }
+    }
+
+    /// The owning discussion partition reconstructed from `post_id`.
+    pub fn post_partition(&self) -> Partition {
+        Partition::SpacePost(self.post_id.clone())
+    }
+
+    /// Author reconstructed as a `Partition`.
+    pub fn author_partition(&self) -> Partition {
+        use std::str::FromStr;
+        Partition::from_str(&self.author_pk).unwrap_or(Partition::None)
+    }
+
+    /// Parent comment `EntityType`, if this row is a reply.
+    pub fn parent_comment_entity(&self) -> Option<EntityType> {
+        if self.parent_comment_id.is_empty() {
+            None
+        } else {
+            Some(EntityType::SpacePostComment(self.parent_comment_id.clone()))
+        }
+    }
+
+    /// Composite like-key for this comment (`id` or `{parent}#{id}`).
+    pub fn like_key(&self) -> String {
+        if self.parent_comment_id.is_empty() {
+            self.comment_id.clone()
+        } else {
+            format!("{}#{}", self.parent_comment_id, self.comment_id)
+        }
+    }
+
+    /// Fetch a comment by its `(post, EntityType)` identity.
+    pub async fn get_by_entity(
+        space_post_pk: &SpacePostPartition,
+        comment_pk: &EntityType,
+    ) -> crate::features::spaces::pages::actions::actions::discussion::Result<Option<Self>> {
+        let leaf = match comment_leaf_of(comment_pk) {
+            Some(v) => v,
+            None => return Err(SpaceActionDiscussionError::InvalidDiscussionId.into()),
+        };
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .post_id(StringOp::Eq(space_post_pk.0.clone()))
+                    .comment_id(StringOp::Eq(leaf)),
+            )
+            .await
+            .map_err(crate::common::Error::from)
+            .map_err(Into::into)
+    }
+
+    /// Fetch a comment by `(post_id, leaf comment id)`.
+    pub async fn get_by_leaf(
+        post_id: &str,
+        comment_id: &str,
+    ) -> crate::common::Result<Option<Self>> {
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .post_id(StringOp::Eq(post_id.to_string()))
+                    .comment_id(StringOp::Eq(comment_id.to_string())),
+            )
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// Top-level comments of a discussion, newest first (paged).
+    pub async fn list_top_level(
+        post_id: &str,
+        bookmark: Option<String>,
+        limit: i64,
+    ) -> crate::common::Result<(Vec<Self>, Option<String>)> {
+        use postgres::Order;
+        let page = bookmark
+            .and_then(|b| b.parse::<i64>().ok())
+            .unwrap_or(1)
+            .max(1);
+        let p = Self::repository()
+            .find(
+                Self::query()
+                    .post_id(StringOp::Eq(post_id.to_string()))
+                    .parent_comment_id(StringOp::Eq(String::new()))
+                    .order_by(SpacePostCommentColumn::CreatedAt, Order::Desc)
+                    .page(page)
+                    .page_size(limit),
+            )
+            .await
+            .map_err(crate::common::Error::from)?;
+        let next = if page < p.total_pages {
+            Some((page + 1).to_string())
+        } else {
+            None
+        };
+        Ok((p.items, next))
+    }
+
+    /// Top-level comments created after `since`, newest first, unpaginated.
+    pub async fn list_top_level_since(
+        post_id: &str,
+        since: i64,
+        limit: i64,
+    ) -> crate::common::Result<Vec<Self>> {
+        use postgres::Order;
+        use postgres::ops::NumOp;
+        Self::repository()
+            .find(
+                Self::query()
+                    .post_id(StringOp::Eq(post_id.to_string()))
+                    .parent_comment_id(StringOp::Eq(String::new()))
+                    .created_at(NumOp::Gt(since))
+                    .order_by(SpacePostCommentColumn::CreatedAt, Order::Desc)
+                    .page(1)
+                    .page_size(limit),
+            )
+            .await
+            .map(|p| p.items)
+            .map_err(crate::common::Error::from)
+    }
+
+    /// Replies of a comment, ordered by likes desc (paged).
     pub async fn list_by_comment(
-        cli: &aws_sdk_dynamodb::Client,
         comment_sk: EntityType,
-        opt: SpacePostCommentQueryOption,
+        bookmark: Option<String>,
+        limit: i64,
     ) -> crate::features::spaces::pages::actions::actions::discussion::Result<(
         Vec<Self>,
         Option<String>,
     )> {
-        let parent_comment_id = match comment_sk {
-            EntityType::SpacePostComment(id) => id,
-            _ => {
+        use postgres::Order;
+        let parent_comment_id = match comment_leaf_of(&comment_sk) {
+            Some(id) => id,
+            None => {
                 crate::error!("Invalid parent comment sk: {:?}", comment_sk);
-                return Err(
-                    SpaceActionDiscussionError::InvalidDiscussionId.into(),
-                );
+                return Err(SpaceActionDiscussionError::InvalidDiscussionId.into());
             }
         };
+        let page = bookmark
+            .and_then(|b| b.parse::<i64>().ok())
+            .unwrap_or(1)
+            .max(1);
+        let p = Self::repository()
+            .find(
+                Self::query()
+                    .parent_comment_id(StringOp::Eq(parent_comment_id))
+                    .order_by(SpacePostCommentColumn::Likes, Order::Desc)
+                    .order_by(SpacePostCommentColumn::CreatedAt, Order::Desc)
+                    .page(page)
+                    .page_size(limit),
+            )
+            .await
+            .map_err(crate::common::Error::from)?;
+        let next = if page < p.total_pages {
+            Some((page + 1).to_string())
+        } else {
+            None
+        };
+        Ok((p.items, next))
+    }
 
-        SpacePostComment::find_replies_by_likes(cli, parent_comment_id, opt).await
+    /// Atomic `likes += delta` on the given transaction.
+    pub async fn bump_likes_tx(
+        tx: &postgres::Tx,
+        comment_id: uuid::Uuid,
+        delta: i64,
+    ) -> crate::common::Result<()> {
+        Self::bump_counter_tx(tx, comment_id, "likes", delta).await
+    }
+
+    /// Atomic `replies += delta` on the given transaction.
+    pub async fn bump_replies_tx(
+        tx: &postgres::Tx,
+        comment_id: uuid::Uuid,
+        delta: i64,
+    ) -> crate::common::Result<()> {
+        Self::bump_counter_tx(tx, comment_id, "replies", delta).await
+    }
+
+    async fn bump_counter_tx(
+        tx: &postgres::Tx,
+        comment_id: uuid::Uuid,
+        column: &str,
+        delta: i64,
+    ) -> crate::common::Result<()> {
+        use postgres::sqlx::{Postgres, QueryBuilder};
+        let table = Self::table_name();
+        let mut qb = QueryBuilder::<Postgres>::new(format!(
+            "UPDATE \"{table}\" SET \"{column}\" = \"{column}\" + "
+        ));
+        postgres::Value::from(delta).push_bind(&mut qb);
+        qb.push(" WHERE \"id\" = ");
+        postgres::Value::from(comment_id).push_bind(&mut qb);
+        Self::repository()
+            .with_tx(tx)
+            .db()
+            .execute(qb)
+            .await
+            .map_err(crate::common::Error::from)?;
+        Ok(())
     }
 
     pub async fn reply(
-        cli: &aws_sdk_dynamodb::Client,
         space_pk: SpacePartition,
         space_post_pk: SpacePostPartition,
         parent_comment_sk: EntityType,
@@ -138,46 +368,52 @@ impl SpacePostComment {
         images: Vec<String>,
         author: &crate::common::models::space::SpaceUser,
     ) -> crate::features::spaces::pages::actions::actions::discussion::Result<Self> {
-        let space_post_pk_p: Partition = space_post_pk.clone().into();
-
-        let parent_comment = Self::updater(&space_post_pk_p, &parent_comment_sk)
-            .increase_replies(1)
-            .transact_write_item();
-
         let parent_comment_id = match &parent_comment_sk {
-            EntityType::SpacePostComment(id) => id.to_string(),
+            EntityType::SpacePostComment(id) => id.clone(),
             _ => {
                 crate::error!("Invalid parent_comment_sk: {:?}", parent_comment_sk);
-                return Err(
-                    SpaceActionDiscussionError::InvalidDiscussionId.into(),
-                );
+                return Err(SpaceActionDiscussionError::InvalidDiscussionId.into());
             }
         };
 
-        let (pk, sk) = super::SpacePost::keys(&space_pk, &space_post_pk);
+        let post = SpacePost::get_one(&space_pk, &space_post_pk)
+            .await?
+            .ok_or(SpaceActionDiscussionError::NotFound)?;
+        let parent = Self::get_by_leaf(&space_post_pk.0, &parent_comment_id)
+            .await?
+            .ok_or(SpaceActionDiscussionError::NotFound)?;
 
-        let post = super::SpacePost::updater(&pk, sk)
-            .increase_comments(1)
-            .transact_write_item();
+        let mut comment = Self::new(space_pk, space_post_pk, content, images, author);
+        // Replies keep the historical v4 id.
+        comment.comment_id = uuid::Uuid::new_v4().to_string();
+        comment.parent_comment_id = parent_comment_id;
 
-        let mut comment = Self::new(space_pk, space_post_pk, content, images, author)
-            .with_parent_comment_sk(parent_comment_sk.clone());
-
-        let uuid = uuid::Uuid::new_v4().to_string();
-        comment.sk = EntityType::SpacePostCommentReply(parent_comment_id.clone(), uuid);
-        comment.parent_id_for_likes = parent_comment_id;
-
-        let comment_tx = comment.create_transact_write_item();
-
-        crate::transact_write_items!(cli, vec![parent_comment, comment_tx, post]).map_err(|e| {
+        let tx = postgres::Tx::begin()
+            .await
+            .map_err(crate::common::Error::from)?;
+        Self::repository()
+            .with_tx(&tx)
+            .insert(&comment)
+            .await
+            .map_err(|e| {
+                crate::error!("Failed to reply comment: {}", e);
+                SpaceActionDiscussionError::CreateFailed
+            })?;
+        Self::bump_replies_tx(&tx, parent.id, 1).await.map_err(|e| {
+            crate::error!("Failed to reply comment: {}", e);
+            SpaceActionDiscussionError::CreateFailed
+        })?;
+        SpacePost::bump_comments_public_tx(&tx, post.id, 1)
+            .await
+            .map_err(|e| {
+                crate::error!("Failed to reply comment: {}", e);
+                SpaceActionDiscussionError::CreateFailed
+            })?;
+        tx.commit().await.map_err(|e| {
             crate::error!("Failed to reply comment: {}", e);
             SpaceActionDiscussionError::CreateFailed
         })?;
 
         Ok(comment)
-    }
-
-    pub fn like_keys(&self, user_pk: &Partition) -> (Partition, EntityType) {
-        SpacePostCommentLike::keys_from_partition(self.pk.clone(), self.sk.clone(), user_pk)
     }
 }

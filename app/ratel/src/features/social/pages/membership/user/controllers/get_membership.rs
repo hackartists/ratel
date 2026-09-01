@@ -18,15 +18,11 @@ pub struct MembershipResponse {
 
 #[get("/api/me/membership", user: crate::features::auth::User)]
 pub async fn get_membership_handler() -> Result<MembershipResponse> {
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
-
-    let membership =
-        UserMembership::get(cli, user.pk.clone(), Some(EntityType::UserMembership)).await?;
+    let membership = UserMembership::find_by_user(&user.pk().to_string()).await?;
 
     match membership {
         Some(membership) => {
-            let m = ensure_user_membership_monthly_refill(cli, membership).await?;
+            let m = ensure_user_membership_monthly_refill(membership).await?;
             Ok(MembershipResponse {
                 tier: m.membership_pk.to_string(),
                 total_credits: m.total_credits,

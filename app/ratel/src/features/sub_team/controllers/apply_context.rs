@@ -10,25 +10,18 @@ use crate::features::sub_team::models::{
     SubTeamApplication, SubTeamApplicationStatus, SubTeamDocument, SubTeamFormField, SubTeamLink,
 };
 
-#[cfg(feature = "server")]
-const FIELD_SK_PREFIX: &str = "SUB_TEAM_FORM_FIELD";
-#[cfg(feature = "server")]
-const DOC_SK_PREFIX: &str = "SUB_TEAM_DOCUMENT";
-#[cfg(feature = "server")]
-const LINK_SK_PREFIX: &str = "SUB_TEAM_LINK";
-#[cfg(feature = "server")]
-const APPLICATION_SK_PREFIX: &str = "SUB_TEAM_APPLICATION";
-
 #[get("/api/teams/:team_pk/sub-teams/apply-context")]
 pub async fn get_sub_team_apply_context_handler(
     team_pk: TeamPartition,
 ) -> Result<ApplyContextResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let parent_pk: Partition = team_pk.into();
+    let parent_uuid = match &parent_pk {
+        Partition::Team(id) => uuid::Uuid::parse_str(id).map_err(|_| SubTeamError::ParentNotEligible)?,
+        _ => return Err(SubTeamError::ParentNotEligible.into()),
+    };
 
     // 1. Load parent team for settings flags.
-    let team = Team::get(cli, &parent_pk, Some(EntityType::Team))
+    let team = Team::get_by_id(parent_uuid)
         .await
         .map_err(|e| {
             crate::error!("apply_context team load failed: {e}");
@@ -36,20 +29,14 @@ pub async fn get_sub_team_apply_context_handler(
         })?
         .ok_or(SubTeamError::ParentNotEligible)?;
 
-    // 2. Form fields (ordered by order ASC then created_at ASC). The
-    //    apply page must render EVERY field — partial pages would let
-    //    a parent's later fields silently disappear from the form, so
-    //    walk all pages via `opt_all`.
-    let field_opts = SubTeamFormField::opt_all().sk(FIELD_SK_PREFIX.to_string());
-    let (mut fields, _) = SubTeamFormField::query(cli, parent_pk.clone(), field_opts)
+    // 2. Form fields (ordered by order ASC then created_at ASC).
+    let mut fields = SubTeamFormField::list_for_team(&parent_pk)
         .await
         .map_err(|e| {
             crate::error!("apply_context form fields query failed: {e}");
             SubTeamError::FormFieldNotFound
         })?;
-    // Locked defaults (제안하는 팀 이름 / 설립 목적) always render at
-    // the top of the apply form, regardless of `order`. Matches the
-    // admin-side `sort_fields` ordering in `form_fields.rs`.
+    // Locked defaults always render at the top of the apply form.
     fields.sort_by(|a, b| {
         b.locked
             .cmp(&a.locked)
@@ -58,21 +45,11 @@ pub async fn get_sub_team_apply_context_handler(
     });
     let form_fields: Vec<SubTeamFormFieldResponse> = fields.into_iter().map(Into::into).collect();
 
-    // 3. All parent docs — required ones must be agreed before
-    //    submit, reference-only ones render as read-only links.
-    //    Trailing `#` keeps `SUB_TEAM_DOCUMENT_VERSION#…` snapshot
-    //    rows out of the result set. `opt_all` so doc lists past
-    //    the first page don't silently drop from the apply UI.
-    let doc_opts = SubTeamDocument::opt_all().sk(format!("{DOC_SK_PREFIX}#"));
-    let (mut docs, _) = SubTeamDocument::query(cli, parent_pk.clone(), doc_opts)
-        .await
-        .map_err(|e| {
-            crate::error!("apply_context docs query failed: {e}");
-            SubTeamError::DocumentNotFound
-        })?;
-    // Returns ALL parent docs (required + reference-only). The apply
-    // page renders both — required ones must be agreed to before
-    // submit; reference-only ones are read-only links.
+    // 3. All parent docs — required ones must be agreed before submit.
+    let mut docs = SubTeamDocument::list_for_team(&parent_pk).await.map_err(|e| {
+        crate::error!("apply_context docs query failed: {e}");
+        SubTeamError::DocumentNotFound
+    })?;
     docs.sort_by(|a, b| {
         b.required
             .cmp(&a.required)
@@ -81,14 +58,14 @@ pub async fn get_sub_team_apply_context_handler(
     });
     let required_docs: Vec<ApplyContextDocument> = docs.into_iter().map(Into::into).collect();
 
-    // 4. Recognized count — query SubTeamLink rows under parent pk.
-    let recognized_count = count_links(cli, &parent_pk).await.map_err(|e| {
+    // 4. Recognized count — SubTeamLink rows under parent pk.
+    let recognized_count = count_links(&parent_pk).await.map_err(|e| {
         crate::error!("apply_context recognized count failed: {e}");
         SubTeamError::ApplicationStateMismatch
     })?;
 
     // 5. Pending count — SubTeamApplication rows whose status is Pending.
-    let pending_count = count_pending_applications(cli, &parent_pk).await.map_err(|e| {
+    let pending_count = count_pending_applications(&parent_pk).await.map_err(|e| {
         crate::error!("apply_context pending count failed: {e}");
         SubTeamError::ApplicationStateMismatch
     })?;
@@ -105,19 +82,13 @@ pub async fn get_sub_team_apply_context_handler(
 }
 
 #[cfg(feature = "server")]
-async fn count_links(cli: &aws_sdk_dynamodb::Client, parent_pk: &Partition) -> Result<i64> {
-    let opts = SubTeamLink::opt_all().sk(LINK_SK_PREFIX.to_string());
-    let (items, _) = SubTeamLink::query(cli, parent_pk.clone(), opts).await?;
-    Ok(items.len() as i64)
+async fn count_links(parent_pk: &Partition) -> Result<i64> {
+    Ok(SubTeamLink::list_for_parent(parent_pk).await?.len() as i64)
 }
 
 #[cfg(feature = "server")]
-async fn count_pending_applications(
-    cli: &aws_sdk_dynamodb::Client,
-    parent_pk: &Partition,
-) -> Result<i64> {
-    let opts = SubTeamApplication::opt_all().sk(APPLICATION_SK_PREFIX.to_string());
-    let (items, _) = SubTeamApplication::query(cli, parent_pk.clone(), opts).await?;
+async fn count_pending_applications(parent_pk: &Partition) -> Result<i64> {
+    let items = SubTeamApplication::find_by_parent_all(parent_pk).await?;
     let count = items
         .iter()
         .filter(|a| a.status == SubTeamApplicationStatus::Pending)

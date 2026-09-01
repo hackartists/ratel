@@ -37,15 +37,30 @@ impl ReplyPayload {
         comment: &crate::features::spaces::pages::actions::actions::discussion::SpacePostComment,
         tenant_id: String,
     ) -> Self {
-        let space_id = comment.space_pk.clone().unwrap().into();
+        let space_id = SpacePartition(comment.space_id.clone().unwrap_or_default());
+        let author_pk = comment
+            .author_pk
+            .parse::<Partition>()
+            .unwrap_or_else(|_| Partition::User(comment.author_pk.clone()));
+        // Replies build `{parent_id}#{reply_id}` — mirrors
+        // `activity::services::handle_xp_event::handle_discussion_xp`, which
+        // reconstructs the same legacy `SpacePostCommentReply` sk shape.
+        let comment_id = if comment.parent_comment_id.is_empty() {
+            SpacePostCommentEntityType(comment.comment_id.clone())
+        } else {
+            SpacePostCommentEntityType(format!(
+                "{}#{}",
+                comment.parent_comment_id, comment.comment_id
+            ))
+        };
 
         Self {
             r#type: QdrantIndexType::Reply,
             tenant_id,
-            user_id: UserOrTeam::from(comment.author_pk.clone()),
+            user_id: UserOrTeam::from(author_pk),
             space_id,
-            comment_id: comment.sk.clone().into(),
-            discussion_id: comment.pk.clone().into(),
+            comment_id,
+            discussion_id: SpacePostPartition(comment.post_id.clone()),
             content: comment.content.clone(),
             author: comment.author_display_name.clone(),
         }

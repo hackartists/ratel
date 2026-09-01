@@ -40,17 +40,21 @@ impl From<(SpacePostComment, bool)> for DiscussionCommentResponse {
 #[cfg(feature = "server")]
 impl From<(SpacePostComment, bool, bool)> for DiscussionCommentResponse {
     fn from((comment, liked, reported): (SpacePostComment, bool, bool)) -> Self {
+        let pk = comment.post_partition();
+        let sk = comment.comment_entity();
+        let parent_comment_sk = comment.parent_comment_entity();
+        let author_pk = comment.author_partition();
         Self {
-            pk: comment.pk,
-            sk: comment.sk,
+            pk,
+            sk,
             created_at: comment.created_at,
             updated_at: comment.updated_at,
             content: comment.content,
-            images: comment.images,
-            likes: comment.likes,
-            replies: comment.replies,
-            parent_comment_sk: comment.parent_comment_sk,
-            author_pk: comment.author_pk,
+            images: comment.images.0,
+            likes: comment.likes as u64,
+            replies: comment.replies as u64,
+            parent_comment_sk,
+            author_pk,
             author_display_name: comment.author_display_name,
             author_username: comment.author_username,
             author_profile_url: comment.author_profile_url,
@@ -63,17 +67,21 @@ impl From<(SpacePostComment, bool, bool)> for DiscussionCommentResponse {
 #[cfg(feature = "server")]
 impl From<SpacePostComment> for DiscussionCommentResponse {
     fn from(comment: SpacePostComment) -> Self {
+        let pk = comment.post_partition();
+        let sk = comment.comment_entity();
+        let parent_comment_sk = comment.parent_comment_entity();
+        let author_pk = comment.author_partition();
         Self {
-            pk: comment.pk,
-            sk: comment.sk,
+            pk,
+            sk,
             created_at: comment.created_at,
             updated_at: comment.updated_at,
             content: comment.content,
-            images: comment.images,
-            likes: comment.likes,
-            replies: comment.replies,
-            parent_comment_sk: comment.parent_comment_sk,
-            author_pk: comment.author_pk,
+            images: comment.images.0,
+            likes: comment.likes as u64,
+            replies: comment.replies as u64,
+            parent_comment_sk,
+            author_pk,
             author_display_name: comment.author_display_name,
             author_username: comment.author_username,
             author_profile_url: comment.author_profile_url,

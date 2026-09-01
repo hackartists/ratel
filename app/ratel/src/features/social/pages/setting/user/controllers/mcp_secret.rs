@@ -16,15 +16,7 @@ pub struct McpSecretResponse {
 /// The raw token is NOT returned here (it's only available at generation time).
 #[get("/api/me/mcp-secret", user: crate::features::auth::User)]
 pub async fn get_mcp_secret_handler() -> Result<McpSecretResponse> {
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
-
-    let existing = crate::common::models::McpClientSecret::get(
-        cli,
-        &user.pk,
-        Some(EntityType::McpClientSecret),
-    )
-    .await?;
+    let existing = crate::common::models::McpClientSecret::find_by_user(&user.pk()).await?;
 
     Ok(McpSecretResponse {
         secret: None,
@@ -36,33 +28,18 @@ pub async fn get_mcp_secret_handler() -> Result<McpSecretResponse> {
 /// If one already exists, it is replaced.
 #[post("/api/me/mcp-secret/regenerate", user: crate::features::auth::User)]
 pub async fn regenerate_mcp_secret_handler() -> Result<McpSecretResponse> {
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
-
     // Delete existing secret if present
-    let existing = crate::common::models::McpClientSecret::get(
-        cli,
-        &user.pk,
-        Some(EntityType::McpClientSecret),
-    )
-    .await?;
-
-    if existing.is_some() {
-        crate::common::models::McpClientSecret::delete(
-            cli,
-            &user.pk,
-            Some(EntityType::McpClientSecret),
-        )
-        .await?;
-    }
+    crate::common::models::McpClientSecret::delete_for_user(&user.pk()).await?;
 
     // Create a new secret (returns entity with hash + raw token for user)
-    let (new_secret, raw_token) = crate::common::models::McpClientSecret::new(user.pk.clone());
-    new_secret.create(cli).await?;
+    let (new_secret, raw_token) = crate::common::models::McpClientSecret::new(user.pk());
+    crate::common::models::McpClientSecret::repository()
+        .insert(&new_secret)
+        .await?;
 
     // Invalidate any cached MCP service for the old secret
     #[cfg(feature = "server")]
-    crate::common::mcp::invalidate_user_services(&user.pk).await;
+    crate::common::mcp::invalidate_user_services(&user.pk()).await;
 
     Ok(McpSecretResponse {
         secret: Some(raw_token),

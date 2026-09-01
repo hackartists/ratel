@@ -15,6 +15,8 @@ use crate::features::spaces::pages::apps::models::SpaceApp;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
@@ -42,20 +44,38 @@ pub async fn update_discussion_topics(
     req: UpdateDiscussionTopicsRequest,
 ) -> Result<()> {
     SpaceApp::can_edit(role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
 
-    // Sk pattern: SPACE_ANALYZE_DISCUSSION_RESULT#{report_id}#{discussion_id}#{request_id}
-    let sk = EntityType::SpaceAnalyzeDiscussionResult(
-        report_id.to_string(),
-        format!("{}#{}", discussion_id, request_id),
-    );
+    // `id` IS the request UUIDv7. Point-read by pk, then verify the full
+    // (space, report, discussion) tuple to preserve the original
+    // UpdateItem's implicit sk-keyed scoping.
+    let request_uuid =
+        uuid::Uuid::parse_str(&request_id).map_err(|_| Error::InvalidFormat)?;
 
-    SpaceAnalyzeDiscussionResult::updater(space_pk, sk)
-        .with_topics(req.topics)
-        .with_updated_at(crate::common::utils::time::get_now_timestamp_millis())
-        .execute(cli)
+    let existing = SpaceAnalyzeDiscussionResult::repository()
+        .get(request_uuid)
+        .await
+        .map_err(|e| {
+            crate::error!("update_discussion_topics: {e}");
+            Error::Internal
+        })?;
+    let scoped = existing.as_ref().is_some_and(|r| {
+        r.space_pk == space_pk.to_string()
+            && r.report_id == report_id.to_string()
+            && r.discussion_id == discussion_id.to_string()
+    });
+    if !scoped {
+        crate::error!("update_discussion_topics: row not found");
+        return Err(Error::Internal);
+    }
+
+    SpaceAnalyzeDiscussionResult::repository()
+        .update(
+            request_uuid,
+            SpaceAnalyzeDiscussionResult::update()
+                .topics(TopicRows(req.topics))
+                .updated_at(crate::common::utils::time::get_now_timestamp_millis()),
+        )
         .await
         .map_err(|e| {
             crate::error!("update_discussion_topics: {e}");

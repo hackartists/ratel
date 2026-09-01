@@ -6,6 +6,7 @@ pub mod aws_sns;
 pub mod bedrock_embeddings_config;
 pub mod dynamodb;
 pub mod icp;
+pub mod postgres_pool;
 pub mod qdrant_config;
 use super::*;
 
@@ -21,6 +22,9 @@ pub struct ServerConfig {
 impl ServerConfig {
     pub fn dynamodb(&self) -> &aws_sdk_dynamodb::Client {
         &dynamodb::DB
+    }
+    pub fn postgres(&self) -> &::postgres::sqlx::PgPool {
+        &self::postgres_pool::POOL
     }
     pub fn s3(&self) -> &crate::common::utils::aws::S3Client {
         &aws_s3::S3_CLIENT

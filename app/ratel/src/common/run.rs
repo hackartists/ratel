@@ -78,8 +78,69 @@ fn serve(app: fn() -> Element) {
         }
     }
 
+    // Wire the Postgres pool: register it as the process-global pool and run
+    // schema migrations from the PostgresEntity inventory before serving. The
+    // session store (and future migrated slices) resolve the global pool.
+    {
+        let pool = cfg.postgres().clone();
+        ::postgres::set_global_pool(pool.clone());
+
+        // Resolve a runtime once (reused across retries).
+        enum MigRt {
+            Current(tokio::runtime::Handle),
+            Owned(tokio::runtime::Runtime),
+        }
+        let rt = match tokio::runtime::Handle::try_current() {
+            Ok(h) => MigRt::Current(h),
+            Err(_) => MigRt::Owned(
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("tokio runtime build for postgres migrations"),
+            ),
+        };
+
+        // Retry transient migration failures in-process instead of exiting.
+        // A hard exit here restarts the container, and every aborted boot leaks
+        // its pooled connections (a killed process's sockets linger on the
+        // server); enough of those and Postgres hits `max_connections`, which
+        // then makes EVERY subsequent boot's migration time out — a
+        // self-inflicted crash loop. Retrying rides out Postgres still coming up
+        // or a momentary connection blip without ever entering that loop.
+        let mut attempt = 0u32;
+        const MAX_ATTEMPTS: u32 = 20;
+        loop {
+            attempt += 1;
+            let migrate =
+                async { ::postgres::Schema::from_inventory().migrate(&pool).await };
+            let res = match &rt {
+                MigRt::Current(h) => h.block_on(migrate),
+                MigRt::Owned(r) => r.block_on(migrate),
+            };
+            match res {
+                Ok(()) => break,
+                Err(e) if attempt < MAX_ATTEMPTS => {
+                    tracing::warn!(
+                        error = %e,
+                        attempt,
+                        "postgres schema migration failed; retrying in 3s"
+                    );
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                }
+                Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        attempt,
+                        "postgres schema migration failed after retries; aborting startup"
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
     let session_layer =
-        crate::common::middlewares::session_layer::get_session_layer(cli, cfg.env.to_string());
+        crate::common::middlewares::session_layer::get_session_layer(cfg.env.to_string());
 
     // Allow cross-origin requests from the Tauri Android/iOS WebView
     // (http://tauri.localhost / https://tauri.localhost) and from the
@@ -145,6 +206,36 @@ fn serve(app: fn() -> Element) {
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
         .layer(cors_layer)
         .layer(session_layer)
+        // OUTSIDE the session layer: an anonymous `/spaces/**` GET that hits the
+        // SSR shell cache is replayed from memory without a session lookup or a
+        // re-render. Logged-in (…_sid cookie) and non-page requests bypass it.
+        .layer(axum::middleware::from_fn(
+            crate::common::middlewares::ssr_cache::ssr_cache,
+        ))
+        // Compress text responses here rather than at the proxy.
+        //
+        // dev sits behind the shared ingress-nginx, whose ConfigMap is empty,
+        // so `use-gzip` keeps its upstream default of false and the 17 KB SSR
+        // shell goes out uncompressed. It cannot be fixed from this repo: there
+        // is no gzip Ingress annotation, and `configuration-snippet` has been
+        // refused by default since controller 1.9. Setting it in that ConfigMap
+        // would also turn compression on for every other service sharing the
+        // controller. prod fronts the app with CloudFront, which does compress
+        // at the edge — but the origin fetch behind it still carries the full
+        // body, and the plan is to move prod onto k3s, where there is no edge
+        // left to fall back on. Compressing here covers all three cases and
+        // travels with the deploy rather than with cluster state.
+        //
+        // gzip only. `compression-br` was tried and dropped: on this page it
+        // produced the same size (3479 vs 3500 bytes) for 2.5x the CPU (+24%
+        // per request against +9%), and since browsers send `gzip, deflate, br,
+        // zstd` with no q-values, tower-http breaks the tie by enum order — so
+        // brotli would have been the path nearly every real request took.
+        //
+        // OUTSIDE ssr_cache on purpose: the cache then holds one plain copy and
+        // each response is encoded for its own Accept-Encoding, so a client
+        // that sent none is never handed a gzip body out of the cache.
+        .layer(tower_http::compression::CompressionLayer::new())
         .layer(axum::middleware::from_fn(log_request));
 
     crate::common::mcp::set_app_router(app.clone());
@@ -170,10 +261,27 @@ fn serve(app: fn() -> Element) {
 
     #[cfg(not(feature = "lambda"))]
     {
+        // Postgres migration (Phase 5): the Postgres outbox poller replaces the
+        // DynamoDB Stream as the event source for the CDC dispatcher. It runs on
+        // every server deployment (single-processing across replicas via a
+        // pg_advisory_lock) — unlike the local-dev-only DynamoDB stream poller
+        // below, which is now inert (no stream on Postgres).
+        #[cfg(feature = "server")]
+        {
+            tracing::info!("Starting Postgres outbox poller (CDC dispatcher source)");
+            crate::common::events::outbox::spawn_outbox_poller();
+        }
+
         #[cfg(feature = "local-dev")]
         {
-            tracing::info!("Starting local-dev DynamoDB Stream poller");
-            crate::common::stream_poller::spawn_stream_poller();
+            if crate::common::events::stream_poller_enabled() {
+                tracing::info!("Starting local-dev DynamoDB Stream poller");
+                crate::common::stream_poller::spawn_stream_poller();
+            } else {
+                tracing::info!(
+                    "RATEL_STREAM_POLLER=off — in-process stream poller disabled (using ratel_cdc/ratel_worker pipeline)"
+                );
+            }
         }
 
         #[cfg(feature = "local-dev")]

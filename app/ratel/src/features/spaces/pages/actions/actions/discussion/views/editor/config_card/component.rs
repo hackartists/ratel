@@ -16,9 +16,9 @@ pub fn ConfigCard() -> Element {
 
     let action_id_str = discussion_id().to_string();
     let initial_prerequisite = action.prerequisite;
-    let saved_credits = action.credits;
+    let saved_credits = action.credits as u64;
     let action_status = action.status.clone();
-    let initial_depends_on = action.depends_on.clone();
+    let initial_depends_on = action.depends_on.0.clone();
     let initial_status = action.status.clone();
     let discussion_entity = use_memo(move || {
         crate::common::types::SpaceDiscussionEntityType(discussion_id().to_string())

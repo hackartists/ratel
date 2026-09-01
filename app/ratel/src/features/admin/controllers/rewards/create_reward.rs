@@ -10,19 +10,13 @@ pub struct CreateGlobalRewardRequest {
 }
 
 #[post("/api/admin/rewards", _user: AdminUser)]
-pub async fn create_reward(req: CreateGlobalRewardRequest) -> Result<Reward> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
-    if Reward::get(cli, Partition::Reward, Some(req.behavior.clone()))
-        .await?
-        .is_some()
-    {
+pub async fn create_reward(req: CreateGlobalRewardRequest) -> Result<RewardResponse> {
+    if Reward::get_by_behavior(&req.behavior).await?.is_some() {
         return Err(SpaceRewardError::RewardAlreadyExists.into());
     }
 
     let reward = Reward::new(req.behavior, req.point, req.period, req.condition);
-    reward.create(cli).await?;
+    reward.create().await?;
 
-    Ok(reward)
+    Ok(RewardResponse::from(reward))
 }

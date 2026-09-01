@@ -17,53 +17,32 @@ const MAX_RECENT_REPLIES: usize = 20;
 /// The `post` is deserialized from the DynamoDB NewImage.
 pub async fn handle_ai_moderator_event(post: SpacePost) -> Result<()> {
     let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
 
-    let space_pk_str = post.pk.to_string();
-    let discussion_sk_str = post.sk.to_string();
-
-    // Extract SpacePartition from the space pk string (e.g., "SPACE#abc" → "abc")
-    let space_id = {
-        let inner = space_pk_str
-            .strip_prefix("SPACE#")
-            .unwrap_or(&space_pk_str);
-        SpacePartition(inner.to_string())
-    };
+    let space_id = SpacePartition(post.space_id.clone());
+    let discussion_id = post.post_id.clone();
 
     // Check if AI moderation should trigger for this reply count
-    let config = match moderation_handler::should_moderate(
-        cli,
-        &space_id,
-        &discussion_sk_str,
-        post.comments,
-    )
-    .await?
-    {
-        Some(config) => config,
-        None => return Ok(()), // No moderation needed
-    };
+    let config =
+        match moderation_handler::should_moderate(&space_id, &discussion_id, post.comments)
+            .await?
+        {
+            Some(config) => config,
+            None => return Ok(()), // No moderation needed
+        };
 
     tracing::info!(
-        space_pk = %space_pk_str,
-        discussion_sk = %discussion_sk_str,
+        space_id = %post.space_id,
+        discussion_id = %discussion_id,
         comments = post.comments,
         reply_interval = config.reply_interval,
         "AI Moderator triggered"
     );
 
-    // Fetch recent replies for context
-    // SpacePostPartition is derived from the discussion sk string (e.g., "SPACE_POST#uuid" → "uuid")
-    let discussion_id = discussion_sk_str
-        .strip_prefix("SPACE_POST#")
-        .unwrap_or(&discussion_sk_str);
-    let space_post_pk = SpacePostPartition(discussion_id.to_string());
-    let post_pk: Partition = space_post_pk.clone().into();
-
-    let opt = SpacePostComment::opt()
-        .sk(EntityType::SpacePostComment(String::default()).to_string())
-        .limit(MAX_RECENT_REPLIES as i32);
-    let (comments, _): (Vec<SpacePostComment>, Option<String>) =
-        SpacePostComment::query(cli, &post_pk, opt).await?;
+    // Fetch recent replies for context (top-level comments only, newest
+    // first — mirrors the old sk-prefix-scoped, limited DynamoDB query).
+    let space_post_pk = SpacePostPartition(discussion_id.clone());
+    let (comments, _) =
+        SpacePostComment::list_top_level(&discussion_id, None, MAX_RECENT_REPLIES as i64).await?;
 
     let recent_replies: Vec<String> = comments
         .iter()
@@ -71,13 +50,9 @@ pub async fn handle_ai_moderator_event(post: SpacePost) -> Result<()> {
         .collect();
 
     // Fetch material context from Qdrant (best-effort)
-    let material_context = fetch_material_context(
-        &common_config,
-        &space_pk_str,
-        &discussion_sk_str,
-        &recent_replies,
-    )
-    .await;
+    let material_context =
+        fetch_material_context(&common_config, &post.space_id, &discussion_id, &recent_replies)
+            .await;
 
     // Generate AI moderation reply
     let reply_text =
@@ -92,22 +67,16 @@ pub async fn handle_ai_moderator_event(post: SpacePost) -> Result<()> {
         profile_url: String::new(),
     };
 
-    let comment: SpacePostComment = SpacePost::comment(
-        cli,
-        space_id,
-        space_post_pk,
-        reply_text,
-        vec![],
-        &ai_author,
-    )
-    .await
-    .map_err(|e| {
-        crate::error!("Failed to save AI moderator reply: {e}");
-        AiModeratorError::ReplySaveFailed
-    })?;
+    let comment: SpacePostComment =
+        SpacePost::comment(space_id, space_post_pk, reply_text, vec![], &ai_author)
+            .await
+            .map_err(|e| {
+                crate::error!("Failed to save AI moderator reply: {e}");
+                AiModeratorError::ReplySaveFailed
+            })?;
 
     tracing::info!(
-        comment_sk = %comment.sk,
+        comment_id = %comment.comment_id,
         "AI Moderator reply saved"
     );
 

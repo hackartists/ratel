@@ -28,34 +28,26 @@ pub async fn update_discussion(
     req: UpdateDiscussionRequest,
 ) -> Result<SpacePost> {
     SpacePost::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_id.clone().into();
-    let discussion_sk_entity: EntityType = discussion_sk.clone().into();
-
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut updater = SpacePost::updater(&space_pk, &discussion_sk_entity).with_updated_at(now);
 
-    let action_pk = CompositePartition::<SpacePartition, String>(
-        space_id.clone(),
-        discussion_sk.to_string(),
-    );
-    let mut action_updater =
-        SpaceAction::updater(&action_pk, &EntityType::SpaceAction).with_updated_at(now);
-    let mut update_action = false;
+    let mut post = SpacePost::get_one(&space_id, &SpacePostPartition(discussion_sk.0.clone()))
+        .await?
+        .ok_or(SpaceActionDiscussionError::NotFound)?;
+    post.updated_at = now;
+
+    let mut action_title: Option<String> = None;
+    let mut action_description: Option<String> = None;
 
     if let Some(title) = req.title {
-        updater = updater.with_title(title.clone());
-        action_updater = action_updater.with_title(title);
-        update_action = true;
+        post.title = title.clone();
+        action_title = Some(title);
     }
     if let Some(html_contents) = req.html_contents {
-        updater = updater.with_html_contents(html_contents.clone());
-        action_updater = action_updater.with_description(html_contents);
-        update_action = true;
+        post.html_contents = html_contents.clone();
+        action_description = Some(html_contents);
     }
     if let Some(category_name) = &req.category_name {
-        updater = updater.with_category_name(category_name.clone());
+        post.category_name = category_name.clone();
     }
     if let Some(mut files) = req.files {
         for file in &mut files {
@@ -63,19 +55,31 @@ pub async fn update_discussion(
                 file.id = crate::common::uuid::Uuid::now_v7().to_string();
             }
         }
-        updater = updater.with_files(files);
+        post.files = PostFiles(files);
     }
 
-    let post = updater.execute(cli).await?;
+    SpacePost::repository()
+        .upsert(&post)
+        .await
+        .map_err(crate::common::Error::from)?;
 
-    if update_action {
-        action_updater.execute(cli).await?;
+    if action_title.is_some() || action_description.is_some() {
+        if let Some(mut action) = SpaceAction::get_one(&space_id, &discussion_sk.0).await? {
+            if let Some(title) = action_title {
+                action.title = title;
+            }
+            if let Some(description) = action_description {
+                action.description = description;
+            }
+            action.updated_at = now;
+            action.save().await?;
+        }
     }
 
     if let Some(category_name) = req.category_name {
         if !category_name.is_empty() {
             let cat = SpaceCategory::new(space_id, category_name.clone());
-            let _ = cat.upsert(cli).await;
+            let _ = cat.save().await;
         }
     }
 

@@ -1,13 +1,15 @@
 use super::*;
+use postgres::PostgresEntity;
+use postgres::ops::StringOp;
 
 /// Test: calling record_activity twice with the same (space, user, action_id)
 /// for a Poll should only create one SpaceActivity record.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_poll_xp_dedup() {
     let ctx = TestContext::setup().await;
 
     let space_id = crate::common::types::SpacePartition(uuid::Uuid::new_v4().to_string());
-    let author = crate::features::activity::types::AuthorPartition::from(ctx.test_user.0.pk.clone());
+    let author = crate::features::activity::types::AuthorPartition::from(ctx.test_user.0.pk());
     let action_id = uuid::Uuid::new_v4().to_string();
 
     let data = crate::features::activity::types::SpaceActivityData::Poll {
@@ -17,7 +19,6 @@ async fn test_poll_xp_dedup() {
 
     // First call — should succeed
     let result = crate::features::activity::controllers::record_activity(
-        &ctx.ddb,
         space_id.clone(),
         author.clone(),
         action_id.clone(),
@@ -31,7 +32,6 @@ async fn test_poll_xp_dedup() {
 
     // Second call (duplicate) — should be silently skipped
     let result = crate::features::activity::controllers::record_activity(
-        &ctx.ddb,
         space_id.clone(),
         author.clone(),
         action_id.clone(),
@@ -44,24 +44,30 @@ async fn test_poll_xp_dedup() {
     assert!(result.is_ok(), "second record_activity failed: {:?}", result);
 
     // Verify only 1 SpaceActivity exists
-    let pk = crate::common::types::CompositePartition(space_id.clone(), author.clone());
-    let sk_prefix = format!("SPACE_ACTIVITY#{}#", action_id);
-    let opt = crate::features::activity::models::SpaceActivity::opt().sk(sk_prefix).limit(10);
-    let (items, _) = crate::features::activity::models::SpaceActivity::query(&ctx.ddb, pk, opt)
+    let page = crate::features::activity::models::SpaceActivity::repository()
+        .find(
+            crate::features::activity::models::SpaceActivity::query()
+                .space_id(StringOp::Eq(space_id.0.clone()))
+                .author_pk(StringOp::Eq(author.to_string()))
+                .dedup_key(StringOp::StartsWith(action_id.clone()))
+                .page(1)
+                .page_size(10),
+        )
         .await
         .expect("query failed");
+    let items = page.items;
 
     assert_eq!(items.len(), 1, "expected 1 activity, got {}", items.len());
 }
 
 /// Test: calling record_activity twice with the same (space, user, action_id)
 /// for Follow should only create one SpaceActivity record.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_follow_xp_dedup() {
     let ctx = TestContext::setup().await;
 
     let space_id = crate::common::types::SpacePartition(uuid::Uuid::new_v4().to_string());
-    let author = crate::features::activity::types::AuthorPartition::from(ctx.test_user.0.pk.clone());
+    let author = crate::features::activity::types::AuthorPartition::from(ctx.test_user.0.pk());
     let action_id = uuid::Uuid::new_v4().to_string();
 
     let data = crate::features::activity::types::SpaceActivityData::Follow {
@@ -70,34 +76,40 @@ async fn test_follow_xp_dedup() {
 
     // Two calls
     crate::features::activity::controllers::record_activity(
-        &ctx.ddb, space_id.clone(), author.clone(), action_id.clone(),
+        space_id.clone(), author.clone(), action_id.clone(),
         crate::features::spaces::pages::actions::types::SpaceActionType::Follow,
         data.clone(), "testuser".to_string(), "".to_string(),
     ).await.expect("first failed");
 
     crate::features::activity::controllers::record_activity(
-        &ctx.ddb, space_id.clone(), author.clone(), action_id.clone(),
+        space_id.clone(), author.clone(), action_id.clone(),
         crate::features::spaces::pages::actions::types::SpaceActionType::Follow,
         data.clone(), "testuser".to_string(), "".to_string(),
     ).await.expect("second failed");
 
-    let pk = crate::common::types::CompositePartition(space_id.clone(), author.clone());
-    let sk_prefix = format!("SPACE_ACTIVITY#{}#", action_id);
-    let opt = crate::features::activity::models::SpaceActivity::opt().sk(sk_prefix).limit(10);
-    let (items, _) = crate::features::activity::models::SpaceActivity::query(&ctx.ddb, pk, opt)
+    let page = crate::features::activity::models::SpaceActivity::repository()
+        .find(
+            crate::features::activity::models::SpaceActivity::query()
+                .space_id(StringOp::Eq(space_id.0.clone()))
+                .author_pk(StringOp::Eq(author.to_string()))
+                .dedup_key(StringOp::StartsWith(action_id.clone()))
+                .page(1)
+                .page_size(10),
+        )
         .await.expect("query failed");
+    let items = page.items;
 
     assert_eq!(items.len(), 1, "expected 1 activity, got {}", items.len());
 }
 
 /// Test: two different comments on the same discussion should each create
 /// their own SpaceActivity (not deduplicated against each other).
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_discussion_different_comments_not_deduped() {
     let ctx = TestContext::setup().await;
 
     let space_id = crate::common::types::SpacePartition(uuid::Uuid::new_v4().to_string());
-    let author = crate::features::activity::types::AuthorPartition::from(ctx.test_user.0.pk.clone());
+    let author = crate::features::activity::types::AuthorPartition::from(ctx.test_user.0.pk());
     let action_id = uuid::Uuid::new_v4().to_string();
     let comment_id_1 = uuid::Uuid::new_v4().to_string();
     let comment_id_2 = uuid::Uuid::new_v4().to_string();
@@ -115,35 +127,41 @@ async fn test_discussion_different_comments_not_deduped() {
 
     // Comment 1
     crate::features::activity::controllers::record_activity(
-        &ctx.ddb, space_id.clone(), author.clone(), action_id.clone(),
+        space_id.clone(), author.clone(), action_id.clone(),
         crate::features::spaces::pages::actions::types::SpaceActionType::TopicDiscussion,
         data1.clone(), "testuser".to_string(), "".to_string(),
     ).await.expect("comment 1 failed");
 
     // Comment 2 (different comment_id — should NOT be deduped)
     crate::features::activity::controllers::record_activity(
-        &ctx.ddb, space_id.clone(), author.clone(), action_id.clone(),
+        space_id.clone(), author.clone(), action_id.clone(),
         crate::features::spaces::pages::actions::types::SpaceActionType::TopicDiscussion,
         data2.clone(), "testuser".to_string(), "".to_string(),
     ).await.expect("comment 2 failed");
 
     // Both should exist
-    let pk = crate::common::types::CompositePartition(space_id.clone(), author.clone());
-    let sk_prefix = format!("SPACE_ACTIVITY#{}#", action_id);
-    let opt = crate::features::activity::models::SpaceActivity::opt().sk(sk_prefix).limit(10);
-    let (items, _) = crate::features::activity::models::SpaceActivity::query(&ctx.ddb, pk, opt)
+    let page = crate::features::activity::models::SpaceActivity::repository()
+        .find(
+            crate::features::activity::models::SpaceActivity::query()
+                .space_id(StringOp::Eq(space_id.0.clone()))
+                .author_pk(StringOp::Eq(author.to_string()))
+                .dedup_key(StringOp::StartsWith(action_id.clone()))
+                .page(1)
+                .page_size(10),
+        )
         .await.expect("query failed");
+    let items = page.items;
 
     assert_eq!(items.len(), 2, "expected 2 activities (one per comment), got {}", items.len());
 }
 
 /// Test: same discussion comment submitted twice should be deduplicated.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_discussion_same_comment_deduped() {
     let ctx = TestContext::setup().await;
 
     let space_id = crate::common::types::SpacePartition(uuid::Uuid::new_v4().to_string());
-    let author = crate::features::activity::types::AuthorPartition::from(ctx.test_user.0.pk.clone());
+    let author = crate::features::activity::types::AuthorPartition::from(ctx.test_user.0.pk());
     let action_id = uuid::Uuid::new_v4().to_string();
     let comment_id = uuid::Uuid::new_v4().to_string();
 
@@ -155,23 +173,29 @@ async fn test_discussion_same_comment_deduped() {
 
     // Two calls with same comment_id
     crate::features::activity::controllers::record_activity(
-        &ctx.ddb, space_id.clone(), author.clone(), action_id.clone(),
+        space_id.clone(), author.clone(), action_id.clone(),
         crate::features::spaces::pages::actions::types::SpaceActionType::TopicDiscussion,
         data.clone(), "testuser".to_string(), "".to_string(),
     ).await.expect("first failed");
 
     crate::features::activity::controllers::record_activity(
-        &ctx.ddb, space_id.clone(), author.clone(), action_id.clone(),
+        space_id.clone(), author.clone(), action_id.clone(),
         crate::features::spaces::pages::actions::types::SpaceActionType::TopicDiscussion,
         data.clone(), "testuser".to_string(), "".to_string(),
     ).await.expect("second failed");
 
-    let pk = crate::common::types::CompositePartition(space_id.clone(), author.clone());
     let dedup = format!("{}#comment#{}", action_id, comment_id);
-    let sk_prefix = format!("SPACE_ACTIVITY#{}#", dedup);
-    let opt = crate::features::activity::models::SpaceActivity::opt().sk(sk_prefix).limit(10);
-    let (items, _) = crate::features::activity::models::SpaceActivity::query(&ctx.ddb, pk, opt)
+    let page = crate::features::activity::models::SpaceActivity::repository()
+        .find(
+            crate::features::activity::models::SpaceActivity::query()
+                .space_id(StringOp::Eq(space_id.0.clone()))
+                .author_pk(StringOp::Eq(author.to_string()))
+                .dedup_key(StringOp::Eq(dedup.clone()))
+                .page(1)
+                .page_size(10),
+        )
         .await.expect("query failed");
+    let items = page.items;
 
     assert_eq!(items.len(), 1, "expected 1 activity, got {}", items.len());
 }

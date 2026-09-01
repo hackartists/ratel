@@ -24,14 +24,14 @@ pub struct PollResponse {
 impl From<SpacePoll> for PollResponse {
     fn from(poll: SpacePoll) -> Self {
         Self {
-            sk: poll.sk.clone(),
+            sk: EntityType::SpacePoll(poll.poll_id.clone()),
             title: poll.title.clone(),
             description: poll.description.clone(),
             response_editable: poll.response_editable,
             user_response_count: poll.user_response_count,
             created_at: poll.created_at,
             updated_at: poll.updated_at,
-            questions: poll.questions.clone(),
+            questions: poll.questions.0.clone(),
             status: PollStatus::NotStarted,
             default: poll.is_default_poll(),
             my_response: None,

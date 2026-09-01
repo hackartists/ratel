@@ -19,10 +19,7 @@ impl From<crate::common::models::notification::UserInboxNotification>
 {
     fn from(n: crate::common::models::notification::UserInboxNotification) -> Self {
         Self {
-            id: match n.sk {
-                EntityType::UserInboxNotification(id) => UserInboxNotificationEntityType(id),
-                _ => UserInboxNotificationEntityType(String::new()),
-            },
+            id: UserInboxNotificationEntityType(n.id.to_string()),
             kind: n.kind,
             payload: n.payload,
             is_read: n.is_read,

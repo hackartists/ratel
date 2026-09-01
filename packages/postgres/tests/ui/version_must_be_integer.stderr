@@ -1,0 +1,6 @@
+error: postgres version must be an integer literal, for example version = 1
+ --> tests/ui/version_must_be_integer.rs:7:5
+  |
+7 | /     #[postgres(version = "1")]
+8 | |     value: String,
+  | |_________________^

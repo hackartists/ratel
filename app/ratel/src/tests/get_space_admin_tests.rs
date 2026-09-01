@@ -25,11 +25,9 @@
 //! `get_space` that short-circuits the participant load.
 use super::*;
 use crate::common::models::space::{SpaceCommon, SpaceParticipant};
-use crate::common::types::{
-    EntityType, Partition, SpacePublishState, SpaceStatus, SpaceVisibility, UserType,
-};
+use crate::common::types::{Partition, SpacePublishState, SpaceStatus, SpaceVisibility, UserType};
 use crate::features::auth::UserTeam;
-use crate::features::posts::models::Team;
+use crate::features::posts::models::{AuthorTypeJson, Team};
 use crate::features::posts::types::{PostStatus, Visibility};
 use crate::features::social::pages::member::dto::TeamRole;
 
@@ -56,45 +54,46 @@ async fn create_team_owned_by_test_user(ctx: &TestContext) -> Partition {
 /// routes into the `Team::get_permissions_by_team_pk` branch and
 /// returns admin/owner permissions for team admins (i.e. the
 /// `SpaceEdit` bit that `get_space` uses to detect admins).
-async fn insert_team_owned_space(ctx: &TestContext, team_pk: Partition) -> (SpaceCommon, String) {
+async fn insert_team_owned_space(_ctx: &TestContext, team_pk: Partition) -> (SpaceCommon, String) {
     let post_id = uuid::Uuid::new_v4().to_string();
     let now = crate::common::utils::time::get_now_timestamp_millis();
     let space_pk = Partition::Space(post_id.clone());
     let post_pk = Partition::Feed(post_id.clone());
 
-    let mut space = SpaceCommon::default();
-    space.pk = space_pk.clone();
-    space.sk = EntityType::SpaceCommon;
-    space.created_at = now;
-    space.updated_at = now;
-    space.status = Some(SpaceStatus::Open);
-    space.publish_state = SpacePublishState::Published;
-    space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk.clone();
-    space.user_pk = team_pk.clone();
-    space.author_display_name = "team".to_string();
-    space.author_profile_url = String::new();
-    space.author_username = "team".to_string();
-    space.create(&ctx.ddb).await.expect("create space");
+    let space = SpaceCommon {
+        id: uuid::Uuid::now_v7(),
+        space_pk: space_pk.to_string(),
+        created_at: now,
+        updated_at: now,
+        status: Some(SpaceStatus::Open),
+        publish_state: SpacePublishState::Published,
+        visibility: SpaceVisibility::Public,
+        post_pk: post_pk.to_string(),
+        user_pk: team_pk.to_string(),
+        author_display_name: "team".to_string(),
+        author_profile_url: String::new(),
+        author_username: "team".to_string(),
+        ..Default::default()
+    };
+    space.create().await.expect("create space");
 
     let post = crate::features::posts::models::Post {
-        pk: post_pk,
-        sk: EntityType::Post,
+        id: uuid::Uuid::parse_str(&post_id).unwrap(),
         created_at: now,
         updated_at: now,
         title: "Admin Test Space".to_string(),
         status: PostStatus::Published,
         visibility: Some(Visibility::Public),
-        user_pk: team_pk,
-        author_type: UserType::Team,
+        user_pk: team_pk.to_string(),
+        author_type: AuthorTypeJson(UserType::Team),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.expect("create post");
+    post.create().await.expect("create post");
 
     (space, post_id)
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_space_as_team_admin_without_participant_row_succeeds() {
     let ctx = TestContext::setup().await;
     let team_pk = create_team_owned_by_test_user(&ctx).await;
@@ -121,30 +120,24 @@ async fn test_get_space_as_team_admin_without_participant_row_succeeds() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_space_as_team_admin_survives_partial_participant_row() {
-    use aws_sdk_dynamodb::types::AttributeValue as AV;
-
     let ctx = TestContext::setup().await;
     let team_pk = create_team_owned_by_test_user(&ctx).await;
     let (space, space_id) = insert_team_owned_space(&ctx, team_pk).await;
 
-    // Simulate what the legacy `bump_participant_activity` did to admins:
-    // a bare UpdateItem against the (missing) SpaceParticipant key, which
-    // DDB upserts into a partial row containing only the keys + the SET
-    // field. `created_at`, `display_name`, etc. are all absent.
-    let (pk, sk) = SpaceParticipant::keys(space.pk.clone(), ctx.test_user.0.pk.clone());
+    // Simulate what the legacy `bump_participant_activity` did to admins: an
+    // update that only ever touches `last_activity_at`. Postgres enforces
+    // NOT NULL on every other `SpaceParticipant` column (no more partial-row
+    // upserts like DynamoDB's bare UpdateItem), so we seed a full participant
+    // row and then perform the same last_activity_at-only bump the old bug
+    // used to perform.
+    let space_pk = space.partition();
+    let mut participant = SpaceParticipant::new(space_pk, ctx.test_user.0.pk());
+    participant.create().await.expect("seed participant row");
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    ctx.ddb
-        .update_item()
-        .table_name(SpaceParticipant::table_name())
-        .key("pk", AV::S(pk.to_string()))
-        .key("sk", AV::S(sk.to_string()))
-        .update_expression("SET last_activity_at = :now")
-        .expression_attribute_values(":now", AV::N(now.to_string()))
-        .send()
-        .await
-        .expect("seed partial participant row");
+    participant.last_activity_at = Some(now);
+    participant.upsert().await.expect("bump last_activity_at");
 
     // Pre-`is_admin`-skip: this returned 500 because
     // `SpaceParticipant::get(...)?` blew up with
@@ -162,7 +155,7 @@ async fn test_get_space_as_team_admin_survives_partial_participant_row() {
     assert_eq!(body["participated"], serde_json::json!(false));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_space_as_non_admin_still_loads_participant() {
     let ctx = TestContext::setup().await;
     let team_pk = create_team_owned_by_test_user(&ctx).await;
@@ -174,12 +167,16 @@ async fn test_get_space_as_non_admin_still_loads_participant() {
     // row, get_space should still succeed and report participated=false,
     // can_participate=true (space is Open & Public).
     let (member, member_headers) = ctx.create_another_user().await;
-    let team = Team::get(&ctx.ddb, &team_pk, Some(EntityType::Team))
+    let team_id = match &team_pk {
+        Partition::Team(id) => uuid::Uuid::parse_str(id).expect("valid team id"),
+        _ => panic!("expected a Team partition"),
+    };
+    let team = Team::get_by_id(team_id)
         .await
         .expect("get team")
         .expect("team exists");
     UserTeam::new(
-        member.pk.clone(),
+        member.pk(),
         team_pk.clone(),
         team.display_name.clone(),
         team.profile_url.clone(),
@@ -187,7 +184,7 @@ async fn test_get_space_as_non_admin_still_loads_participant() {
         team.dao_address.clone(),
         TeamRole::Member,
     )
-    .create(&ctx.ddb)
+    .create()
     .await
     .expect("create UserTeam membership");
 

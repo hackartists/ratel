@@ -1,5 +1,6 @@
 use crate::features::spaces::pages::actions::actions::poll::*;
 use crate::features::spaces::pages::actions::models::SpaceAction;
+#[cfg(feature = "server")]
 use crate::features::spaces::space_common::models::aggregate::DashboardAggregate;
 
 #[mcp_tool(
@@ -11,28 +12,57 @@ pub async fn create_poll(
     #[mcp(description = "Space partition key")] space_pk: SpacePartition,
 ) -> Result<PollResponse> {
     SpacePoll::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let poll = SpacePoll::new(space_pk.clone())?;
 
     let space_action = SpaceAction::new(
         space_pk.clone(),
-        SpacePollEntityType::from(poll.sk.clone()).to_string(),
+        poll.poll_id.clone(),
         crate::features::spaces::pages::actions::types::SpaceActionType::Poll,
     );
 
-    let space_pk_partition: Partition = space_pk.into();
-    let _ = DashboardAggregate::get_or_create(cli, &space_pk_partition).await?;
-
-    let mut items = vec![
-        poll.create_transact_write_item(),
-        space_action.create_transact_write_item(),
-    ];
-    items.push(DashboardAggregate::inc_polls(&space_pk_partition, 1));
-    crate::transact_write_items!(cli, items).map_err(|e| {
-        crate::error!("Failed to create poll: {e}");
+    // Postgres side: insert poll + companion action atomically.
+    let tx = postgres::Tx::begin().await.map_err(|e| {
+        crate::error!("Failed to begin tx: {e}");
         SpacePollError::CreateFailed
     })?;
+    SpacePoll::repository()
+        .with_tx(&tx)
+        .insert(&poll)
+        .await
+        .map_err(|e| {
+            crate::error!("Failed to create poll: {e}");
+            SpacePollError::CreateFailed
+        })?;
+    SpaceAction::repository()
+        .with_tx(&tx)
+        .insert(&space_action)
+        .await
+        .map_err(|e| {
+            crate::error!("Failed to create poll action: {e}");
+            SpacePollError::CreateFailed
+        })?;
+    // Emit outbox event (Phase 5) — EssenceIndexPoll rule on SPACE_POLL# INSERT.
+    crate::common::events::outbox::EventOutbox::emit_insert_tx(
+        &tx,
+        crate::common::events::outbox::topic::SPACE_POLL,
+        &poll,
+    )
+    .await
+    .map_err(|_| SpacePollError::CreateFailed)?;
+    tx.commit().await.map_err(|e| {
+        crate::error!("Failed to commit poll: {e}");
+        SpacePollError::CreateFailed
+    })?;
+
+    // Bump the (now Postgres-backed) dashboard aggregate.
+    let space_pk_partition: Partition = space_pk.into();
+    let _ = DashboardAggregate::get_or_create(&space_pk_partition).await?;
+    DashboardAggregate::inc_polls(&space_pk_partition, 1)
+        .await
+        .map_err(|e| {
+            crate::error!("Failed to bump poll aggregate: {e}");
+            SpacePollError::CreateFailed
+        })?;
 
     // Essence indexing happens via the DynamoDB Stream pipeline.
 

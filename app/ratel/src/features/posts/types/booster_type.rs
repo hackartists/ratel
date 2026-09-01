@@ -5,6 +5,8 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema_repr))]
+// Postgres migration: stored as a JSONB scalar (serde repr number).
+#[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[repr(u8)]
 pub enum BoosterType {
     #[default]

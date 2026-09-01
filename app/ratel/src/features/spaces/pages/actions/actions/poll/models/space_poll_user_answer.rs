@@ -1,33 +1,105 @@
+#[cfg(feature = "server")]
 use std::collections::HashMap;
 
+#[cfg(feature = "server")]
 use crate::common::attribute::*;
-use crate::common::utils::time::get_now_timestamp_millis;
-
 use crate::features::spaces::pages::actions::actions::poll::*;
+#[cfg(feature = "server")]
+use crate::common::utils::time::get_now_timestamp_millis;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use postgres::ops::StringOp;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, DynamoEntity, Default)]
+/// jsonb wrapper for the embedded `Vec<Answer>` column. Cross-platform because
+/// `SpacePollUserAnswer` is embedded in the client-facing `PollResultResponse`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
-pub struct SpacePollUserAnswer {
-    pub pk: Partition, // User Partition
-    #[dynamo(prefix = "POLL_PK", index = "gsi1", name = "find_by_space_pk", pk)]
-    pub sk: EntityType,
+#[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
+#[serde(transparent)]
+pub struct PollUserAnswers(pub Vec<Answer>);
 
-    #[dynamo(index = "gsi1", sk)]
+impl std::ops::Deref for PollUserAnswers {
+    type Target = Vec<Answer>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// jsonb wrapper for the optional embedded `RespondentAttr` column.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
+#[serde(transparent)]
+pub struct RespondentJson(pub RespondentAttr);
+
+impl std::ops::Deref for RespondentJson {
+    type Target = RespondentAttr;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// One user's answer to a poll.
+///
+/// Postgres migration: the DynamoDB identity was `pk = user_pk` +
+/// `sk = SpacePollUserAnswer#{space}#{poll}`, with a GSI on `sk`. It becomes a
+/// surrogate `id` PK plus the flattened `actor_pk` / `space_id` / `poll_id`
+/// columns; `(actor_pk, space_id, poll_id)` is the natural key. Stays
+/// cross-platform because it is embedded in the client-facing
+/// `PollResultResponse`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
+#[cfg_attr(feature = "server", postgres(table = "space_poll_user_answers", unique(actor_pk, space_id, poll_id)))]
+pub struct SpacePollUserAnswer {
+    #[serde(default)]
+    pub id: uuid::Uuid,
+
+    /// Voter as full `Partition` string (`USER#…`).
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub actor_pk: String,
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub poll_id: String,
+    #[serde(default)]
+    pub space_id: String,
+
+    #[cfg_attr(feature = "server", postgres(order))]
     pub created_at: i64,
 
-    pub answers: Vec<Answer>, // User responses to the survey
-
-    pub respondent: Option<RespondentAttr>,
-
-    pub user_pk: Option<Partition>,
-    pub display_name: Option<String>,
-    pub profile_url: Option<String>,
-    pub username: Option<String>,
     #[serde(default)]
-    pub space_id: Option<String>,
+    pub answers: PollUserAnswers,
+
+    #[serde(default)]
+    pub respondent: Option<RespondentJson>,
+
+    #[serde(default)]
+    pub user_pk: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub profile_url: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+}
+
+#[cfg(feature = "server")]
+fn poll_id_of(poll_sk: &EntityType) -> String {
+    match poll_sk {
+        EntityType::SpacePoll(id) => id.clone(),
+        other => other.to_string(),
+    }
+}
+
+#[cfg(feature = "server")]
+fn space_id_of(space_pk: &Partition) -> String {
+    match space_pk {
+        Partition::Space(id) => id.clone(),
+        other => other.to_string(),
+    }
 }
 
 #[cfg(feature = "server")]
@@ -39,74 +111,65 @@ impl SpacePollUserAnswer {
         respondent: Option<RespondentAttr>,
         author: crate::common::models::space::SpaceUser,
     ) -> Self {
-        let user_pk = author.pk;
+        let actor_pk = author.pk.to_string();
         let created_at = get_now_timestamp_millis();
-        let (pk, sk) = Self::keys(&user_pk, &poll_sk, &space_pk);
-        let space_id_str = match &space_pk {
-            Partition::Space(id) => id.clone(),
-            _ => space_pk.to_string(),
-        };
+
         Self {
-            pk: pk.clone(),
-            sk,
+            id: uuid::Uuid::now_v7(),
+            actor_pk: actor_pk.clone(),
+            poll_id: poll_id_of(&poll_sk),
+            space_id: space_id_of(&space_pk),
             created_at,
-            answers,
-            respondent,
-            user_pk: Some(user_pk),
+            answers: PollUserAnswers(answers),
+            respondent: respondent.map(RespondentJson),
+            user_pk: Some(actor_pk),
             display_name: Some(author.display_name),
             profile_url: Some(author.profile_url),
             username: Some(author.username),
-            space_id: Some(space_id_str),
         }
-    }
-    // FIXME: Because of EntityType(String, String) Type cannot deserialize from string
-    // So we need to parse it manually
-    /*
-        This test code is failed.
-        #[cfg(test)]
-        mod tests {
-            use super::*;
-            use std::str::FromStr;
-
-            #[test]
-            fn test_dynamo_key_roundtrip() {
-                let space_pk = Partition::Space("UID1".to_string());
-                let poll_sk = EntityType::SpacePoll("UID2".to_string());
-                let original = EntityType::SpacePollUserAnswer(space_pk.to_string(), poll_sk.to_string());
-                let serialized = original.to_string();
-                let deserialized = EntityType::from_str(&serialized).unwrap();
-                assert_eq!(original, deserialized);
-            }
-        }
-    */
-    pub fn parse_wrong_sk(sk: String) -> String {
-        let (_, poll_sk) = sk.split_once('#').unwrap();
-        poll_sk.to_string()
-    }
-
-    pub fn keys(
-        user_pk: &Partition,
-        poll_sk: &EntityType,
-        space_pk: &Partition,
-    ) -> (Partition, EntityType) {
-        (
-            Partition::SpacePollUserAnswer(user_pk.to_string()),
-            EntityType::SpacePollUserAnswer(space_pk.to_string(), poll_sk.to_string()),
-        )
     }
 
     pub async fn find_one(
-        cli: &aws_sdk_dynamodb::Client,
         space_pk: &Partition,
         poll_sk: &EntityType,
         user_pk: &Partition,
     ) -> crate::features::spaces::pages::actions::actions::poll::Result<Option<Self>> {
-        let (pk, sk) = Self::keys(user_pk, poll_sk, space_pk);
-        Self::get(cli, &pk, Some(sk)).await
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .actor_pk(StringOp::Eq(user_pk.to_string()))
+                    .space_id(StringOp::Eq(space_id_of(space_pk)))
+                    .poll_id(StringOp::Eq(poll_id_of(poll_sk))),
+            )
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// All answers for a `(space, poll)`.
+    pub async fn list_by_poll(
+        space_pk: &Partition,
+        poll_sk: &EntityType,
+    ) -> crate::common::Result<Vec<Self>> {
+        Self::repository()
+            .find(
+                Self::query()
+                    .space_id(StringOp::Eq(space_id_of(space_pk)))
+                    .poll_id(StringOp::Eq(poll_id_of(poll_sk))),
+            )
+            .await
+            .map(|p| p.items)
+            .map_err(crate::common::Error::from)
+    }
+
+    /// Natural-key upsert on `(actor_pk, space_id, poll_id)`.
+    pub async fn save(&self) -> crate::common::Result<Self> {
+        Self::repository()
+            .upsert_on(&["actor_pk", "space_id", "poll_id"], self)
+            .await
+            .map_err(crate::common::Error::from)
     }
 
     pub async fn summarize_responses_with_attribute(
-        cli: &aws_sdk_dynamodb::Client,
         space_pk: &Partition,
         poll_sk: &EntityType,
     ) -> crate::features::spaces::pages::actions::actions::poll::Result<(
@@ -117,14 +180,16 @@ impl SpacePollUserAnswer {
         Vec<SpacePollUserAnswer>,
         Vec<SpacePollUserAnswer>,
     )> {
-        let poll = SpacePoll::get(&cli, space_pk, Some(poll_sk.clone()))
+        let poll_id = SpacePollEntityType(poll_id_of(poll_sk));
+        let space_partition = match space_pk {
+            Partition::Space(id) => SpacePartition(id.clone()),
+            _ => SpacePartition(space_id_of(space_pk)),
+        };
+        let poll = SpacePoll::get_one(&space_partition, &poll_id)
             .await?
             .ok_or(Error::NotFound("Poll Not found".to_string()))?;
 
-        let final_pk = poll_sk.clone();
-        let mut sample_pk = poll_sk.clone();
-
-        let question = poll.questions;
+        let question = poll.questions.0;
 
         let seed: Vec<SpacePollSummary> = question
             .iter()
@@ -139,116 +204,55 @@ impl SpacePollUserAnswer {
         let mut age_map: Map<AgeBand, Vec<SpacePollSummary>> = Map::new();
         let mut school_map: Map<String, Vec<SpacePollSummary>> = Map::new();
 
-        let mut bookmark: Option<String> = None;
-        let mut final_all: Vec<SpacePollUserAnswer> = Vec::new();
+        let final_all: Vec<SpacePollUserAnswer> = Self::list_by_poll(space_pk, poll_sk).await?;
 
-        loop {
-            let (responses, new_bookmark) = Self::find_by_space_pk(
-                cli,
-                &EntityType::SpacePollUserAnswer(space_pk.to_string(), poll_sk.to_string()),
-                if let Some(b) = &bookmark {
-                    SpacePollUserAnswerQueryOption::builder().bookmark(b.clone())
-                } else {
-                    SpacePollUserAnswerQueryOption::builder()
-                },
-            )
-            .await?;
-
-            for resp in &responses {
-                final_all.push(resp.clone());
+        for resp in &final_all {
+            for (qi, ans) in resp.answers.0.iter().cloned().enumerate() {
+                if let Some(s) = overall.get_mut(qi) {
+                    s.aggregate_answer(ans);
+                }
             }
 
-            for resp in responses {
-                for (qi, ans) in resp.answers.iter().cloned().enumerate() {
-                    if let Some(s) = overall.get_mut(qi) {
+            if let Some(g) = resp.respondent.as_ref().and_then(|r| r.0.gender.clone()) {
+                let entry = gender_map.entry(g).or_insert_with(|| seed.clone());
+                for (qi, ans) in resp.answers.0.iter().cloned().enumerate() {
+                    if let Some(s) = entry.get_mut(qi) {
                         s.aggregate_answer(ans);
                     }
                 }
+            }
 
-                if let Some(g) = resp.respondent.as_ref().and_then(|r| r.gender.clone()) {
-                    let entry = gender_map.entry(g).or_insert_with(|| seed.clone());
-                    for (qi, ans) in resp.answers.iter().cloned().enumerate() {
-                        if let Some(s) = entry.get_mut(qi) {
-                            s.aggregate_answer(ans);
-                        }
-                    }
-                }
-
-                if let Some(a) = resp.respondent.as_ref().and_then(|r| r.age.clone()) {
-                    let band = age_to_band(&a);
-                    let entry = age_map.entry(band).or_insert_with(|| seed.clone());
-                    for (qi, ans) in resp.answers.iter().cloned().enumerate() {
-                        if let Some(s) = entry.get_mut(qi) {
-                            s.aggregate_answer(ans);
-                        }
-                    }
-                }
-
-                if let Some(school) = resp.respondent.as_ref().and_then(|r| r.school.clone()) {
-                    let key = if school.is_empty() {
-                        "UNKNOWN".to_string()
-                    } else {
-                        school
-                    };
-                    let entry = school_map.entry(key).or_insert_with(|| seed.clone());
-                    for (qi, ans) in resp.answers.into_iter().enumerate() {
-                        if let Some(s) = entry.get_mut(qi) {
-                            s.aggregate_answer(ans);
-                        }
+            if let Some(a) = resp.respondent.as_ref().and_then(|r| r.0.age.clone()) {
+                let band = age_to_band(&a);
+                let entry = age_map.entry(band).or_insert_with(|| seed.clone());
+                for (qi, ans) in resp.answers.0.iter().cloned().enumerate() {
+                    if let Some(s) = entry.get_mut(qi) {
+                        s.aggregate_answer(ans);
                     }
                 }
             }
 
-            if let Some(b) = new_bookmark {
-                bookmark = Some(b);
-            } else {
-                break;
+            if let Some(school) = resp.respondent.as_ref().and_then(|r| r.0.school.clone()) {
+                let key = if school.is_empty() {
+                    "UNKNOWN".to_string()
+                } else {
+                    school
+                };
+                let entry = school_map.entry(key).or_insert_with(|| seed.clone());
+                for (qi, ans) in resp.answers.0.iter().cloned().enumerate() {
+                    if let Some(s) = entry.get_mut(qi) {
+                        s.aggregate_answer(ans);
+                    }
+                }
             }
         }
 
-        let (sample_aligned, final_aligned) = if sample_pk == final_pk {
-            (final_all, vec![])
-        } else {
-            let mut sample_all: Vec<SpacePollUserAnswer> = Vec::new();
-            let mut sb: Option<String> = None;
-            loop {
-                let (chunk, next) = Self::find_by_space_pk(
-                    cli,
-                    &EntityType::SpacePollUserAnswer(space_pk.to_string(), sample_pk.to_string()),
-                    if let Some(b) = &sb {
-                        SpacePollUserAnswerQueryOption::builder().bookmark(b.clone())
-                    } else {
-                        SpacePollUserAnswerQueryOption::builder()
-                    },
-                )
-                .await?;
-                sample_all.extend(chunk);
-                if let Some(b) = next {
-                    sb = Some(b);
-                } else {
-                    break;
-                }
-            }
-
-            let mut sample_by_user: HashMap<String, SpacePollUserAnswer> = HashMap::new();
-            for s in sample_all {
-                if let Partition::SpacePollUserAnswer(user) = &s.pk {
-                    sample_by_user.insert(user.clone(), s);
-                }
-            }
-
-            let mut sample_out = Vec::new();
-            let mut final_out = Vec::new();
-            for f in final_all {
-                if let Partition::SpacePollUserAnswer(user) = &f.pk {
-                    if let Some(s) = sample_by_user.remove(user) {
-                        sample_out.push(s);
-                        final_out.push(f);
-                    }
-                }
-            }
-            (sample_out, final_out)
-        };
+        // The DynamoDB implementation split answers into a "sample" set and a
+        // "final" set keyed by two sort keys. In the current data model those
+        // two keys are always identical, so the sample set is the full set and
+        // the final set is empty.
+        let sample_aligned = final_all;
+        let final_aligned: Vec<SpacePollUserAnswer> = vec![];
 
         let by_gender: HashMap<String, Vec<SpacePollSummary>> = gender_map
             .into_iter()

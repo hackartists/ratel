@@ -20,9 +20,8 @@ use rmcp::{
 };
 use tokio::sync::RwLock;
 
-use crate::common::config::ServerConfig;
 use crate::common::models::McpClientSecret;
-use crate::common::types::{ContentBody, EntityType, FeedPartition, TeamPartition};
+use crate::common::types::{ContentBody, FeedPartition, TeamPartition};
 use crate::features::auth::controllers::get_me_handler_mcp_impl;
 use crate::features::posts::controllers::{
     create_post_handler_mcp_impl, create_space_handler_mcp_impl, delete_post_handler_mcp_impl,
@@ -926,11 +925,7 @@ async fn get_or_create_service(client_secret: &str) -> McpService {
 
 /// Invalidate cached MCP service when a user regenerates their secret.
 pub async fn invalidate_user_services(user_pk: &crate::common::types::Partition) {
-    let conf = ServerConfig::default();
-    let cli = conf.dynamodb();
-    if let Ok(Some(secret)) =
-        McpClientSecret::get(cli, user_pk, Some(EntityType::McpClientSecret)).await
-    {
+    if let Ok(Some(secret)) = McpClientSecret::find_by_user(user_pk).await {
         let mut cache = MCP_SERVICES.write().await;
         cache.remove(&secret.secret);
     }

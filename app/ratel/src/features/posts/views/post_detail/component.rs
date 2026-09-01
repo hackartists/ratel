@@ -48,16 +48,16 @@ pub fn PostDetail(post_id: ReadSignal<FeedPartition>) -> Element {
         .unwrap_or_default();
     let post_body = post
         .as_ref()
-        .map(|p| p.body.clone())
+        .map(|p| p.body.0.clone())
         .unwrap_or_default();
     let post_html = post_body.to_html();
     let post_image = post
         .as_ref()
-        .and_then(|p| p.urls.first().cloned())
+        .and_then(|p| p.urls.0.first().cloned())
         .unwrap_or_default();
     let post_attachments = post
         .as_ref()
-        .map(|p| p.attachments.clone())
+        .map(|p| p.attachments.0.clone())
         .unwrap_or_default();
     let author_name = post
         .as_ref()

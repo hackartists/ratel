@@ -76,19 +76,18 @@ fn validate_expires_at(scheduled_at: Option<i64>, expires_at: i64) -> Result<()>
 
 #[cfg(feature = "server")]
 fn to_response(row: FactFoldSubject) -> SubjectResponse {
-    let id = row.id().unwrap_or_default();
     SubjectResponse {
-        id: FactFoldSubjectEntityType(id),
+        id: FactFoldSubjectEntityType(row.subject_id.clone()),
         status: row.status,
         headline_text: row.headline_text,
         body_excerpt: row.body_excerpt,
         verdict: row.verdict,
         difficulty: row.difficulty,
-        category_tags: row.category_tags,
+        category_tags: row.category_tags.0,
         source_label: row.source_label,
         insider_statement: row.insider_statement,
         reveal_summary: row.reveal_summary,
-        reveal_sources: row.reveal_sources,
+        reveal_sources: row.reveal_sources.0,
         scheduled_at: row.scheduled_at,
         expires_at: row.expires_at,
         created_at: row.created_at,
@@ -115,13 +114,10 @@ pub async fn create_subject_handler(
         return Err(FactOrFoldError::SubjectInvalid.into());
     }
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
     let subject_id = uuid::Uuid::now_v7().to_string();
     let row = FactFoldSubject::new_draft(
         subject_id,
-        user.pk.clone(),
+        user.pk().clone(),
         req.headline_text,
         req.body_excerpt,
         req.verdict,
@@ -135,7 +131,7 @@ pub async fn create_subject_handler(
         req.expires_at,
     );
 
-    row.create(cli).await.map_err(|e| {
+    row.insert_new().await.map_err(|e| {
         crate::error!("create_subject_handler create failed: {e}");
         FactOrFoldError::StorageFailure
     })?;
@@ -145,46 +141,35 @@ pub async fn create_subject_handler(
 
 // ── GET /api/fact-or-fold/admin/subjects ────────────────────────
 
-const HEADLINE_SK_PREFIX: &str = "FACT_FOLD_SUBJECT";
-
 #[get("/api/fact-or-fold/admin/subjects?bookmark&status", _user: AdminUser)]
 pub async fn list_subjects_handler(
     bookmark: Option<String>,
     status: Option<SubjectStatus>,
 ) -> Result<ListResponse<SubjectResponse>> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    // All subjects share a single anchor pk so a sk-prefix query lists
-    // them in one round-trip.
-    let opts = FactFoldSubject::opt_with_bookmark(bookmark)
-        .sk(HEADLINE_SK_PREFIX.to_string())
-        .limit(PAGE_LIMIT);
-    let (rows, next) = FactFoldSubject::query(cli, FactFoldSubject::anchor_pk(), opts)
+    // Offset-based pagination replaces the DynamoDB LEK bookmark;
+    // `bookmark` carries the next row offset. `status` filters at the
+    // DB level; a `None` status excludes soft-deleted rows and orders
+    // newest-first (matching the prior in-memory sort).
+    let offset: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .unwrap_or(0)
+        .max(0);
+    let exclude_deleted = status.is_none();
+    let rows = FactFoldSubject::list_page(status, exclude_deleted, PAGE_LIMIT as i64, offset)
         .await
         .map_err(|e| {
             crate::error!("list_subjects_handler query failed: {e}");
             FactOrFoldError::StorageFailure
         })?;
 
-    let exclude_deleted = status.is_none();
-    let mut items: Vec<_> = rows
-        .into_iter()
-        .filter(|h| match status {
-            Some(s) => h.status == s,
-            None => true,
-        })
-        .filter(|h| {
-            if exclude_deleted {
-                !matches!(h.status, SubjectStatus::Deleted)
-            } else {
-                true
-            }
-        })
-        .collect();
-    items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    let next = if rows.len() as i32 == PAGE_LIMIT {
+        Some((offset + PAGE_LIMIT as i64).to_string())
+    } else {
+        None
+    };
 
-    let responses: Vec<SubjectResponse> = items.into_iter().map(to_response).collect();
+    let responses: Vec<SubjectResponse> = rows.into_iter().map(to_response).collect();
     Ok((responses, next).into())
 }
 
@@ -194,11 +179,7 @@ pub async fn list_subjects_handler(
 pub async fn get_subject_handler(
     subject_id: FactFoldSubjectEntityType,
 ) -> Result<SubjectResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    let sk: EntityType = subject_id.into();
-    let row = FactFoldSubject::get(cli, &FactFoldSubject::anchor_pk(), Some(sk))
+    let row = FactFoldSubject::get_by_subject_id(&subject_id.0)
         .await
         .map_err(|e| {
             crate::error!("get_subject_handler get failed: {e}");
@@ -216,13 +197,7 @@ pub async fn update_subject_handler(
     subject_id: FactFoldSubjectEntityType,
     req: UpdateSubjectRequest,
 ) -> Result<SubjectResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    let pk = FactFoldSubject::anchor_pk();
-    let sk: EntityType = subject_id.into();
-
-    let mut existing = FactFoldSubject::get(cli, &pk, Some(sk.clone()))
+    let mut existing = FactFoldSubject::get_by_subject_id(&subject_id.0)
         .await
         .map_err(|e| {
             crate::error!("update_subject_handler get failed: {e}");
@@ -259,7 +234,6 @@ pub async fn update_subject_handler(
     }
 
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut updater = FactFoldSubject::updater(&pk, &sk).with_updated_at(now);
     existing.updated_at = now;
     let mut changed = false;
 
@@ -267,7 +241,6 @@ pub async fn update_subject_handler(
         if v.trim().is_empty() || v.len() > HEADLINE_TEXT_MAX {
             return Err(FactOrFoldError::SubjectInvalid.into());
         }
-        updater = updater.with_headline_text(v.clone());
         existing.headline_text = v;
         changed = true;
     }
@@ -276,12 +249,10 @@ pub async fn update_subject_handler(
         if v.trim().is_empty() || body_len > HEADLINE_BODY_MAX {
             return Err(FactOrFoldError::SubjectInvalid.into());
         }
-        updater = updater.with_body_excerpt(v.clone());
         existing.body_excerpt = v;
         changed = true;
     }
     if let Some(v) = req.verdict {
-        updater = updater.with_verdict(v);
         existing.verdict = v;
         changed = true;
     }
@@ -289,20 +260,17 @@ pub async fn update_subject_handler(
         if !(HEADLINE_DIFFICULTY_MIN..=HEADLINE_DIFFICULTY_MAX).contains(&v) {
             return Err(FactOrFoldError::SubjectInvalid.into());
         }
-        updater = updater.with_difficulty(v);
         existing.difficulty = v;
         changed = true;
     }
     if let Some(v) = req.category_tags {
-        updater = updater.with_category_tags(v.clone());
-        existing.category_tags = v;
+        existing.category_tags = crate::features::arcade::games::fact_or_fold::models::CategoryTagList(v);
         changed = true;
     }
     if let Some(v) = req.source_label {
         if v.trim().is_empty() {
             return Err(FactOrFoldError::SubjectInvalid.into());
         }
-        updater = updater.with_source_label(v.clone());
         existing.source_label = v;
         changed = true;
     }
@@ -310,12 +278,10 @@ pub async fn update_subject_handler(
         if v.trim().is_empty() {
             return Err(FactOrFoldError::SubjectInvalid.into());
         }
-        updater = updater.with_insider_statement(v.clone());
         existing.insider_statement = v;
         changed = true;
     }
     if let Some(v) = req.reveal_summary {
-        updater = updater.with_reveal_summary(v.clone());
         existing.reveal_summary = v;
         changed = true;
     }
@@ -323,28 +289,24 @@ pub async fn update_subject_handler(
         if v.len() > REVEAL_SOURCES_MAX {
             return Err(FactOrFoldError::SubjectInvalid.into());
         }
-        updater = updater.with_reveal_sources(v.clone());
-        existing.reveal_sources = v;
+        existing.reveal_sources = crate::features::arcade::games::fact_or_fold::models::RevealSourceList(v);
         changed = true;
     }
     if let Some(v) = req.scheduled_at {
-        updater = updater.with_scheduled_at(v).with_pick_at(v);
         existing.scheduled_at = Some(v);
         existing.pick_at = v;
         if matches!(existing.status, SubjectStatus::Draft) {
-            updater = updater.with_status(SubjectStatus::Scheduled);
             existing.status = SubjectStatus::Scheduled;
         }
         changed = true;
     }
     if let Some(v) = req.expires_at {
-        updater = updater.with_expires_at(v);
         existing.expires_at = v;
         changed = true;
     }
 
     if changed {
-        updater.execute(cli).await.map_err(|e| {
+        existing.save().await.map_err(|e| {
             crate::error!("update_subject_handler execute failed: {e}");
             FactOrFoldError::StorageFailure
         })?;
@@ -359,13 +321,7 @@ pub async fn update_subject_handler(
 pub async fn delete_subject_handler(
     subject_id: FactFoldSubjectEntityType,
 ) -> Result<SubjectResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    let pk = FactFoldSubject::anchor_pk();
-    let sk: EntityType = subject_id.into();
-
-    let mut existing = FactFoldSubject::get(cli, &pk, Some(sk.clone()))
+    let mut existing = FactFoldSubject::get_by_subject_id(&subject_id.0)
         .await
         .map_err(|e| {
             crate::error!("delete_subject_handler get failed: {e}");
@@ -378,18 +334,13 @@ pub async fn delete_subject_handler(
     }
 
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    FactFoldSubject::updater(&pk, &sk)
-        .with_status(SubjectStatus::Deleted)
-        .with_updated_at(now)
-        .execute(cli)
-        .await
-        .map_err(|e| {
-            crate::error!("delete_subject_handler execute failed: {e}");
-            FactOrFoldError::StorageFailure
-        })?;
-
     existing.status = SubjectStatus::Deleted;
     existing.updated_at = now;
+    existing.save().await.map_err(|e| {
+        crate::error!("delete_subject_handler execute failed: {e}");
+        FactOrFoldError::StorageFailure
+    })?;
+
     Ok(to_response(existing))
 }
 
@@ -403,13 +354,7 @@ pub async fn publish_subject_handler(
     subject_id: FactFoldSubjectEntityType,
     req: PublishSubjectRequest,
 ) -> Result<SubjectResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    let pk = FactFoldSubject::anchor_pk();
-    let sk: EntityType = subject_id.into();
-
-    let mut existing = FactFoldSubject::get(cli, &pk, Some(sk.clone()))
+    let mut existing = FactFoldSubject::get_by_subject_id(&subject_id.0)
         .await
         .map_err(|e| {
             crate::error!("publish_subject_handler get failed: {e}");
@@ -456,29 +401,17 @@ pub async fn publish_subject_handler(
         validate_expires_at(next_scheduled_at, exp)?;
     }
 
-    let updater = FactFoldSubject::updater(&pk, &sk)
-        .with_status(next_status)
-        .with_pick_at(next_pick_at)
-        .with_updated_at(now);
-    let updater = match next_scheduled_at {
-        Some(ts) => updater.with_scheduled_at(ts),
-        // Publish-now clears any prior schedule so the row no longer
-        // surfaces in queue/upcoming queries.
-        None => updater.remove_scheduled_at(),
-    };
-    let updater = match req.expires_at {
-        Some(exp) => updater.with_expires_at(exp),
-        None => updater,
-    };
-    updater.execute(cli).await.map_err(|e| {
-        crate::error!("publish_subject_handler execute failed: {e}");
-        FactOrFoldError::StorageFailure
-    })?;
-
+    // Publish-now (`next_scheduled_at == None`) clears any prior
+    // schedule so the row no longer surfaces in queue/upcoming queries.
     existing.status = next_status;
     existing.scheduled_at = next_scheduled_at;
     existing.pick_at = next_pick_at;
     existing.expires_at = next_expires_at;
     existing.updated_at = now;
+    existing.save().await.map_err(|e| {
+        crate::error!("publish_subject_handler execute failed: {e}");
+        FactOrFoldError::StorageFailure
+    })?;
+
     Ok(to_response(existing))
 }

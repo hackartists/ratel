@@ -3,6 +3,8 @@ use crate::features::social::types::SocialError;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
@@ -21,9 +23,6 @@ pub struct ChangePasswordResponse {
 pub async fn change_password_handler(body: ChangePasswordRequest) -> Result<ChangePasswordResponse> {
     use crate::common::utils::password::hash_password;
 
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
-
     let stored_password = user.password.clone().unwrap_or_default();
     if stored_password.is_empty() {
         return Err(SocialError::IncorrectCurrentPassword.into());
@@ -39,9 +38,9 @@ pub async fn change_password_handler(body: ChangePasswordRequest) -> Result<Chan
     }
 
     let new_hashed = hash_password(&body.new_password);
-    crate::features::auth::User::updater(user.pk.clone(), user.sk.clone())
-        .with_password(new_hashed)
-        .execute(cli)
+    let updater = crate::features::auth::User::update().password(new_hashed);
+    crate::features::auth::User::repository()
+        .update(user.id, updater)
         .await?;
 
     Ok(ChangePasswordResponse { success: true })

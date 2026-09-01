@@ -36,39 +36,25 @@ pub async fn update_quiz(
     req: UpdateQuizRequest,
 ) -> Result<String> {
     SpaceQuiz::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_id = space_pk;
-    let space_pk: Partition = space_id.clone().into();
-    let quiz_sk: EntityType = quiz_id.clone().into();
 
-    let existing = SpaceQuiz::get(cli, &space_pk, Some(quiz_sk.clone()))
+    let mut existing = SpaceQuiz::get_one(&space_id, &quiz_id)
         .await?
         .ok_or(Error::NotFound("Quiz not found".into()))?;
-    let _updates_locked_fields = req.retry_count.is_some()
-        || req.pass_score.is_some()
-        || req.questions.is_some()
-        || req.answers.is_some();
 
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut updater = SpaceQuiz::updater(&space_pk, &quiz_sk).with_updated_at(now);
-    let action_pk = CompositePartition(space_id, quiz_id.to_string());
-    let action_sk = EntityType::SpaceAction;
-    let mut action_updater = crate::features::spaces::pages::actions::models::SpaceAction::updater(
-        &action_pk, &action_sk,
-    )
-    .with_updated_at(now);
-    let mut should_update_action = false;
+    existing.updated_at = now;
 
+    // Companion SpaceAction (title/description) — mutated only if requested.
+    let mut action_title: Option<String> = None;
+    let mut action_description: Option<String> = None;
     if let Some(title) = req.title {
-        action_updater = action_updater.with_title(title);
-        should_update_action = true;
+        action_title = Some(title);
     }
-
     if let Some(description) = req.description {
-        action_updater = action_updater.with_description(description);
-        should_update_action = true;
+        action_description = Some(description);
     }
+    let should_update_action = action_title.is_some() || action_description.is_some();
 
     if let Some(retry_count) = req.retry_count {
         if retry_count < 0 {
@@ -77,10 +63,10 @@ pub async fn update_quiz(
         if retry_count.saturating_add(1) > MAX_TOTAL_ATTEMPTS {
             return Err(SpaceActionQuizError::RetryCountExceedsMax.into());
         }
-        updater = updater.with_retry_count(retry_count);
+        existing.retry_count = retry_count;
     }
 
-    let mut questions_for_answers = None;
+    let mut questions_for_answers: Option<Vec<Question>> = None;
     if let Some(questions) = req.questions {
         if questions.is_empty() {
             return Err(SpaceActionQuizError::EmptyQuestions.into());
@@ -91,19 +77,15 @@ pub async fn update_quiz(
         {
             return Err(SpaceActionQuizError::UnsupportedQuestionType.into());
         }
-        updater = updater.with_questions(questions.clone());
+        existing.questions = QuizQuestions(questions.clone());
         questions_for_answers = Some(questions);
     }
-
-    let questions_for_validation = questions_for_answers
-        .as_ref()
-        .unwrap_or(&existing.questions);
 
     if let Some(pass_score) = req.pass_score {
         if pass_score < 0 {
             return Err(SpaceActionQuizError::InvalidPassScore.into());
         }
-        updater = updater.with_pass_score(pass_score);
+        existing.pass_score = pass_score;
     }
 
     if let Some(mut files) = req.files {
@@ -112,41 +94,45 @@ pub async fn update_quiz(
                 file.id = crate::common::uuid::Uuid::now_v7().to_string();
             }
         }
-        updater = updater.with_files(files);
+        existing.files = QuizFiles(files);
     }
 
-    updater.execute(cli).await?;
+    SpaceQuiz::repository()
+        .upsert(&existing)
+        .await
+        .map_err(crate::common::Error::from)?;
+
+    // Emit outbox event (Phase 5) — EssenceIndexQuiz rule on SPACE_QUIZ# MODIFY.
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::SPACE_QUIZ,
+        &existing,
+    )
+    .await
+    .ok();
+
     if should_update_action {
-        action_updater.execute(cli).await?;
+        if let Some(mut action) =
+            crate::features::spaces::pages::actions::models::SpaceAction::get_one(
+                &space_id, &quiz_id.0,
+            )
+            .await?
+        {
+            if let Some(title) = action_title {
+                action.title = title;
+            }
+            if let Some(description) = action_description {
+                action.description = description;
+            }
+            action.updated_at = now;
+            action.save().await?;
+        }
     }
 
-    if let Ok(Some(quiz)) = SpaceQuiz::get(cli, &space_pk, Some(quiz_sk.clone())).await {
-        let (action_title, action_description) = match crate::features::spaces::pages::actions::models::SpaceAction::get(
-            cli,
-            &action_pk,
-            Some(EntityType::SpaceAction),
-        )
-        .await
-        {
-            Ok(Some(action)) => (action.title, action.description),
-            _ => (String::new(), String::new()),
-        };
-        let creator_pk = crate::common::models::space::SpaceCommon::get(
-            cli,
-            &space_pk,
-            Some(EntityType::SpaceCommon),
-        )
-        .await
-        .ok()
-        .flatten()
-        .map(|s| s.user_pk)
-        .unwrap_or(space_pk.clone());
-        let _ = (creator_pk, action_title, action_description);
-        // Essence re-indexing happens via the DynamoDB Stream pipeline.
-    }
+    // Essence re-indexing happens via the DynamoDB Stream pipeline.
 
     if let Some(answers) = req.answers {
-        let questions = questions_for_answers.unwrap_or_else(|| existing.questions.clone());
+        let questions =
+            questions_for_answers.unwrap_or_else(|| existing.questions.0.clone());
 
         if questions.len() != answers.len() {
             return Err(SpaceActionQuizError::AnswersLengthMismatch.into());
@@ -155,13 +141,13 @@ pub async fn update_quiz(
             validate_quiz_answer(question, answer)?;
         }
 
-        let answer_sk = EntityType::SpaceQuizAnswer(quiz_id.to_string());
-        let answer_updater = SpaceQuizAnswer::updater(&space_pk, &answer_sk)
-            .with_created_at(now)
-            .with_updated_at(now)
-            .with_space_pk(space_pk.clone())
-            .with_answers(answers);
-        answer_updater.execute(cli).await?;
+        let mut answer_row = SpaceQuizAnswer::get_one(&space_id, &quiz_id)
+            .await?
+            .unwrap_or_else(|| SpaceQuizAnswer::new(space_id.clone(), quiz_id.clone(), vec![]));
+        answer_row.answers = QuizCorrectAnswers(answers);
+        answer_row.created_at = now;
+        answer_row.updated_at = now;
+        answer_row.save().await?;
     }
 
     Ok("success".to_string())

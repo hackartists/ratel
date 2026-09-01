@@ -5,19 +5,19 @@ use crate::features::character::dto::CharacterResponse;
 pub async fn get_character_handler() -> Result<CharacterResponse> {
     use crate::features::character::models::{CharacterSkill, CharacterXp};
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
+    let user_pk = user.pk();
 
-    let (xp_pk, xp_sk) = CharacterXp::user_keys(&user.pk);
+    // Sequential, NOT `tokio::try_join!`: racing two pooled-connection queries
+    // means a cancellation (try_join! aborts the sibling the instant one errs)
+    // can drop a query mid-`.await`, wedging its sqlx connection on the
+    // untimed release-ping and permanently leaking that pool permit. Under the
+    // shared test pool a few such leaks exhaust `max_connections` and later
+    // requests hang ("pool timed out"). Each query here fully completes and
+    // releases its connection before the next starts.
+    let xp_res = CharacterXp::get_by_user(&user_pk).await?;
+    let skill_rows = CharacterSkill::list_for_user(&user_pk).await?;
 
-    // Fan out the two reads in parallel — one CharacterXp single-row + the
-    // entire CharacterSkill collection via begins_with(sk) Query. ~1 RTT total.
-    let (xp_res, skill_rows) = tokio::try_join!(
-        CharacterXp::get(cli, &xp_pk, Some(&xp_sk)),
-        CharacterSkill::list_for_user(cli, &user.pk),
-    )?;
-
-    let xp = xp_res.unwrap_or_else(|| CharacterXp::new(user.pk.clone()));
+    let xp = xp_res.unwrap_or_else(|| CharacterXp::new(user_pk.clone()));
     let skills = CharacterSkill::levels_by_id(&skill_rows);
 
     Ok(CharacterResponse::from_parts(&xp, skills))

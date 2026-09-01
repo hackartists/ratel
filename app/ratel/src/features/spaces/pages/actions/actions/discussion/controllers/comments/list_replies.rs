@@ -10,47 +10,32 @@ pub async fn list_replies(
     bookmark: Option<String>,
 ) -> Result<ListResponse<DiscussionCommentResponse>> {
     SpacePost::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let discussion_sk_entity: EntityType = discussion_sk.into();
-    let space_post_pk: SpacePostPartition = match &discussion_sk_entity {
-        EntityType::SpacePost(id) => SpacePostPartition(id.clone()),
-        _ => return Err(SpaceActionDiscussionError::InvalidDiscussionId.into()),
-    };
+    let _ = space_id;
+    let space_post_pk = SpacePostPartition(discussion_sk.0);
+    let post_id = space_post_pk.0.clone();
     let comment_sk_entity: EntityType = comment_sk.into();
 
-    let opt = SpacePostComment::opt_all()
-        .scan_index_forward(false)
-        .limit(50);
-    let opt = if let Some(b) = bookmark {
-        opt.bookmark(b)
-    } else {
-        opt
-    };
-
     let (replies, next_bookmark) =
-        SpacePostComment::list_by_comment(cli, comment_sk_entity, opt).await?;
+        SpacePostComment::list_by_comment(comment_sk_entity, bookmark, 50).await?;
 
-    // Moderation: drop hidden replies (req #2) and blocked authors (req #4).
+    // Moderation: drop auto-hidden comments (App Store req #2) and comments
+    // authored by someone the viewer personally blocked (req #4).
     let blocked = crate::common::models::moderation::blocked_author_set(
-        cli,
-        user.0.as_ref().map(|u| &u.pk),
+        user.0.as_ref().map(|u| u.pk()).as_ref(),
     )
     .await;
     let replies = crate::common::models::moderation::retain_visible(
         replies,
         &blocked,
         |c| c.hidden,
-        |c| &c.author_pk,
+        |c| c.author_pk.as_str(),
     );
 
-    let space_post_pk: Partition = space_post_pk.into();
     let liked_set: HashSet<String> = if let Some(ref u) = user.0 {
-        let keys: Vec<_> = replies.iter().map(|r| r.like_keys(&u.pk)).collect();
-        let likes = SpacePostCommentLike::batch_get(cli, keys)
+        let keys: Vec<String> = replies.iter().map(|r| r.like_key()).collect();
+        SpacePostCommentLike::liked_keys(&post_id, &u.pk(), keys)
             .await
-            .unwrap_or_default();
-        likes.into_iter().map(|l| l.sk.to_string()).collect()
+            .unwrap_or_default()
     } else {
         HashSet::new()
     };
@@ -74,17 +59,7 @@ pub async fn list_replies(
     let responses: Vec<DiscussionCommentResponse> = replies
         .into_iter()
         .map(|r| {
-            let like_key = if let Some(ref u) = user.0 {
-                let (_, sk) = SpacePostCommentLike::keys_from_partition(
-                    space_post_pk.clone(),
-                    r.sk.clone(),
-                    &u.pk,
-                );
-                sk.to_string()
-            } else {
-                String::new()
-            };
-            let liked = liked_set.contains(&like_key);
+            let liked = liked_set.contains(&r.like_key());
             (r, liked).into()
         })
         .collect();

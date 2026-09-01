@@ -1,56 +1,92 @@
-use crate::features::my_follower::*;
+#[cfg(feature = "server")]
 use crate::common::models::auth::UserFollow;
-use crate::features::posts::models::Team;
+use crate::features::my_follower::*;
 
 #[delete("/api/my-follower/follow", user: crate::features::auth::User)]
 pub async fn unfollow_user(target_pk: Partition) -> Result<()> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
+    let user_pk = user.pk();
 
-    if target_pk == user.pk {
+    if target_pk == user_pk {
         return Err(FollowError::CannotUnfollowSelf.into());
     }
 
-    let (follower_pk, follower_sk) = UserFollow::follower_keys(&target_pk, &user.pk);
-    if UserFollow::get(cli, follower_pk.clone(), Some(follower_sk.clone()))
-        .await?
-        .is_none()
-    {
+    let Some(follower_row) = UserFollow::find_follower(&target_pk, &user_pk).await? else {
         return Ok(());
-    }
+    };
+    let following_row = UserFollow::find_following(&user_pk, &target_pk).await?;
 
-    let (following_pk, following_sk) = UserFollow::following_keys(&user.pk, &target_pk);
-
-    let follower_delete = UserFollow::delete_transact_write_item(&follower_pk, &follower_sk);
-    let following_delete = UserFollow::delete_transact_write_item(&following_pk, &following_sk);
-    let target_update = match &target_pk {
-        Partition::User(_) => {
-            crate::common::models::auth::User::updater(target_pk.clone(), EntityType::User)
-                .decrease_followers_count(1)
-                .transact_write_item()
+    let target_uuid = match &target_pk {
+        Partition::User(id) | Partition::Team(id) => {
+            uuid::Uuid::parse_str(id).map_err(|_| FollowError::InvalidTarget)?
         }
-        Partition::Team(_) => Team::updater(target_pk.clone(), EntityType::Team)
-            .decrease_followers(1)
-            .transact_write_item(),
         _ => return Err(FollowError::InvalidTarget.into()),
     };
-    let follower_update = crate::common::models::auth::User::updater(user.pk.clone(), EntityType::User)
-        .decrease_followings_count(1)
-        .transact_write_item();
+    let follower_uuid = match &user_pk {
+        Partition::User(id) => uuid::Uuid::parse_str(id).map_err(|_| FollowError::InvalidTarget)?,
+        _ => return Err(FollowError::InvalidTarget.into()),
+    };
 
-    cli.transact_write_items()
-        .set_transact_items(Some(vec![
-            follower_delete,
-            following_delete,
-            target_update,
-            follower_update,
-        ]))
-        .send()
-        .await
-        .map_err(|e| {
-            crate::error!("unfollow failed: {e}");
-            FollowError::UnfollowFailed
-        })?;
+    let tx = postgres::Tx::begin().await.map_err(|e| {
+        crate::error!("unfollow failed: {e}");
+        FollowError::UnfollowFailed
+    })?;
+
+    // Idempotent deletes — a row already gone (concurrent unfollow) is not an
+    // error, matching DynamoDB's unconditional-delete-in-transaction semantics.
+    let _ = UserFollow::repository()
+        .with_tx(&tx)
+        .delete(follower_row.id)
+        .await;
+    if let Some(row) = following_row {
+        let _ = UserFollow::repository().with_tx(&tx).delete(row.id).await;
+    }
+
+    match &target_pk {
+        Partition::User(_) => {
+            crate::features::my_follower::models::bump_user_counter_tx(
+                &tx,
+                target_uuid,
+                "followers_count",
+                -1,
+            )
+            .await
+            .map_err(|e| {
+                crate::error!("unfollow failed: {e}");
+                FollowError::UnfollowFailed
+            })?;
+        }
+        Partition::Team(_) => {
+            crate::features::my_follower::models::bump_team_counter_tx(
+                &tx,
+                target_uuid,
+                "followers",
+                -1,
+            )
+            .await
+            .map_err(|e| {
+                crate::error!("unfollow failed: {e}");
+                FollowError::UnfollowFailed
+            })?;
+        }
+        _ => return Err(FollowError::InvalidTarget.into()),
+    };
+
+    crate::features::my_follower::models::bump_user_counter_tx(
+        &tx,
+        follower_uuid,
+        "followings_count",
+        -1,
+    )
+    .await
+    .map_err(|e| {
+        crate::error!("unfollow failed: {e}");
+        FollowError::UnfollowFailed
+    })?;
+
+    tx.commit().await.map_err(|e| {
+        crate::error!("unfollow commit failed: {e}");
+        FollowError::UnfollowFailed
+    })?;
 
     Ok(())
 }

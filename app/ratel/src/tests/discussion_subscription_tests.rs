@@ -1,7 +1,7 @@
 use super::*;
 use crate::common::models::space::{SpaceCommon, SpaceParticipant};
 use crate::common::types::{
-    EntityType, Partition, SpacePartition, SpacePostPartition, SpacePublishState, SpaceStatus,
+    FeedPartition, Partition, SpacePartition, SpacePostPartition, SpacePublishState, SpaceStatus,
     SpaceVisibility,
 };
 use crate::common::models::notification::UserInboxNotification;
@@ -10,15 +10,15 @@ use crate::features::spaces::pages::actions::actions::discussion::{
     SpacePost, SpacePostSubscription,
 };
 
-async fn inbox_rows_for(ctx: &TestContext, user_pk: Partition) -> Vec<UserInboxNotification> {
-    let (rows, _) = UserInboxNotification::query(
-        &ctx.ddb,
-        user_pk,
-        UserInboxNotification::opt().sk("USER_INBOX_NOTIFICATION".to_string()),
-    )
-    .await
-    .expect("query inbox");
-    rows
+async fn inbox_rows_for(_ctx: &TestContext, user_pk: Partition) -> Vec<UserInboxNotification> {
+    let user_id = match &user_pk {
+        Partition::User(id) => id.clone(),
+        other => other.to_string(),
+    };
+    UserInboxNotification::find_for_user(&user_id, false, 1, 1000)
+        .await
+        .expect("query inbox")
+        .items
 }
 
 /// Seed a published, ongoing, public space owned by `ctx.test_user` plus one
@@ -28,44 +28,40 @@ async fn seed_space_and_discussion(ctx: &TestContext) -> (String, String) {
     let post_id = space_id.clone();
     let now = crate::common::utils::time::get_now_timestamp_millis();
 
-    let space_pk = Partition::Space(space_id.clone());
-    let post_pk = Partition::Feed(post_id.clone());
-
-    let mut space = SpaceCommon::default();
-    space.pk = space_pk.clone();
-    space.sk = EntityType::SpaceCommon;
+    let mut space = SpaceCommon::new(
+        FeedPartition(post_id.clone()),
+        ctx.test_user.0.pk(),
+        ctx.test_user.0.display_name.clone(),
+        ctx.test_user.0.profile_url.clone(),
+        ctx.test_user.0.username.clone(),
+    );
     space.created_at = now;
     space.updated_at = now;
     space.status = Some(SpaceStatus::Ongoing);
     space.publish_state = SpacePublishState::Published;
     space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk.clone();
-    space.user_pk = ctx.test_user.0.pk.clone();
-    space.author_display_name = ctx.test_user.0.display_name.clone();
-    space.author_profile_url = ctx.test_user.0.profile_url.clone();
-    space.author_username = ctx.test_user.0.username.clone();
-    space.create(&ctx.ddb).await.expect("create space");
+    space.create().await.expect("create space");
 
     let post = crate::features::posts::models::Post {
-        pk: post_pk.clone(),
-        sk: EntityType::Post,
+        id: uuid::Uuid::parse_str(&post_id).expect("valid post id"),
         title: "Sub Test".to_string(),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.expect("create post");
+    post.create().await.expect("create post");
 
     let discussion_id = uuid::Uuid::now_v7().to_string();
     let mut discussion = SpacePost::default();
-    discussion.pk = space_pk.clone();
-    discussion.sk = EntityType::SpacePost(discussion_id.clone());
+    discussion.id = uuid::Uuid::now_v7();
+    discussion.space_id = space_id.clone();
+    discussion.post_id = discussion_id.clone();
     discussion.created_at = now;
     discussion.updated_at = now;
     discussion.title = "Test Discussion".to_string();
-    discussion.user_pk = ctx.test_user.0.pk.clone();
+    discussion.user_pk = ctx.test_user.0.pk().to_string();
     discussion.author_display_name = ctx.test_user.0.display_name.clone();
     discussion.author_username = ctx.test_user.0.username.clone();
     discussion.author_profile_url = ctx.test_user.0.profile_url.clone();
-    discussion.create(&ctx.ddb).await.expect("create discussion");
+    discussion.create().await.expect("create discussion");
 
     // The detail endpoint also loads the discussion's SpaceAction row.
     let space_action = crate::features::spaces::pages::actions::models::SpaceAction::new(
@@ -73,33 +69,28 @@ async fn seed_space_and_discussion(ctx: &TestContext) -> (String, String) {
         discussion_id.clone(),
         crate::features::spaces::pages::actions::types::SpaceActionType::TopicDiscussion,
     );
-    space_action
-        .create(&ctx.ddb)
-        .await
-        .expect("create space action");
+    space_action.create().await.expect("create space action");
 
     (space_id, discussion_id)
 }
 
-async fn join_space(ctx: &TestContext, space_id: &str, user_pk: Partition) {
+async fn join_space(_ctx: &TestContext, space_id: &str, user_pk: Partition) {
     let participant = SpaceParticipant::new(Partition::Space(space_id.to_string()), user_pk);
-    participant.create(&ctx.ddb).await.expect("join space");
+    participant.create().await.expect("join space");
 }
 
 async fn subscription_exists(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     discussion_id: &str,
     user_pk: &Partition,
 ) -> bool {
-    let (pk, sk) =
-        SpacePostSubscription::keys(&SpacePostPartition(discussion_id.to_string()), user_pk);
-    SpacePostSubscription::get(&ctx.ddb, &pk, Some(sk))
+    SpacePostSubscription::get_one(&SpacePostPartition(discussion_id.to_string()), user_pk)
         .await
         .expect("get subscription")
         .is_some()
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_subscribe_creates_row() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -111,12 +102,12 @@ async fn test_subscribe_creates_row() {
     };
     assert_eq!(status, 200, "subscribe: {:?}", body);
     assert!(
-        subscription_exists(&ctx, &discussion_id, &ctx.test_user.0.pk).await,
+        subscription_exists(&ctx, &discussion_id, &ctx.test_user.0.pk()).await,
         "subscription row should exist after subscribe"
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_subscribe_is_idempotent() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -133,17 +124,17 @@ async fn test_subscribe_is_idempotent() {
         };
         assert_eq!(status, 200, "subscribe twice: {:?}", body);
     }
-    assert!(subscription_exists(&ctx, &discussion_id, &ctx.test_user.0.pk).await);
+    assert!(subscription_exists(&ctx, &discussion_id, &ctx.test_user.0.pk()).await);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_participant_can_unsubscribe() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
 
     // A non-author participant subscribes then unsubscribes — allowed.
     let (user2, headers2) = ctx.create_another_user().await;
-    join_space(&ctx, &space_id, user2.pk.clone()).await;
+    join_space(&ctx, &space_id, user2.pk()).await;
 
     let (status, _, body) = crate::test_post! {
         app: ctx.app.clone(),
@@ -151,7 +142,7 @@ async fn test_participant_can_unsubscribe() {
         headers: headers2.clone(),
     };
     assert_eq!(status, 200, "participant subscribe: {:?}", body);
-    assert!(subscription_exists(&ctx, &discussion_id, &user2.pk).await);
+    assert!(subscription_exists(&ctx, &discussion_id, &user2.pk()).await);
 
     let (status, _, body) = crate::test_delete! {
         app: ctx.app.clone(),
@@ -160,12 +151,12 @@ async fn test_participant_can_unsubscribe() {
     };
     assert_eq!(status, 200, "participant unsubscribe: {:?}", body);
     assert!(
-        !subscription_exists(&ctx, &discussion_id, &user2.pk).await,
+        !subscription_exists(&ctx, &discussion_id, &user2.pk()).await,
         "subscription row should be gone after participant unsubscribe"
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_author_cannot_unsubscribe() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -184,39 +175,37 @@ async fn test_author_cannot_unsubscribe() {
     };
     assert_ne!(status, 200, "author must not be able to unsubscribe: {:?}", body);
     assert!(
-        subscription_exists(&ctx, &discussion_id, &ctx.test_user.0.pk).await,
+        subscription_exists(&ctx, &discussion_id, &ctx.test_user.0.pk()).await,
         "author subscription must remain after a rejected unsubscribe"
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_discussion_auto_subscribes_author() {
     let ctx = TestContext::setup().await;
 
     let space_id = uuid::Uuid::new_v4().to_string();
     let post_id = space_id.clone();
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut space = SpaceCommon::default();
-    space.pk = Partition::Space(space_id.clone());
-    space.sk = EntityType::SpaceCommon;
+    let mut space = SpaceCommon::new(
+        FeedPartition(post_id.clone()),
+        ctx.test_user.0.pk(),
+        ctx.test_user.0.display_name.clone(),
+        ctx.test_user.0.profile_url.clone(),
+        ctx.test_user.0.username.clone(),
+    );
     space.created_at = now;
     space.updated_at = now;
     space.status = Some(SpaceStatus::Ongoing);
     space.publish_state = SpacePublishState::Published;
     space.visibility = SpaceVisibility::Public;
-    space.post_pk = Partition::Feed(post_id.clone());
-    space.user_pk = ctx.test_user.0.pk.clone();
-    space.author_display_name = ctx.test_user.0.display_name.clone();
-    space.author_profile_url = ctx.test_user.0.profile_url.clone();
-    space.author_username = ctx.test_user.0.username.clone();
-    space.create(&ctx.ddb).await.expect("create space");
+    space.create().await.expect("create space");
     let post = crate::features::posts::models::Post {
-        pk: Partition::Feed(post_id.clone()),
-        sk: EntityType::Post,
+        id: uuid::Uuid::parse_str(&post_id).expect("valid post id"),
         title: "AutoSub".to_string(),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.expect("create post");
+    post.create().await.expect("create post");
 
     let (status, _, body) = crate::test_post! {
         app: ctx.app.clone(),
@@ -225,19 +214,18 @@ async fn test_create_discussion_auto_subscribes_author() {
     };
     assert_eq!(status, 200, "create discussion: {:?}", body);
 
-    let discussion_sk = body["sk"].as_str().expect("sk in response");
-    let discussion_id = discussion_sk
-        .strip_prefix("SPACE_POST#")
-        .unwrap_or(discussion_sk)
+    let discussion_id = body["post_id"]
+        .as_str()
+        .expect("post_id in response")
         .to_string();
 
     assert!(
-        subscription_exists(&ctx, &discussion_id, &ctx.test_user.0.pk).await,
-        "author should be auto-subscribed to their new discussion (sk={discussion_sk})"
+        subscription_exists(&ctx, &discussion_id, &ctx.test_user.0.pk()).await,
+        "author should be auto-subscribed to their new discussion (post_id={discussion_id})"
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_detail_reports_subscribed_state() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -275,7 +263,7 @@ async fn test_detail_reports_subscribed_state() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_subscribe_requires_auth() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -287,7 +275,7 @@ async fn test_subscribe_requires_auth() {
     assert_ne!(status, 200, "unauthenticated subscribe must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_comment_notifies_subscriber_not_author() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -297,9 +285,9 @@ async fn test_comment_notifies_subscriber_not_author() {
         let sub = SpacePostSubscription::new(
             SpacePostPartition(discussion_id.clone()),
             SpacePartition(space_id.clone()),
-            &subscriber.pk,
+            &subscriber.pk(),
         );
-        sub.create(&ctx.ddb).await.expect("seed subscription");
+        sub.create().await.expect("seed subscription");
     }
 
     crate::common::utils::discussion_notification::send_discussion_comment_posted(
@@ -308,7 +296,7 @@ async fn test_comment_notifies_subscriber_not_author() {
         "Test Discussion",
         "SPACE_POST_COMMENT#test-comment-1",
         None,
-        &ctx.test_user.0.pk.to_string(),
+        &ctx.test_user.0.pk().to_string(),
         &ctx.test_user.0.display_name,
         "hello everyone",
         "/spaces/x/discussions/y/comments/z",
@@ -316,7 +304,7 @@ async fn test_comment_notifies_subscriber_not_author() {
     .await
     .expect("fan-out");
 
-    let sub_rows = inbox_rows_for(&ctx, subscriber.pk.clone()).await;
+    let sub_rows = inbox_rows_for(&ctx, subscriber.pk()).await;
     let disc_rows: Vec<_> = sub_rows
         .iter()
         .filter(|r| r.kind == InboxKind::DiscussionCommentPosted)
@@ -328,7 +316,7 @@ async fn test_comment_notifies_subscriber_not_author() {
         sub_rows
     );
 
-    let author_rows = inbox_rows_for(&ctx, ctx.test_user.0.pk.clone()).await;
+    let author_rows = inbox_rows_for(&ctx, ctx.test_user.0.pk()).await;
     let author_disc: Vec<_> = author_rows
         .iter()
         .filter(|r| r.kind == InboxKind::DiscussionCommentPosted)
@@ -340,7 +328,7 @@ async fn test_comment_notifies_subscriber_not_author() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_mentioned_subscriber_gets_only_mention_not_subscription() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -350,12 +338,12 @@ async fn test_mentioned_subscriber_gets_only_mention_not_subscription() {
         let sub = SpacePostSubscription::new(
             SpacePostPartition(discussion_id.clone()),
             SpacePartition(space_id.clone()),
-            &mentioned.pk,
+            &mentioned.pk(),
         );
-        sub.create(&ctx.ddb).await.expect("seed subscription");
+        sub.create().await.expect("seed subscription");
     }
 
-    let content = format!("hey @[{}](user:{})", mentioned.display_name, mentioned.pk);
+    let content = format!("hey @[{}](user:{})", mentioned.display_name, mentioned.pk());
 
     crate::common::utils::discussion_notification::send_discussion_comment_posted(
         &SpacePartition(space_id.clone()),
@@ -363,7 +351,7 @@ async fn test_mentioned_subscriber_gets_only_mention_not_subscription() {
         "Test Discussion",
         "SPACE_POST_COMMENT#test-comment-2",
         None,
-        &ctx.test_user.0.pk.to_string(),
+        &ctx.test_user.0.pk().to_string(),
         &ctx.test_user.0.display_name,
         &content,
         "/spaces/x/discussions/y/comments/z",
@@ -371,7 +359,7 @@ async fn test_mentioned_subscriber_gets_only_mention_not_subscription() {
     .await
     .expect("fan-out");
 
-    let rows = inbox_rows_for(&ctx, mentioned.pk.clone()).await;
+    let rows = inbox_rows_for(&ctx, mentioned.pk()).await;
     let disc_rows: Vec<_> = rows
         .iter()
         .filter(|r| r.kind == InboxKind::DiscussionCommentPosted)
@@ -383,7 +371,7 @@ async fn test_mentioned_subscriber_gets_only_mention_not_subscription() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_reply_target_subscriber_gets_only_reply_row() {
     let ctx = TestContext::setup().await;
     let (space_id, discussion_id) = seed_space_and_discussion(&ctx).await;
@@ -393,23 +381,24 @@ async fn test_reply_target_subscriber_gets_only_reply_row() {
         let sub = SpacePostSubscription::new(
             SpacePostPartition(discussion_id.clone()),
             SpacePartition(space_id.clone()),
-            &parent_author.pk,
+            &parent_author.pk(),
         );
-        sub.create(&ctx.ddb).await.expect("seed subscription");
+        sub.create().await.expect("seed subscription");
     }
     let parent_uuid = uuid::Uuid::now_v7().to_string();
     let parent_sk = format!("SPACE_POST_COMMENT#{parent_uuid}");
     {
         use crate::features::spaces::pages::actions::actions::discussion::SpacePostComment;
         let mut parent = SpacePostComment::default();
-        parent.pk = Partition::SpacePost(discussion_id.clone());
-        parent.sk = EntityType::SpacePostComment(parent_uuid.clone());
+        parent.id = uuid::Uuid::now_v7();
+        parent.post_id = discussion_id.clone();
+        parent.comment_id = parent_uuid.clone();
         parent.content = "parent".to_string();
-        parent.author_pk = parent_author.pk.clone();
+        parent.author_pk = parent_author.pk().to_string();
         parent.author_display_name = parent_author.display_name.clone();
         parent.author_username = parent_author.username.clone();
         parent.author_profile_url = parent_author.profile_url.clone();
-        parent.create(&ctx.ddb).await.expect("create parent comment");
+        parent.create().await.expect("create parent comment");
     }
 
     crate::common::utils::discussion_notification::send_discussion_comment_posted(
@@ -418,7 +407,7 @@ async fn test_reply_target_subscriber_gets_only_reply_row() {
         "Test Discussion",
         "SPACE_POST_COMMENT_REPLY#reply-1",
         Some(&parent_sk),
-        &ctx.test_user.0.pk.to_string(),
+        &ctx.test_user.0.pk().to_string(),
         &ctx.test_user.0.display_name,
         "my reply",
         "/spaces/x/discussions/y/comments/z",
@@ -426,7 +415,7 @@ async fn test_reply_target_subscriber_gets_only_reply_row() {
     .await
     .expect("fan-out");
 
-    let rows = inbox_rows_for(&ctx, parent_author.pk.clone()).await;
+    let rows = inbox_rows_for(&ctx, parent_author.pk()).await;
     let reply_rows = rows
         .iter()
         .filter(|r| r.kind == InboxKind::ReplyOnComment)

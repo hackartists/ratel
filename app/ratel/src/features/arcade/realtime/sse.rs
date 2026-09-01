@@ -65,10 +65,10 @@ pub async fn events_handler(
         .map_err(|_| ArcadeError::ChannelUnknown)?;
 
     let user_id = user
-        .pk
+        .pk()
         .to_string()
         .strip_prefix("USER#")
-        .unwrap_or(&user.pk.to_string())
+        .unwrap_or(&user.pk().to_string())
         .to_string();
     let ctx = ChannelContext {
         user_id: user_id.clone(),

@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::features::spaces::pages::report::models::*;
 use crate::features::spaces::pages::report::*;
-use crate::features::spaces::pages::report::types::SpaceReportError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateAIReportResponse {
@@ -12,6 +10,9 @@ pub struct CreateAIReportResponse {
 // FIXME: implement middleware and authorization
 #[post("/v3/spaces/{space_pk}/analyze/ai-contents")]
 pub async fn create_ai_report(space_pk: SpacePartition) -> Result<CreateAIReportResponse> {
+    use crate::features::spaces::pages::report::models::SpaceAnalyze;
+    use crate::features::spaces::pages::report::types::SpaceReportError;
+
     let partition = Partition::Space(space_pk.to_string());
     let space_pk_filter = partition.to_string();
 
@@ -123,11 +124,23 @@ pub async fn create_ai_report(space_pk: SpacePartition) -> Result<CreateAIReport
 
     let html_contents = html_sections.join("");
 
-    let conf = ServerConfig::default();
-    let dynamo = conf.dynamodb();
-    SpaceAnalyze::updater(partition, EntityType::SpaceAnalyze)
-        .with_html_contents(html_contents.clone())
-        .execute(dynamo)
+    let mut analyze = SpaceAnalyze::get_for(&space_pk)
+        .await
+        .map_err(|e| {
+            crate::error!("create_ai_report: failed to load analyze: {e:?}");
+            SpaceReportError::AnalyzeUpdateFailed
+        })?
+        .unwrap_or_default();
+    if analyze.space_id.is_empty() {
+        analyze.space_id = space_pk.0.clone();
+    }
+    if analyze.created_at == 0 {
+        analyze.created_at = crate::common::utils::time::get_now_timestamp_millis();
+    }
+    analyze.html_contents = Some(html_contents.clone());
+
+    SpaceAnalyze::repository()
+        .upsert_on(&["space_id"], &analyze)
         .await
         .map_err(|e| {
             crate::error!("failed to update analyze: {e:?}");

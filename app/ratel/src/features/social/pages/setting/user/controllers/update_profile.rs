@@ -3,6 +3,8 @@ use super::dto::{UserDetailResponse, UserProfileResponse};
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
@@ -14,27 +16,24 @@ pub struct UpdateProfileRequest {
 
 #[post("/api/me/profile", user: crate::features::auth::User)]
 pub async fn update_profile_handler(body: UpdateProfileRequest) -> Result<UserDetailResponse> {
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
-
-    crate::features::auth::User::updater(user.pk.clone(), user.sk.clone())
-        .with_display_name(body.nickname)
-        .with_profile_url(body.profile_url)
-        .with_description(body.description)
-        .execute(cli)
+    let updater = crate::features::auth::User::update()
+        .display_name(body.nickname)
+        .profile_url(body.profile_url)
+        .description(body.description);
+    let user = crate::features::auth::User::repository()
+        .update(user.id, updater)
         .await?;
 
-    let user = crate::features::auth::User::get(cli, user.pk.clone(), Some(EntityType::User))
-        .await?
-        .ok_or(Error::NotFound("User not found".into()))?;
-
-    let evm_address = crate::features::auth::UserEvmAddress::get(
-        cli,
-        user.pk.clone(),
-        Some(EntityType::UserEvmAddress),
-    )
-    .await?
-    .map(|item| item.evm_address);
+    let evm_address = {
+        use postgres::ops::StringOp;
+        crate::features::auth::UserEvmAddress::repository()
+            .find_one(
+                crate::features::auth::UserEvmAddress::query()
+                    .user_pk(StringOp::Eq(user.pk().to_string())),
+            )
+            .await?
+            .map(|item| item.evm_address)
+    };
 
     Ok(UserDetailResponse {
         user: UserProfileResponse {

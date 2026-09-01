@@ -13,20 +13,16 @@ pub async fn list_dashboard_data_handler(
     use crate::features::spaces::space_common::models::space_reward::SpaceReward;
     use crate::features::spaces::space_common::types::dashboard::*;
 
-    let cfg = crate::features::spaces::pages::dashboard::config::get();
-    let cli = cfg.dynamodb();
     let space_pk: crate::common::Partition = space_id.clone().into();
 
-    let agg = DashboardAggregate::get_or_default(cli, &space_pk).await?;
+    let agg = DashboardAggregate::get_or_default(&space_pk).await?;
 
     // Query SpaceActions to get per-type counts
     let action_counts = {
         use crate::features::spaces::pages::actions::models::SpaceAction;
         use crate::features::spaces::pages::actions::types::SpaceActionType;
 
-        let (actions, _) = SpaceAction::find_by_space(cli, &space_pk, SpaceAction::opt())
-            .await
-            .unwrap_or_default();
+        let actions = SpaceAction::list_by_space(&space_id).await.unwrap_or_default();
 
         let mut counts = ActionTypeCounts::default();
         for action in &actions {
@@ -44,7 +40,7 @@ pub async fn list_dashboard_data_handler(
     let mut components = build_dashboard_components(&agg, space.participants, action_counts);
 
     // InfoCard: populate with SpaceReward data
-    let rewards = SpaceReward::list_by_action(cli, space_id.clone(), None)
+    let rewards = SpaceReward::list_by_action(space_id.clone(), None)
         .await
         .unwrap_or_default();
 
@@ -98,9 +94,8 @@ pub async fn list_dashboard_data_handler(
         use crate::features::activity::models::SpaceScore;
         use crate::features::spaces::space_common::types::dashboard::*;
 
-        let score_opts = SpaceScore::opt().limit(50).scan_index_forward(true);
-
-        if let Ok((scores, _)) = SpaceScore::find_by_space_rank(cli, &space_pk, score_opts).await {
+        if let Ok(score_page) = SpaceScore::find_by_space_rank(&space_id, 1, 50).await {
+            let scores = score_page.items;
             if !scores.is_empty() {
                 let entries: Vec<RankingEntry> = scores
                     .iter()

@@ -3,21 +3,12 @@ use crate::common::*;
 #[cfg(feature = "server")]
 use crate::common::models::notification::{InboxDedupMarker, UserInboxNotification};
 
-/// Write an inbox row. Non-fatal: logs `error!` on DynamoDB failure and returns Ok.
+/// Write an inbox row. Non-fatal: logs `error!` on storage failure and returns Ok.
 #[cfg(feature = "server")]
-pub async fn create_inbox_row(
-    recipient_pk: Partition,
-    payload: InboxPayload,
-) -> Result<()> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
+pub async fn create_inbox_row(recipient_pk: Partition, payload: InboxPayload) -> Result<()> {
     let row = UserInboxNotification::new(recipient_pk.clone(), payload);
-    if let Err(e) = row.create(cli).await {
-        crate::error!(
-            "create_inbox_row: failed for user={}: {e}",
-            recipient_pk
-        );
+    if let Err(e) = row.save().await {
+        crate::error!("create_inbox_row: failed for user={}: {e}", recipient_pk);
     }
     Ok(())
 }
@@ -31,30 +22,27 @@ pub async fn create_inbox_row_once(
     payload: InboxPayload,
     source_id: &str,
 ) -> Result<()> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
     let kind = payload.kind();
     let marker = InboxDedupMarker::new(recipient_pk.clone(), kind, source_id);
 
-    match InboxDedupMarker::get(cli, &marker.pk, Some(marker.sk.clone())).await {
+    match InboxDedupMarker::find_existing(&marker.user_id, &marker.marker_key).await {
         Ok(Some(_)) => {
             tracing::debug!(
                 "create_inbox_row_once: skipped duplicate for user={} kind={:?} source={}",
-                recipient_pk, kind, source_id
+                recipient_pk,
+                kind,
+                source_id
             );
             return Ok(());
         }
         Ok(None) => {}
         Err(e) => {
-            crate::error!(
-                "create_inbox_row_once: dedup lookup failed, proceeding anyway: {e}"
-            );
+            crate::error!("create_inbox_row_once: dedup lookup failed, proceeding anyway: {e}");
         }
     }
 
     let row = UserInboxNotification::new(recipient_pk.clone(), payload);
-    if let Err(e) = row.create(cli).await {
+    if let Err(e) = row.save().await {
         crate::error!(
             "create_inbox_row_once: row create failed for user={}: {e}",
             recipient_pk
@@ -62,7 +50,7 @@ pub async fn create_inbox_row_once(
         return Ok(());
     }
 
-    if let Err(e) = marker.create(cli).await {
+    if let Err(e) = marker.save().await {
         crate::error!(
             "create_inbox_row_once: marker create failed (row created, dedup broken): {e}"
         );

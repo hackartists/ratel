@@ -2,6 +2,7 @@ use super::*;
 use crate::features::auth::User;
 use crate::features::membership::models::TeamPurchase;
 use crate::features::membership::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 use crate::social::pages::membership::user::controllers::PurchaseHistoryItem;
@@ -11,34 +12,32 @@ pub async fn get_team_purchase_history_handler(
     username: String,
     bookmark: Option<String>,
 ) -> Result<ListResponse<PurchaseHistoryItem>> {
-    use crate::features::membership::models::TeamPurchaseQueryOption;
-
     if !role.is_admin_or_owner() {
         return Err(Error::NotFound("Permission denied".to_string()));
     }
 
-    let conf = crate::features::membership::config::get();
-    let cli = conf.common.dynamodb();
+    // Bookmark is a 1-based page number (Postgres offset pagination replaces the
+    // DynamoDB opaque last-evaluated-key bookmark).
+    let page_no: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
+    let page_size: i64 = 20;
 
-    let mut opt = TeamPurchaseQueryOption::builder()
-        .limit(20)
-        .scan_index_forward(false);
+    let team_pk = team.partition().to_string();
+    let page = TeamPurchase::find_by_team_page(&team_pk, page_no, page_size).await?;
 
-    if let Some(bookmark_str) = bookmark {
-        opt = opt.bookmark(bookmark_str);
-    }
+    let next_bookmark = if page_no < page.total_pages {
+        Some((page_no + 1).to_string())
+    } else {
+        None
+    };
 
-    let (purchases, last_key) = TeamPurchase::find_by_team(
-        cli,
-        CompositePartition::team_purchase_pk(team.pk.clone().into()),
-        opt,
-    )
-    .await?;
-
-    let items: Vec<PurchaseHistoryItem> = purchases.into_iter().map(Into::into).collect();
+    let items: Vec<PurchaseHistoryItem> = page.items.into_iter().map(Into::into).collect();
 
     Ok(ListResponse {
         items,
-        bookmark: last_key,
+        bookmark: next_bookmark,
     })
 }

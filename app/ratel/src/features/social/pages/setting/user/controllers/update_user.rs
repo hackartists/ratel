@@ -38,20 +38,16 @@ pub struct UserDetailResponse {
 
 #[get("/api/me", user: crate::features::auth::User)]
 pub async fn get_user_detail_handler() -> Result<UserDetailResponse> {
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
-
-    let user = crate::features::auth::User::get(cli, user.pk.clone(), Some(EntityType::User))
-        .await?
-        .ok_or(Error::NotFound("User not found".into()))?;
-
-    let evm_address = crate::features::auth::UserEvmAddress::get(
-        cli,
-        user.pk.clone(),
-        Some(EntityType::UserEvmAddress),
-    )
-    .await?
-    .map(|item| item.evm_address);
+    let evm_address = {
+        use postgres::ops::StringOp;
+        crate::features::auth::UserEvmAddress::repository()
+            .find_one(
+                crate::features::auth::UserEvmAddress::query()
+                    .user_pk(StringOp::Eq(user.pk().to_string())),
+            )
+            .await?
+            .map(|item| item.evm_address)
+    };
 
     Ok(UserDetailResponse {
         user: UserProfileResponse {
@@ -66,42 +62,40 @@ pub async fn get_user_detail_handler() -> Result<UserDetailResponse> {
 
 #[post("/api/me", user: crate::features::auth::User)]
 pub async fn update_user_handler(body: UpdateUserRequest) -> Result<UserDetailResponse> {
-    let conf = crate::common::config::ServerConfig::default();
-    let cli = conf.dynamodb();
-
-    match body {
+    let user = match body {
         UpdateUserRequest::Profile {
             nickname,
             profile_url,
             description,
         } => {
-            let mut updater = crate::features::auth::User::updater(user.pk.clone(), user.sk.clone())
-                .with_display_name(nickname)
-                .with_profile_url(profile_url)
-                .with_description(description);
-            updater.execute(cli).await?;
+            let updater = crate::features::auth::User::update()
+                .display_name(nickname)
+                .profile_url(profile_url)
+                .description(description);
+            crate::features::auth::User::repository()
+                .update(user.id, updater)
+                .await?
         }
         UpdateUserRequest::EvmAddress { evm_address } => {
-            crate::features::auth::UserEvmAddress::new(user.pk.clone(), evm_address)
-                .upsert(cli)
-                .await?;
+            let entity = crate::features::auth::UserEvmAddress::new(user.pk(), evm_address);
+            entity.save().await?;
+            user
         }
         UpdateUserRequest::Theme { .. } => {
             return Err(Error::UnsupportedOperation);
         }
-    }
+    };
 
-    let user = crate::features::auth::User::get(cli, user.pk.clone(), Some(EntityType::User))
-        .await?
-        .ok_or(Error::NotFound("User not found".into()))?;
-
-    let evm_address = crate::features::auth::UserEvmAddress::get(
-        cli,
-        user.pk.clone(),
-        Some(EntityType::UserEvmAddress),
-    )
-    .await?
-    .map(|item| item.evm_address);
+    let evm_address = {
+        use postgres::ops::StringOp;
+        crate::features::auth::UserEvmAddress::repository()
+            .find_one(
+                crate::features::auth::UserEvmAddress::query()
+                    .user_pk(StringOp::Eq(user.pk().to_string())),
+            )
+            .await?
+            .map(|item| item.evm_address)
+    };
 
     Ok(UserDetailResponse {
         user: UserProfileResponse {

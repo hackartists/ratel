@@ -1,0 +1,76 @@
+# Reconfigure the ICP subnet, and run the tc2 measurement, without a full
+# app deploy.
+#
+# `Dev deploy` also runs this chart, but it builds every app image first, so
+# reaching the helm step takes ~40 minutes. A measurement run is a values
+# change; paying forty minutes for it is the reason it would not get run.
+#
+# The image tag lives in the chart (`image.tag: dev`) and `Dev deploy` does
+# not override it, so running helm from here produces the same release that
+# workflow would.
+#
+# This is also how the measurement stays available to the team rather than to
+# whoever holds a kubeconfig: `infra` is not writable from a personal
+# namespace, but anyone with repo access can start this.
+name: ICP subnet
+
+on:
+  workflow_dispatch:
+    inputs:
+      replicas:
+        description: >-
+          Nodes in the subnet. 4 is a real subnet (n = 3f+1, f = 1); 1 has no
+          consensus, so a throughput figure from it describes execution rather
+          than a chain. Changing this needs allow_rebuild.
+        type: choice
+        options: ["4", "1"]
+        default: "4"
+      allow_rebuild:
+        description: >-
+          Regenerate the subnet registry. Required when `replicas` changes —
+          it starts a new chain from height 0 and every canister has to be
+          redeployed.
+        type: boolean
+        default: false
+
+jobs:
+  configure:
+    runs-on: self-hosted
+    # Shared with `Dev deploy` so two helm operations never race on the same
+    # release.
+    concurrency:
+      group: ratel-dev-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify cluster access
+        run: |
+          set -euo pipefail
+          kubectl get ns >/dev/null || {
+            echo "::error::runner has no cluster access — is this a k3s runner pod?"
+            exit 1
+          }
+
+      - name: Apply
+        run: |
+          set -euo pipefail
+          args=(
+            upgrade --install icp infra/helm/icp
+            --namespace infra
+            -f infra/helm/icp/environments/tc2.yaml
+            --set "replicaCount=${{ inputs.replicas }}"
+            --set "subnet.allowRebuild=${{ inputs.allow_rebuild }}"
+            --wait --timeout 20m
+          )
+          helm "${args[@]}"
+
+      - name: Subnet state
+        run: |
+          set -euo pipefail
+          kubectl -n infra get statefulset icp
+          kubectl -n infra get ingress icp 2>/dev/null && {
+            echo "::error::an Ingress exists — the subnet is not supposed to be reachable from outside the cluster"
+            exit 1
+          }
+          echo "No Ingress. The subnet is reachable only from inside the cluster network."

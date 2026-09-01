@@ -18,8 +18,8 @@ pub struct MeetResponse {
 #[cfg(feature = "server")]
 impl From<SpaceMeet> for MeetResponse {
     fn from(m: SpaceMeet) -> Self {
-        let pk: SpacePartition = m.pk.into();
-        let sk: SpaceMeetEntityType = m.sk.into();
+        let pk = SpacePartition(m.space_id.clone());
+        let sk = SpaceMeetEntityType(m.meet_id.clone());
         Self {
             pk,
             sk,

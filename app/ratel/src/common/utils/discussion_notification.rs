@@ -30,7 +30,6 @@ pub async fn send_discussion_comment_posted(
     use std::str::FromStr;
 
     let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let ses = cfg.ses();
 
     let space_post_pk = SpacePostPartition(discussion_id.to_string());
@@ -53,7 +52,7 @@ pub async fn send_discussion_comment_posted(
         if let Ok(parent_sk) = EntityType::from_str(parent_sk_str) {
             if let Some((_parent_content, parent_author_pk, reply_author_pks)) =
                 crate::common::utils::reply_notification::fetch_space_discussion_thread(
-                    cli, &post_pk, &parent_sk,
+                    &post_pk, &parent_sk,
                 )
                 .await
             {
@@ -66,7 +65,7 @@ pub async fn send_discussion_comment_posted(
                     if !seen.insert(pk_str) {
                         continue;
                     }
-                    let Some(email) = lookup_email(cli, &pk).await else {
+                    let Some(email) = lookup_email(&pk).await else {
                         continue;
                     };
                     let payload = crate::common::types::InboxPayload::ReplyOnComment {
@@ -92,11 +91,10 @@ pub async fn send_discussion_comment_posted(
         }
     }
 
-    // Priority 3 — subscribers (direct partition Query, never a Scan).
+    // Priority 3 — subscribers (indexed lookup by post_id, never a full scan).
     let mut subscriber_emails: Vec<String> = Vec::new();
-    let opt = SpacePostSubscription::opt().sk(SpacePostSubscription::sk_prefix());
-    let subs = match SpacePostSubscription::query(cli, post_pk.clone(), opt).await {
-        Ok((items, _)) => items,
+    let subs = match SpacePostSubscription::list_by_post(discussion_id).await {
+        Ok(items) => items,
         Err(e) => {
             crate::error!("list discussion subscribers failed: {e}");
             Vec::new()
@@ -104,12 +102,12 @@ pub async fn send_discussion_comment_posted(
     };
 
     for sub in subs {
-        let pk = sub.user_pk;
-        let pk_str = pk.to_string();
-        if !seen.insert(pk_str) {
+        let pk_str = sub.user_pk.clone();
+        if !seen.insert(pk_str.clone()) {
             continue;
         }
-        let Some(email) = lookup_email(cli, &pk).await else {
+        let pk: Partition = pk_str.parse().unwrap_or(Partition::None);
+        let Some(email) = lookup_email(&pk).await else {
             continue;
         };
         let payload = crate::common::types::InboxPayload::DiscussionCommentPosted {
@@ -165,8 +163,8 @@ pub async fn send_discussion_comment_posted(
 }
 
 #[cfg(feature = "server")]
-async fn lookup_email(cli: &aws_sdk_dynamodb::Client, pk: &Partition) -> Option<String> {
-    match crate::common::models::User::get(cli, pk, Some(EntityType::User)).await {
+async fn lookup_email(pk: &Partition) -> Option<String> {
+    match crate::common::models::User::find_by_pk(pk).await {
         Ok(Some(u)) if !u.email.is_empty() => Some(u.email),
         Ok(_) => None,
         Err(e) => {

@@ -32,10 +32,7 @@ pub struct QuizResponse {
 #[cfg(feature = "server")]
 impl From<SpaceQuiz> for QuizResponse {
     fn from(quiz: SpaceQuiz) -> Self {
-        let quiz_id: SpaceQuizEntityType = match &quiz.sk {
-            EntityType::SpaceQuiz(id) => id.clone().into(),
-            _ => SpaceQuizEntityType::default(),
-        };
+        let quiz_id = SpaceQuizEntityType(quiz.quiz_id.clone());
         Self {
             quiz_id,
             created_at: quiz.created_at,
@@ -45,8 +42,8 @@ impl From<SpaceQuiz> for QuizResponse {
             title: String::new(),
             description: String::new(),
             user_response_count: quiz.user_response_count,
-            questions: quiz.questions,
-            files: quiz.files,
+            questions: quiz.questions.0,
+            files: quiz.files.0,
             my_response: None,
             my_score: None,
             passed: None,

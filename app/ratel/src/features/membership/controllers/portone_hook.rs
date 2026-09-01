@@ -7,8 +7,12 @@ use crate::features::membership::models::{
 #[allow(unused_imports)]
 use rmcp::schemars;
 #[cfg(feature = "server")]
+use crate::features::membership::models::MembershipEntity;
+#[cfg(feature = "server")]
 use crate::features::membership::services::portone::PortOne;
 use crate::features::membership::*;
+#[cfg(feature = "server")]
+use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,30 +29,17 @@ fn should_schedule_renewal(membership: &Membership, currency: Currency) -> bool 
 }
 
 #[cfg(feature = "server")]
-async fn has_user_scheduled_purchase(
-    cli: &aws_sdk_dynamodb::Client,
-    user_pk: &Partition,
-) -> Result<bool> {
-    let opt = UserPurchase::opt_one().sk(PurchaseStatus::Scheduled.to_string());
-    let pk = CompositePartition::user_purchase_pk(user_pk.clone());
-    let (purchases, _) = UserPurchase::find_by_status(cli, &pk, opt).await?;
-    Ok(!purchases.is_empty())
+async fn has_user_scheduled_purchase(user_pk: &str) -> Result<bool> {
+    Ok(!UserPurchase::find_scheduled_for_user(user_pk).await?.is_empty())
 }
 
 #[cfg(feature = "server")]
-async fn has_team_scheduled_purchase(
-    cli: &aws_sdk_dynamodb::Client,
-    team_pk: &Partition,
-) -> Result<bool> {
-    let opt = TeamPurchase::opt_one().sk(PurchaseStatus::Scheduled.to_string());
-    let pk = CompositePartition::team_purchase_pk(team_pk.clone());
-    let (purchases, _) = TeamPurchase::find_by_status(cli, &pk, opt).await?;
-    Ok(!purchases.is_empty())
+async fn has_team_scheduled_purchase(team_pk: &str) -> Result<bool> {
+    Ok(!TeamPurchase::find_scheduled_for_team(team_pk).await?.is_empty())
 }
 
 #[cfg(feature = "server")]
 async fn schedule_user_renewal(
-    cli: &aws_sdk_dynamodb::Client,
     portone: &PortOne,
     membership: &Membership,
     user_membership: &UserMembership,
@@ -59,7 +50,7 @@ async fn schedule_user_renewal(
         return Ok(());
     }
 
-    if has_user_scheduled_purchase(cli, &user_membership.pk).await? {
+    if has_user_scheduled_purchase(&user_membership.user_pk).await? {
         return Ok(());
     }
 
@@ -77,13 +68,15 @@ async fn schedule_user_renewal(
         )
         .await?;
 
-    scheduled_purchase.create(cli).await?;
+    UserPurchase::repository()
+        .insert(&scheduled_purchase)
+        .await
+        .map_err(Error::from)?;
     Ok(())
 }
 
 #[cfg(feature = "server")]
 async fn schedule_team_renewal(
-    cli: &aws_sdk_dynamodb::Client,
     portone: &PortOne,
     membership: &Membership,
     team_membership: &TeamMembership,
@@ -94,7 +87,7 @@ async fn schedule_team_renewal(
         return Ok(());
     }
 
-    if has_team_scheduled_purchase(cli, &team_membership.pk).await? {
+    if has_team_scheduled_purchase(&team_membership.team_pk).await? {
         return Ok(());
     }
 
@@ -112,72 +105,75 @@ async fn schedule_team_renewal(
         )
         .await?;
 
-    scheduled_purchase.create(cli).await?;
+    TeamPurchase::repository()
+        .insert(&scheduled_purchase)
+        .await
+        .map_err(Error::from)?;
     Ok(())
 }
 
 #[cfg(feature = "server")]
-async fn disable_user_auto_renew(
-    cli: &aws_sdk_dynamodb::Client,
-    membership: &UserMembership,
-) -> Result<()> {
+async fn disable_user_auto_renew(membership: &UserMembership) -> Result<()> {
     let mut updated = membership.clone();
     updated.auto_renew = false;
     updated.next_membership = None;
-    updated.upsert(cli).await?;
+    updated.save().await?;
     Ok(())
 }
 
 #[cfg(feature = "server")]
-async fn disable_team_auto_renew(
-    cli: &aws_sdk_dynamodb::Client,
-    membership: &TeamMembership,
-) -> Result<()> {
+async fn disable_team_auto_renew(membership: &TeamMembership) -> Result<()> {
     let mut updated = membership.clone();
     updated.auto_renew = false;
     updated.next_membership = None;
-    updated.upsert(cli).await?;
+    updated.save().await?;
     Ok(())
 }
 
 #[cfg(feature = "server")]
 async fn handle_user_purchase(
-    cli: &aws_sdk_dynamodb::Client,
     portone: &PortOne,
     req: &PortoneRequest,
     user_purchase: UserPurchase,
 ) -> Result<bool> {
-    let user_pk = user_purchase.pk.0.clone();
-    let user_id: UserPartition = user_pk.clone().into();
-    let (user_payment, _) = UserPayment::get_by_user(cli, portone, user_id.clone(), None).await?;
+    let user_pk = user_purchase.user_pk.clone();
+    let user_partition: Partition = user_pk
+        .parse()
+        .map_err(|_| Error::InvalidPartitionKey(user_pk.clone()))?;
+    let user_id: UserPartition = user_partition.into();
+    let (user_payment, _) = UserPayment::get_by_user(portone, user_id.clone(), None).await?;
 
-    let TransactionType::PurchaseMembership(tier) = user_purchase.tx_type.clone() else {
+    let TransactionType::PurchaseMembership(tier) =
+        TransactionType::from_str(&user_purchase.tx_type).unwrap_or_default()
+    else {
         return Ok(true);
     };
-    let membership = Membership::get_by_membership_tier(cli, &tier).await?;
+    let membership = Membership::get_by_membership_tier(&tier).await?;
 
     match user_purchase.status {
         PurchaseStatus::Scheduled => {
             let renewed_membership = UserMembership::new(
                 user_id,
-                membership.pk.clone().into(),
+                membership.tier.clone(),
                 membership.duration_days,
                 membership.credits,
             )?
             .with_auto_renew(true);
 
-            let txs = vec![
-                UserPurchase::updater(&user_purchase.pk, &user_purchase.sk)
-                    .with_status(PurchaseStatus::Success)
-                    .with_tx_id(req.tx_id.clone())
-                    .transact_write_item(),
-                renewed_membership.upsert_transact_write_item(),
-            ];
+            let mut updated_purchase = user_purchase.clone();
+            updated_purchase.status = PurchaseStatus::Success;
+            updated_purchase.tx_id = req.tx_id.clone();
 
-            crate::transact_write_all_items_with_failover!(cli, txs);
+            let tx = postgres::Tx::begin().await.map_err(Error::from)?;
+            UserPurchase::repository()
+                .with_tx(&tx)
+                .upsert(&updated_purchase)
+                .await
+                .map_err(Error::from)?;
+            renewed_membership.save_in_tx(&tx).await?;
+            tx.commit().await.map_err(Error::from)?;
 
             if let Err(err) = schedule_user_renewal(
-                cli,
                 portone,
                 &membership,
                 &renewed_membership,
@@ -187,17 +183,15 @@ async fn handle_user_purchase(
             .await
             {
                 tracing::error!("failed to schedule next user membership renewal: {:?}", err);
-                disable_user_auto_renew(cli, &renewed_membership).await?;
+                disable_user_auto_renew(&renewed_membership).await?;
             }
         }
         PurchaseStatus::Success => {
-            let user_membership =
-                UserMembership::get(cli, user_pk.clone(), Some(EntityType::UserMembership))
-                    .await?
-                    .ok_or_else(|| Error::NotFound("User membership not found".to_string()))?;
+            let user_membership = UserMembership::find_by_user(&user_purchase.user_pk)
+                .await?
+                .ok_or_else(|| Error::NotFound("User membership not found".to_string()))?;
 
             if let Err(err) = schedule_user_renewal(
-                cli,
                 portone,
                 &membership,
                 &user_membership,
@@ -207,7 +201,7 @@ async fn handle_user_purchase(
             .await
             {
                 tracing::error!("failed to schedule next user membership renewal: {:?}", err);
-                disable_user_auto_renew(cli, &user_membership).await?;
+                disable_user_auto_renew(&user_membership).await?;
             }
         }
         PurchaseStatus::Canceled => {}
@@ -218,42 +212,48 @@ async fn handle_user_purchase(
 
 #[cfg(feature = "server")]
 async fn handle_team_purchase(
-    cli: &aws_sdk_dynamodb::Client,
     portone: &PortOne,
     req: &PortoneRequest,
     team_purchase: TeamPurchase,
 ) -> Result<bool> {
-    let team_pk = team_purchase.pk.0.clone();
-    let team_id: TeamPartition = team_pk.clone().into();
-    let (team_payment, _) = TeamPayment::get_by_team(cli, portone, team_id.clone(), None).await?;
+    let team_pk = team_purchase.team_pk.clone();
+    let team_partition: Partition = team_pk
+        .parse()
+        .map_err(|_| Error::InvalidPartitionKey(team_pk.clone()))?;
+    let team_id: TeamPartition = team_partition.into();
+    let (team_payment, _) = TeamPayment::get_by_team(portone, team_id.clone(), None).await?;
 
-    let TransactionType::PurchaseMembership(tier) = team_purchase.tx_type.clone() else {
+    let TransactionType::PurchaseMembership(tier) =
+        TransactionType::from_str(&team_purchase.tx_type).unwrap_or_default()
+    else {
         return Ok(true);
     };
-    let membership = Membership::get_by_membership_tier(cli, &tier).await?;
+    let membership = Membership::get_by_membership_tier(&tier).await?;
 
     match team_purchase.status {
         PurchaseStatus::Scheduled => {
             let renewed_membership = TeamMembership::new(
                 team_id,
-                membership.pk.clone().into(),
+                membership.tier.clone(),
                 membership.duration_days,
                 membership.credits,
             )?
             .with_auto_renew(true);
 
-            let txs = vec![
-                TeamPurchase::updater(&team_purchase.pk, &team_purchase.sk)
-                    .with_status(PurchaseStatus::Success)
-                    .with_tx_id(req.tx_id.clone())
-                    .transact_write_item(),
-                renewed_membership.upsert_transact_write_item(),
-            ];
+            let mut updated_purchase = team_purchase.clone();
+            updated_purchase.status = PurchaseStatus::Success;
+            updated_purchase.tx_id = req.tx_id.clone();
 
-            crate::transact_write_all_items_with_failover!(cli, txs);
+            let tx = postgres::Tx::begin().await.map_err(Error::from)?;
+            TeamPurchase::repository()
+                .with_tx(&tx)
+                .upsert(&updated_purchase)
+                .await
+                .map_err(Error::from)?;
+            renewed_membership.save_in_tx(&tx).await?;
+            tx.commit().await.map_err(Error::from)?;
 
             if let Err(err) = schedule_team_renewal(
-                cli,
                 portone,
                 &membership,
                 &renewed_membership,
@@ -263,17 +263,15 @@ async fn handle_team_purchase(
             .await
             {
                 tracing::error!("failed to schedule next team membership renewal: {:?}", err);
-                disable_team_auto_renew(cli, &renewed_membership).await?;
+                disable_team_auto_renew(&renewed_membership).await?;
             }
         }
         PurchaseStatus::Success => {
-            let team_membership =
-                TeamMembership::get(cli, team_pk.clone(), Some(EntityType::TeamMembership))
-                    .await?
-                    .ok_or_else(|| Error::NotFound("Team membership not found".to_string()))?;
+            let team_membership = TeamMembership::find_by_team(&team_purchase.team_pk)
+                .await?
+                .ok_or_else(|| Error::NotFound("Team membership not found".to_string()))?;
 
             if let Err(err) = schedule_team_renewal(
-                cli,
                 portone,
                 &membership,
                 &team_membership,
@@ -283,7 +281,7 @@ async fn handle_team_purchase(
             .await
             {
                 tracing::error!("failed to schedule next team membership renewal: {:?}", err);
-                disable_team_auto_renew(cli, &team_membership).await?;
+                disable_team_auto_renew(&team_membership).await?;
             }
         }
         PurchaseStatus::Canceled => {}
@@ -300,24 +298,19 @@ pub async fn handle_portone_webhook(req: PortoneRequest) -> Result<()> {
         }
 
         let conf = crate::features::membership::config::get();
-        let cli = conf.common.dynamodb();
         let portone = PortOne::new(conf.portone.api_secret);
 
-        let user_opt = UserPurchase::opt_one();
-        let (user_purchases, _) =
-            UserPurchase::find_by_payment_id(cli, &req.payment_id, user_opt).await?;
+        let user_purchases = UserPurchase::find_by_payment_id(&req.payment_id).await?;
 
         if let Some(user_purchase) = user_purchases.into_iter().next() {
-            handle_user_purchase(cli, &portone, &req, user_purchase).await?;
+            handle_user_purchase(&portone, &req, user_purchase).await?;
             return Ok(());
         }
 
-        let team_opt = TeamPurchase::opt_one();
-        let (team_purchases, _) =
-            TeamPurchase::find_by_payment_id(cli, &req.payment_id, team_opt).await?;
+        let team_purchases = TeamPurchase::find_by_payment_id(&req.payment_id).await?;
 
         if let Some(team_purchase) = team_purchases.into_iter().next() {
-            handle_team_purchase(cli, &portone, &req, team_purchase).await?;
+            handle_team_purchase(&portone, &req, team_purchase).await?;
             return Ok(());
         }
 

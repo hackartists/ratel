@@ -1,0 +1,54 @@
+# Dev ingress — TWO hosts on one Ingress, both with real certificates:
+#   - ratel-dev.biyard.co     the wildcard *.biyard.co DNS points at the
+#                             cluster; cert-manager issues via the
+#                             letsencrypt-route53 ClusterIssuer (same
+#                             annotation set as the dataroom prod ingress).
+#   - dev.ratel.foundation    its DNS ALREADY points at the cluster (verified
+#                             2026-08-04), and the letsencrypt-route53
+#                             ClusterIssuer has a dns01 solver for the
+#                             ratel.foundation Route53 zone (same AWS account
+#                             as biyard.co), so cert-manager can issue for it
+#                             too. Each host gets its own tls entry/secret so
+#                             one zone's issuance hiccup can't block the
+#                             other's certificate.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-shell
+  namespace: ratel-dev
+  labels:
+    app: app-shell
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-route53
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ratel-dev.biyard.co
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+    - host: dev.ratel.foundation
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+  tls:
+    - hosts:
+        - ratel-dev.biyard.co
+      secretName: ratel-dev-biyard-co-tls
+    - hosts:
+        - dev.ratel.foundation
+      secretName: dev-ratel-foundation-tls

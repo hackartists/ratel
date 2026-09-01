@@ -8,8 +8,6 @@
 //! appropriate `if stored < N` gate.
 
 #[cfg(feature = "server")]
-mod m001_backfill_character_xp;
-#[cfg(feature = "server")]
 mod runner;
 
 #[cfg(feature = "server")]

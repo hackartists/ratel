@@ -19,19 +19,17 @@ const EMAIL_CHUNK_SIZE: usize = 50;
 /// parent space is `Ongoing` (the audience is meaningful only then).
 pub async fn notify_action_ongoing(action: SpaceAction) -> Result<()> {
     tracing::info!(
-        action_pk = ?action.pk,
+        space_id = %action.space_id,
+        action_id = %action.action_id,
         "notify_action_ongoing: received event",
     );
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    let space_id: SpacePartition = action.pk.0.clone();
+    let space_id: SpacePartition = SpacePartition(action.space_id.clone());
     let space_pk: Partition = space_id.clone().into();
-    let action_id = action.pk.1.clone();
+    let action_id = action.action_id.clone();
 
     // Guard: parent space must be Ongoing — no audience otherwise.
-    let space = match SpaceCommon::get(cli, &space_pk, Some(&EntityType::SpaceCommon)).await? {
+    let space = match SpaceCommon::get_by_partition(&space_pk).await? {
         Some(s) => s,
         None => return Ok(()),
     };
@@ -44,7 +42,7 @@ pub async fn notify_action_ongoing(action: SpaceAction) -> Result<()> {
         return Ok(());
     }
 
-    let user_pks = resolve_space_participant_user_pks(cli, &space_pk).await?;
+    let user_pks = resolve_space_participant_user_pks(&space_pk).await?;
     if user_pks.is_empty() {
         tracing::info!("notify_action_ongoing: no participants, skipping");
         return Ok(());
@@ -52,13 +50,20 @@ pub async fn notify_action_ongoing(action: SpaceAction) -> Result<()> {
 
     // Load post for the space title used in inbox + email copy.
     let post_pk = space_pk.clone().to_post_key()?;
-    let space_title = match Post::get(cli, &post_pk, Some(&EntityType::Post)).await? {
-        Some(p) => p.title,
+    let post_id = match &post_pk {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).ok(),
+        _ => None,
+    };
+    let space_title = match post_id {
+        Some(id) => match Post::get_by_feed_id(id).await? {
+            Some(p) => p.title,
+            None => {
+                tracing::error!("notify_action_ongoing: post not found for {}", post_pk);
+                return Ok(());
+            }
+        },
         None => {
-            tracing::error!(
-                "notify_action_ongoing: post not found for {}",
-                post_pk
-            );
+            tracing::error!("notify_action_ongoing: invalid post key {}", post_pk);
             return Ok(());
         }
     };
@@ -96,7 +101,7 @@ pub async fn notify_action_ongoing(action: SpaceAction) -> Result<()> {
     }
 
     // 2. Resolve emails + fan out via Notification rows (50 per row).
-    let emails = resolve_emails(cli, user_pks).await?;
+    let emails = resolve_emails(user_pks).await?;
     if emails.is_empty() {
         tracing::info!("notify_action_ongoing: no emails resolved, skipping email fan-out");
         return Ok(());
@@ -112,7 +117,7 @@ pub async fn notify_action_ongoing(action: SpaceAction) -> Result<()> {
             action_type_label: action_type_label.clone(),
             cta_url: cta_url.clone(),
         });
-        if let Err(e) = n.create(cli).await {
+        if let Err(e) = n.create().await {
             tracing::error!(
                 "notify_action_ongoing: failed to create Notification row: {e}"
             );

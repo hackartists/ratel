@@ -7,6 +7,10 @@ use rmcp::schemars;
     Debug, Clone, PartialEq, Eq, SerializeDisplay, DeserializeFromStr, Default, DynamoEnum,
 )]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+// Postgres migration: stored as a JSONB scalar (serde string form via
+// `SerializeDisplay`, e.g. `"Public"` / `"TeamOnly#<pk>"`). Native PG enums
+// cannot represent the `TeamOnly(String)` data variant, so JSONB is used.
+#[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 pub enum Visibility {
     #[default]
     Public,

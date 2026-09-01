@@ -1,4 +1,6 @@
-use crate::common::models::auth::{AdminUser, TestAccount};
+use crate::common::models::auth::AdminUser;
+#[cfg(feature = "server")]
+use crate::common::models::auth::TestAccount;
 use crate::features::admin::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -30,38 +32,29 @@ impl From<TestAccount> for TestAccountResponse {
 /// and never receive a real verification email. Admin only.
 #[post("/api/admin/test-accounts", _user: AdminUser)]
 pub async fn create_test_account(req: CreateTestAccountRequest) -> Result<TestAccountResponse> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
     let email = req.email.trim().to_lowercase();
     if email.is_empty() || !email.contains('@') {
         return Err(Error::InvalidEmail);
     }
 
     let account = TestAccount::new(email, req.note.trim().to_string());
-    account.create(cli).await?;
+    account.create().await?;
     Ok(account.into())
 }
 
 /// List all reviewer test accounts. Admin only.
 #[get("/api/admin/test-accounts", _user: AdminUser)]
 pub async fn list_test_accounts() -> Result<Vec<TestAccountResponse>> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
-    let (items, _) =
-        TestAccount::query(cli, Partition::TestAccount, TestAccount::opt().limit(200)).await?;
+    let items = TestAccount::list(200).await?;
     Ok(items.into_iter().map(TestAccountResponse::from).collect())
 }
 
 /// Remove a reviewer test account by email. Admin only.
 #[delete("/api/admin/test-accounts/:email", _user: AdminUser)]
 pub async fn delete_test_account(email: String) -> Result<TestAccountResponse> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
     let email = email.trim().to_lowercase();
-    TestAccount::delete(cli, Partition::TestAccount, Some(EntityType::TestAccount(email)))
-        .await
+    TestAccount::delete_by_email(&email)
+        .await?
         .map(TestAccountResponse::from)
+        .ok_or_else(|| Error::NotFound(email))
 }

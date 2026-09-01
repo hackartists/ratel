@@ -15,11 +15,10 @@ pub async fn verify_vote(
     poll_sk: SpacePollEntityType,
 ) -> Result<VerifyVoteResponse> {
     let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_pk: Partition = space_pk.into();
     let poll_sk_entity: EntityType = poll_sk.into();
 
-    SpacePollUserAnswer::find_one(cli, &space_pk, &poll_sk_entity, &member.pk)
+    SpacePollUserAnswer::find_one(&space_pk, &poll_sk_entity, &member.pk)
         .await?
         .ok_or(Error::NotFound("No vote found for this user".into()))?;
 

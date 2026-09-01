@@ -7,40 +7,41 @@ use crate::features::sub_team::models::{
     SubTeamAnnouncement, SubTeamAnnouncementFanout, SubTeamAnnouncementStatus, SubTeamLink,
 };
 use crate::features::sub_team::types::SubTeamError;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
-const PAGE_SIZE: i32 = 100;
-const MAX_PAGES: usize = 10;
 /// Phase 1 cap — anything beyond this returns BroadcastTooManySubTeams at
 /// publish time, so we should never fan out to more than this here either.
 pub const MAX_RECOGNIZED_SUB_TEAMS: usize = 50;
 
+/// Parse a `Partition::Team(id)` into its `Uuid` — Postgres `Team`/`TeamOwner`
+/// rows are keyed by the raw uuid, not the `"TEAM#…"` partition string.
+fn team_uuid(team_pk: &Partition) -> Option<Uuid> {
+    match team_pk {
+        Partition::Team(id) => Uuid::parse_str(id).ok(),
+        _ => None,
+    }
+}
+
 /// Resolve every member user pk for a team (UserTeam rows + owner). Used for
 /// fan-out inbox notifications.
 pub async fn resolve_team_members(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     team_pk: &Partition,
 ) -> Result<Vec<Partition>> {
     let mut user_pks: HashSet<String> = HashSet::new();
 
-    if let Ok(Some(owner)) = TeamOwner::get(cli, team_pk, Some(&EntityType::TeamOwner)).await {
-        user_pks.insert(owner.user_pk.to_string());
+    if let Some(uuid) = team_uuid(team_pk) {
+        if let Ok(Some(owner)) = TeamOwner::find_by_team(uuid).await {
+            user_pks.insert(owner.user_pk.clone());
+        }
     }
 
-    let user_team_sk = EntityType::UserTeam(team_pk.to_string());
-    let mut bookmark: Option<String> = None;
-    for _ in 0..MAX_PAGES {
-        let mut opt = crate::features::auth::UserTeamQueryOption::builder().limit(PAGE_SIZE);
-        if let Some(bm) = bookmark.as_ref() {
-            opt = opt.bookmark(bm.clone());
-        }
-        let (rows, next) = UserTeam::find_by_team(cli, &user_team_sk, opt).await?;
-        for row in rows {
-            user_pks.insert(row.pk.to_string());
-        }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
-        }
+    let rows = UserTeam::find_by_team(team_pk).await?;
+    for row in rows {
+        user_pks.insert(row.user_pk.clone());
     }
 
     Ok(user_pks
@@ -51,56 +52,19 @@ pub async fn resolve_team_members(
 
 /// Count recognized sub-teams for a parent team (used for publish-time
 /// validation against the 50-team cap).
-pub async fn count_recognized_sub_teams(
-    cli: &aws_sdk_dynamodb::Client,
-    parent_pk: &Partition,
-) -> Result<usize> {
-    let opt = SubTeamLink::opt()
-        .sk("SUB_TEAM_LINK".to_string())
-        .limit((MAX_RECOGNIZED_SUB_TEAMS as i32) + 1);
-    let (items, _) = SubTeamLink::query(cli, parent_pk.clone(), opt)
-        .await
-        .map_err(|e| {
-            crate::error!("count_recognized_sub_teams query failed: {e}");
-            SubTeamError::BroadcastTooManySubTeams
-        })?;
-    Ok(items.len())
+pub async fn count_recognized_sub_teams(parent_pk: &Partition) -> Result<usize> {
+    Ok(SubTeamLink::list_for_parent(parent_pk).await?.len())
 }
 
 /// List recognized sub-teams (bounded — cap enforced by caller).
-pub async fn list_recognized_sub_teams(
-    cli: &aws_sdk_dynamodb::Client,
-    parent_pk: &Partition,
-) -> Result<Vec<SubTeamLink>> {
-    let opt = SubTeamLink::opt()
-        .sk("SUB_TEAM_LINK".to_string())
-        .limit((MAX_RECOGNIZED_SUB_TEAMS as i32) + 1);
-    let (items, _) = SubTeamLink::query(cli, parent_pk.clone(), opt)
-        .await
-        .map_err(|e| {
-            crate::error!("list_recognized_sub_teams query failed: {e}");
-            SubTeamError::AnnouncementPublishFailed
-        })?;
-    Ok(items)
+pub async fn list_recognized_sub_teams(parent_pk: &Partition) -> Result<Vec<SubTeamLink>> {
+    SubTeamLink::list_for_parent(parent_pk).await
 }
 
-/// Fan-out handler for an announcement that has just been flipped to
-/// Published. Called from `EventBridgeEnvelope::proc` in deployed envs and
-/// directly from `stream_handler` in local-dev.
-///
-/// **New model (no Post cloning):** the parent's anchor Post — created
-/// synchronously in `publish_announcement_handler` — is the **only**
-/// Post row for this announcement. Likes, comments, shares, and the
-/// canonical `/posts/{announcement_id}` URL all live on that single row.
-///
-/// This fan-out writes one lightweight `SubTeamAnnouncementFanout`
-/// marker per recognized sub-team (or just the single targeted child,
-/// for direct messages). The marker points back at the anchor Post by
-/// pk. The child's wall query (`list_team_posts_handler`) reads these
-/// markers, batch-gets the anchor Posts they point at, and unions the
-/// result with the child's own Posts.
-///
-/// Members of each sub-team still receive an inbox notification.
+/// Fan-out handler for an announcement that has just been flipped to Published.
+/// Called from `EventBridgeEnvelope::proc` in deployed envs and directly from
+/// `stream_handler` in local-dev, so it keeps the `cli` argument for the
+/// external `Team` / `Post` / inbox writes.
 pub async fn handle_announcement_published(
     cli: &aws_sdk_dynamodb::Client,
     announcement: SubTeamAnnouncement,
@@ -112,10 +76,7 @@ pub async fn handle_announcement_published(
         );
         return Ok(());
     }
-    // Idempotency. The CDK Pipe filter only checks `status: "Published"`,
-    // and this function writes a `fan_out_count` update at the end —
-    // that write is itself a MODIFY event with status=Published, so the
-    // Lambda would re-enter without this guard and fan out repeatedly.
+    // Idempotency — a re-entry after the fan_out_count write should no-op.
     if announcement.fan_out_count > 0 {
         tracing::debug!(
             "handle_announcement_published: already fanned out ({}), skipping",
@@ -124,20 +85,20 @@ pub async fn handle_announcement_published(
         return Ok(());
     }
 
-    let parent_team_id = match &announcement.pk {
-        Partition::Team(id) => id.clone(),
-        other => {
-            crate::error!(
-                "handle_announcement_published: unexpected pk variant: {:?}",
-                other
-            );
-            return Err(SubTeamError::AnnouncementPublishFailed.into());
-        }
-    };
+    let parent_partition = announcement.team_partition();
+    let parent_team_id = announcement.parent_team_id();
+    if parent_team_id.is_empty() {
+        crate::error!(
+            "handle_announcement_published: unexpected pk variant: {:?}",
+            announcement.team_pk
+        );
+        return Err(SubTeamError::AnnouncementPublishFailed.into());
+    }
 
-    // Load parent team once so the inbox notifications can quote the
-    // parent's display name without re-fetching per child.
-    let parent_team = match Team::get(cli, &announcement.pk, Some(EntityType::Team)).await {
+    // Load parent team once so the inbox notifications can quote its name.
+    let parent_team_uuid = Uuid::parse_str(&parent_team_id)
+        .map_err(|_| SubTeamError::AnnouncementPublishFailed)?;
+    let parent_team = match Team::get_by_id(parent_team_uuid).await {
         Ok(Some(t)) => t,
         Ok(None) => {
             crate::error!("handle_announcement_published: parent team not found: {parent_team_id}");
@@ -149,13 +110,10 @@ pub async fn handle_announcement_published(
         }
     };
 
-    // Direct messages target a single recognized sub-team — verify the
-    // link still exists (the relationship may have been deregistered
-    // between send time and stream delivery) and bypass the cap check.
-    // Broadcast announcements use the full recognized-sub-teams list.
+    // Direct messages target a single recognized sub-team — verify the link
+    // still exists. Broadcasts use the full recognized-sub-teams list.
     let links: Vec<SubTeamLink> = if let Some(target_id) = &announcement.target_child_team_id {
-        let link_sk = EntityType::SubTeamLink(target_id.clone());
-        match SubTeamLink::get(cli, &announcement.pk, Some(link_sk)).await {
+        match SubTeamLink::find_link(&parent_partition, target_id).await {
             Ok(Some(link)) => vec![link],
             Ok(None) => {
                 tracing::warn!(
@@ -172,7 +130,7 @@ pub async fn handle_announcement_published(
             }
         }
     } else {
-        list_recognized_sub_teams(cli, &announcement.pk).await?
+        list_recognized_sub_teams(&parent_partition).await?
     };
     if links.len() > MAX_RECOGNIZED_SUB_TEAMS {
         crate::error!(
@@ -195,12 +153,8 @@ pub async fn handle_announcement_published(
         let child_team_id = link.child_team_id.clone();
         let child_team_pk: Partition = Partition::Team(child_team_id.clone());
 
-        // Broadcasts: write a marker so the wall query can union the
-        // anchor Post into the child's feed. Direct messages bypass the
-        // marker entirely — their anchor Post is written with
-        // `user_pk = target_child_team_pk` at send-time, so it shows up
-        // in the child's `Post::find_by_user_and_status` query directly
-        // (and stays off the parent's wall).
+        // Broadcasts: write a marker so the wall query can union the anchor
+        // Post into the child's feed. Direct messages bypass the marker.
         if !is_direct {
             let marker = SubTeamAnnouncementFanout::new(
                 child_team_pk.clone(),
@@ -209,19 +163,16 @@ pub async fn handle_announcement_published(
                 false,
                 now,
             );
-            if let Err(e) = marker.create(cli).await {
+            if let Err(e) = SubTeamAnnouncementFanout::repository().insert(&marker).await {
                 crate::error!(
                     "handle_announcement_published: marker create for child={} failed: {e}",
                     child_team_id
                 );
-                // Partial fan-out is acceptable per Phase 1 spec — keep
-                // going so other children still get their inbox.
+                // Partial fan-out is acceptable per Phase 1 spec.
                 continue;
             }
             fan_out_count += 1;
         } else {
-            // Direct messages still count toward fan_out_count so the
-            // idempotency guard at the top of this function holds.
             fan_out_count += 1;
         }
 
@@ -249,13 +200,16 @@ pub async fn handle_announcement_published(
         }
     }
 
-    let mut updater = SubTeamAnnouncement::updater(&announcement.pk, &announcement.sk)
-        .with_fan_out_count(fan_out_count)
-        .with_updated_at(now);
+    let mut upd = SubTeamAnnouncement::update()
+        .fan_out_count(fan_out_count)
+        .updated_at(now);
     if is_direct {
-        updater = updater.with_target_post_pk(anchor_post_pk.to_string());
+        upd = upd.target_post_pk(anchor_post_pk.to_string());
     }
-    if let Err(e) = updater.execute(cli).await {
+    if let Err(e) = SubTeamAnnouncement::repository()
+        .update(announcement.id, upd)
+        .await
+    {
         crate::error!("handle_announcement_published: fan_out_count update failed: {e}");
     }
 
@@ -278,12 +232,16 @@ pub async fn handle_space_published(
     use crate::features::posts::models::Post;
     use crate::features::posts::types::PostType;
 
-    // Broadcast-attached Space has `space.pk = SPACE#<id>` and
-    // `space.post_pk = FEED#<id>` — the anchor Post lives on the Feed
-    // partition, NOT the Space partition. Using `space.pk` here would
-    // always lookup-miss and silently drop every notification.
-    let post_pk = space.post_pk.clone();
-    let post = match Post::get(cli, &post_pk, Some(EntityType::Post)).await {
+    // The anchor Post lives on the Feed partition (`space.post_pk`), not the
+    // Space partition.
+    let post_id_uuid = match space.post_pk.parse::<Partition>() {
+        Ok(Partition::Feed(id)) => Uuid::parse_str(&id).ok(),
+        _ => None,
+    };
+    let Some(post_id_uuid) = post_id_uuid else {
+        return Ok(());
+    };
+    let post = match Post::get_by_feed_id(post_id_uuid).await {
         Ok(Some(p)) => p,
         Ok(None) => return Ok(()),
         Err(e) => {
@@ -302,8 +260,7 @@ pub async fn handle_space_published(
     };
 
     let ann_pk = Partition::Team(parent_team_id.clone());
-    let ann_sk = EntityType::SubTeamAnnouncement(announcement_id.clone());
-    let announcement = match SubTeamAnnouncement::get(cli, &ann_pk, Some(ann_sk.clone())).await {
+    let announcement = match SubTeamAnnouncement::find_in_team(&ann_pk, &announcement_id).await {
         Ok(Some(a)) => a,
         Ok(None) => return Ok(()),
         Err(e) => {
@@ -318,7 +275,12 @@ pub async fn handle_space_published(
         return Ok(());
     }
 
-    let parent_team = match Team::get(cli, &announcement.pk, Some(EntityType::Team)).await {
+    let parent_partition = announcement.team_partition();
+    let Ok(parent_team_uuid) = Uuid::parse_str(&parent_team_id) else {
+        crate::error!("handle_space_published: invalid parent_team_id: {parent_team_id}");
+        return Ok(());
+    };
+    let parent_team = match Team::get_by_id(parent_team_uuid).await {
         Ok(Some(t)) => t,
         Ok(None) => {
             crate::error!("handle_space_published: parent team not found: {parent_team_id}");
@@ -330,12 +292,9 @@ pub async fn handle_space_published(
         }
     };
 
-    let links = list_recognized_sub_teams(cli, &announcement.pk).await?;
+    let links = list_recognized_sub_teams(&parent_partition).await?;
     let anchor_post_pk = Partition::Feed(announcement.announcement_id.clone());
-    // Space URL takes the raw id (no `SPACE#`/`FEED#` prefix), which
-    // matches the canonical `/spaces/:space_id` route in `route.rs`.
-    // Derive from `announcement_id` since both `space.pk` and
-    // `space.post_pk` carry the same id.
+    // Space URL takes the raw id — matches the canonical `/spaces/:space_id`.
     let cta_url = format!("/spaces/{}", announcement.announcement_id);
 
     for link in &links {
@@ -360,10 +319,13 @@ pub async fn handle_space_published(
     }
 
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    if let Err(e) = SubTeamAnnouncement::updater(&announcement.pk, &ann_sk)
-        .with_broadcast_notified_at(now)
-        .with_updated_at(now)
-        .execute(cli)
+    if let Err(e) = SubTeamAnnouncement::repository()
+        .update(
+            announcement.id,
+            SubTeamAnnouncement::update()
+                .broadcast_notified_at(now)
+                .updated_at(now),
+        )
         .await
     {
         crate::error!("handle_space_published: broadcast_notified_at write failed: {e}");
@@ -371,4 +333,3 @@ pub async fn handle_space_published(
 
     Ok(())
 }
-

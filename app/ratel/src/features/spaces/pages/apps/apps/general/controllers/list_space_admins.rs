@@ -22,22 +22,19 @@ pub async fn list_space_admins(
         return Err(Error::NoPermission);
     }
 
-    let common_config = crate::common::CommonConfig::default();
-    let dynamo = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
 
-    let space = SpaceCommon::get(dynamo, &space_pk, Some(&EntityType::SpaceCommon))
+    let space = SpaceCommon::get_by_partition(&space_pk)
         .await?
         .ok_or(Error::SpaceNotFound)?;
 
     let mut admins: Vec<SpaceAdminListItem> = Vec::new();
 
     // Add the space owner as the first admin
-    if let Ok(Some(owner)) = User::get(dynamo, space.user_pk.clone(), Some(EntityType::User)).await
-    {
-        let user_id = match &owner.pk {
-            Partition::User(id) => id.clone(),
-            _ => owner.pk.to_string(),
+    if let Ok(Some(owner)) = User::find_by_pk_str(&space.user_pk).await {
+        let user_id = match owner.pk() {
+            Partition::User(id) => id,
+            other => other.to_string(),
         };
         admins.push(SpaceAdminListItem {
             user_id,
@@ -50,14 +47,12 @@ pub async fn list_space_admins(
     }
 
     // Add explicit Space Admins
-    let sk_prefix = EntityType::SpaceAdmin(String::default()).to_string();
-    let opt = SpaceAdmin::opt().sk(sk_prefix).limit(100);
-    let (space_admins, _) = SpaceAdmin::query(dynamo, &space_pk, opt).await?;
+    let space_admins = SpaceAdmin::find_by_space(&space_pk).await?;
 
     for sa in space_admins {
-        let user_id = match &sa.user_pk {
-            Partition::User(id) => id.clone(),
-            _ => sa.user_pk.to_string(),
+        let user_id = match sa.user_pk.parse::<Partition>() {
+            Ok(Partition::User(id)) => id,
+            _ => sa.user_pk.clone(),
         };
         admins.push(SpaceAdminListItem {
             user_id,

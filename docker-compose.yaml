@@ -5,24 +5,98 @@ services:
     environment:
       IP: "0.0.0.0"
       PORT: "8080"
+      # Postgres migration: the app resolves the global pool from DATABASE_URL
+      # and migrates the inventory schema on startup (see common/run.rs). The
+      # AWS_*/DYNAMO_* vars remain only so the still-present (vestigial) DynamoDB
+      # client can be constructed at boot — no live DynamoDB reads/writes happen.
+      DATABASE_URL: "postgres://ratel:ratel@postgres:5432/ratel"
+      AWS_REGION: "ap-northeast-2"
+      AWS_DEFAULT_REGION: "ap-northeast-2"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      AWS_ACCOUNT_ID: "test"
+      DYNAMO_ENDPOINT: "http://localstack:4566"
+      DYNAMO_TABLE_PREFIX: "ratel-local"
+      # Per-instance sqlx POOL max (client side), NOT the postgres server's
+      # max_connections. Kept small (10) to match production sizing where
+      # `replicas × pool ≤ server max_connections`. A small pool also makes the
+      # Playwright run a leak check: if a connection leak survives, a 10-pool
+      # exhausts fast (PoolTimeout) instead of being masked by a large pool.
+      POSTGRES_MAX_CONNECTIONS: "10"
+      RUST_LOG: "error"
     ports:
       - "8080:8080"
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "apt update && apt install curl -y && curl -f http://localhost:8080 || exit 1",
-        ]
+      # curl is baked into the app-shell image (see app/ratel/Dockerfile), so the
+      # probe is fast and deterministic — no per-probe `apt install`. start_period
+      # covers the ~30s cold boot (Postgres pool connect + schema migrate) during
+      # which failing probes don't count against `retries` or flip to unhealthy.
+      test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
       interval: 10s
-      timeout: 10s
-      retries: 100
+      timeout: 5s
+      retries: 30
+      start_period: 90s
     depends_on:
-      localstack:
+      postgres:
         condition: service_healthy
-      localstack-init:
-        condition: service_completed_successfully
     networks:
       - ratel-network
+    profiles:
+      - testing
+
+  # Postgres backing store for the migrated app (replaces the DynamoDB data
+  # layer). The app creates every table from its PostgresEntity inventory on
+  # startup, so no init container is needed.
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ratel
+      POSTGRES_PASSWORD: ratel
+      POSTGRES_DB: ratel
+    # App reaches this over the compose network at `postgres:5432`. Host port
+    # 5433 (not 5432, to avoid colliding with a local Postgres) is exposed only
+    # so host-side tooling (the one-time seed loader) can connect.
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ratel -d ratel"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - ratel-network
+    profiles:
+      - testing
+      - infra
+
+  # postgres-seed — loads the Playwright fixtures (test users hi+user1@…,
+  # hiteam, memberships, attribute codes) the migration-era replacement for the
+  # DynamoDB seed localstack-init performs. Source of truth is the data-only
+  # scripts/postgres-seed.sql (generated from the same scripts/dynamodb-data
+  # fixtures via etl_migrate). It is DATA-only, so it waits for app-shell to
+  # migrate the schema first (depends_on app-shell-testing healthy) and loads
+  # once; a fresh namespace/volume every run means no reset is needed.
+  postgres-seed:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ratel
+    volumes:
+      - ./scripts:/scripts
+    command:
+      - sh
+      - -c
+      - |
+        psql -h postgres -U ratel -d ratel -v ON_ERROR_STOP=1 -f /scripts/postgres-seed.sql
+        echo "postgres seed loaded"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      app-shell-testing:
+        condition: service_healthy
+    networks:
+      - ratel-network
+    restart: "no"
     profiles:
       - testing
 

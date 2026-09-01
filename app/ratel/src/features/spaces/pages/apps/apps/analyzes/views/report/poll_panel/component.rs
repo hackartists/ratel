@@ -52,6 +52,25 @@ pub fn PollPanel() -> Element {
     let export_target = active_poll_id.clone();
     let export_disabled = export_target.is_none() || ctrl.handle_export_excel.pending();
 
+    // Real analyzed-poll title. Prefer the active aggregate's `poll_title`;
+    // when no responses matched the filter (empty aggregates) fall back to the
+    // report's poll cross-filter `question_title`, then to the generic chip
+    // label. Never a hardcoded sample string.
+    let panel_title = aggregates
+        .first()
+        .map(|q| q.poll_title.clone())
+        .filter(|t| !t.trim().is_empty())
+        .or_else(|| {
+            detail
+                .report
+                .filters
+                .iter()
+                .find(|f| f.source == AnalyzeFilterSource::Poll)
+                .map(|f| f.question_title.clone())
+                .filter(|t| !t.trim().is_empty())
+        })
+        .unwrap_or_else(|| tr.detail_panel_chip_poll.to_string());
+
     rsx! {
         section { class: "panel", "data-panel": "poll", "data-active": "true",
             // Action toolbar — sits above the title, right-aligned.
@@ -120,7 +139,7 @@ pub fn PollPanel() -> Element {
                     }
                     "{tr.detail_panel_chip_poll}"
                 }
-                span { "data-poll-title": true, "{tr.detail_poll_title}" }
+                span { "data-poll-title": true, "{panel_title}" }
             }
 
             if aggregates.is_empty() {

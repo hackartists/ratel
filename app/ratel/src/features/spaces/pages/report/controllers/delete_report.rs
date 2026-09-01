@@ -1,6 +1,6 @@
-use crate::features::spaces::pages::report::models::SpaceReport;
-use crate::features::spaces::pages::report::types::SpaceReportError;
 use crate::features::spaces::pages::report::*;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 /// `Default` is required by the `test_*!` macros — they fall back to
 /// `<Resp>::default()` when a non-2xx response body fails to parse
@@ -23,24 +23,24 @@ pub async fn delete_report(
     space_pk: SpacePartition,
     report_id: SpaceReportEntityType,
 ) -> Result<DeleteReportResponse> {
+    use crate::features::spaces::pages::report::models::SpaceReport;
+    use crate::features::spaces::pages::report::types::SpaceReportError;
+
     SpaceReport::can_delete(role)?;
-    let space_partition: Partition = space_pk.into();
-    let sk: EntityType = report_id.into();
+    let _ = space_pk;
 
-    let conf = ServerConfig::default();
-    let dynamo = conf.dynamodb();
+    let report_uuid =
+        uuid::Uuid::parse_str(&report_id.0).map_err(|_| SpaceReportError::ReportNotFound)?;
 
-    let id = match &sk {
-        EntityType::SpaceReport(id) => id.clone(),
-        _ => String::new(),
-    };
-
-    SpaceReport::delete(dynamo, &space_partition, Some(sk))
-        .await
-        .map_err(|e| {
+    // Idempotent delete — swallow NotFound so retries/double-clicks succeed.
+    match SpaceReport::delete_by_id(report_uuid).await {
+        Ok(_) => {}
+        Err(postgres::Error::NotFound) => {}
+        Err(e) => {
             crate::error!("failed to delete report: {e:?}");
-            SpaceReportError::ReportDeleteFailed
-        })?;
+            return Err(SpaceReportError::ReportDeleteFailed.into());
+        }
+    }
 
-    Ok(DeleteReportResponse { id })
+    Ok(DeleteReportResponse { id: report_id.0 })
 }

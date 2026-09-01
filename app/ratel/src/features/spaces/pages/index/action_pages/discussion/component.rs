@@ -504,7 +504,7 @@ pub fn DiscussionArenaPage(
                                 on_submit: move |_| on_submit(()),
                                 placeholder: if in_thread { tr.reply_placeholder.to_string() } else { tr.comment_placeholder.to_string() },
                                 disabled: comment_text().trim().is_empty()
-                                                                                                                                                                                                                                    && pending_images.read().is_empty(),
+                                                                                                                                                                    && pending_images.read().is_empty(),
                                 on_mention_query_change,
                                 on_composer_focus,
                                 priority_user_pks: top_priority,
@@ -804,7 +804,7 @@ fn CommentCardBody(
         .read()
         .user
         .as_ref()
-        .map(|u| u.pk == comment.author_pk)
+        .map(|u| u.pk() == comment.author_pk)
         .unwrap_or(false);
 
     let comment_sk = use_signal(|| comment.sk.clone());

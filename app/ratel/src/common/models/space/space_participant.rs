@@ -3,32 +3,59 @@ use crate::common::models::auth::User;
 use crate::common::types::*;
 use crate::common::utils::time::get_now_timestamp_millis;
 use crate::common::*;
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, DynamoEntity, Default)]
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+
+/// `kind` column value for a real participation row (was `sk = SPACE_PARTICIPANT`).
+pub const PARTICIPANT_KIND: &str = "PARTICIPANT";
+/// `kind` column value for an invitation row (was `sk = SPACE_INVITATION`).
+pub const INVITATION_KIND: &str = "INVITATION";
+
+/// A space participant or invitation (was DynamoDB
+/// `pk = (space_pk, user_pk)` + `sk = SPACE_PARTICIPANT | SPACE_INVITATION`).
+///
+/// Postgres migration: surrogate `id` PK. The composite `(space, user)` key
+/// plus the participant/invitation discriminator collapses to the natural key
+/// `unique(space_pk, user_pk, kind)`. `space_pk` / `user_pk` are **cross-feature**
+/// references stored as their full `Partition` strings (`"SPACE#…"` / `"USER#…"`)
+/// — plain indexed columns, **no FK** for now. `kind` carries the former `sk`
+/// discriminator (`PARTICIPANT` / `INVITATION`).
+///
+/// `user_type` stays the shared `UserType` enum; its `SMALLINT` Postgres column
+/// codec is defined in `common/models/auth/user.rs`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(PostgresEntity))]
+#[cfg_attr(
+    feature = "server",
+    postgres(table = "space_participants", unique(space_pk, user_pk, kind))
+)]
 pub struct SpaceParticipant {
-    pub pk: CompositePartition,
-    pub sk: EntityType,
+    #[serde(default)]
+    pub id: Uuid,
 
-    #[dynamo(index = "gsi1", sk)]
-    #[dynamo(index = "gsi2", sk)]
+    /// Cross-feature reference — the space, full `Partition` string.
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub space_pk: String,
+    /// Cross-feature reference — the user, full `Partition` string.
+    #[cfg_attr(feature = "server", postgres(index))]
+    pub user_pk: String,
+
+    /// Former `sk` discriminator: `PARTICIPANT` or `INVITATION`.
+    pub kind: String,
+
     pub created_at: i64,
     pub display_name: String,
-    #[dynamo(index = "gsi3", sk)]
+    #[cfg_attr(feature = "server", postgres(index))]
     pub username: String,
     pub profile_url: String,
 
     pub user_type: UserType,
 
-    #[dynamo(prefix = "SP", name = "find_by_space", index = "gsi2", pk)]
-    #[dynamo(prefix = "SP", name = "search_users_by_space", index = "gsi3", pk)]
-    pub space_pk: Partition,
-    #[dynamo(prefix = "SP", name = "find_by_user", index = "gsi1", pk)]
-    pub user_pk: Partition,
-
     /// Records the user's explicit consent to verify the required
     /// attributes for this space (the "I understand and agree…"
-    /// checkbox shown when joining). `Option<bool>` so that existing
-    /// participants without this field still deserialize cleanly.
+    /// checkbox shown when joining).
     #[serde(default)]
     pub informed_agreed: Option<bool>,
 
@@ -38,6 +65,10 @@ pub struct SpaceParticipant {
 }
 
 impl SpaceParticipant {
+    pub fn is_invitation(&self) -> bool {
+        self.kind == INVITATION_KIND
+    }
+
     #[cfg(feature = "server")]
     pub fn new(space_pk: Partition, user_pk: Partition) -> Self {
         use names::{Generator, Name};
@@ -50,43 +81,33 @@ impl SpaceParticipant {
         let username = display_name.replace(' ', "-").to_lowercase();
 
         Self {
-            pk: CompositePartition(space_pk.clone(), user_pk.clone()),
-            sk: EntityType::SpaceParticipant,
+            id: Uuid::now_v7(),
+            space_pk: space_pk.to_string(),
+            user_pk: user_pk.to_string(),
+            kind: PARTICIPANT_KIND.to_string(),
             created_at,
             display_name,
             username,
             profile_url: "https://metadata.ratel.foundation/ratel/default-profile.png".to_string(),
             user_type: UserType::AnonymousSpaceUser,
-            space_pk,
-            user_pk,
             informed_agreed: None,
             last_activity_at: None,
         }
     }
 
-    pub fn new_non_anonymous(
-        space_pk: Partition,
-        User {
-            pk,
-            username,
-            display_name,
-            profile_url,
-            user_type,
-            ..
-        }: User,
-    ) -> Self {
+    pub fn new_non_anonymous(space_pk: Partition, user: User) -> Self {
         let created_at = get_now_timestamp_millis();
-        let user_pk = pk;
+        let user_pk = user.pk();
         Self {
-            pk: CompositePartition(space_pk.clone(), user_pk.clone()),
-            sk: EntityType::SpaceParticipant,
+            id: Uuid::now_v7(),
+            space_pk: space_pk.to_string(),
+            user_pk: user_pk.to_string(),
+            kind: PARTICIPANT_KIND.to_string(),
             created_at,
-            display_name,
-            username,
-            profile_url,
-            user_type,
-            space_pk,
-            user_pk,
+            display_name: user.display_name,
+            username: user.username,
+            profile_url: user.profile_url,
+            user_type: user.user_type,
             informed_agreed: None,
             last_activity_at: None,
         }
@@ -97,147 +118,125 @@ impl SpaceParticipant {
         let username = display_name.replace(' ', "-").to_lowercase();
 
         Self {
-            pk: CompositePartition(space_pk.clone(), user_pk.clone()),
-            sk: EntityType::SpaceInvitation,
+            id: Uuid::now_v7(),
+            space_pk: space_pk.to_string(),
+            user_pk: user_pk.to_string(),
+            kind: INVITATION_KIND.to_string(),
             created_at,
             display_name,
             username,
             profile_url: "https://metadata.ratel.foundation/ratel/default-profile.png".to_string(),
             user_type: UserType::AnonymousSpaceUser,
-            space_pk,
-            user_pk,
             informed_agreed: None,
             last_activity_at: None,
         }
     }
+}
 
-    pub fn keys(space_pk: Partition, user_pk: Partition) -> (CompositePartition, EntityType) {
-        (
-            CompositePartition(space_pk, user_pk),
-            EntityType::SpaceParticipant,
-        )
+#[cfg(feature = "server")]
+impl SpaceParticipant {
+    /// The participation row for `(space, user)`, if any (`kind = PARTICIPANT`).
+    pub async fn get_participant(
+        space_pk: &Partition,
+        user_pk: &Partition,
+    ) -> Result<Option<Self>> {
+        use postgres::ops::StringOp;
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .space_pk(StringOp::Eq(space_pk.to_string()))
+                    .user_pk(StringOp::Eq(user_pk.to_string()))
+                    .kind(StringOp::Eq(PARTICIPANT_KIND.to_string())),
+            )
+            .await
+            .map_err(crate::common::Error::from)
     }
 
-    // pub async fn verify_credential(
-    //     dynamo: &DynamoClient,
-    //     space_pk: &Partition,
-    //     user: User,
-    // ) -> bool {
-    //     // FIXME: fix to real credential info
-    //     let age = 26;
-    //     let gender = "male";
-    //     let gender = Self::parse_gender(gender);
+    /// The invitation row for `(space, user)`, if any (`kind = INVITATION`).
+    pub async fn get_invitation(
+        space_pk: &Partition,
+        user_pk: &Partition,
+    ) -> Result<Option<Self>> {
+        use postgres::ops::StringOp;
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .space_pk(StringOp::Eq(space_pk.to_string()))
+                    .user_pk(StringOp::Eq(user_pk.to_string()))
+                    .kind(StringOp::Eq(INVITATION_KIND.to_string())),
+            )
+            .await
+            .map_err(crate::common::Error::from)
+    }
 
-    //     let mut bookmark = None::<String>;
+    /// Every participation row for a space, newest first (`find_by_space` GSI2).
+    pub async fn find_by_space(space_pk: &Partition) -> Result<Vec<Self>> {
+        use postgres::ops::StringOp;
+        Ok(Self::repository()
+            .find(
+                Self::query()
+                    .space_pk(StringOp::Eq(space_pk.to_string()))
+                    .kind(StringOp::Eq(PARTICIPANT_KIND.to_string()))
+                    .order_by(SpaceParticipantColumn::CreatedAt, postgres::Order::Desc),
+            )
+            .await
+            .map_err(crate::common::Error::from)?
+            .items)
+    }
 
-    //     loop {
-    //         let opt = match &bookmark {
-    //             Some(b) => SpacePanelQueryOption::builder()
-    //                 .sk("SPACE_PANEL#".into())
-    //                 .bookmark(b.clone()),
-    //             None => SpacePanelQueryOption::builder().sk("SPACE_PANEL#".into()),
-    //         };
+    /// Every space a user participates in (`find_by_user` GSI1), newest first.
+    pub async fn find_by_user(user_pk: &Partition) -> Result<Vec<Self>> {
+        use postgres::ops::StringOp;
+        Ok(Self::repository()
+            .find(
+                Self::query()
+                    .user_pk(StringOp::Eq(user_pk.to_string()))
+                    .kind(StringOp::Eq(PARTICIPANT_KIND.to_string()))
+                    .order_by(SpaceParticipantColumn::CreatedAt, postgres::Order::Desc),
+            )
+            .await
+            .map_err(crate::common::Error::from)?
+            .items)
+    }
 
-    //         let (panels, next) =
-    //             match SpacePanel::query(&dynamo.client, space_pk.clone(), opt).await {
-    //                 Ok(v) => v,
-    //                 Err(_) => return false,
-    //             };
+    /// Prefix search of participants in a space by username (`search_users_by_space`
+    /// GSI3). An empty `prefix` returns all participants.
+    pub async fn search_users_by_space(space_pk: &Partition, prefix: &str) -> Result<Vec<Self>> {
+        use postgres::ops::StringOp;
+        let mut query = Self::query()
+            .space_pk(StringOp::Eq(space_pk.to_string()))
+            .kind(StringOp::Eq(PARTICIPANT_KIND.to_string()));
+        if !prefix.is_empty() {
+            query = query.username(StringOp::StartsWith(prefix.to_string()));
+        }
+        Ok(Self::repository()
+            .find(query.order_by(SpaceParticipantColumn::Username, postgres::Order::Asc))
+            .await
+            .map_err(crate::common::Error::from)?
+            .items)
+    }
 
-    //         for p in panels {
-    //             if p.participants >= p.quotas {
-    //                 continue;
-    //             }
-    //             if Self::attributes_match(age, gender.clone(), &p.attributes) {
-    //                 let res: SpacePanelResponse = p.into();
-    //                 let participants =
-    //                     SpacePanelParticipant::new(space_pk.clone(), res.clone().pk, user);
-    //                 let _ = match participants.create(&dynamo.client).await {
-    //                     Ok(v) => v,
-    //                     Err(_) => return false,
-    //                 };
-    //                 let (pk, sk) = SpacePanel::keys(&space_pk, &res.pk);
-    //                 let _ = match SpacePanel::updater(pk, sk)
-    //                     .increase_participants(1)
-    //                     .execute(&dynamo.client)
-    //                     .await
-    //                 {
-    //                     Ok(v) => v,
-    //                     Err(_) => return false,
-    //                 };
-
-    //                 return true;
-    //             }
-    //         }
-
-    //         if let Some(b) = next {
-    //             bookmark = Some(b);
-    //         } else {
-    //             break;
-    //         }
-    //     }
-    //     false
-    // }
-
-    // fn attributes_match(age: u8, gender: Option<Gender>, attrs: &[Attribute]) -> bool {
-    //     if attrs.is_empty() {
-    //         return true;
-    //     }
-
-    //     let mut age_rules: Vec<&Age> = Vec::new();
-    //     let mut gender_rules: Vec<&Gender> = Vec::new();
-
-    //     for attr in attrs {
-    //         match attr {
-    //             Attribute::Age(a) => age_rules.push(a),
-    //             Attribute::Gender(g) => gender_rules.push(g),
-    //         }
-    //     }
-
-    //     let age_ok = if age_rules.is_empty() {
-    //         true
-    //     } else {
-    //         age_rules.iter().any(|rule| match rule {
-    //             Age::Specific(a) => age == *a,
-    //             Age::Range {
-    //                 inclusive_min,
-    //                 inclusive_max,
-    //             } => age >= *inclusive_min && age <= *inclusive_max,
-    //         })
-    //     };
-
-    //     let gender_ok = if gender_rules.is_empty() {
-    //         true
-    //     } else {
-    //         match gender {
-    //             Some(ref g) => gender_rules.iter().any(|rule| *rule == g),
-    //             None => false,
-    //         }
-    //     };
-    //     age_ok && gender_ok
-    // }
-
-    // fn parse_gender(s: &str) -> Option<Gender> {
-    //     match s {
-    //         "male" | "Male" => Some(Gender::Male),
-    //         "female" | "Female" => Some(Gender::Female),
-    //         _ => None,
-    //     }
-    // }
+    /// Natural-key upsert on `(space_pk, user_pk, kind)`, preserving `id`.
+    pub async fn save(&self) -> Result<Self> {
+        Self::repository()
+            .upsert_on(&["space_pk", "user_pk", "kind"], self)
+            .await
+            .map_err(crate::common::Error::from)
+    }
 }
 
 impl From<(Partition, User)> for SpaceParticipant {
     fn from((space_pk, user): (Partition, User)) -> Self {
         SpaceParticipant {
-            pk: CompositePartition(space_pk.clone(), user.pk.clone()),
-            sk: EntityType::SpaceParticipant,
+            id: Uuid::now_v7(),
+            space_pk: space_pk.to_string(),
+            user_pk: user.pk().to_string(),
+            kind: PARTICIPANT_KIND.to_string(),
             created_at: user.created_at,
             display_name: user.display_name,
             username: user.username,
             user_type: user.user_type,
             profile_url: user.profile_url,
-            space_pk,
-            user_pk: user.pk,
             informed_agreed: None,
             last_activity_at: None,
         }
@@ -259,21 +258,16 @@ where
             return Ok(sp.clone());
         }
 
-        let conf = ServerConfig::default();
-        let cli = conf.dynamodb();
-
+        let space_pk = space.partition();
         let participant: SpaceParticipant = if space.should_explicit_participation() {
-            SpaceParticipant::get(
-                cli,
-                CompositePartition(space.pk.clone(), user.pk),
-                Some(EntityType::SpaceParticipant),
-            )
-            .await
-            .map_err(|_| Error::NotFound("user not found".to_string()))?
-            .ok_or(Error::NotFound("user not found".to_string()))?
+            SpaceParticipant::get_participant(&space_pk, &user.pk())
+                .await
+                .map_err(|_| Error::NotFound("user not found".to_string()))?
+                .ok_or(Error::NotFound("user not found".to_string()))?
         } else {
-            // Auto-create participation record for spaces that do not require explicit participation
-            (space.pk.clone(), user).into()
+            // Auto-create participation record for spaces that do not require
+            // explicit participation.
+            (space_pk, user).into()
         };
 
         parts.extensions.insert(participant.clone());

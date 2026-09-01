@@ -33,11 +33,7 @@ pub struct DidSummaryResponse {
 pub async fn get_did_summary_handler() -> Result<DidSummaryResponse> {
     use crate::common::models::did::VerifiedAttributes;
 
-    let conf = crate::common::CommonConfig::default();
-    let cli = conf.dynamodb();
-
-    let pk = CompositePartition(user.pk.clone(), Partition::Attributes);
-    let attrs = VerifiedAttributes::get(cli, pk, None::<String>)
+    let attrs = VerifiedAttributes::get_by_user(&user.pk())
         .await?
         .unwrap_or_default();
 

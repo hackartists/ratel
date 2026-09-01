@@ -1,6 +1,11 @@
 use crate::common::*;
 
+/// Opaque jsonb payload describing the specific action a `SpaceActivity`
+/// records. Stored as a single jsonb column on `space_activities` (server
+/// only); the wire representation is unchanged, so web builds keep the plain
+/// enum without the ORM derive.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SpaceActivityData {
     #[default]

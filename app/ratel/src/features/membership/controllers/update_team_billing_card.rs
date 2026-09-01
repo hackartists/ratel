@@ -7,6 +7,7 @@ use crate::features::membership::models::TeamPayment;
 #[cfg(feature = "server")]
 use crate::features::membership::services::portone::PortOne;
 use crate::features::membership::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 
@@ -24,11 +25,9 @@ pub async fn update_team_billing_card_handler(
         }
 
         let conf = crate::features::membership::config::get();
-        let cli = conf.common.dynamodb();
         let portone = PortOne::new(conf.portone.api_secret);
 
-        let pk = CompositePartition::team_payment_pk(team.pk.clone().into());
-        let payment: TeamPayment = TeamPayment::get(cli, &pk, None::<String>)
+        let mut payment: TeamPayment = TeamPayment::find_by_team_pk(&team.partition().to_string())
             .await?
             .ok_or_else(|| {
                 Error::NotFound(
@@ -52,11 +51,9 @@ pub async fn update_team_billing_card_handler(
             .await?;
 
         let new_billing_key = res.billing_key_info.billing_key;
-        TeamPayment::updater(&payment.pk, &payment.sk)
-            .with_billing_key(new_billing_key)
-            .with_masked_card_number(masked.clone())
-            .execute(cli)
-            .await?;
+        payment.billing_key = Some(new_billing_key);
+        payment.masked_card_number = Some(masked.clone());
+        payment.save().await?;
 
         Ok(BillingInfoResponse {
             has_card: true,

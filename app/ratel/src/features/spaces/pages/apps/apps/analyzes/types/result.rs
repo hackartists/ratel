@@ -129,7 +129,10 @@ pub struct NetworkEdge {
 
 /// User-supplied parameters for the discussion analysis run. Mirrors
 /// the four inputs in the detail page's "분석 설정" form.
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(
+    feature = "server",
+    derive(rmcp::schemars::JsonSchema, postgres::PostgresJson)
+)]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct DiscussionAnalysisParams {
     /// Number of LDA topics. Bound 1..=20 on the form.

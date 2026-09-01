@@ -4,7 +4,9 @@ use crate::features::posts::types::*;
 use crate::features::posts::*;
 use std::collections::HashMap;
 
-use crate::features::cross_posting::models::PostSyndicationDirective;
+use crate::features::cross_posting::models::{
+    EnabledPlatforms, PlatformOverrides, PostSyndicationDirective,
+};
 use crate::features::cross_posting::types::SocialPlatform;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
@@ -67,51 +69,49 @@ pub async fn update_post_handler(post_id: FeedPartition, req: UpdatePostRequest)
     let conf = crate::features::posts::config::get();
     let cli = conf.dynamodb();
 
-    let post_pk: Partition = post_id.into();
+    let post_uuid = uuid::Uuid::parse_str(&post_id.0)
+        .map_err(|_| Error::NotFound("Post not found".into()))?;
 
     tracing::debug!(
-        "update_post_handler: user = {:?}, post_pk = {:?}, req = {:?}",
+        "update_post_handler: user = {:?}, post_id = {:?}, req = {:?}",
         user,
-        post_pk,
+        post_uuid,
         req
     );
     let (mut post, has_permission) =
-        Post::has_permission(cli, &post_pk, Some(&user.pk), TeamGroupPermission::PostEdit).await?;
+        Post::has_permission(cli, post_uuid, Some(&user.pk()), TeamGroupPermission::PostEdit).await?;
     if !has_permission {
         return Err(PostError::NotAccessible.into());
     }
 
     let now = chrono::Utc::now().timestamp_millis();
-
-    let updater = Post::updater(&post.pk, &post.sk).with_updated_at(now);
     post.updated_at = now;
 
-    let transacts = match req {
+    // Cross-posting Stage 1 directive is staged here and written after the
+    // Post row is saved (Postgres has no cross-table transact needed here).
+    let mut pending_directive: Option<PostSyndicationDirective> = None;
+
+    // Phase 5: capture the pre-edit post so the outbox MODIFY event carries the
+    // real old→new images (see the emit after `post.save()` below).
+    let old_post = post.clone();
+
+    match req {
         UpdatePostRequest::Writing {
             title,
             content,
             categories,
         } => {
-            post.title = title.clone();
-            post.body = content.clone();
-            if let Some(ref cats) = categories {
-                post.categories = cats.clone();
-            }
-
-            let mut updater = updater.with_title(title).with_body(content);
+            post.title = title;
+            post.body = BodyJson(content);
             if let Some(cats) = categories {
-                updater = updater.with_categories(cats);
+                post.categories = StringVec(cats);
             }
-            vec![updater.transact_write_item()]
         }
         UpdatePostRequest::Image { images } => {
-            post.urls = images.clone();
-            vec![updater.with_urls(images).transact_write_item()]
+            post.urls = StringVec(images);
         }
-
         UpdatePostRequest::Info { visibility } => {
-            post.visibility = Some(visibility.clone());
-            vec![updater.with_visibility(visibility).transact_write_item()]
+            post.visibility = Some(visibility);
         }
         UpdatePostRequest::Publish {
             publish,
@@ -134,7 +134,7 @@ pub async fn update_post_handler(post_id: FeedPartition, req: UpdatePostRequest)
             let visibility = visibility.unwrap_or_default();
             let is_public_publish = publish && matches!(visibility, Visibility::Public);
 
-            post.visibility = Some(visibility.clone());
+            post.visibility = Some(visibility);
 
             let status = if publish {
                 PostStatus::Published
@@ -142,50 +142,37 @@ pub async fn update_post_handler(post_id: FeedPartition, req: UpdatePostRequest)
                 PostStatus::Draft
             };
             post.status = status;
-            post.title = title.clone();
-            post.body = content.clone();
-            if let Some(ref cats) = categories {
-                post.categories = cats.clone();
-            }
-            let mut updater = updater
-                .with_status(status)
-                .with_title(title)
-                .with_body(content)
-                .with_visibility(visibility);
+            post.title = title;
+            post.body = BodyJson(content);
             if let Some(cats) = categories {
-                updater = updater.with_categories(cats);
+                post.categories = StringVec(cats);
             }
-            let mut transacts = if let Some(image_urls) = image_urls {
-                post.urls = image_urls.clone();
-                vec![updater.with_urls(image_urls).transact_write_item()]
-            } else {
-                vec![updater.transact_write_item()]
-            };
+            if let Some(image_urls) = image_urls {
+                post.urls = StringVec(image_urls);
+            }
 
-            // Cross-posting Stage 1 factory hook (design doc → "Atomic
-            // write — reuse existing infrastructure"). Append a
-            // PostSyndicationDirective to the SAME transact batch so
-            // either both Post + directive land or neither does. Stage 1
-            // Lambda triggers on the Post Draft→Published MODIFY and reads
-            // this directive to bake SyndicationJob rows; absence of the
-            // directive is the kill switch (no syndication).
+            // Cross-posting Stage 1 factory hook. In DynamoDB this rode the
+            // same transact as the Post publish; on Postgres the directive is
+            // upserted right after `post.save()` below (Stage 1 dispatch reads
+            // it; absence of the directive is the kill switch).
             if is_public_publish && enabled_platforms.as_ref().is_some_and(|v| !v.is_empty()) {
-                let directive = PostSyndicationDirective {
-                    pk: post.pk.clone(),
-                    sk: EntityType::SyndicationDirective,
-                    enabled_platforms: enabled_platforms.unwrap_or_default(),
-                    platform_overrides: platform_overrides.unwrap_or_default(),
-                    author_user_id: user.pk.clone(),
-                    created_at: now,
+                let post_id = post.id.to_string();
+                let author_user_id = match &user.pk() {
+                    Partition::User(id) => id.clone(),
+                    other => other.to_string(),
                 };
-                transacts.push(directive.create_transact_write_item());
+                pending_directive = Some(PostSyndicationDirective {
+                    id: uuid::Uuid::now_v7(),
+                    post_id,
+                    enabled_platforms: EnabledPlatforms(enabled_platforms.unwrap_or_default()),
+                    platform_overrides: PlatformOverrides(platform_overrides.unwrap_or_default()),
+                    author_user_id,
+                    created_at: now,
+                });
             }
-
-            transacts
         }
         UpdatePostRequest::PostType { r#type } => {
-            post.post_type = r#type.clone();
-            vec![updater.with_post_type(r#type).transact_write_item()]
+            post.post_type = r#type;
         }
         UpdatePostRequest::Author { team_id } => {
             let author: Author = if let Some(team_id) = team_id {
@@ -193,64 +180,62 @@ pub async fn update_post_handler(post_id: FeedPartition, req: UpdatePostRequest)
                 Team::get_permitted_team(
                     cli,
                     team_pk,
-                    user.pk.clone(),
+                    user.pk(),
                     TeamGroupPermission::PostWrite,
                 )
                 .await?
                 .into()
             } else {
-                let user_pk = user.pk.clone();
-                let full_user = crate::features::auth::User::get(
-                    cli,
-                    user_pk,
-                    Some(EntityType::User),
-                )
-                .await?
-                .ok_or::<Error>(PostError::NotAccessible.into())?;
+                let user_pk = user.pk();
+                let full_user = crate::features::auth::User::find_by_pk(&user_pk)
+                    .await?
+                    .ok_or::<Error>(PostError::NotAccessible.into())?;
                 full_user.into()
             };
 
-            post.user_pk = author.pk.clone();
-            post.author_display_name = author.display_name.clone();
-            post.author_profile_url = author.profile_url.clone();
-            post.author_username = author.username.clone();
-            post.author_type = author.user_type.clone();
-
-            vec![
-                updater
-                    .with_user_pk(author.pk)
-                    .with_author_display_name(author.display_name)
-                    .with_author_profile_url(author.profile_url)
-                    .with_author_username(author.username)
-                    .with_author_type(author.user_type)
-                    .transact_write_item(),
-            ]
+            post.user_pk = author.pk.to_string();
+            post.author_display_name = author.display_name;
+            post.author_profile_url = author.profile_url;
+            post.author_username = author.username;
+            post.author_type = AuthorTypeJson(author.user_type);
         }
         UpdatePostRequest::ArtworkMetadata {
             metadata: next_metadata,
         } => {
-            let mut transacts = vec![];
-
-            transacts.push(updater.transact_write_item());
-
-            let artwork = PostArtwork::get(cli, &post.pk, Some(EntityType::PostArtwork)).await?;
-            tracing::debug!("Existing artwork metadata: {:?}", artwork);
-            if let Some(mut artwork) = artwork {
-                let artwork_updater =
-                    PostArtwork::updater(post.pk.clone(), EntityType::PostArtwork)
-                        .with_metadata(next_metadata.clone());
-                transacts.push(artwork_updater.transact_write_item());
-                artwork.metadata = next_metadata;
-            } else {
-                let artwork = PostArtwork::new(post.pk.clone(), next_metadata);
-                tracing::debug!("Creating new artwork metadata: {:?}", artwork);
-                transacts.push(artwork.create_transact_write_item());
-            };
-            transacts
+            let existing = PostArtwork::find_by_post(post_uuid).await?;
+            tracing::debug!("Existing artwork metadata: {:?}", existing);
+            let mut artwork = existing.unwrap_or_else(|| PostArtwork::new(post_uuid, vec![]));
+            artwork.metadata = ArtworkMetadataVec(next_metadata);
+            artwork.save().await?;
         }
-    };
+    }
 
-    crate::transact_write_items!(cli, transacts)?;
+    let post = post.save().await?;
+
+    // Phase 5: emit as MODIFY (real old→new images) so the is_modify POST rules
+    // fire (TimelineUpdate, PopularPostUpdate, PostPublishedForSyndication —
+    // gated on `is_modify && status==PUBLISHED`) alongside the is_upsert
+    // essence/vector rules.
+    crate::common::events::outbox::EventOutbox::emit_modify(
+        crate::common::events::outbox::topic::POST,
+        &old_post,
+        &post,
+    )
+    .await
+    .ok();
+
+    // Write the cross-posting directive to Postgres now that the Post publish
+    // has been saved. Natural-key (`post_id`) upsert keeps re-publish idempotent.
+    // A directive failure must not fail the publish, so it is logged, not
+    // propagated (Stage 1 simply won't syndicate this post).
+    if let Some(directive) = pending_directive {
+        if let Err(e) = PostSyndicationDirective::repository()
+            .upsert_on(&["post_id"], &directive)
+            .await
+        {
+            crate::error!("update_post: failed to persist syndication directive: {e}");
+        }
+    }
 
     // Essence re-indexing happens via the DynamoDB Stream pipeline.
 

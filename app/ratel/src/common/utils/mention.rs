@@ -200,7 +200,6 @@ pub fn apply_mention_markup(display_text: &str, mentions: &[(String, String)]) -
 
 #[cfg(feature = "server")]
 pub async fn create_mention_notifications(
-    cli: &aws_sdk_dynamodb::Client,
     content: &str,
     author_pk: &crate::common::types::Partition,
     author_name: &str,
@@ -225,7 +224,7 @@ pub async fn create_mention_notifications(
         }
         // Look up the mentioned user's email
         let pk: crate::common::types::Partition = pk_str.parse().unwrap_or_default();
-        let user = match crate::common::models::User::get(cli, &pk, Some(crate::common::types::EntityType::User)).await {
+        let user = match crate::common::models::User::find_by_pk(&pk).await {
             Ok(Some(u)) => u,
             Ok(None) => {
                 tracing::warn!("Mentioned user not found: {}", pk_str);
@@ -239,7 +238,7 @@ pub async fn create_mention_notifications(
         if user.email.is_empty() {
             continue;
         }
-        let user_pk = user.pk.clone();
+        let user_pk = user.pk();
         let notification = crate::common::models::notification::Notification::new(
             crate::common::types::NotificationData::MentionInComment {
                 email: user.email,
@@ -248,7 +247,7 @@ pub async fn create_mention_notifications(
                 cta_url: cta_url.to_string(),
             },
         );
-        if let Err(e) = notification.create(cli).await {
+        if let Err(e) = notification.save().await {
             tracing::error!("Failed to create mention notification for {}: {}", pk_str, e);
         }
 

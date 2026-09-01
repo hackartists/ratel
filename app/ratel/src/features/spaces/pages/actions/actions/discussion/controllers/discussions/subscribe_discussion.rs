@@ -12,19 +12,11 @@ pub async fn subscribe_discussion(
     discussion_sk: SpacePostEntityType,
 ) -> Result<()> {
     SpacePost::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
+    let space_post_pk = SpacePostPartition(discussion_sk.0);
 
-    let discussion_sk_entity: EntityType = discussion_sk.into();
-    let space_post_pk = match &discussion_sk_entity {
-        EntityType::SpacePost(id) => SpacePostPartition(id.clone()),
-        _ => return Err(SpaceActionDiscussionError::InvalidDiscussionId.into()),
-    };
-
-    // `create` is a conditional put (attribute_not_exists), so guard with a
-    // point read to keep subscribe idempotent — already subscribed is success.
-    let (pk, sk) = SpacePostSubscription::keys(&space_post_pk, &member.pk);
-    let exists = SpacePostSubscription::get(cli, &pk, Some(sk))
+    // Guard with a point read to keep subscribe idempotent — already
+    // subscribed is success.
+    let exists = SpacePostSubscription::get_one(&space_post_pk, &member.pk)
         .await
         .map_err(|e| {
             crate::error!("subscribe_discussion existence check failed: {e}");
@@ -36,10 +28,13 @@ pub async fn subscribe_discussion(
     }
 
     let sub = SpacePostSubscription::new(space_post_pk, space_id, &member.pk);
-    sub.create(cli).await.map_err(|e| {
-        crate::error!("subscribe_discussion failed: {e}");
-        SpaceActionDiscussionError::CreateFailed
-    })?;
+    SpacePostSubscription::repository()
+        .insert(&sub)
+        .await
+        .map_err(|e| {
+            crate::error!("subscribe_discussion failed: {e}");
+            SpaceActionDiscussionError::CreateFailed
+        })?;
 
     Ok(())
 }

@@ -1,26 +1,61 @@
-use crate::common::utils::time::get_now_timestamp_millis;
-
 use crate::features::spaces::pages::actions::actions::quiz::*;
+#[cfg(feature = "server")]
+use crate::common::utils::time::get_now_timestamp_millis;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use postgres::ops::StringOp;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, DynamoEntity)]
+/// jsonb wrapper for the embedded `Vec<Answer>` column (server-only).
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, postgres::PostgresJson)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
-pub struct SpaceQuizAttempt {
-    pub pk: Partition,  // user_pk
-    pub sk: EntityType, // SpaceQuizAttempt#{quiz_id}#{attempt_id}
+#[serde(transparent)]
+pub struct QuizAttemptAnswers(pub Vec<Answer>);
 
-    #[dynamo(index = "gsi1", sk)]
+#[cfg(feature = "server")]
+impl std::ops::Deref for QuizAttemptAnswers {
+    type Target = Vec<Answer>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// One quiz attempt by a user.
+///
+/// Postgres migration: the DynamoDB identity was `pk = user_pk` +
+/// `sk = SpaceQuizAttempt#{quiz_id}#{attempt_id}`, with a GSI on
+/// `quiz_user = {user_pk}#{quiz_id}`. It becomes a surrogate `id` PK plus the
+/// flattened `user_pk` / `quiz_id` / `attempt_id` columns and an indexed
+/// `quiz_user` column for the per-(quiz,user) attempt listing. Server-only.
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PostgresEntity)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[postgres(table = "space_quiz_attempts")]
+pub struct SpaceQuizAttempt {
+    pub id: Uuid,
+
+    /// Actor as full `Partition` string (`USER#…`).
+    pub user_pk: String,
+    pub quiz_id: String,
+    pub attempt_id: String,
+
+    /// `{user_pk}#{quiz_id}` — indexed for the per-(quiz,user) attempt listing.
+    #[postgres(index)]
+    pub quiz_user: String,
+
+    #[postgres(order)]
     pub created_at: i64,
 
-    #[dynamo(prefix = "QUIZ_USER", index = "gsi1", name = "find_by_quiz_user", pk)]
-    pub quiz_user: String, // {user_pk}#{quiz_id}
-
-    pub answers: Vec<Answer>,
-    pub score: i64,
     #[serde(default)]
-    pub user_pk: Option<Partition>,
+    pub answers: QuizAttemptAnswers,
+    pub score: i64,
+
     #[serde(default)]
     pub display_name: Option<String>,
     #[serde(default)]
@@ -45,18 +80,18 @@ impl SpaceQuizAttempt {
     ) -> Self {
         let created_at = get_now_timestamp_millis();
         let attempt_id = uuid::Uuid::now_v7().to_string();
-        let user_pk = author.pk;
-        let (pk, sk) = Self::keys(&user_pk, &quiz_id, &attempt_id);
-        let quiz_user = Self::quiz_user_key(&quiz_id, &user_pk);
+        let user_pk = author.pk.to_string();
+        let quiz_user = Self::quiz_user_key(&quiz_id, &author.pk);
 
         Self {
-            pk,
-            sk,
-            created_at,
+            id: Uuid::now_v7(),
+            user_pk,
+            quiz_id: quiz_id.0,
+            attempt_id,
             quiz_user,
-            answers,
+            created_at,
+            answers: QuizAttemptAnswers(answers),
             score,
-            user_pk: Some(user_pk),
             display_name: Some(author.display_name),
             profile_url: Some(author.profile_url),
             username: Some(author.username),
@@ -69,41 +104,37 @@ impl SpaceQuizAttempt {
         format!("{user_pk}#{quiz_id}")
     }
 
-    pub fn keys(
-        user_pk: &Partition,
-        quiz_id: &SpaceQuizEntityType,
-        attempt_id: &str,
-    ) -> (Partition, EntityType) {
-        (
-            Partition::SpaceQuizAttempt(user_pk.to_string()),
-            EntityType::SpaceQuizAttempt(format!("{quiz_id}#{attempt_id}")),
-        )
-    }
-
     pub async fn find_latest_by_quiz_user(
-        cli: &aws_sdk_dynamodb::Client,
         quiz_id: &SpaceQuizEntityType,
         user_pk: &Partition,
     ) -> crate::features::spaces::pages::actions::actions::quiz::Result<Option<Self>> {
-        let pk = Self::compose_gsi1_pk(Self::quiz_user_key(quiz_id, user_pk));
-        let opt = SpaceQuizAttemptQueryOption::builder()
-            .limit(1)
-            .scan_index_forward(false);
-        let (items, _) = Self::find_by_quiz_user(cli, &pk, opt).await?;
-        Ok(items.into_iter().next())
+        use postgres::Order;
+        Self::repository()
+            .find_one(
+                Self::query()
+                    .quiz_user(StringOp::Eq(Self::quiz_user_key(quiz_id, user_pk)))
+                    .order_by(SpaceQuizAttemptColumn::CreatedAt, Order::Desc),
+            )
+            .await
+            .map_err(crate::common::Error::from)
     }
 
     pub async fn list_by_quiz_user(
-        cli: &aws_sdk_dynamodb::Client,
         quiz_id: &SpaceQuizEntityType,
         user_pk: &Partition,
         limit: i32,
     ) -> crate::features::spaces::pages::actions::actions::quiz::Result<Vec<Self>> {
-        let pk = Self::compose_gsi1_pk(Self::quiz_user_key(quiz_id, user_pk));
-        let opt = SpaceQuizAttemptQueryOption::builder()
-            .limit(limit)
-            .scan_index_forward(false);
-        let (items, _) = Self::find_by_quiz_user(cli, &pk, opt).await?;
-        Ok(items)
+        use postgres::Order;
+        Self::repository()
+            .find(
+                Self::query()
+                    .quiz_user(StringOp::Eq(Self::quiz_user_key(quiz_id, user_pk)))
+                    .order_by(SpaceQuizAttemptColumn::CreatedAt, Order::Desc)
+                    .page(1)
+                    .page_size(limit as i64),
+            )
+            .await
+            .map(|p| p.items)
+            .map_err(crate::common::Error::from)
     }
 }

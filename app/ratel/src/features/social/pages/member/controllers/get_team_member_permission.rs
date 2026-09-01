@@ -1,6 +1,7 @@
 use super::super::*;
 
 use super::super::dto::{TeamMemberPermission, TeamRole};
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 #[get("/api/teams/:username/members/permission", user: crate::features::auth::OptionalUser, team: Team)]
@@ -9,13 +10,13 @@ pub async fn get_team_member_permission_handler(username: String) -> Result<Team
     let cli = conf.common.dynamodb();
     let user: Option<crate::features::auth::User> = user.into();
     let role = match user {
-        Some(u) => Team::get_user_role(cli, &team.pk, &u.pk)
+        Some(u) => Team::get_user_role(cli, &team.partition(), &u.pk())
             .await?
             .unwrap_or_default(),
         None => TeamRole::default(),
     };
     Ok(TeamMemberPermission {
-        team_pk: team.pk.clone().into(),
+        team_pk: team.partition().into(),
         permissions: role.to_legacy_permissions(),
         role,
     })

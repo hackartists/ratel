@@ -1,0 +1,25 @@
+[package]
+name = "event"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+event-macros = { path = "../event-macros" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rdkafka = { version = "0.38", features = ["cmake-build", "tokio"] }
+futures = "0.3"
+inventory = "0.3"
+thiserror = { workspace = true }
+tokio = { workspace = true, optional = true }
+# Process-wide shutdown token (consumer graceful drain) — inlined into this
+# crate as `event::shutdown` (Assets keeps it in a `shared` crate Ratel lacks).
+tokio-util = { version = "0.7", optional = true }
+tracing = { workspace = true }
+
+[features]
+default = []
+server = ["dep:tokio", "dep:tokio-util"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

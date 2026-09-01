@@ -21,7 +21,7 @@ fn main() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use app_shell::common::CommonConfig;
-    use app_shell::common::types::{EntityType, Partition};
+    use app_shell::common::types::Partition;
     use app_shell::features::spaces::pages::apps::apps::analyzes::SpaceAnalyzeReport;
     use app_shell::features::spaces::pages::apps::apps::analyzes::services::auto_analysis;
 
@@ -44,10 +44,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = cfg.dynamodb();
 
     let space_pk = Partition::Space(space_uuid.clone());
-    let sk = EntityType::SpaceAnalyzeReport(report_id.clone());
 
     println!("Loading report space={space_uuid} report={report_id} …");
-    let report = SpaceAnalyzeReport::get(cli, &space_pk, Some(sk))
+    let report = SpaceAnalyzeReport::get_for_space(&space_pk, &report_id)
         .await?
         .ok_or("report not found at the given (space, report_id)")?;
     println!(

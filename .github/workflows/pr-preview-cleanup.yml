@@ -1,0 +1,182 @@
+name: PR preview cleanup
+
+# Primary teardown for the e2e preview (pr-workflow.yml) — same model as
+# asset: the preview stack (namespace ratel-pr-<num>, serving
+# ratel-<num>.pr.biyard.co) and the Playwright report webroot
+# (ratel-report-<num>.pr.biyard.co) stay up for the PR's lifetime so the
+# sticky comment's links keep working, and are removed here when the PR
+# closes — merged OR not (a closed PR fires this too).
+#
+# ── why this workflow used to leak (fixed 2026-08-10) ──────────────────────
+# Deleting the namespace on `closed` is only correct if the PR's e2e run is
+# already done. It usually is not: the run queues behind build-image for
+# 20-30 min on the self-hosted pool, so a PR merged as soon as the required
+# checks go green fires this workflow while e2e has not even STARTED. The
+# delete then hit a namespace that did not exist yet (a 37 ms no-op), e2e
+# created ratel-pr-<num> minutes later, and — since the preview is meant to
+# outlive the run — nothing ever removed it. Measured on the four leaked
+# namespaces (#1735/#1736/#1739/#1740): e2e started 20-28 min AFTER the merge
+# in every case.
+#
+# So this job now CANCELS the PR's in-flight runs and waits for them to stop
+# BEFORE deleting, and verifies the namespace is actually gone afterwards
+# (failing loudly instead of `|| true`-ing a stuck Terminating namespace into
+# a green check). pr-preview-sweeper.yml is the periodic backstop for
+# anything that still slips past — e.g. a run cancelled so late that its own
+# teardown step never got a turn.
+#
+# No database step: the ratel preview is fully namespace-contained
+# (LocalStack + Postgres + Qdrant live inside the namespace), so deleting the
+# namespace is the whole app-tier teardown.
+#
+# Registry note: the ratel-app-shell:pr-<num> tags in the in-cluster registry
+# are NOT deleted here (the registry API needs digest lookups + an offline GC
+# pass); registry housekeeping is home-infra's job.
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    # Same self-hosted pool as e2e: the runner pods carry in-cluster
+    # kubectl credentials and mount the pr-webroot PVC at /root/nginx.
+    runs-on: self-hosted
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write # update the sticky comment
+      actions: write # cancel the PR's in-flight runs before tearing down
+    env:
+      PR_NUM: "${{ github.event.number }}"
+      NS: "ratel-pr-${{ github.event.number }}"
+      HEAD_REF: "${{ github.event.pull_request.head.ref }}"
+      CURRENT_RUN_ID: "${{ github.run_id }}"
+    steps:
+      - name: Cancel this PR's in-flight runs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        # A run still in flight owns the namespace: it will (re)create it after
+        # we delete, and it is burning self-hosted runner time on a PR that is
+        # already merged. Cancel first, then wait for the runners to actually
+        # let go — the e2e job's own `always()` teardown step runs during that
+        # window and usually removes the namespace before we even get to it.
+        run: |
+          set -uo pipefail
+          api="https://api.github.com"
+          repo="${{ github.repository }}"
+          auth="Authorization: Bearer ${GITHUB_TOKEN}"
+          acc="Accept: application/vnd.github+json"
+
+          in_flight() {
+            curl -sf -H "$auth" -H "$acc" \
+              "${api}/repos/${repo}/actions/runs?event=pull_request&per_page=100" 2>/dev/null \
+              | jq -r --argjson n "${PR_NUM}" --arg ref "${HEAD_REF}" \
+                  --argjson current "${CURRENT_RUN_ID}" '
+                  .workflow_runs[]
+                  | select(.status != "completed")
+                  | select(.id != $current)
+                  | select((([.pull_requests[]?.number] | index($n)) != null)
+                           or (.head_branch == $ref))
+                  | .id' 2>/dev/null
+          }
+
+          ids=$(in_flight)
+          if [ -z "${ids}" ]; then
+            echo "no in-flight runs for PR #${PR_NUM}"
+          else
+            for id in ${ids}; do
+              curl -sf -X POST -H "$auth" -H "$acc" \
+                "${api}/repos/${repo}/actions/runs/${id}/cancel" >/dev/null \
+                && echo "cancel requested for run ${id}" \
+                || echo "::warning::could not cancel run ${id} (non-fatal)"
+            done
+            # Give the runners up to 3 min to wind down. Cancellation lets each
+            # job's `if: always()` steps finish, which is exactly what we want
+            # (e2e tears its own namespace down there).
+            deadline=$(( $(date +%s) + 180 ))
+            while [ -n "$(in_flight)" ]; do
+              if [ "$(date +%s)" -ge "${deadline}" ]; then
+                echo "::warning::runs still winding down after 180s — deleting anyway"
+                break
+              fi
+              sleep 10
+            done
+          fi
+
+      - name: Tear down the PR namespace and report webroot
+        id: teardown
+        run: |
+          set -uo pipefail
+          # Playwright report webroot on the pr-webroot PVC.
+          rm -rf "/root/nginx/ratel-report-${PR_NUM}" || true
+
+          # k8s namespace ratel-pr-<num> — the live preview stack. Two delete
+          # attempts: the first can time out on a slow pod eviction, and a
+          # cancelled run's teardown may still be racing us.
+          for attempt in 1 2; do
+            kubectl delete namespace "${NS}" --ignore-not-found --wait --timeout=180s && break
+            echo "::warning::delete attempt ${attempt} for ${NS} did not complete"
+            sleep 15
+          done
+
+          namespace=$(kubectl get namespace "${NS}" --ignore-not-found -o name) || {
+            echo "::error::could not verify whether ${NS} was deleted"
+            exit 1
+          }
+          if [ -z "${namespace}" ]; then
+            echo "cleaned up PR ${PR_NUM} preview leftovers"
+            exit 0
+          fi
+
+          # Still here: almost always a namespace wedged in Terminating on a
+          # finalizer. Clear the finalizers through the /finalize subresource —
+          # the standard unwedge, and safe because every workload in this
+          # namespace is PR-scoped and disposable.
+          phase=$(kubectl get namespace "${NS}" -o jsonpath='{.status.phase}' 2>/dev/null || echo unknown)
+          echo "::warning::${NS} still present (phase=${phase}) — clearing finalizers"
+          kubectl get namespace "${NS}" -o json 2>/dev/null \
+            | jq '.spec.finalizers = [] | .metadata.finalizers = []' \
+            | kubectl replace --raw "/api/v1/namespaces/${NS}/finalize" -f - >/dev/null 2>&1 \
+            || echo "::warning::finalize call failed"
+          sleep 10
+
+          namespace=$(kubectl get namespace "${NS}" --ignore-not-found -o name) || {
+            echo "::error::could not verify ${NS} after clearing finalizers"
+            exit 1
+          }
+          if [ -n "${namespace}" ]; then
+            # Loud on purpose. The old `|| true` turned exactly this state into
+            # a green check, which is how four namespaces survived unnoticed.
+            echo "::error::${NS} could not be deleted — pr-preview-sweeper will retry hourly"
+            kubectl get all -n "${NS}" 2>&1 | head -40 || true
+            exit 1
+          fi
+          echo "cleaned up PR ${PR_NUM} preview leftovers"
+
+      - name: Mark the sticky comment as torn down
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TEARDOWN_OUTCOME: ${{ steps.teardown.outcome }}
+        # Runner image has no `gh`; use curl + jq against the REST API.
+        run: |
+          set -uo pipefail
+          marker="<!-- e2e-preview -->"
+          repo="${{ github.repository }}"
+          api="https://api.github.com"
+          auth="Authorization: Bearer ${GITHUB_TOKEN}"
+          acc="Accept: application/vnd.github+json"
+          existing=$(curl -sf -H "$auth" -H "$acc" \
+            "${api}/repos/${repo}/issues/${PR_NUM}/comments?per_page=100" 2>/dev/null \
+            | jq -r --arg m "$marker" 'map(select(.body | startswith($m))) | .[0].id // empty' 2>/dev/null || true)
+          if [ -n "${existing}" ]; then
+            if [ "${TEARDOWN_OUTCOME}" = "success" ]; then
+              body="$(printf '%s\n🧹 PR closed — the preview namespace `ratel-pr-%s` and the Playwright report webroot have been torn down.\n' "$marker" "$PR_NUM")"
+            else
+              body="$(printf '%s\n⚠️ PR closed, but cleanup could not verify that preview namespace `ratel-pr-%s` was removed. Check the cleanup run and the hourly sweeper.\n' "$marker" "$PR_NUM")"
+            fi
+            payload=$(jq -nc --arg b "$body" '{body:$b}')
+            curl -sf -X PATCH -H "$auth" -H "$acc" \
+              "${api}/repos/${repo}/issues/comments/${existing}" -d "$payload" >/dev/null \
+              && echo "updated sticky comment ${existing}" || echo "::warning::comment update failed (non-fatal)"
+          fi

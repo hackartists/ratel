@@ -1,0 +1,5 @@
+error: PostgresJson supports named-field structs, single-field tuple newtypes, or enums
+ --> tests/ui/json_multi_tuple.rs:8:1
+  |
+8 | pub struct NotANewtype(String, i32);
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

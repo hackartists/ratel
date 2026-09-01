@@ -1,6 +1,7 @@
-use crate::features::spaces::pages::report::models::SpaceReport;
-use crate::features::spaces::pages::report::types::{ReportBlock, SpaceReportError};
+use crate::features::spaces::pages::report::types::ReportBlock;
 use crate::features::spaces::pages::report::*;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateReportRequest {
@@ -28,44 +29,52 @@ pub async fn update_report(
     report_id: SpaceReportEntityType,
     req: UpdateReportRequest,
 ) -> Result<UpdateReportResponse> {
-    SpaceReport::can_edit(role)?;
-    let space_partition: Partition = space_pk.into();
-    let sk: EntityType = report_id.into();
+    use crate::features::spaces::pages::report::models::{ReportBlockList, SpaceReport};
+    use crate::features::spaces::pages::report::types::SpaceReportError;
 
-    let conf = ServerConfig::default();
-    let dynamo = conf.dynamodb();
+    SpaceReport::can_edit(role)?;
+    let space_id = space_pk.0.clone();
+
+    let report_uuid =
+        uuid::Uuid::parse_str(&report_id.0).map_err(|_| SpaceReportError::ReportNotFound)?;
+
+    let mut report = SpaceReport::get_by_id(report_uuid)
+        .await
+        .map_err(|e| {
+            crate::error!("failed to load report for update: {e:?}");
+            SpaceReportError::ReportUpdateFailed
+        })?
+        .ok_or(SpaceReportError::ReportNotFound)?;
+
+    if report.space_id != space_id {
+        return Err(SpaceReportError::ReportNotFound.into());
+    }
 
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut updater =
-        SpaceReport::updater(space_partition.clone(), sk.clone()).with_updated_at(now);
+    report.updated_at = now;
     if let Some(title) = req.title {
-        updater = updater.with_title(title);
+        report.title = title;
     }
     if let Some(description) = req.description {
-        updater = updater.with_description(description);
+        report.description = description;
     }
     if let Some(status) = req.status {
-        updater = updater.with_status(status);
+        report.status = status;
     }
     if let Some(blocks) = req.blocks {
-        updater = updater.with_blocks(blocks);
+        report.blocks = ReportBlockList(blocks);
     }
     if let Some(html) = req.html_contents {
-        updater = updater.with_html_contents(html);
+        report.html_contents = Some(html);
     }
 
-    updater.execute(dynamo).await.map_err(|e| {
+    SpaceReport::repository().upsert(&report).await.map_err(|e| {
         crate::error!("failed to update report: {e:?}");
         SpaceReportError::ReportUpdateFailed
     })?;
 
-    let id = match &sk {
-        EntityType::SpaceReport(id) => id.clone(),
-        _ => String::new(),
-    };
-
     Ok(UpdateReportResponse {
-        id,
+        id: report.report_id(),
         updated_at: now,
     })
 }

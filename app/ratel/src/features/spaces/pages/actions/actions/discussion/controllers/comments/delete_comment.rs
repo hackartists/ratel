@@ -10,24 +10,15 @@ pub async fn delete_comment(
 ) -> Result<()> {
     SpacePost::can_view(&role)?;
 
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_post_id = SpacePostPartition(discussion_sk.0.clone());
-    let space_post_pk: Partition = space_post_id.clone().into();
-    let discussion_sk_entity: EntityType = discussion_sk.clone().into();
-    let space_action = SpaceAction::get(
-        cli,
-        &CompositePartition(space_id.clone(), discussion_sk.to_string()),
-        Some(EntityType::SpaceAction),
-    )
-    .await?
-    .ok_or(Error::SpaceActionNotFound)?;
+    let space_action = SpaceAction::get_one(&space_id, &discussion_sk.0)
+        .await?
+        .ok_or(Error::SpaceActionNotFound)?;
 
     let deps_met = crate::features::spaces::pages::actions::services::dependency::dependencies_met(
-        cli,
         &space,
         &space_action,
-        &user.pk,
+        &user.pk(),
     )
     .await?;
 
@@ -42,46 +33,70 @@ pub async fn delete_comment(
         return Err(SpaceActionDiscussionError::NotAvailableInCurrentStatus.into());
     }
 
-    let (post_pk, post_sk) = SpacePost::keys(&space_id, &space_post_id);
-    let _post = SpacePost::get(cli, &post_pk, Some(post_sk.clone()))
+    let post = SpacePost::get_one(&space_id, &space_post_id)
         .await?
         .ok_or(SpaceActionDiscussionError::NotFound)?;
     let comment_sk_entity: EntityType = comment_sk.into();
 
-    let comment = SpacePostComment::get(cli, &space_post_pk, Some(comment_sk_entity.clone()))
+    let comment = SpacePostComment::get_by_entity(&space_post_id, &comment_sk_entity)
         .await?
         .ok_or(Error::NotFound("Comment not found".into()))?;
 
-    if comment.author_pk != user.pk {
+    if comment.author_partition() != user.pk() {
         return Err(Error::NoPermission);
     }
 
-    let delete_comment_tx =
-        SpacePostComment::delete_transact_write_item(&space_post_pk, &comment_sk_entity);
-
-    let post_tx = SpacePost::updater(&post_pk, post_sk)
-        .decrease_comments(1)
-        .transact_write_item();
-
-    let space_pk: Partition = space_id.into();
-    let agg_item =
-        crate::features::spaces::space_common::models::aggregate::DashboardAggregate::inc_comments(
-            &space_pk, -1,
-        );
-
-    let mut txs = vec![delete_comment_tx, post_tx, agg_item];
-
-    if let Some(parent_sk) = &comment.parent_comment_sk {
-        let parent_tx = SpacePostComment::updater(&space_post_pk, parent_sk)
-            .decrease_replies(1)
-            .transact_write_item();
-        txs.push(parent_tx);
+    // Postgres: delete comment + decrement the discussion comment count, and
+    // (for replies) decrement the parent's reply count — atomically.
+    let tx = postgres::Tx::begin()
+        .await
+        .map_err(crate::common::Error::from)?;
+    // Emit outbox event (Phase 5) — EssenceDeleteDiscussionComment rule on
+    // SPACE_POST_COMMENT# REMOVE.
+    crate::common::events::outbox::EventOutbox::emit_remove_tx(
+        &tx,
+        crate::common::events::outbox::topic::SPACE_POST_COMMENT,
+        &comment,
+    )
+    .await
+    .map_err(|_| SpaceActionDiscussionError::DeleteFailed)?;
+    SpacePostComment::repository()
+        .with_tx(&tx)
+        .delete(comment.id)
+        .await
+        .map_err(|e| {
+            crate::error!("Failed to delete comment: {}", e);
+            SpaceActionDiscussionError::DeleteFailed
+        })?;
+    SpacePost::bump_comments_public_tx(&tx, post.id, -1)
+        .await
+        .map_err(|e| {
+            crate::error!("Failed to delete comment: {}", e);
+            SpaceActionDiscussionError::DeleteFailed
+        })?;
+    if !comment.parent_comment_id.is_empty() {
+        if let Some(parent) =
+            SpacePostComment::get_by_leaf(&space_post_id.0, &comment.parent_comment_id).await?
+        {
+            SpacePostComment::bump_replies_tx(&tx, parent.id, -1)
+                .await
+                .map_err(|e| {
+                    crate::error!("Failed to delete comment: {}", e);
+                    SpaceActionDiscussionError::DeleteFailed
+                })?;
+        }
     }
-
-    crate::transact_write_items!(cli, txs).map_err(|e| {
+    tx.commit().await.map_err(|e| {
         crate::error!("Failed to delete comment: {}", e);
         SpaceActionDiscussionError::DeleteFailed
     })?;
+
+    // Decrement the dashboard aggregate.
+    let space_pk: Partition = space_id.into();
+    let _ = crate::features::spaces::space_common::models::aggregate::DashboardAggregate::inc_comments(
+        &space_pk, -1,
+    )
+    .await;
 
     Ok(())
 }

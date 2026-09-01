@@ -26,7 +26,10 @@ use crate::features::spaces::pages::apps::apps::analyzes::*;
 use std::collections::{HashMap, HashSet};
 
 pub async fn hydrate_records(
-    cli: &aws_sdk_dynamodb::Client,
+    // No longer used — every model this touches is Postgres-backed now and
+    // reads from the global connection pool. Kept so call sites don't need
+    // to change.
+    _cli: &aws_sdk_dynamodb::Client,
     space_pk: &Partition,
     filters: &[AnalyzeReportFilter],
     refs: Vec<MatchedRecordRef>,
@@ -34,13 +37,35 @@ pub async fn hydrate_records(
 ) -> Result<Vec<AnalyzeRecordRow>> {
     use crate::common::models::auth::User;
     use crate::common::models::space::SpaceParticipant;
-    use crate::common::types::CompositePartition;
     use crate::features::posts::models::Team;
     use crate::features::spaces::pages::actions::actions::discussion::{
         SpacePost, SpacePostComment,
     };
     use crate::features::spaces::pages::actions::actions::poll::SpacePoll;
     use crate::features::spaces::pages::actions::actions::quiz::SpaceQuiz;
+    use uuid::Uuid;
+
+    /// Resolve display info for a `User` or `Team` partition. Both models
+    /// are Postgres-backed now — `User` by full `Partition` string,
+    /// `Team` by its surrogate `Uuid` id.
+    async fn resolve_user_or_team(p: Partition) -> Option<(String, String, String)> {
+        match &p {
+            Partition::User(_) => User::find_by_pk(&p)
+                .await
+                .ok()
+                .flatten()
+                .map(|u| (u.username, u.display_name, u.profile_url)),
+            Partition::Team(id) => {
+                let team_id = Uuid::parse_str(id).ok()?;
+                Team::get_by_id(team_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|t| (t.username, t.display_name, t.profile_url))
+            }
+            _ => None,
+        }
+    }
 
     let mut polls: HashMap<String, SpacePoll> = HashMap::new();
     let mut quizzes: HashMap<String, SpaceQuiz> = HashMap::new();
@@ -64,21 +89,23 @@ pub async fn hydrate_records(
         }
     }
 
+    let space_partition: SpacePartition = space_pk.clone().into();
+
     for poll_id in want_poll {
-        let sk = EntityType::SpacePoll(poll_id.clone());
-        if let Ok(Some(p)) = SpacePoll::get(cli, space_pk.clone(), Some(sk)).await {
+        let poll_entity_id = SpacePollEntityType(poll_id.clone());
+        if let Ok(Some(p)) = SpacePoll::get_one(&space_partition, &poll_entity_id).await {
             polls.insert(poll_id, p);
         }
     }
     for quiz_id in want_quiz {
-        let sk = EntityType::SpaceQuiz(quiz_id.clone());
-        if let Ok(Some(q)) = SpaceQuiz::get(cli, space_pk.clone(), Some(sk)).await {
+        let quiz_entity_id = SpaceQuizEntityType(quiz_id.clone());
+        if let Ok(Some(q)) = SpaceQuiz::get_one(&space_partition, &quiz_entity_id).await {
             quizzes.insert(quiz_id, q);
         }
     }
     for post_id in want_post {
-        let sk = EntityType::SpacePost(post_id.clone());
-        if let Ok(Some(p)) = SpacePost::get(cli, space_pk.clone(), Some(sk)).await {
+        let post_partition: SpacePostPartition = SpacePostPartition(post_id.clone());
+        if let Ok(Some(p)) = SpacePost::get_one(&space_partition, &post_partition).await {
             posts.insert(post_id, p);
         }
     }
@@ -111,15 +138,11 @@ pub async fn hydrate_records(
             let p = p.clone();
             let space_pk = space_pk.clone();
             async move {
-                SpaceParticipant::get(
-                    cli,
-                    CompositePartition(space_pk, p),
-                    Some(EntityType::SpaceParticipant),
-                )
-                .await
-                .ok()
-                .flatten()
-                .map(|sp| (sp.username, sp.display_name, sp.profile_url))
+                SpaceParticipant::get_participant(&space_pk, &p)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|sp| (sp.username, sp.display_name, sp.profile_url))
             }
         });
         let resolved = futures::future::join_all(lookups).await;
@@ -129,24 +152,9 @@ pub async fn hydrate_records(
             }
         }
     } else {
-        let lookups = actor_pks.iter().map(|(_key, p)| {
-            let p = p.clone();
-            async move {
-                match &p {
-                    Partition::User(_) => User::get(cli, &p, Some(EntityType::User))
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|u| (u.username, u.display_name, u.profile_url)),
-                    Partition::Team(_) => Team::get(cli, &p, Some(EntityType::Team))
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|t| (t.username, t.display_name, t.profile_url)),
-                    _ => None,
-                }
-            }
-        });
+        let lookups = actor_pks
+            .iter()
+            .map(|(_key, p)| resolve_user_or_team(p.clone()));
         let resolved = futures::future::join_all(lookups).await;
         for ((key, _pk), info) in actor_pks.into_iter().zip(resolved.into_iter()) {
             if let Some(triple) = info {
@@ -160,24 +168,9 @@ pub async fn hydrate_records(
         .into_iter()
         .filter_map(|s| s.parse::<Partition>().ok().map(|p| (s.clone(), p)))
         .collect();
-    let target_lookups = target_pks.iter().map(|(_key, p)| {
-        let p = p.clone();
-        async move {
-            match &p {
-                Partition::User(_) => User::get(cli, &p, Some(EntityType::User))
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|u| (u.username, u.display_name, u.profile_url)),
-                Partition::Team(_) => Team::get(cli, &p, Some(EntityType::Team))
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|t| (t.username, t.display_name, t.profile_url)),
-                _ => None,
-            }
-        }
-    });
+    let target_lookups = target_pks
+        .iter()
+        .map(|(_key, p)| resolve_user_or_team(p.clone()));
     let target_resolved = futures::future::join_all(target_lookups).await;
     for ((key, _pk), info) in target_pks.into_iter().zip(target_resolved.into_iter()) {
         if let Some(triple) = info {
@@ -232,9 +225,9 @@ pub async fn hydrate_records(
                     row.post_title = post.title.clone();
                 }
                 if let Ok(comment_sk) = r.sub_id.parse::<EntityType>() {
-                    let post_pk = Partition::SpacePost(r.item_id.clone());
+                    let post_partition = SpacePostPartition(r.item_id.clone());
                     if let Ok(Some(comment)) =
-                        SpacePostComment::get(cli, post_pk, Some(comment_sk)).await
+                        SpacePostComment::get_by_entity(&post_partition, &comment_sk).await
                     {
                         row.comment_text = comment.content;
                         // Override actor info from the comment's

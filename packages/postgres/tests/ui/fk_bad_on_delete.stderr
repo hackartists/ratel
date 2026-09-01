@@ -1,0 +1,6 @@
+error: on_delete must be one of: CASCADE, SET NULL, SET DEFAULT, RESTRICT, NO ACTION
+  --> tests/ui/fk_bad_on_delete.rs:12:5
+   |
+12 | /     #[postgres(references = "parents(id)", on_delete = "NONSENSE")]
+13 | |     pub parent_id: Uuid,
+   | |_______________________^

@@ -11,22 +11,17 @@ pub async fn get_quiz(
     quiz_id: SpaceQuizEntityType,
 ) -> Result<QuizResponse> {
     SpaceQuiz::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_id = space_pk;
-    let space_pk: Partition = space_id.clone().into();
-    let quiz_sk: EntityType = quiz_id.clone().into();
 
-    let quiz = SpaceQuiz::get(cli, &space_pk, Some(quiz_sk))
+    let quiz = SpaceQuiz::get_one(&space_id, &quiz_id)
         .await?
         .ok_or(Error::NotFound("Quiz not found".into()))?;
 
     let mut response: QuizResponse = quiz.into();
 
-    let space_action = crate::features::spaces::pages::actions::models::SpaceAction::get(
-        cli,
-        &CompositePartition(space_id, quiz_id.clone()),
-        Some(EntityType::SpaceAction),
+    let space_action = crate::features::spaces::pages::actions::models::SpaceAction::get_one(
+        &space_id,
+        &quiz_id.0,
     )
     .await?
     .ok_or(Error::SpaceActionNotFound)?;
@@ -49,12 +44,12 @@ pub async fn get_quiz(
             .saturating_add(1)
             .min(MAX_TOTAL_ATTEMPTS);
         let attempts =
-            SpaceQuizAttempt::list_by_quiz_user(cli, &quiz_id, &user.pk, max_attempts as i32)
+            SpaceQuizAttempt::list_by_quiz_user(&quiz_id, &user.pk(), max_attempts as i32)
                 .await?;
         response.attempt_count = attempts.len() as i64;
         let has_passed = if let Some(latest) = attempts.first() {
             let passed = latest.score >= response.pass_score;
-            response.my_response = Some(latest.answers.clone());
+            response.my_response = Some(latest.answers.0.clone());
             response.my_score = Some(latest.score);
             response.passed = Some(passed);
             passed
@@ -71,11 +66,8 @@ pub async fn get_quiz(
     }
 
     if include_correct_answers {
-        let answer_sk = EntityType::SpaceQuizAnswer(quiz_id.to_string());
-        if let Some(answer) =
-            SpaceQuizAnswer::get(cli, &space_pk, Some(answer_sk)).await?
-        {
-            response.correct_answers = Some(answer.answers);
+        if let Some(answer) = SpaceQuizAnswer::get_one(&space_id, &quiz_id).await? {
+            response.correct_answers = Some(answer.answers.0);
         }
     }
 

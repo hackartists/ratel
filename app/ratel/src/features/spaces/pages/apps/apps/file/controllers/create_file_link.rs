@@ -16,24 +16,13 @@ pub async fn create_file_link(
     space_pk: SpacePartition,
     req: CreateFileLinkRequest,
 ) -> Result<()> {
-    let cli = crate::features::spaces::pages::apps::apps::file::config::get().common.dynamodb();
-
     let space_pk: Partition = space_pk.into();
     let now = crate::common::utils::time::now();
-    let link_id = crate::common::uuid::Uuid::now_v7().to_string();
 
-    let file_link = FileLink {
-        pk: space_pk.clone(),
-        sk: EntityType::FileLink(link_id),
-        file_url: req.file_url.clone(),
-        link_target: req.link_target,
-        created_at: now,
-        updated_at: now,
-    };
+    let file_link = FileLink::new(space_pk.clone(), req.file_url.clone(), req.link_target, now);
 
-    file_link.create(cli).await?;
+    FileLink::repository().insert(&file_link).await?;
 
-    let (pk, sk) = SpaceFile::keys(&space_pk);
     let name = req
         .file_name
         .filter(|n| !n.trim().is_empty())
@@ -47,15 +36,12 @@ pub async fn create_file_link(
         ..Default::default()
     };
 
-    let existing = SpaceFile::get(cli, &pk, Some(sk.clone())).await?;
+    let existing = SpaceFile::get_by_space(&space_pk).await?;
     if let Some(mut space_file) = existing {
-        space_file.files.push(new_file);
-        SpaceFile::updater(&pk, sk)
-            .with_files(space_file.files)
-            .execute(cli)
-            .await?;
+        space_file.files.0.push(new_file);
+        space_file.save().await?;
     } else {
-        SpaceFile::new(space_pk, vec![new_file]).create(cli).await?;
+        SpaceFile::new(space_pk, vec![new_file]).save().await?;
     }
 
     Ok(())

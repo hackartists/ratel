@@ -3,32 +3,33 @@ use crate::common::*;
 #[allow(unused_imports)]
 use rmcp::schemars;
 
-/// Materialized leaderboard row (PR7). Maintained as a settlement
-/// side-effect: every time `FactFoldUserStats` is bumped, the
-/// settlement handler also rewrites the matching leaderboard
-/// entry — deleting the prior accuracy-keyed row and writing a
-/// fresh one at the new sk.
+use postgres::{Order, PostgresEntity};
+use uuid::Uuid;
+
+/// Materialized leaderboard row (PR7), one per user.
 ///
-/// sk encoding: `{accuracy_bps:010}#{user_id}` — accuracy in
-/// basis points (0..=10_000) zero-padded to 10 chars so an
-/// sk-DESC query at `Partition::FactFoldLeaderboard` returns the
-/// highest-accuracy users first regardless of who tied at the
-/// boundary.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(
-    feature = "server",
-    derive(DynamoEntity, rmcp::schemars::JsonSchema)
-)]
+/// Postgres migration: the DynamoDB accuracy-encoded sort key
+/// (`{accuracy_bps:010}#{user_id}` under a shared anchor pk) is
+/// replaced by a surrogate `id` PK plus a `unique(user_id)` natural
+/// key with `accuracy_bps` as a plain sortable column. The old
+/// delete-old-sk-then-write-new-sk dance collapses into a single
+/// `upsert_on(user_id)` — the row is updated in place, and a
+/// `accuracy_bps DESC` query returns the highest-accuracy users first.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "fact_fold_leaderboard_entries")]
 pub struct FactFoldLeaderboardEntry {
-    pub pk: Partition,  // Partition::FactFoldLeaderboard
-    pub sk: EntityType, // EntityType::FactFoldLeaderboardEntry(inner)
+    pub id: Uuid,
+
+    #[postgres(unique)]
+    pub user_id: String,
 
     pub created_at: i64,
     pub updated_at: i64,
 
-    pub user_pk: Partition,
-    /// Accuracy = correct_count / total_rounds, in basis points
-    /// (10_000 = 100% accurate).
+    /// Rendered `Partition` string of the user.
+    pub user_pk: String,
+    /// Accuracy = correct_count / total_rounds, in basis points.
+    #[postgres(index)]
     pub accuracy_bps: i32,
     pub total_rounds: i64,
     pub correct_count: i64,
@@ -36,24 +37,29 @@ pub struct FactFoldLeaderboardEntry {
     pub last_played_at: i64,
 }
 
-#[cfg(feature = "server")]
 impl FactFoldLeaderboardEntry {
-    pub fn anchor_pk() -> Partition {
-        Partition::FactFoldLeaderboard
+    /// Top entries by accuracy (DESC), then user id (DESC) as a stable
+    /// tie-break — matches the old sk-DESC scan ordering.
+    pub async fn list_top(limit: i64, offset: i64) -> crate::common::Result<Vec<Self>> {
+        Ok(Self::repository()
+            .find(
+                Self::query()
+                    .order_by(FactFoldLeaderboardEntryColumn::AccuracyBps, Order::Desc)
+                    .order_by(FactFoldLeaderboardEntryColumn::UserId, Order::Desc)
+                    .limit(limit)
+                    .offset(offset),
+            )
+            .await
+            .map_err(crate::common::Error::from)?
+            .items)
     }
 
-    pub fn encode_sk_inner(accuracy_bps: i32, user_id: &str) -> String {
-        let clamped = accuracy_bps.clamp(0, 10_000) as u32;
-        format!("{:010}#{}", clamped, user_id)
-    }
-
-    pub fn keys(accuracy_bps: i32, user_id: &str) -> (Partition, EntityType) {
-        (
-            Partition::FactFoldLeaderboard,
-            EntityType::FactFoldLeaderboardEntry(Self::encode_sk_inner(
-                accuracy_bps,
-                user_id,
-            )),
-        )
+    /// Natural-key upsert on `user_id` (replaces the delete+recreate
+    /// pair the sk-encoded accuracy required on DynamoDB).
+    pub async fn save(&self) -> crate::common::Result<Self> {
+        Self::repository()
+            .upsert_on(&["user_id"], self)
+            .await
+            .map_err(crate::common::Error::from)
     }
 }

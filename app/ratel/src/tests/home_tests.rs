@@ -1,7 +1,7 @@
 use super::*;
 use crate::common::models::space::{SpaceCommon, SpaceParticipant};
 use crate::common::types::{
-    EntityType, Partition, SpacePartition, SpacePublishState, SpaceStatus, SpaceVisibility,
+    Partition, SpacePartition, SpacePublishState, SpaceStatus, SpaceVisibility,
 };
 use crate::features::auth::User;
 use crate::features::posts::models::Post;
@@ -23,28 +23,27 @@ async fn seed_space_with_participants(
     let post_pk = Partition::Feed(id);
 
     let mut space = SpaceCommon::default();
-    space.pk = space_pk.clone();
-    space.sk = EntityType::SpaceCommon;
+    space.id = uuid::Uuid::now_v7();
+    space.space_pk = space_pk.to_string();
     space.created_at = now;
     space.updated_at = now;
     space.status = Some(status);
     space.publish_state = SpacePublishState::Published;
     space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk.clone();
-    space.user_pk = author.pk.clone();
+    space.post_pk = post_pk.to_string();
+    space.user_pk = author.pk().to_string();
     space.author_display_name = author.display_name.clone();
     space.author_username = author.username.clone();
     space.participants = participants;
-    space.create(&ctx.ddb).await.unwrap();
+    space.create().await.unwrap();
 
     let post = Post {
-        pk: post_pk,
-        sk: EntityType::Post,
-        title: format!("Test Space {}", space.pk),
-        space_pk: Some(space_pk.clone()),
+        id: uuid::Uuid::now_v7(),
+        title: format!("Test Space {}", space_pk),
+        space_pk: Some(space_pk.to_string()),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.unwrap();
+    post.create().await.unwrap();
 
     // The Hot stream is read-only; rows are written by
     // `space_fanout::upsert_hot_space`. Production paths trigger this via
@@ -65,14 +64,14 @@ async fn seed_space(ctx: &TestContext, author: &User, status: SpaceStatus) -> Sp
 }
 
 async fn seed_participant(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     space_pk: &Partition,
     user: &User,
     last_activity_at: Option<i64>,
 ) {
     let mut sp = SpaceParticipant::new_non_anonymous(space_pk.clone(), user.clone());
     sp.last_activity_at = last_activity_at;
-    sp.create(&ctx.ddb).await.unwrap();
+    sp.create().await.unwrap();
 }
 
 fn space_id_str(pk: &Partition) -> String {
@@ -81,19 +80,19 @@ fn space_id_str(pk: &Partition) -> String {
 
 // ----- My Spaces ---------------------------------------------------------
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_my_spaces_ranks_active_before_inactive() {
     let ctx = TestContext::setup().await;
     let user = ctx.test_user.0.clone();
 
     let designing = seed_space(&ctx, &user, SpaceStatus::Designing).await;
-    seed_participant(&ctx, &designing.pk, &user, Some(9_000)).await;
+    seed_participant(&ctx, &designing.partition(), &user, Some(9_000)).await;
 
     let ongoing = seed_space(&ctx, &user, SpaceStatus::Ongoing).await;
-    seed_participant(&ctx, &ongoing.pk, &user, Some(1_000)).await;
+    seed_participant(&ctx, &ongoing.partition(), &user, Some(1_000)).await;
 
     let finished = seed_space(&ctx, &user, SpaceStatus::Finished).await;
-    seed_participant(&ctx, &finished.pk, &user, Some(5_000)).await;
+    seed_participant(&ctx, &finished.partition(), &user, Some(5_000)).await;
 
     let (status, _, body) = crate::test_get! {
         app: ctx.app.clone(),
@@ -104,9 +103,9 @@ async fn test_my_spaces_ranks_active_before_inactive() {
     assert_eq!(status, 200, "my-spaces: {:?}", body);
 
     let returned: Vec<String> = body.items.iter().map(|i| i.space_id.to_string()).collect();
-    let ongoing_id = space_id_str(&ongoing.pk);
-    let designing_id = space_id_str(&designing.pk);
-    let finished_id = space_id_str(&finished.pk);
+    let ongoing_id = space_id_str(&ongoing.partition());
+    let designing_id = space_id_str(&designing.partition());
+    let finished_id = space_id_str(&finished.partition());
 
     assert!(
         returned.contains(&ongoing_id),
@@ -134,7 +133,7 @@ async fn test_my_spaces_ranks_active_before_inactive() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_my_spaces_sorts_by_last_activity() {
     let ctx = TestContext::setup().await;
     let user = ctx.test_user.0.clone();
@@ -144,8 +143,8 @@ async fn test_my_spaces_sorts_by_last_activity() {
 
     // Pin explicit activity times so the sort is deterministic regardless of
     // the order BatchGetItem returns rows.
-    seed_participant(&ctx, &older.pk, &user, Some(1_000)).await;
-    seed_participant(&ctx, &newer.pk, &user, Some(2_000)).await;
+    seed_participant(&ctx, &older.partition(), &user, Some(1_000)).await;
+    seed_participant(&ctx, &newer.partition(), &user, Some(2_000)).await;
 
     let (status, _, body) = crate::test_get! {
         app: ctx.app.clone(),
@@ -156,8 +155,8 @@ async fn test_my_spaces_sorts_by_last_activity() {
     assert_eq!(status, 200, "my-spaces: {:?}", body);
     assert!(body.items.len() >= 2, "expected both spaces");
 
-    let newer_id = space_id_str(&newer.pk);
-    let older_id = space_id_str(&older.pk);
+    let newer_id = space_id_str(&newer.partition());
+    let older_id = space_id_str(&older.partition());
     let newer_idx = body
         .items
         .iter()
@@ -180,7 +179,7 @@ async fn test_my_spaces_sorts_by_last_activity() {
 // designing — `create_space_handler` writes a participant row for the
 // author but leaves `publish_state = Draft` until publish, and this list
 // is how the home carousel surfaces work-in-progress.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_my_spaces_includes_draft_owned_by_creator() {
     let ctx = TestContext::setup().await;
     let user = ctx.test_user.0.clone();
@@ -191,28 +190,27 @@ async fn test_my_spaces_includes_draft_owned_by_creator() {
     let post_pk = Partition::Feed(id);
 
     let mut draft = SpaceCommon::default();
-    draft.pk = space_pk.clone();
-    draft.sk = EntityType::SpaceCommon;
+    draft.id = uuid::Uuid::now_v7();
+    draft.space_pk = space_pk.to_string();
     draft.created_at = now;
     draft.updated_at = now;
     draft.status = None;
     draft.publish_state = SpacePublishState::Draft;
     draft.visibility = SpaceVisibility::Private;
-    draft.post_pk = post_pk.clone();
-    draft.user_pk = user.pk.clone();
+    draft.post_pk = post_pk.to_string();
+    draft.user_pk = user.pk().to_string();
     draft.author_display_name = user.display_name.clone();
     draft.author_username = user.username.clone();
     draft.participants = 1;
-    draft.create(&ctx.ddb).await.unwrap();
+    draft.create().await.unwrap();
 
     let post = Post {
-        pk: post_pk,
-        sk: EntityType::Post,
+        id: uuid::Uuid::now_v7(),
         title: "Draft Space".to_string(),
-        space_pk: Some(space_pk.clone()),
+        space_pk: Some(space_pk.to_string()),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.unwrap();
+    post.create().await.unwrap();
     seed_participant(&ctx, &space_pk, &user, Some(now)).await;
 
     let (status, _, body) = crate::test_get! {
@@ -232,7 +230,7 @@ async fn test_my_spaces_includes_draft_owned_by_creator() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_my_spaces_requires_auth() {
     let ctx = TestContext::setup().await;
     let (status, _, _) = crate::test_get! {
@@ -246,7 +244,7 @@ async fn test_my_spaces_requires_auth() {
 
 /// Anonymous viewers see the global Hot stream — every eligible space
 /// surfaces regardless of viewer identity.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_hot_spaces_anonymous_sees_global_stream() {
     let ctx = TestContext::setup().await;
     let author = ctx.test_user.0.clone();
@@ -260,7 +258,7 @@ async fn test_hot_spaces_anonymous_sees_global_stream() {
     };
     assert_eq!(status, 200, "hot-spaces (anon): {:?}", body);
 
-    let target = space_id_str(&space.pk);
+    let target = space_id_str(&space.partition());
     assert!(
         body.items.iter().any(|i| i.space_id.to_string() == target),
         "anon viewer should see the public space: {:?}",
@@ -271,7 +269,7 @@ async fn test_hot_spaces_anonymous_sees_global_stream() {
 /// Logged-in viewers see the same stream as anonymous ones — there is no
 /// per-viewer fanout. A viewer with no relationship to the author still
 /// sees the space because the Hot tab is global.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_hot_spaces_logged_in_sees_same_stream_as_anonymous() {
     let ctx = TestContext::setup().await;
     let author = ctx.test_user.0.clone();
@@ -287,7 +285,7 @@ async fn test_hot_spaces_logged_in_sees_same_stream_as_anonymous() {
     };
     assert_eq!(status, 200, "hot-spaces: {:?}", body);
 
-    let target = space_id_str(&space.pk);
+    let target = space_id_str(&space.partition());
     assert!(
         body.items.iter().any(|i| i.space_id.to_string() == target),
         "logged-in viewer should see the global Hot stream: {:?}",
@@ -297,7 +295,7 @@ async fn test_hot_spaces_logged_in_sees_same_stream_as_anonymous() {
 
 /// Spaces below the participant gate must NOT surface in the Hot tab —
 /// the gate is what prevents empty/test spaces from polluting the stream.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_hot_spaces_excludes_low_participant_space() {
     let ctx = TestContext::setup().await;
     let author = ctx.test_user.0.clone();
@@ -312,7 +310,7 @@ async fn test_hot_spaces_excludes_low_participant_space() {
     };
     assert_eq!(status, 200, "hot-spaces: {:?}", body);
 
-    let target = space_id_str(&space.pk);
+    let target = space_id_str(&space.partition());
     assert!(
         body.items.iter().all(|i| i.space_id.to_string() != target),
         "space with <MIN_PARTICIPANTS_FOR_HOT participants must not surface: {:?}",

@@ -10,7 +10,7 @@
 use super::*;
 use crate::common::models::space::SpaceCommon;
 use crate::common::types::{
-    EntityType, ListResponse, Partition, SpacePublishState, SpaceStatus, SpaceVisibility,
+    ListResponse, Partition, SpacePublishState, SpaceStatus, SpaceVisibility,
 };
 use crate::features::spaces::pages::report::controllers::{
     CreateReportResponse, DeleteReportResponse, GetReportResponse, UpdateReportResponse,
@@ -28,25 +28,26 @@ async fn seed_space(ctx: &TestContext) -> String {
     let space_pk = Partition::Space(space_id.clone());
     let post_pk = Partition::Feed(space_id.clone());
 
-    let mut space = SpaceCommon::default();
-    space.pk = space_pk;
-    space.sk = EntityType::SpaceCommon;
-    space.created_at = now;
-    space.updated_at = now;
-    space.status = Some(SpaceStatus::Ongoing);
-    space.publish_state = SpacePublishState::Published;
-    space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk;
-    space.user_pk = ctx.test_user.0.pk.clone();
-    space.author_display_name = ctx.test_user.0.display_name.clone();
-    space.author_profile_url = ctx.test_user.0.profile_url.clone();
-    space.author_username = ctx.test_user.0.username.clone();
-    space.create(&ctx.ddb).await.expect("seed space");
+    let space = SpaceCommon {
+        space_pk: space_pk.to_string(),
+        created_at: now,
+        updated_at: now,
+        status: Some(SpaceStatus::Ongoing),
+        publish_state: SpacePublishState::Published,
+        visibility: SpaceVisibility::Public,
+        post_pk: post_pk.to_string(),
+        user_pk: ctx.test_user.0.pk().to_string(),
+        author_display_name: ctx.test_user.0.display_name.clone(),
+        author_profile_url: ctx.test_user.0.profile_url.clone(),
+        author_username: ctx.test_user.0.username.clone(),
+        ..Default::default()
+    };
+    space.create().await.expect("seed space");
 
     space_id
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_reports_empty_initially() {
     let ctx = TestContext::setup().await;
     let space_id = seed_space(&ctx).await;
@@ -66,7 +67,7 @@ async fn test_list_reports_empty_initially() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_then_list_returns_the_report() {
     let ctx = TestContext::setup().await;
     let space_id = seed_space(&ctx).await;
@@ -111,7 +112,7 @@ async fn test_create_then_list_returns_the_report() {
     assert_eq!(item.status, ReportStatus::Draft);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_report_returns_full_detail() {
     let ctx = TestContext::setup().await;
     let space_id = seed_space(&ctx).await;
@@ -138,7 +139,7 @@ async fn test_get_report_returns_full_detail() {
     assert!(body.html_contents.is_none());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_get_missing_report_errors() {
     let ctx = TestContext::setup().await;
     let space_id = seed_space(&ctx).await;
@@ -151,7 +152,7 @@ async fn test_get_missing_report_errors() {
     assert_ne!(status, 200, "missing report must not 200");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_reports_orders_newest_first() {
     let ctx = TestContext::setup().await;
     let space_id = seed_space(&ctx).await;
@@ -189,7 +190,7 @@ async fn test_list_reports_orders_newest_first() {
     assert_eq!(returned, expected, "expected newest-first ordering");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_report_forbidden_for_non_creator() {
     // Owner seeds + the second user authenticates as a non-creator.
     // The space is public so the extractor will resolve the second
@@ -227,7 +228,7 @@ async fn test_create_report_forbidden_for_non_creator() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_reports_allowed_for_non_creator_on_public_space() {
     // The list endpoint uses `can_view`, which is permissive for any
     // resolved space role. A non-creator on a public space should be
@@ -254,7 +255,7 @@ async fn test_list_reports_allowed_for_non_creator_on_public_space() {
 /// query path without going through the create endpoint (which only
 /// creates Drafts).
 async fn seed_report_with_status(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     space_id: &str,
     title: &str,
     status: crate::features::spaces::pages::report::types::ReportStatus,
@@ -264,27 +265,24 @@ async fn seed_report_with_status(
 
     let now = get_now_timestamp_millis();
     let report = SpaceReport {
-        pk: Partition::Space(space_id.to_string()),
-        sk: EntityType::SpaceReport(uuid::Uuid::now_v7().to_string()),
+        id: uuid::Uuid::now_v7(),
+        space_id: space_id.to_string(),
         created_at: now,
         updated_at: now,
         status,
         title: title.to_string(),
         description: String::new(),
         html_contents: None,
-        blocks: Vec::new(),
+        blocks: Default::default(),
     };
-    let id = match &report.sk {
-        EntityType::SpaceReport(id) => id.clone(),
-        _ => String::new(),
-    };
-    report.create(&ctx.ddb).await.expect("seed report");
+    let id = report.id.to_string();
+    report.create().await.expect("seed report");
     // Ensure later uuid_v7 ids sort after earlier ones.
     tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     id
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_reports_filters_by_status_via_gsi() {
     use crate::features::spaces::pages::report::types::ReportStatus;
     let ctx = TestContext::setup().await;
@@ -345,7 +343,7 @@ async fn test_list_reports_filters_by_status_via_gsi() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_delete_report_removes_row_and_refreshes_list() {
     let ctx = TestContext::setup().await;
     let space_id = seed_space(&ctx).await;
@@ -386,7 +384,7 @@ async fn test_delete_report_removes_row_and_refreshes_list() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_delete_report_forbidden_for_non_creator() {
     let ctx = TestContext::setup().await;
     let space_id = seed_space(&ctx).await;
@@ -429,7 +427,7 @@ async fn test_delete_report_forbidden_for_non_creator() {
     assert_eq!(body.id, report_id);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_report_round_trips_title_and_blocks() {
     use crate::features::spaces::pages::report::types::ReportBlock;
 
@@ -484,7 +482,7 @@ async fn test_update_report_round_trips_title_and_blocks() {
     }
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_report_forbidden_for_non_creator() {
     let ctx = TestContext::setup().await;
     let space_id = seed_space(&ctx).await;

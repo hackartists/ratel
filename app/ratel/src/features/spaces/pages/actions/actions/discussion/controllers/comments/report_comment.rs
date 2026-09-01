@@ -1,9 +1,13 @@
-use crate::common::models::moderation::{
-    ModerationSetting, ModerationStatus, UserModerationFlag,
-};
+use crate::common::models::moderation::{ModerationSetting, ModerationStatus, UserModerationFlag};
 use crate::features::spaces::pages::actions::actions::discussion::*;
+#[cfg(feature = "server")]
+#[allow(unused_imports)]
+use rmcp::schemars;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 pub struct ReportCommentRequest {
     pub reason: ReportReason,
     #[serde(default)]
@@ -14,9 +18,8 @@ pub struct ReportCommentRequest {
 ///
 /// One report per (comment, reporter) — a repeat report by the same user is a
 /// no-op. When a comment's DISTINCT reporter count reaches the admin-configured
-/// threshold the comment is auto-hidden (req #2); when the reported AUTHOR's
-/// accumulated report count reaches the threshold the author is flagged
-/// `PendingReview` for the admin moderation queue (req #5).
+/// threshold the comment is auto-hidden (req #2); the reported AUTHOR enters the
+/// admin moderation queue on their first report (req #5).
 #[post("/api/spaces/{space_id}/discussions/{discussion_sk}/comments/{comment_sk}/report", role: SpaceUserRole, user: crate::features::auth::User)]
 pub async fn report_comment(
     space_id: SpacePartition,
@@ -24,78 +27,65 @@ pub async fn report_comment(
     comment_sk: SpacePostCommentTargetEntityType,
     req: ReportCommentRequest,
 ) -> Result<()> {
+    let _ = space_id;
     SpacePost::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
 
-    let discussion_sk_entity: EntityType = discussion_sk.into();
-    let space_post_pk: SpacePostPartition = match &discussion_sk_entity {
-        EntityType::SpacePost(id) => SpacePostPartition(id.clone()),
-        _ => return Err(SpaceActionDiscussionError::InvalidDiscussionId.into()),
-    };
-    let post_pk: Partition = space_post_pk.into();
+    let space_post_pk = SpacePostPartition(discussion_sk.0);
+    let post_id = space_post_pk.0.clone();
     let comment_sk_entity: EntityType = comment_sk.into();
 
-    let comment = SpacePostComment::get(cli, &post_pk, Some(comment_sk_entity.clone()))
+    let comment = SpacePostComment::get_by_entity(&space_post_pk, &comment_sk_entity)
         .await?
         .ok_or(SpaceActionDiscussionError::NotFound)?;
 
     // A user cannot report their own comment.
-    if comment.author_pk == user.pk {
+    if comment.author_pk == user.pk().to_string() {
         return Err(Error::NoPermission);
     }
 
+    let comment_key = comment.like_key();
+
     // Dedup: if this reporter already reported this comment, no-op.
-    let (report_pk, report_sk) =
-        match SpacePostCommentReport::keys(&post_pk, &comment_sk_entity, &user.pk) {
-            Some(keys) => keys,
-            None => return Err(SpaceActionDiscussionError::InvalidDiscussionId.into()),
-        };
-    if SpacePostCommentReport::get(cli, &report_pk, Some(report_sk))
-        .await?
-        .is_some()
-    {
+    if SpacePostCommentReport::already_reported(&post_id, &comment_key, &user.pk()).await? {
         return Ok(());
     }
 
     let report = SpacePostCommentReport::new(
-        post_pk.clone(),
-        comment_sk_entity.clone(),
+        post_id.clone(),
+        comment_key.clone(),
         comment.author_pk.clone(),
-        user.pk.clone(),
+        &user.pk(),
         req.reason,
         req.detail,
-    )
-    .ok_or(SpaceActionDiscussionError::InvalidDiscussionId)?;
-
-    report.create(cli).await.map_err(|e| {
-        crate::error!("failed to create comment report: {e}");
-        SpaceActionDiscussionError::CreateFailed
-    })?;
+    );
+    SpacePostCommentReport::repository()
+        .insert(&report)
+        .await
+        .map_err(|e| {
+            crate::error!("failed to create comment report: {e}");
+            SpaceActionDiscussionError::CreateFailed
+        })?;
 
     // Threshold (admin-configurable, default 3).
-    let (setting_pk, setting_sk) = ModerationSetting::keys();
-    let threshold = ModerationSetting::get(cli, &setting_pk, Some(setting_sk))
-        .await
-        .ok()
-        .flatten()
-        .map(|s| s.report_threshold)
-        .unwrap_or(crate::common::models::moderation::DEFAULT_REPORT_THRESHOLD)
-        .max(1);
+    let threshold = ModerationSetting::threshold().await;
 
-    // Bump the comment's reporter count; auto-hide once it hits the threshold.
-    let new_comment_count = comment.report_count + 1;
-    let mut comment_updater =
-        SpacePostComment::updater(&post_pk, &comment_sk_entity).increase_report_count(1);
-    if new_comment_count >= threshold && !comment.hidden {
-        comment_updater = comment_updater.with_hidden(true);
+    // Recount DISTINCT reporters and auto-hide once the threshold is reached.
+    // Counting beats an increment here: the UNIQUE index is the source of
+    // truth, so a concurrent double-report can never inflate the tally.
+    let count = SpacePostCommentReport::count_for_comment(&post_id, &comment_key)
+        .await
+        .unwrap_or(comment.report_count + 1);
+
+    let mut upd = SpacePostComment::update().report_count(count);
+    if count >= threshold && !comment.hidden {
+        upd = upd.hidden(true);
     }
-    if let Err(e) = comment_updater.execute(cli).await {
+    if let Err(e) = SpacePostComment::repository().update(comment.id, upd).await {
         crate::error!("failed to bump comment report_count: {e}");
     }
 
     // Bump the author's moderation tally and surface them in the admin queue.
-    bump_author_flag(cli, &comment).await;
+    bump_author_flag(&comment).await;
 
     Ok(())
 }
@@ -106,31 +96,32 @@ pub async fn report_comment(
 /// comment auto-hide (above), not when the admin sees the user. An existing
 /// admin decision (`Blocked` / `Dismissed`) is never overridden.
 #[cfg(feature = "server")]
-async fn bump_author_flag(cli: &aws_sdk_dynamodb::Client, comment: &SpacePostComment) {
+#[cfg(feature = "server")]
+async fn bump_author_flag(comment: &SpacePostComment) {
     use crate::common::utils::time::get_now_timestamp;
 
-    let (flag_pk, flag_sk) = match UserModerationFlag::keys(&comment.author_pk) {
-        Some(keys) => keys,
-        None => return,
-    };
+    let author_pk = comment.author_partition();
+    if !matches!(author_pk, Partition::User(_)) {
+        return;
+    }
 
-    match UserModerationFlag::get(cli, &flag_pk, Some(flag_sk)).await {
+    match UserModerationFlag::find_by_user(&author_pk).await {
         Ok(Some(flag)) => {
-            let mut updater = UserModerationFlag::updater(&flag.pk, &flag.sk)
-                .increase_report_count(1)
-                .with_updated_at(get_now_timestamp());
+            let mut upd = UserModerationFlag::update()
+                .report_count(flag.report_count + 1)
+                .updated_at(get_now_timestamp());
             // Surface an otherwise-untouched user for review. Never override an
             // admin decision (Blocked / Dismissed).
             if flag.status == ModerationStatus::None {
-                updater = updater.with_status(ModerationStatus::PendingReview);
+                upd = upd.status(ModerationStatus::PendingReview);
             }
-            if let Err(e) = updater.execute(cli).await {
+            if let Err(e) = UserModerationFlag::repository().update(flag.id, upd).await {
                 crate::error!("failed to bump author moderation flag: {e}");
             }
         }
         Ok(None) => {
             let mut flag = match UserModerationFlag::new(
-                comment.author_pk.clone(),
+                &author_pk,
                 comment.author_display_name.clone(),
                 comment.author_username.clone(),
             ) {
@@ -139,7 +130,7 @@ async fn bump_author_flag(cli: &aws_sdk_dynamodb::Client, comment: &SpacePostCom
             };
             flag.report_count = 1;
             flag.status = ModerationStatus::PendingReview;
-            if let Err(e) = flag.create(cli).await {
+            if let Err(e) = UserModerationFlag::repository().insert(&flag).await {
                 crate::error!("failed to create author moderation flag: {e}");
             }
         }

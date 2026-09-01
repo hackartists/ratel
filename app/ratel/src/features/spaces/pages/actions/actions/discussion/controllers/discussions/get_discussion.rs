@@ -9,12 +9,8 @@ pub async fn get_discussion(
     discussion_sk: SpacePostEntityType,
 ) -> Result<SpacePost> {
     SpacePost::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_id.into();
-    let discussion_sk_entity: EntityType = discussion_sk.into();
 
-    let post = SpacePost::get(cli, &space_pk, Some(discussion_sk_entity.clone()))
+    let post = SpacePost::get_one(&space_id, &SpacePostPartition(discussion_sk.0))
         .await?
         .ok_or(SpaceActionDiscussionError::NotFound)?;
 

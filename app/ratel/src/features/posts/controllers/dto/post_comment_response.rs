@@ -33,19 +33,30 @@ pub struct PostCommentResponse {
     pub is_report: bool,
 }
 
+/// The comment's own wire `sk` — `<parent>::<id>` for a reply, or `<id>` for a
+/// top-level comment (mirrors `PostCommentTargetEntityType`'s reply encoding).
+fn comment_sk(comment: &PostComment) -> PostCommentTargetEntityType {
+    match comment.parent_comment_id {
+        Some(parent) => PostCommentTargetEntityType(format!("{parent}::{}", comment.id)),
+        None => PostCommentTargetEntityType(comment.id.to_string()),
+    }
+}
+
 impl From<(PostComment, bool, bool)> for PostCommentResponse {
     fn from((comment, liked, is_report): (PostComment, bool, bool)) -> Self {
         Self {
-            pk: comment.pk.into(),
-            sk: comment.sk.into(),
+            pk: Partition::Feed(comment.post_id.to_string()).into(),
+            sk: comment_sk(&comment),
             updated_at: comment.updated_at,
-            content: comment.content,
-            images: comment.images,
-            likes: comment.likes,
+            content: comment.content.clone(),
+            images: comment.images.0.clone(),
+            likes: comment.likes as u64,
             reports: comment.reports,
-            replies: comment.replies,
-            parent_comment_sk: comment.parent_comment_sk.map(|sk| sk.into()),
-            author_pk: comment.author_pk,
+            replies: comment.replies as u64,
+            parent_comment_sk: comment
+                .parent_comment_id
+                .map(|p| PostCommentTargetEntityType(p.to_string())),
+            author_pk: comment.author_pk.parse::<Partition>().unwrap_or_default(),
             author_display_name: comment.author_display_name,
             author_username: comment.author_username,
             author_profile_url: comment.author_profile_url,
@@ -57,22 +68,6 @@ impl From<(PostComment, bool, bool)> for PostCommentResponse {
 
 impl From<PostComment> for PostCommentResponse {
     fn from(comment: PostComment) -> Self {
-        Self {
-            pk: comment.pk.into(),
-            sk: comment.sk.into(),
-            updated_at: comment.updated_at,
-            content: comment.content,
-            images: comment.images,
-            likes: comment.likes,
-            reports: comment.reports,
-            replies: comment.replies,
-            parent_comment_sk: comment.parent_comment_sk.map(|sk| sk.into()),
-            author_pk: comment.author_pk,
-            author_display_name: comment.author_display_name,
-            author_username: comment.author_username,
-            author_profile_url: comment.author_profile_url,
-            liked: false,
-            is_report: false,
-        }
+        Self::from((comment, false, false))
     }
 }

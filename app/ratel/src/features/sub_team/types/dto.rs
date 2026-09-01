@@ -37,6 +37,7 @@ pub struct UpdateSubTeamSettingsRequest {
 /// attribute and renders the field read-only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 pub enum TeamProfileLink {
     /// `Team.display_name`
     TeamName,
@@ -247,17 +248,13 @@ pub struct ApplyContextResponse {
 #[cfg(feature = "server")]
 impl From<crate::features::sub_team::models::SubTeamFormField> for SubTeamFormFieldResponse {
     fn from(f: crate::features::sub_team::models::SubTeamFormField) -> Self {
-        let id = match &f.sk {
-            EntityType::SubTeamFormField(id) => id.clone(),
-            _ => String::new(),
-        };
         Self {
-            id,
+            id: f.id.to_string(),
             label: f.label,
             field_type: f.field_type,
             required: f.required,
             order: f.order,
-            options: f.options,
+            options: f.options.0,
             linked_to: f.linked_to,
             locked: f.locked,
         }
@@ -267,12 +264,8 @@ impl From<crate::features::sub_team::models::SubTeamFormField> for SubTeamFormFi
 #[cfg(feature = "server")]
 impl From<crate::features::sub_team::models::SubTeamDocument> for SubTeamDocumentResponse {
     fn from(d: crate::features::sub_team::models::SubTeamDocument) -> Self {
-        let id = match &d.sk {
-            EntityType::SubTeamDocument(id) => id.clone(),
-            _ => String::new(),
-        };
         Self {
-            id,
+            id: d.id.to_string(),
             title: d.title,
             body: d.body,
             required: d.required,
@@ -281,7 +274,7 @@ impl From<crate::features::sub_team::models::SubTeamDocument> for SubTeamDocumen
             updated_at: d.updated_at,
             version: d.version.max(1),
             editor_username: d.editor_username,
-            attachments: d.attachments,
+            attachments: d.attachments.0,
             category: d.category,
             backing_post_id: d.backing_post_id,
             // Engagement counts are populated by the handler after a
@@ -307,7 +300,7 @@ impl From<crate::features::sub_team::models::SubTeamDocumentVersion>
             required: v.required,
             order: v.order,
             editor_username: v.editor_username,
-            attachments: v.attachments,
+            attachments: v.attachments.0,
         }
     }
 }
@@ -315,18 +308,14 @@ impl From<crate::features::sub_team::models::SubTeamDocumentVersion>
 #[cfg(feature = "server")]
 impl From<crate::features::sub_team::models::SubTeamDocument> for ApplyContextDocument {
     fn from(d: crate::features::sub_team::models::SubTeamDocument) -> Self {
-        let id = match &d.sk {
-            EntityType::SubTeamDocument(id) => id.clone(),
-            _ => String::new(),
-        };
         Self {
-            id,
+            id: d.id.to_string(),
             title: d.title,
             body: d.body,
             body_hash: d.body_hash,
             order: d.order,
             required: d.required,
-            attachments: d.attachments,
+            attachments: d.attachments.0,
         }
     }
 }
@@ -616,14 +605,14 @@ impl From<crate::features::sub_team::models::SubTeamAnnouncement> for SubTeamAnn
             title: a.title,
             body: a.body,
             html_contents: a.html_contents,
-            tags: a.tags,
-            attachments: a.attachments,
+            tags: a.tags.0,
+            attachments: a.attachments.0,
             author_user_id: a.author_user_id,
             status: a.status,
             target_type: a.target_type,
-            visibility: a.visibility,
+            visibility: a.visibility.0,
             space_enabled: a.space_enabled,
-            space_type: a.space_type,
+            space_type: a.space_type.0,
             space_pk: a.space_pk,
             fan_out_count: a.fan_out_count,
             comments_count: 0,
@@ -667,8 +656,8 @@ impl From<crate::features::sub_team::models::SubTeamApplication> for SubTeamAppl
             updated_at: a.updated_at,
             submitted_at: a.submitted_at,
             decided_at: a.decided_at,
-            form_snapshot: a.form_snapshot.into_iter().map(Into::into).collect(),
-            form_values: a.form_values,
+            form_snapshot: a.form_snapshot.0.into_iter().map(Into::into).collect(),
+            form_values: a.form_values.0,
             // Applicant + parent team joins are filled by the listing
             // handler; defaults are kept empty/zero so the `From`
             // conversion stays a pure data shuffle and never touches

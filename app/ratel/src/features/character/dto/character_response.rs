@@ -1,5 +1,7 @@
 use crate::common::*;
+#[cfg(feature = "server")]
 use crate::features::character::leveling;
+#[cfg(feature = "server")]
 use crate::features::character::models::CharacterXp;
 use crate::features::character::types::SkillId;
 #[cfg(feature = "server")]
@@ -45,6 +47,7 @@ pub struct PublicCharacterResponse {
     pub level: i32,
 }
 
+#[cfg(feature = "server")]
 impl CharacterResponse {
     pub fn from_parts(xp: &CharacterXp, skills: Vec<(SkillId, i32)>) -> Self {
         let cur_threshold = leveling::cumulative_xp_at_level(xp.level);

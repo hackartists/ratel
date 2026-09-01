@@ -9,10 +9,13 @@ use crate::features::membership::models::{
 #[allow(unused_imports)]
 use rmcp::schemars;
 #[cfg(feature = "server")]
-use crate::features::membership::models::{handle_downgrade, handle_upgrade};
+use crate::features::membership::models::{
+    handle_downgrade, handle_upgrade, MembershipEntity, PaymentEntity, PurchaseEntity,
+};
 #[cfg(feature = "server")]
 use crate::features::membership::services::portone::PortOne;
 use crate::features::membership::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 use serde::{Deserialize, Serialize};
@@ -46,7 +49,6 @@ pub async fn change_team_membership_handler(
         }
 
         let conf = crate::features::membership::config::get();
-        let cli = conf.common.dynamodb();
         let portone = PortOne::new(conf.portone.api_secret);
 
         let mut ret = ChangeTeamMembershipResponse {
@@ -55,29 +57,24 @@ pub async fn change_team_membership_handler(
             membership: None,
         };
 
-        let team_membership =
-            TeamMembership::get(cli, team.pk.clone(), Some(EntityType::TeamMembership)).await?;
+        let team_membership = TeamMembership::find_by_team(&team.partition().to_string()).await?;
 
         match team_membership {
             Some(team_membership) => {
-                let membership_pk: Partition = team_membership.membership_pk.clone().into();
                 let current_membership =
-                    Membership::get(cli, membership_pk, Some(EntityType::Membership))
-                        .await?
-                        .ok_or_else(|| Error::NotFound("Membership not found".to_string()))?;
+                    Membership::get_by_membership_tier(&team_membership.membership_pk).await?;
 
                 if current_membership.tier == req.membership {
                     return Err(Error::MembershipAlreadyActive);
                 }
 
-                let team_id: TeamPartition = team_membership.pk.clone().into();
+                let team_id: TeamPartition = team.partition().into();
 
                 if req.membership < current_membership.tier {
                     let (team_payment, _) =
-                        TeamPayment::get_by_team(cli, &portone, team_id.clone(), None).await?;
+                        TeamPayment::get_by_team(&portone, team_id.clone(), None).await?;
 
                     let new_membership = handle_downgrade(
-                        cli,
                         &portone,
                         &team_membership,
                         Some(&team_payment),
@@ -90,11 +87,9 @@ pub async fn change_team_membership_handler(
                     ret.membership = Some(new_membership.into());
                 } else {
                     let (team_payment, should_update) =
-                        TeamPayment::get_by_team(cli, &portone, team_id.clone(), req.card_info)
-                            .await?;
+                        TeamPayment::get_by_team(&portone, team_id.clone(), req.card_info).await?;
 
                     let (team_purchase, new_membership) = handle_upgrade(
-                        cli,
                         &portone,
                         &team_membership,
                         current_membership,
@@ -102,16 +97,15 @@ pub async fn change_team_membership_handler(
                         req.currency,
                         team_payment,
                         should_update,
-                        |new_membership, purchase_pk| {
+                        |new_membership| {
                             let new_team_membership = TeamMembership::new(
                                 team_id.clone(),
-                                new_membership.pk.clone().into(),
+                                new_membership.tier.clone(),
                                 new_membership.duration_days,
                                 new_membership.credits,
                             )?
-                            .with_purchase_id(purchase_pk.clone())
                             .with_auto_renew(true);
-                            Ok(new_team_membership.upsert_transact_write_item())
+                            Ok(new_team_membership)
                         },
                     )
                     .await?;
@@ -125,11 +119,10 @@ pub async fn change_team_membership_handler(
                     return Err(Error::MembershipAlreadyActive);
                 }
 
-                let new_membership =
-                    Membership::get_by_membership_tier(cli, &req.membership).await?;
-                let team_id: TeamPartition = team.pk.clone().into();
+                let new_membership = Membership::get_by_membership_tier(&req.membership).await?;
+                let team_id: TeamPartition = team.partition().into();
                 let (team_payment, should_update) =
-                    TeamPayment::get_by_team(cli, &portone, team_id.clone(), req.card_info).await?;
+                    TeamPayment::get_by_team(&portone, team_id.clone(), req.card_info).await?;
 
                 let tx_type = TransactionType::PurchaseMembership(req.membership.clone());
                 let amount = match req.currency {
@@ -143,23 +136,19 @@ pub async fn change_team_membership_handler(
 
                 let new_team_membership = TeamMembership::new(
                     team_id,
-                    new_membership.pk.clone().into(),
+                    new_membership.tier.clone(),
                     new_membership.duration_days,
                     new_membership.credits,
                 )?
-                .with_purchase_id(team_purchase.pk.clone())
                 .with_auto_renew(true);
 
-                let mut txs = vec![
-                    team_purchase.create_transact_write_item(),
-                    new_team_membership.upsert_transact_write_item(),
-                ];
-
+                let tx = postgres::Tx::begin().await.map_err(Error::from)?;
+                team_purchase.insert_in_tx(&tx).await?;
+                new_team_membership.save_in_tx(&tx).await?;
                 if should_update {
-                    txs.push(team_payment.upsert_transact_write_item());
+                    team_payment.upsert_in_tx(&tx).await?;
                 }
-
-                crate::transact_write_all_items_with_failover!(cli, txs);
+                tx.commit().await.map_err(Error::from)?;
 
                 ret.receipt = Some(team_purchase.into());
                 ret.membership = Some(new_membership.into());

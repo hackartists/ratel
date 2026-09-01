@@ -6,7 +6,8 @@ use crate::features::spaces::pages::actions::actions::discussion::SpacePostComme
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct CommentReportResponse {
     pub reporter_pk: String,
-    pub comment_sk: String,
+    pub post_id: String,
+    pub comment_key: String,
     pub reason: String,
     pub detail: String,
     pub created_at: i64,
@@ -15,8 +16,9 @@ pub struct CommentReportResponse {
 impl From<SpacePostCommentReport> for CommentReportResponse {
     fn from(r: SpacePostCommentReport) -> Self {
         Self {
-            reporter_pk: r.reporter_pk.to_string(),
-            comment_sk: r.comment_sk.to_string(),
+            reporter_pk: r.reporter_pk,
+            post_id: r.post_id,
+            comment_key: r.comment_key,
             reason: format!("{:?}", r.reason),
             detail: r.detail,
             created_at: r.created_at,
@@ -31,12 +33,8 @@ pub async fn list_user_reports(
     user_id: String,
     bookmark: Option<String>,
 ) -> Result<ListResponse<CommentReportResponse>> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
     let author_pk = Partition::User(user_id);
-    let opt = SpacePostCommentReport::opt_with_bookmark(bookmark).limit(100);
-    let (items, next) = SpacePostCommentReport::find_by_author(cli, &author_pk, opt).await?;
+    let (items, next) = SpacePostCommentReport::list_by_author(&author_pk, bookmark, 100).await?;
 
     Ok(ListResponse {
         items: items.into_iter().map(Into::into).collect(),

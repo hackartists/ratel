@@ -1,0 +1,5 @@
+error: PostgresEnum catch-all (data-carrying) variant requires #[postgres(text)] — a native PG enum type can't store arbitrary text
+  --> tests/ui/data_enum.rs:10:5
+   |
+10 |     Data(String),
+   |     ^^^^^^^^^^^^

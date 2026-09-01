@@ -1,0 +1,14 @@
+# dev — app 연동용. 단일 노드로 충분하고, 합의가 필요 없다.
+replicaCount: 1
+addressing:
+  mode: clusterIp
+persistence:
+  enabled: true
+  size: 20Gi
+resources:
+  # Single node for app integration — modest requests so it schedules
+  # alongside everything else on the shared cluster.
+  requests: { cpu: "250m", memory: 512Mi }
+  limits:   { cpu: "2",    memory: 4Gi }
+ingress:
+  enabled: false

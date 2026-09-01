@@ -8,7 +8,7 @@ use crate::features::spaces::pages::actions::actions::poll::{
     utils::aws::DynamoClient,
 };
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_poll_space_creation() {
     let cli = DynamoClient::mock(get_test_aws_config()).client;
 

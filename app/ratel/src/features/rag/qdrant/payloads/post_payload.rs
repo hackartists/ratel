@@ -1,7 +1,7 @@
 use by_macros::QdrantEntity;
 use serde::Serialize;
 
-use crate::common::types::{FeedPartition, Partition, SpacePartition, UserOrTeam};
+use crate::common::types::{FeedPartition, SpacePartition, UserOrTeam};
 use crate::features::rag::qdrant::types::QdrantIndexType;
 
 /// Payload for indexing a published post into Qdrant.
@@ -44,19 +44,20 @@ impl PostPayload {
         tenant_id: String,
         plain_text_preview: String,
     ) -> Self {
-        let space_id = match &post.space_pk {
-            Some(Partition::Space(inner)) => SpacePartition(inner.clone()),
+        let space_id = match post
+            .space_pk
+            .as_ref()
+            .and_then(|s| s.parse::<crate::common::types::Partition>().ok())
+        {
+            Some(crate::common::types::Partition::Space(inner)) => SpacePartition(inner),
             _ => SpacePartition::default(),
         };
-        let post_id = match &post.pk {
-            Partition::Feed(uuid) => FeedPartition(uuid.clone()),
-            _ => FeedPartition(format!("{:?}", post.pk)),
-        };
+        let post_id = FeedPartition(post.feed_id());
 
         Self {
             r#type: QdrantIndexType::Post,
             tenant_id,
-            user_id: UserOrTeam::from(post.user_pk.clone()),
+            user_id: UserOrTeam::from(post.author_partition()),
             space_id,
             post_id,
             title: post.title.clone(),

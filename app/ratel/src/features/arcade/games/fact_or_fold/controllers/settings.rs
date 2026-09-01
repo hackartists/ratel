@@ -84,10 +84,7 @@ fn apply_patch(
 
 #[get("/api/fact-or-fold/admin/settings", _user: AdminUser)]
 pub async fn get_settings_handler() -> Result<FactOrFoldSettingsResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    FactFoldSettings::get_or_default(cli).await.map_err(|e| {
+    FactFoldSettings::get_or_default().await.map_err(|e| {
         crate::error!("get_settings_handler failed: {e}");
         FactOrFoldError::StorageFailure.into()
     })
@@ -99,10 +96,7 @@ pub async fn get_settings_handler() -> Result<FactOrFoldSettingsResponse> {
 pub async fn update_settings_handler(
     req: UpdateFactOrFoldSettingsRequest,
 ) -> Result<FactOrFoldSettingsResponse> {
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
-    let current = FactFoldSettings::get_or_default(cli).await.map_err(|e| {
+    let current = FactFoldSettings::get_or_default().await.map_err(|e| {
         crate::error!("update_settings_handler read failed: {e}");
         FactOrFoldError::StorageFailure
     })?;
@@ -110,7 +104,7 @@ pub async fn update_settings_handler(
     validate_settings(&next)?;
 
     let row = FactFoldSettings::default().merge_response(next.clone());
-    row.upsert(cli).await.map_err(|e| {
+    row.save().await.map_err(|e| {
         crate::error!("update_settings_handler put failed: {e}");
         FactOrFoldError::StorageFailure
     })?;

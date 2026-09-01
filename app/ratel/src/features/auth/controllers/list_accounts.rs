@@ -35,18 +35,24 @@ pub struct ListAccountsResponse {
 
 #[get("/api/auth/accounts")]
 pub async fn list_accounts_handler(params: ListAccountsQueryParams) -> Result<ListAccountsResponse> {
-    let cli = crate::features::auth::config::get().dynamodb();
+    // Bookmark is now a 1-based page index (Postgres has no opaque cursor);
+    // preserved as an `Option<String>` on the wire for client compatibility.
+    let page = params
+        .bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .unwrap_or(1)
+        .max(1);
+    let page_size = 10;
 
-    let mut query_options = UserRefreshTokenQueryOption::builder().limit(10);
+    let result = UserRefreshToken::find_by_device_id(&params.device_id, page, page_size).await?;
+    let next_bookmark = if page < result.total_pages {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
 
-    if let Some(bookmark) = params.bookmark {
-        query_options = query_options.bookmark(bookmark);
-    }
-
-    let (rts, next_bookmark) =
-        UserRefreshToken::find_by_device_id(cli, &params.device_id, query_options).await?;
-
-    if rts.is_empty() {
+    if result.items.is_empty() {
         return Ok(ListAccountsResponse {
             items: vec![],
             bookmark: next_bookmark,
@@ -57,7 +63,7 @@ pub async fn list_accounts_handler(params: ListAccountsQueryParams) -> Result<Li
     let mut seen = HashSet::<String>::new();
     let mut accounts = Vec::<AccountItem>::new();
 
-    for rt in rts.into_iter() {
+    for rt in result.items.into_iter() {
         if rt.revoked {
             continue;
         }
@@ -67,17 +73,21 @@ pub async fn list_accounts_handler(params: ListAccountsQueryParams) -> Result<Li
             }
         }
 
-        let k = rt.pk.to_string();
-        if !seen.insert(k) {
+        if !seen.insert(rt.user_pk.clone()) {
             continue;
         }
 
+        let user_pk: Partition = match rt.user_pk.parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
         accounts.push(AccountItem {
-            user_pk: rt.pk,
+            user_pk,
             display_name: rt.user_display_name,
             profile_url: rt.user_profile_url,
             username: rt.user_username,
-            user_type: rt.user_type,
+            user_type: rt.user_type.0,
             last_login_at: rt.created_at,
             revoked: rt.revoked,
         });

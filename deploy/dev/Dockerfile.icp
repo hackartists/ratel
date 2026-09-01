@@ -1,0 +1,91 @@
+# ratel-icp — the ICP replica (victor138128/ic @ feature/v4-block-api,
+# replica 0.9.0) plus the ic-testnet subnet-config generator.
+#
+# Two binaries because the subnet registry can only be written once the peer
+# addresses are known. The chart runs the generator once in a pre-install Job
+# (against the pinned ClusterIPs) and every replica unpacks the result.
+#
+# LAYOUT MATTERS: ic-testnet depends on the IC sources through PATH deps
+# (ic-config = { path = "ic/rs/config" }, and a dozen more), and its own
+# .gitmodules points `ic` at git@github.com:hackartists/ic.git over SSH — no
+# use inside a build with no keys. So the fork is cloned INTO ic-testnet/ic
+# by hand, which both satisfies those path deps and puts the /api/v4
+# endpoints (the ones the tc2 injector reads block counts from) in the tree.
+#
+# Base image: ubuntu:24.04, matching app/ratel/Dockerfile and
+# deploy/dev/Dockerfile.events, so builder and runtime share a glibc.
+#
+# Architecture: builds natively on the arm64 runner. Verified 2026-08-26 in a
+# linux/arm64 container — replica in 4m20s, generator in 1m10s, and a 4-node
+# subnet built from these binaries reached consensus (matching heights, 3 peers
+# each).
+
+FROM ubuntu:24.04 AS builder
+
+# Both branches carry a patch this deployment needs:
+#   ic         XNET_BIND_ADDR — bind XNet somewhere other than the address the
+#              registry advertises (a ClusterIP cannot be bound in a pod).
+#              Merged into feature/v4-block-api (victor138128/ic#1).
+#   ic-testnet NODES read at runtime — it used to be option_env!, so a prebuilt
+#              binary silently kept generating the 10.5.0.x default subnet.
+#              Merged to main (biyard/ic-testnet#1), so main is enough here.
+ARG IC_REPO=https://github.com/victor138128/ic.git
+ARG IC_BRANCH=feature/v4-block-api
+ARG TESTNET_REPO=https://github.com/biyard/ic-testnet.git
+ARG TESTNET_BRANCH=main
+
+RUN for i in 1 2 3; do apt-get update && break || sleep 5; done \
+    && apt-get install -y --no-install-recommends \
+        build-essential pkg-config libssl-dev libunwind-dev libsqlite3-dev \
+        liblmdb-dev clang cmake protobuf-compiler git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# rust-toolchain.toml in the IC tree pins 1.80.0; rustup honours it on first
+# use, so no toolchain is installed here.
+# The IC tree pins 1.80.0 via rust-toolchain.toml, but the ic-testnet root has
+# no such file — without a default, cargo refuses to run there.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.80.0
+ENV PATH="/root/.cargo/bin:${PATH}"
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+
+WORKDIR /src
+RUN git clone --depth 1 --single-branch --branch ${TESTNET_BRANCH} ${TESTNET_REPO} ic-testnet
+# The submodule URL is SSH-only, so clone the fork into its place instead.
+RUN git clone --depth 1 --single-branch --branch ${IC_BRANCH} ${IC_REPO} ic-testnet/ic
+
+# replica — serves /api/v2 (agent calls) and the fork-only /api/v4 (blocks).
+RUN cd /src/ic-testnet/ic && cargo build --release --bin replica
+
+# ic-testnet — the generator. Package name is ic-testnet and there is no
+# [[bin]] section, so the binary carries the package name.
+RUN cd /src/ic-testnet && cargo build --release
+
+FROM ubuntu:24.04
+
+RUN for i in 1 2 3; do apt-get update && break || sleep 5; done \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates liblmdb0 libunwind8 libsqlite3-0 \
+        python3 python3-json5 bash curl \
+    && rm -rf /var/lib/apt/lists/* \
+    # ubuntu:24.04 ships a stock `ubuntu` account already holding uid 1000,
+    # so creating another one there fails with "UID 1000 is not unique".
+    # Rename it instead — the chart runs the pod as 1000 and the IC crypto
+    # check requires the crypto dir to be owner-rwx with no world bits.
+    && usermod -l icp -d /home/icp -m ubuntu \
+    && groupmod -n icp ubuntu
+
+COPY --from=builder /src/ic-testnet/ic/target/release/replica /usr/local/bin/replica
+COPY --from=builder /src/ic-testnet/target/release/ic-testnet /usr/local/bin/ic-testnet-genconfig
+
+# Fail the build rather than the pod when a shared library is missing.
+RUN ldd /usr/local/bin/replica | grep "not found" && exit 1 || true
+RUN ldd /usr/local/bin/ic-testnet-genconfig | grep "not found" && exit 1 || true
+
+RUN mkdir -p /data && chown icp:icp /data
+USER icp
+WORKDIR /data
+
+EXPOSE 4100/tcp 4100/udp 4101/tcp
+# The chart overrides this with its entrypoint script; the default is here so
+# the image is runnable on its own for debugging.
+ENTRYPOINT ["/usr/local/bin/replica"]

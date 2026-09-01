@@ -1,20 +1,31 @@
 use crate::features::posts::controllers::dto::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Category;
 use crate::*;
 
 #[get("/api/categories?bookmark")]
-pub async fn list_categories_handler(bookmark: Option<String>) -> Result<ListItemsResponse<CategoryResponse>> {
-    let conf = crate::features::posts::config::get();
-    let cli = conf.dynamodb();
+pub async fn list_categories_handler(
+    bookmark: Option<String>,
+) -> Result<ListItemsResponse<CategoryResponse>> {
+    // `bookmark` carries an opaque 1-based page number (Postgres pagination).
+    let page: i64 = bookmark
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok())
+        .filter(|p| *p >= 1)
+        .unwrap_or(1);
 
-    let mut opt = Category::opt().limit(100);
-    if let Some(b) = bookmark {
-        opt = opt.bookmark(b);
-    }
-
-    let (items, bookmark) = Category::query(cli, Partition::Category, opt).await?;
+    let result = Category::list(page, 100).await?;
+    let next_bookmark = if page < result.total_pages {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
     Ok(ListItemsResponse {
-        items: items.into_iter().map(CategoryResponse::from).collect(),
-        bookmark,
+        items: result
+            .items
+            .into_iter()
+            .map(CategoryResponse::from)
+            .collect(),
+        bookmark: next_bookmark,
     })
 }

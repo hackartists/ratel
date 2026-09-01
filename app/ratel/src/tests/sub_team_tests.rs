@@ -1,8 +1,8 @@
 use super::*;
 
-use crate::common::types::{ContentBody, EntityType, InboxPayload, ListResponse, Partition};
-use crate::features::auth::{UserTeam, UserTeamQueryOption};
-use crate::features::posts::models::Team;
+use crate::common::types::{ContentBody, InboxPayload, ListResponse, Partition};
+use crate::features::auth::UserTeam;
+use crate::features::posts::models::{BodyJson, Team};
 use crate::features::social::pages::member::dto::TeamRole;
 use crate::features::sub_team::models::{
     SubTeamApplication, SubTeamApplicationStatus, SubTeamDocument, SubTeamFormField,
@@ -39,9 +39,26 @@ fn team_id_from(pk: &Partition) -> String {
     }
 }
 
+/// Postgres `Team`/`SubTeamAnnouncement`/`TeamOwner` rows are keyed by the raw
+/// `Uuid`, not the `"TEAM#…"` partition string — parse it out of the old
+/// `Partition::Team(id)` wire shape.
+fn team_uuid_from(pk: &Partition) -> uuid::Uuid {
+    uuid::Uuid::parse_str(&team_id_from(pk)).unwrap()
+}
+
+/// `UserInboxNotification::find_for_user` takes the bare recipient user id
+/// (no `"USER#…"` prefix) — unwrap it from the `Partition` the way the model
+/// itself does (`UserInboxNotification::new`).
+fn user_id_of(pk: &Partition) -> String {
+    match pk {
+        Partition::User(id) => id.clone(),
+        other => other.to_string(),
+    }
+}
+
 // ── Settings ─────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_settings_toggles_parent_eligible() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -64,7 +81,7 @@ async fn test_update_settings_toggles_parent_eligible() {
     assert_eq!(body.min_sub_team_members, 3);
 
     // Verify persisted
-    let team = Team::get(&ctx.ddb, &team_pk, Some(EntityType::Team))
+    let team = Team::get_by_id(team_uuid_from(&team_pk))
         .await
         .unwrap()
         .unwrap();
@@ -72,14 +89,14 @@ async fn test_update_settings_toggles_parent_eligible() {
     assert_eq!(team.min_sub_team_members, 3);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_update_settings_requires_admin() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
     let team_id = team_id_from(&team_pk);
 
     // Fetch the created team so we can add `other` as a Member role.
-    let team = Team::get(&ctx.ddb, &team_pk, Some(EntityType::Team))
+    let team = Team::get_by_id(team_uuid_from(&team_pk))
         .await
         .unwrap()
         .unwrap();
@@ -100,15 +117,15 @@ async fn test_update_settings_requires_admin() {
 
     // Add the other user as a plain Member, then try again — still denied.
     let user_team = UserTeam::new(
-        other_user.pk.clone(),
-        team.pk.clone(),
+        other_user.pk(),
+        team.partition(),
         team.display_name.clone(),
         team.profile_url.clone(),
         team.username.clone(),
         team.dao_address.clone(),
         TeamRole::Member,
     );
-    user_team.create(&ctx.ddb).await.unwrap();
+    user_team.create().await.unwrap();
 
     let (status_member, _, _) = crate::test_patch! {
         app: ctx.app.clone(),
@@ -137,7 +154,7 @@ async fn test_update_settings_requires_admin() {
 
 // ── Form fields ──────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_list_update_delete_form_field_round_trip() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -210,7 +227,7 @@ async fn test_create_list_update_delete_form_field_round_trip() {
     assert!(after_unlocked.is_empty(), "after delete: {:?}", after);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_reorder_form_fields_updates_order() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -269,7 +286,7 @@ async fn test_reorder_form_fields_updates_order() {
     assert_eq!(ids_in_order, reversed, "order mismatch: {:?}", listed.items);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_form_field_update_requires_admin() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -323,7 +340,7 @@ async fn test_form_field_update_requires_admin() {
 
 // ── Docs ─────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_list_update_delete_doc_round_trip() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -387,7 +404,7 @@ async fn test_create_list_update_delete_doc_round_trip() {
     assert_eq!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_doc_create_rejects_oversized_body() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -411,7 +428,7 @@ async fn test_doc_create_rejects_oversized_body() {
     assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_doc_update_body_rehashes() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -452,7 +469,7 @@ async fn test_doc_update_body_rehashes() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_reorder_docs_updates_order() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -501,7 +518,7 @@ async fn test_reorder_docs_updates_order() {
     assert_eq!(got, reversed);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_doc_update_requires_admin() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -558,7 +575,7 @@ async fn test_doc_update_requires_admin() {
 
 // ── Apply context ────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_apply_context_returns_form_and_required_docs_for_unauthenticated_caller() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -613,10 +630,10 @@ async fn test_apply_context_returns_form_and_required_docs_for_unauthenticated_c
     let link = SubTeamLink::new(
         team_pk.clone(),
         "child-1".to_string(),
-        ctx.test_user.0.pk.to_string(),
+        ctx.test_user.0.pk().to_string(),
         "app-1".to_string(),
     );
-    link.create(&ctx.ddb).await.unwrap();
+    link.create().await.unwrap();
 
     // Insert a pending application directly so pending_count is 1.
     let applicant_pk = Partition::Team("applicant-a".to_string());
@@ -625,10 +642,10 @@ async fn test_apply_context_returns_form_and_required_docs_for_unauthenticated_c
         applicant_pk,
         team_id.clone(),
         "applicant-a".to_string(),
-        ctx.test_user.0.pk.to_string(),
+        ctx.test_user.0.pk().to_string(),
     );
     app.status = SubTeamApplicationStatus::Pending;
-    app.create(&ctx.ddb).await.unwrap();
+    app.create().await.unwrap();
 
     // Fetch context WITHOUT auth headers.
     let (status, _, body) = crate::test_get! {
@@ -649,7 +666,7 @@ async fn test_apply_context_returns_form_and_required_docs_for_unauthenticated_c
     assert_eq!(body.required_docs[0].body, "# Hi");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_apply_context_only_includes_required_docs() {
     let ctx = TestContext::setup().await;
     let team_pk = create_parent_team(&ctx).await;
@@ -795,7 +812,7 @@ async fn add_n_members(ctx: &TestContext, team_pk: &Partition, n: usize) {
     for _ in 0..n {
         let (other, _) = ctx.create_another_user().await;
         let user_team = UserTeam::new(
-            other.pk.clone(),
+            other.pk(),
             team_pk.clone(),
             "child".to_string(),
             String::new(),
@@ -803,13 +820,13 @@ async fn add_n_members(ctx: &TestContext, team_pk: &Partition, n: usize) {
             None,
             TeamRole::Member,
         );
-        user_team.create(&ctx.ddb).await.unwrap();
+        user_team.create().await.unwrap();
     }
 }
 
 // ── Tests: submit path ───────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_child_submits_application_creates_pending_with_doc_agreements() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -843,7 +860,7 @@ async fn test_child_submits_application_creates_pending_with_doc_agreements() {
     assert!(app.submitted_at.is_some());
 
     // Pending parent id set on applying team.
-    let team = Team::get(&ctx.ddb, &child_pk, Some(EntityType::Team))
+    let team = Team::get_by_id(team_uuid_from(&child_pk))
         .await
         .unwrap()
         .unwrap();
@@ -854,7 +871,7 @@ async fn test_child_submits_application_creates_pending_with_doc_agreements() {
     assert!(team.parent_team_id.is_none());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_when_parent_not_eligible() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -879,7 +896,7 @@ async fn test_submit_rejected_when_parent_not_eligible() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_below_min_members() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -904,7 +921,7 @@ async fn test_submit_rejected_below_min_members() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_without_required_doc_agreement() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -930,7 +947,7 @@ async fn test_submit_rejected_without_required_doc_agreement() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_with_stale_doc_body_hash() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -958,7 +975,7 @@ async fn test_submit_rejected_with_stale_doc_body_hash() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_missing_required_form_field() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -984,7 +1001,7 @@ async fn test_submit_rejected_missing_required_form_field() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_cycle_to_self() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1007,7 +1024,7 @@ async fn test_submit_rejected_cycle_to_self() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_submit_rejected_when_in_flight_application_exists() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1050,7 +1067,7 @@ async fn test_submit_rejected_when_in_flight_application_exists() {
 
 // ── Tests: parent queue ───────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_queue_lists_only_pending_by_default() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1089,7 +1106,7 @@ async fn test_parent_queue_lists_only_pending_by_default() {
     assert!(!listed.items.is_empty());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_approve_flips_team_status_and_creates_link() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1128,7 +1145,7 @@ async fn test_parent_approve_flips_team_status_and_creates_link() {
     ));
 
     // Team now has parent_team_id; pending cleared.
-    let team = Team::get(&ctx.ddb, &child_pk, Some(EntityType::Team))
+    let team = Team::get_by_id(team_uuid_from(&child_pk))
         .await
         .unwrap()
         .unwrap();
@@ -1136,14 +1153,13 @@ async fn test_parent_approve_flips_team_status_and_creates_link() {
     assert!(team.pending_parent_team_id.is_none());
 
     // SubTeamLink row exists under parent.
-    let link_sk = EntityType::SubTeamLink(child_id.clone());
-    let link = SubTeamLink::get(&ctx.ddb, &parent_pk, Some(link_sk))
+    let link = SubTeamLink::find_link(&parent_pk, &child_id)
         .await
         .unwrap();
     assert!(link.is_some(), "SubTeamLink must exist");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_reject_clears_pending_parent_and_records_reason() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1184,7 +1200,7 @@ async fn test_parent_reject_clears_pending_parent_and_records_reason() {
     ));
     assert_eq!(rejected.decision_reason.as_deref(), Some("too few members"));
 
-    let team = Team::get(&ctx.ddb, &child_pk, Some(EntityType::Team))
+    let team = Team::get_by_id(team_uuid_from(&child_pk))
         .await
         .unwrap()
         .unwrap();
@@ -1192,7 +1208,7 @@ async fn test_parent_reject_clears_pending_parent_and_records_reason() {
     assert!(team.parent_team_id.is_none());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_return_keeps_pending_status_and_allows_resubmit() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1233,7 +1249,7 @@ async fn test_parent_return_keeps_pending_status_and_allows_resubmit() {
     ));
 
     // child still pending.
-    let team = Team::get(&ctx.ddb, &child_pk, Some(EntityType::Team))
+    let team = Team::get_by_id(team_uuid_from(&child_pk))
         .await
         .unwrap()
         .unwrap();
@@ -1261,7 +1277,7 @@ async fn test_parent_return_keeps_pending_status_and_allows_resubmit() {
     ));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_child_cancel_clears_pending_parent() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1299,14 +1315,14 @@ async fn test_child_cancel_clears_pending_parent() {
         SubTeamApplicationStatus::Cancelled
     ));
 
-    let team = Team::get(&ctx.ddb, &child_pk, Some(EntityType::Team))
+    let team = Team::get_by_id(team_uuid_from(&child_pk))
         .await
         .unwrap()
         .unwrap();
     assert!(team.pending_parent_team_id.is_none());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_relationship_endpoint_reports_status_correctly() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1360,7 +1376,7 @@ async fn test_parent_relationship_endpoint_reports_status_correctly() {
 
 // ── Announcement lifecycle ──────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_create_update_publish_announcement_lifecycle() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1416,7 +1432,7 @@ async fn test_create_update_publish_announcement_lifecycle() {
     assert!(published.published_at.is_some());
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_announcement_edit_rejected_after_publish() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1452,7 +1468,7 @@ async fn test_announcement_edit_rejected_after_publish() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_publish_rejected_when_too_many_sub_teams() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1464,10 +1480,10 @@ async fn test_publish_rejected_when_too_many_sub_teams() {
         let link = SubTeamLink::new(
             parent_pk.clone(),
             child_id,
-            ctx.test_user.0.pk.to_string(),
+            ctx.test_user.0.pk().to_string(),
             "fake-app".to_string(),
         );
-        link.create(&ctx.ddb).await.unwrap();
+        link.create().await.unwrap();
     }
 
     let (_, _, ann) = crate::test_post! {
@@ -1490,7 +1506,7 @@ async fn test_publish_rejected_when_too_many_sub_teams() {
     assert_ne!(status, 200);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_announcement_creates_notification_per_member_of_each_sub_team() {
     use crate::common::models::notification::UserInboxNotification;
 
@@ -1538,10 +1554,9 @@ async fn test_announcement_creates_notification_per_member_of_each_sub_team() {
         headers: ctx.test_user.1.clone(),
         body: { "body": {} }
     };
-    let src = crate::features::sub_team::models::SubTeamAnnouncement::get(
-        &ctx.ddb,
+    let src = crate::features::sub_team::models::SubTeamAnnouncement::find_in_team(
         &parent_pk,
-        Some(EntityType::SubTeamAnnouncement(ann.id.clone())),
+        &ann.id,
     )
     .await
     .unwrap()
@@ -1563,13 +1578,10 @@ async fn test_announcement_creates_notification_per_member_of_each_sub_team() {
 
     let mut found = 0;
     for m in &members {
-        let opts = UserInboxNotification::opt()
-            .sk("USER_INBOX_NOTIFICATION".to_string())
-            .limit(50);
-        let (rows, _) = UserInboxNotification::query(&ctx.ddb, m.clone(), opts)
+        let page = UserInboxNotification::find_for_user(&user_id_of(m), false, 1, 50)
             .await
             .unwrap();
-        for r in rows {
+        for r in page.items {
             if let InboxPayload::SubTeamAnnouncementReceived {
                 announcement_id, ..
             } = r.payload
@@ -1586,7 +1598,7 @@ async fn test_announcement_creates_notification_per_member_of_each_sub_team() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_soft_delete_announcement_sets_status_deleted() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1607,10 +1619,9 @@ async fn test_soft_delete_announcement_sets_status_deleted() {
     };
     assert_eq!(status, 200);
 
-    let stored = crate::features::sub_team::models::SubTeamAnnouncement::get(
-        &ctx.ddb,
+    let stored = crate::features::sub_team::models::SubTeamAnnouncement::find_in_team(
         &parent_pk,
-        Some(EntityType::SubTeamAnnouncement(ann.id.clone())),
+        &ann.id,
     )
     .await
     .unwrap()
@@ -1621,7 +1632,7 @@ async fn test_soft_delete_announcement_sets_status_deleted() {
     ));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_announcements_excludes_deleted_by_default() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1662,7 +1673,7 @@ async fn test_list_announcements_excludes_deleted_by_default() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_announcement_list_supports_pagination() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1705,26 +1716,26 @@ async fn seed_team_post(
     visibility: crate::features::posts::types::Visibility,
     status: crate::features::posts::types::PostStatus,
 ) -> crate::features::posts::models::Post {
+    let _ = ctx;
     let now = crate::common::utils::time::get_now_timestamp_millis();
     let created = now - ts_offset_ms;
-    let post_id = uuid::Uuid::now_v7().to_string();
+    let post_id = uuid::Uuid::now_v7();
     let mut post = crate::features::posts::models::Post {
-        pk: Partition::Feed(post_id),
-        sk: EntityType::Post,
+        id: post_id,
         title: "T".to_string(),
-        body: ContentBody::html("B"),
+        body: BodyJson(ContentBody::html("B")),
         created_at: created,
         updated_at: created,
         status,
         visibility: Some(visibility),
-        user_pk: author_pk.clone(),
+        user_pk: author_pk.to_string(),
         ..Default::default()
     };
     // Attribute the post to the team's feed space via user_pk (the GSI1
     // `find_by_user_pk` indexes on user_pk — a team-authored post sets this
     // to the team pk).
-    post.user_pk = team_pk.clone();
-    post.create(&ctx.ddb).await.unwrap();
+    post.user_pk = team_pk.to_string();
+    post.create().await.unwrap();
     post
 }
 
@@ -1760,7 +1771,7 @@ async fn approve_child_for(ctx: &TestContext, parent_id: &str) -> (Partition, St
     (child_pk, child_id)
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_sub_teams_returns_recognized_from_link_rows() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1784,7 +1795,7 @@ async fn test_list_sub_teams_returns_recognized_from_link_rows() {
     assert!(ids.contains(&child_id_b.as_str()));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_list_sub_teams_truncates_at_50() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1793,28 +1804,29 @@ async fn test_list_sub_teams_truncates_at_50() {
     // Seed 51 SubTeamLink rows directly — bypass the apply flow for speed.
     // This exercises only the truncation path in list_sub_team_links.
     for i in 0..51 {
-        let child_id = format!("child-trunc-{:03}-{}", i, uuid::Uuid::new_v4().simple());
+        // A child team row must exist so build_sub_team_summary can load it;
+        // insert a minimal Team entity. Its own minted `id` (a real `Uuid`)
+        // becomes the `child_id` the SubTeamLink references — Postgres
+        // `Team.id` is a surrogate uuid, unlike the free-form DynamoDB pk
+        // string this test used to fabricate.
+        let team = crate::features::posts::models::Team::new(
+            format!("Child {i}"),
+            String::new(),
+            format!("chld{i}"),
+            String::new(),
+        );
+        let child_id = team.id.to_string();
+        team.create().await.unwrap();
+
         let mut link = SubTeamLink::new(
             parent_pk.clone(),
             child_id.clone(),
-            ctx.test_user.0.pk.to_string(),
+            ctx.test_user.0.pk().to_string(),
             "app-xxxx".to_string(),
         );
         // Stagger approved_at so sort order is stable.
         link.approved_at += i as i64;
-        // A child team row must exist so build_sub_team_summary can load it;
-        // insert a minimal Team entity.
-        let team = crate::features::posts::models::Team {
-            pk: Partition::Team(child_id.clone()),
-            sk: EntityType::Team,
-            display_name: format!("Child {i}"),
-            profile_url: String::new(),
-            username: format!("chld{i}"),
-            description: String::new(),
-            ..Default::default()
-        };
-        team.create(&ctx.ddb).await.unwrap();
-        link.create(&ctx.ddb).await.unwrap();
+        link.create().await.unwrap();
     }
 
     let (status, _, body) = crate::test_get! {
@@ -1832,7 +1844,7 @@ async fn test_list_sub_teams_truncates_at_50() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_activity_weekly_counts_posts_within_range_only() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1844,7 +1856,7 @@ async fn test_activity_weekly_counts_posts_within_range_only() {
     seed_team_post(
         &ctx,
         &child_pk,
-        &ctx.test_user.0.pk,
+        &ctx.test_user.0.pk(),
         60 * 60 * 1000, // 1h ago
         crate::features::posts::types::Visibility::Public,
         crate::features::posts::types::PostStatus::Published,
@@ -1853,7 +1865,7 @@ async fn test_activity_weekly_counts_posts_within_range_only() {
     seed_team_post(
         &ctx,
         &child_pk,
-        &ctx.test_user.0.pk,
+        &ctx.test_user.0.pk(),
         2 * 86_400 * 1000, // 2d ago
         crate::features::posts::types::Visibility::Public,
         crate::features::posts::types::PostStatus::Published,
@@ -1862,7 +1874,7 @@ async fn test_activity_weekly_counts_posts_within_range_only() {
     seed_team_post(
         &ctx,
         &child_pk,
-        &ctx.test_user.0.pk,
+        &ctx.test_user.0.pk(),
         10 * 86_400 * 1000, // 10d ago — OUTSIDE weekly
         crate::features::posts::types::Visibility::Public,
         crate::features::posts::types::PostStatus::Published,
@@ -1886,7 +1898,7 @@ async fn test_activity_weekly_counts_posts_within_range_only() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_activity_monthly_counts_posts_within_range_only() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1897,7 +1909,7 @@ async fn test_activity_monthly_counts_posts_within_range_only() {
     seed_team_post(
         &ctx,
         &child_pk,
-        &ctx.test_user.0.pk,
+        &ctx.test_user.0.pk(),
         2 * 86_400 * 1000, // 2d ago
         crate::features::posts::types::Visibility::Public,
         crate::features::posts::types::PostStatus::Published,
@@ -1906,7 +1918,7 @@ async fn test_activity_monthly_counts_posts_within_range_only() {
     seed_team_post(
         &ctx,
         &child_pk,
-        &ctx.test_user.0.pk,
+        &ctx.test_user.0.pk(),
         20 * 86_400 * 1000, // 20d ago (still within 30d monthly)
         crate::features::posts::types::Visibility::Public,
         crate::features::posts::types::PostStatus::Published,
@@ -1915,7 +1927,7 @@ async fn test_activity_monthly_counts_posts_within_range_only() {
     seed_team_post(
         &ctx,
         &child_pk,
-        &ctx.test_user.0.pk,
+        &ctx.test_user.0.pk(),
         40 * 86_400 * 1000, // 40d ago — OUTSIDE monthly
         crate::features::posts::types::Visibility::Public,
         crate::features::posts::types::PostStatus::Published,
@@ -1936,7 +1948,7 @@ async fn test_activity_monthly_counts_posts_within_range_only() {
     assert_eq!(body.post_count, 2);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_activity_excludes_private_posts() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -1948,7 +1960,7 @@ async fn test_activity_excludes_private_posts() {
     seed_team_post(
         &ctx,
         &child_pk,
-        &ctx.test_user.0.pk,
+        &ctx.test_user.0.pk(),
         60 * 60 * 1000,
         crate::features::posts::types::Visibility::Public,
         crate::features::posts::types::PostStatus::Published,
@@ -1957,7 +1969,7 @@ async fn test_activity_excludes_private_posts() {
     seed_team_post(
         &ctx,
         &child_pk,
-        &ctx.test_user.0.pk,
+        &ctx.test_user.0.pk(),
         60 * 60 * 1000,
         crate::features::posts::types::Visibility::Private,
         crate::features::posts::types::PostStatus::Published,
@@ -1977,7 +1989,7 @@ async fn test_activity_excludes_private_posts() {
     assert_eq!(body.post_count, 1, "private post must be excluded (AC-15)");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_activity_returns_privacy_notice() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2014,7 +2026,7 @@ async fn test_activity_returns_privacy_notice() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_member_activity_drilldown_sorts_by_post_count_desc() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2027,7 +2039,7 @@ async fn test_member_activity_drilldown_sorts_by_post_count_desc() {
     let (m2, _) = ctx.create_another_user().await;
     for m in [&m1, &m2] {
         let ut = UserTeam::new(
-            m.pk.clone(),
+            m.pk(),
             child_pk.clone(),
             "child".to_string(),
             String::new(),
@@ -2035,15 +2047,15 @@ async fn test_member_activity_drilldown_sorts_by_post_count_desc() {
             None,
             TeamRole::Member,
         );
-        ut.create(&ctx.ddb).await.unwrap();
+        ut.create().await.unwrap();
     }
 
     // m1 authors 3 personal posts within window; m2 authors 1.
     for _ in 0..3 {
         seed_team_post(
             &ctx,
-            &m1.pk,
-            &m1.pk,
+            &m1.pk(),
+            &m1.pk(),
             60 * 60 * 1000,
             crate::features::posts::types::Visibility::Public,
             crate::features::posts::types::PostStatus::Published,
@@ -2052,8 +2064,8 @@ async fn test_member_activity_drilldown_sorts_by_post_count_desc() {
     }
     seed_team_post(
         &ctx,
-        &m2.pk,
-        &m2.pk,
+        &m2.pk(),
+        &m2.pk(),
         60 * 60 * 1000,
         crate::features::posts::types::Visibility::Public,
         crate::features::posts::types::PostStatus::Published,
@@ -2073,11 +2085,11 @@ async fn test_member_activity_drilldown_sorts_by_post_count_desc() {
     assert!(!body.items.is_empty());
 
     // Find rows for m1 and m2; m1 must appear before m2 (post_count DESC).
-    let m1_id = match &m1.pk {
+    let m1_id = match &m1.pk() {
         Partition::User(id) => id.clone(),
         _ => panic!(),
     };
-    let m2_id = match &m2.pk {
+    let m2_id = match &m2.pk() {
         Partition::User(id) => id.clone(),
         _ => panic!(),
     };
@@ -2093,7 +2105,7 @@ async fn test_member_activity_drilldown_sorts_by_post_count_desc() {
     assert_eq!(m1_row.post_count, 3);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_member_activity_returns_last_active_per_member() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2103,7 +2115,7 @@ async fn test_member_activity_returns_last_active_per_member() {
 
     let (m, _) = ctx.create_another_user().await;
     let ut = UserTeam::new(
-        m.pk.clone(),
+        m.pk(),
         child_pk.clone(),
         "child".to_string(),
         String::new(),
@@ -2111,12 +2123,12 @@ async fn test_member_activity_returns_last_active_per_member() {
         None,
         TeamRole::Member,
     );
-    ut.create(&ctx.ddb).await.unwrap();
+    ut.create().await.unwrap();
 
     seed_team_post(
         &ctx,
-        &m.pk,
-        &m.pk,
+        &m.pk(),
+        &m.pk(),
         60 * 60 * 1000,
         crate::features::posts::types::Visibility::Public,
         crate::features::posts::types::PostStatus::Published,
@@ -2132,7 +2144,7 @@ async fn test_member_activity_returns_last_active_per_member() {
         headers: ctx.test_user.1.clone(),
         response_type: ListResponse<MemberActivityResponse>,
     };
-    let m_id = match &m.pk {
+    let m_id = match &m.pk() {
         Partition::User(id) => id.clone(),
         _ => panic!(),
     };
@@ -2145,7 +2157,7 @@ async fn test_member_activity_returns_last_active_per_member() {
     assert!(row.post_count >= 1);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_activity_requires_admin_role() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2202,8 +2214,8 @@ async fn test_activity_requires_admin_role() {
 use crate::features::sub_team::types::TerminationAck;
 
 /// Helper: look up a team's `username` (needed for DELETE /api/teams/:username/settings).
-async fn team_username(ctx: &TestContext, team_pk: &Partition) -> String {
-    let team = Team::get(&ctx.ddb, team_pk, Some(EntityType::Team))
+async fn team_username(_ctx: &TestContext, team_pk: &Partition) -> String {
+    let team = Team::get_by_id(team_uuid_from(team_pk))
         .await
         .unwrap()
         .unwrap();
@@ -2219,18 +2231,16 @@ where
     F: Fn(&InboxPayload) -> bool,
 {
     use crate::common::models::notification::UserInboxNotification;
-    let opts = UserInboxNotification::opt()
-        .sk("USER_INBOX_NOTIFICATION".to_string())
-        .limit(100);
-    let (rows, _) = UserInboxNotification::query(&ctx.ddb, recipient_pk.clone(), opts)
+    let _ = ctx;
+    let page = UserInboxNotification::find_for_user(&user_id_of(recipient_pk), false, 1, 100)
         .await
         .unwrap();
-    rows.iter().filter(|r| predicate(&r.payload)).count()
+    page.items.iter().filter(|r| predicate(&r.payload)).count()
 }
 
 // ── AC-16: Deregister ────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_deregister_clears_parent_keeps_content() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2265,22 +2275,21 @@ async fn test_deregister_clears_parent_keeps_content() {
     assert!(body.ok);
 
     // Child Team's parent_team_id cleared.
-    let child = Team::get(&ctx.ddb, &child_pk, Some(EntityType::Team))
+    let child = Team::get_by_id(team_uuid_from(&child_pk))
         .await
         .unwrap()
         .unwrap();
     assert!(child.parent_team_id.is_none());
 
     // SubTeamLink row gone.
-    let link_sk = EntityType::SubTeamLink(child_id.clone());
-    let link = SubTeamLink::get(&ctx.ddb, &parent_pk, Some(link_sk))
+    let link = SubTeamLink::find_link(&parent_pk, &child_id)
         .await
         .unwrap();
     assert!(link.is_none(), "SubTeamLink must be deleted");
 
     // Child content (post) still there.
     let survived =
-        crate::features::posts::models::Post::get(&ctx.ddb, &post.pk, Some(EntityType::Post))
+        crate::features::posts::models::Post::get_by_id(post.id)
             .await
             .unwrap();
     assert!(
@@ -2289,7 +2298,7 @@ async fn test_deregister_clears_parent_keeps_content() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_deregister_requires_parent_admin() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2322,7 +2331,7 @@ async fn test_deregister_requires_parent_admin() {
     assert_ne!(status, 200, "anon must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_deregister_rejects_when_not_linked() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2346,7 +2355,7 @@ async fn test_deregister_rejects_when_not_linked() {
     assert_ne!(status, 200, "deregister on missing link must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_deregister_notifies_former_sub_team_admins() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2356,11 +2365,7 @@ async fn test_deregister_notifies_former_sub_team_admins() {
 
     // The child's owner is registered as team owner; capture its user pk via the
     // team-owner lookup.
-    let owner = crate::features::posts::models::TeamOwner::get(
-        &ctx.ddb,
-        &child_pk,
-        Some(&EntityType::TeamOwner),
-    )
+    let owner = crate::features::posts::models::TeamOwner::find_by_team(team_uuid_from(&child_pk))
     .await
     .unwrap()
     .unwrap();
@@ -2390,7 +2395,7 @@ async fn test_deregister_notifies_former_sub_team_admins() {
 
 // ── AC-17: Leave parent ──────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_leave_parent_clears_parent_notifies_parent_admins() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2436,21 +2441,20 @@ async fn test_leave_parent_clears_parent_notifies_parent_admins() {
     assert!(body.ok);
 
     // Child Team parent_team_id cleared.
-    let child = Team::get(&ctx.ddb, &child_pk, Some(EntityType::Team))
+    let child = Team::get_by_id(team_uuid_from(&child_pk))
         .await
         .unwrap()
         .unwrap();
     assert!(child.parent_team_id.is_none());
 
     // SubTeamLink row gone.
-    let link_sk = EntityType::SubTeamLink(child_id.clone());
-    let link = SubTeamLink::get(&ctx.ddb, &parent_pk, Some(link_sk))
+    let link = SubTeamLink::find_link(&parent_pk, &child_id)
         .await
         .unwrap();
     assert!(link.is_none());
 
     // Parent's owner (ctx.test_user.0) receives a LeftParent inbox row.
-    let parent_owner_pk: Partition = ctx.test_user.0.pk.to_string().parse().unwrap();
+    let parent_owner_pk: Partition = ctx.test_user.0.pk().to_string().parse().unwrap();
     let count = count_inbox_with_kind(&ctx, &parent_owner_pk, |p| {
         matches!(p, InboxPayload::SubTeamLeftParent { .. })
     })
@@ -2461,7 +2465,7 @@ async fn test_leave_parent_clears_parent_notifies_parent_admins() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_leave_parent_rejects_when_not_a_sub_team() {
     let ctx = TestContext::setup().await;
 
@@ -2478,7 +2482,7 @@ async fn test_leave_parent_rejects_when_not_a_sub_team() {
     assert_ne!(status, 200, "standalone team cannot leave — must fail");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_leave_parent_requires_child_admin() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2530,7 +2534,7 @@ async fn test_leave_parent_requires_child_admin() {
     assert_ne!(status, 200, "anon must be rejected");
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_reapply_after_leaving_is_allowed() {
     // Reapply after leaving is allowed — the apply flow from PR #3 already
     // supports this; just verify there's no lingering `pending_parent_team_id`
@@ -2588,7 +2592,7 @@ async fn test_reapply_after_leaving_is_allowed() {
 
 // ── AC-18: Parent-delete cascade ─────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_delete_cascades_to_sub_teams() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2609,7 +2613,7 @@ async fn test_parent_delete_cascades_to_sub_teams() {
 
     // Both children no longer carry parent_team_id.
     for (cpk, cid) in [(&child_pk_a, &child_id_a), (&child_pk_b, &child_id_b)] {
-        let child = Team::get(&ctx.ddb, cpk, Some(EntityType::Team))
+        let child = Team::get_by_id(team_uuid_from(cpk))
             .await
             .unwrap()
             .unwrap();
@@ -2620,7 +2624,7 @@ async fn test_parent_delete_cascades_to_sub_teams() {
     }
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_delete_notifies_former_sub_teams() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2628,11 +2632,9 @@ async fn test_parent_delete_notifies_former_sub_teams() {
     enable_parent_eligible(&ctx, &parent_id, 0).await;
 
     let (child_pk, _child_id) = approve_child_for(&ctx, &parent_id).await;
-    let child_owner = crate::features::posts::models::TeamOwner::get(
-        &ctx.ddb,
+    let child_owner = crate::features::posts::models::TeamOwner::find_by_team(team_uuid_from(
         &child_pk,
-        Some(&EntityType::TeamOwner),
-    )
+    ))
     .await
     .unwrap()
     .unwrap();
@@ -2656,7 +2658,7 @@ async fn test_parent_delete_notifies_former_sub_teams() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_parent_delete_does_not_touch_sub_team_content() {
     let ctx = TestContext::setup().await;
     let parent_pk = create_parent_team(&ctx).await;
@@ -2678,7 +2680,7 @@ async fn test_parent_delete_does_not_touch_sub_team_content() {
     // Seed a member on the child team.
     let (extra_user, _) = ctx.create_another_user().await;
     let ut = UserTeam::new(
-        extra_user.pk.clone(),
+        extra_user.pk(),
         child_pk.clone(),
         "childname".to_string(),
         String::new(),
@@ -2686,7 +2688,7 @@ async fn test_parent_delete_does_not_touch_sub_team_content() {
         None,
         TeamRole::Member,
     );
-    ut.create(&ctx.ddb).await.unwrap();
+    ut.create().await.unwrap();
 
     // Delete parent.
     let username = team_username(&ctx, &parent_pk).await;
@@ -2699,23 +2701,19 @@ async fn test_parent_delete_does_not_touch_sub_team_content() {
 
     // Child post preserved.
     let still =
-        crate::features::posts::models::Post::get(&ctx.ddb, &post.pk, Some(EntityType::Post))
+        crate::features::posts::models::Post::get_by_id(post.id)
             .await
             .unwrap();
     assert!(still.is_some(), "child post must survive parent delete");
 
     // Child team still exists.
-    let child = Team::get(&ctx.ddb, &child_pk, Some(EntityType::Team))
+    let child = Team::get_by_id(team_uuid_from(&child_pk))
         .await
         .unwrap();
     assert!(child.is_some(), "child team itself must survive");
 
     // Child's UserTeam membership rows preserved.
-    let opt = UserTeamQueryOption::builder().limit(50);
-    let (members, _) =
-        UserTeam::find_by_team(&ctx.ddb, &EntityType::UserTeam(child_pk.to_string()), opt)
-            .await
-            .unwrap();
+    let members = UserTeam::find_by_team(&child_pk).await.unwrap();
     assert!(
         !members.is_empty(),
         "child team membership must be preserved"
@@ -2728,7 +2726,6 @@ fn _unused_guard() {
     let _ = SubTeamFormField::default();
     let _ = SubTeamDocument::default();
     let _ = SubTeamFormFieldType::ShortText;
-    let _ = UserTeamQueryOption::builder();
     let _: Option<SubTeamApplicationDetailResponse> = None;
     let _ = TerminationAck::default();
 }

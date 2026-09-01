@@ -1,4 +1,5 @@
 use crate::features::spaces::pages::actions::actions::discussion::*;
+#[cfg(feature = "server")]
 use crate::features::spaces::space_common::models::aggregate::DashboardAggregate;
 
 #[mcp_tool(name = "delete_discussion", description = "Delete a discussion from a space. Requires creator role.")]
@@ -10,16 +11,17 @@ pub async fn delete_discussion(
     discussion_sk: SpacePostEntityType,
 ) -> Result<()> {
     SpacePost::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
+
+    if let Some(post) = SpacePost::get_one(&space_id, &SpacePostPartition(discussion_sk.0)).await? {
+        SpacePost::repository()
+            .delete(post.id)
+            .await
+            .map_err(crate::common::Error::from)?;
+    }
+
+    // Decrement post count in aggregate.
     let space_pk: Partition = space_id.into();
-    let discussion_sk_entity: EntityType = discussion_sk.into();
-
-    SpacePost::delete(cli, &space_pk, Some(discussion_sk_entity)).await?;
-
-    // Decrement post count in aggregate
-    let agg_item = DashboardAggregate::inc_posts(&space_pk, -1);
-    crate::transact_write_items!(cli, vec![agg_item]).ok();
+    let _ = DashboardAggregate::inc_posts(&space_pk, -1).await;
 
     Ok(())
 }

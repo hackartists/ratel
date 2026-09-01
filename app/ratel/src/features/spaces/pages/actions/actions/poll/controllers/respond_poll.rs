@@ -89,7 +89,14 @@ fn respondent_from_panel_attributes(
                 respondent.age = verified_attributes.age().map(age_to_respondent_age);
             }
             PanelAttribute::CollectiveAttribute(CollectiveAttribute::Gender) => {
-                respondent.gender = verified_attributes.gender;
+                // Postgres migration: `VerifiedAttributes.gender` is the bare
+                // snake_case string ("male" / "female") — parse it back the
+                // same way serde would.
+                respondent.gender = match verified_attributes.gender.as_deref() {
+                    Some("male") => Some(crate::common::attribute::Gender::Male),
+                    Some("female") => Some(crate::common::attribute::Gender::Female),
+                    _ => None,
+                };
             }
             PanelAttribute::VerifiableAttribute(VerifiableAttribute::Age(age)) => {
                 respondent.age = Some(*age);
@@ -114,11 +121,9 @@ async fn get_respondent_from_panels(
     space_pk: &Partition,
     user_pk: &Partition,
 ) -> Result<Option<RespondentAttr>> {
-    let (pk, sk) = crate::common::models::did::VerifiedAttributes::keys(user_pk);
-    let verified_attributes =
-        crate::common::models::did::VerifiedAttributes::get(cli, pk, Some(sk))
-            .await?
-            .unwrap_or_default();
+    let verified_attributes = crate::common::models::did::VerifiedAttributes::get_by_user(user_pk)
+        .await?
+        .unwrap_or_default();
     let matched_attributes =
         crate::features::spaces::controllers::panel_requirements::matched_panel_attributes(
             cli,
@@ -153,20 +158,15 @@ pub async fn respond_poll(
     let space_pk: Partition = space_pk.into();
     let poll_sk_entity: EntityType = poll_sk.clone().into();
 
-    let poll = SpacePoll::get(cli, &space_pk, Some(poll_sk_entity.clone()))
+    let poll = SpacePoll::get_one(&space_id, &poll_sk)
         .await?
         .ok_or(Error::NotFound("Poll not found".into()))?;
 
-    let space_action = SpaceAction::get(
-        cli,
-        &CompositePartition(space_id.clone(), poll_sk.to_string()),
-        Some(EntityType::SpaceAction),
-    )
-    .await?
-    .ok_or(Error::SpaceActionNotFound)?;
+    let space_action = SpaceAction::get_one(&space_id, &poll_sk.0)
+        .await?
+        .ok_or(Error::SpaceActionNotFound)?;
 
     let deps_met = crate::features::spaces::pages::actions::services::dependency::dependencies_met(
-        cli,
         &space,
         &space_action,
         &member.pk,
@@ -184,12 +184,12 @@ pub async fn respond_poll(
         return Err(SpacePollError::PollNotInProgress.into());
     }
 
-    if !validate_answers(poll.questions.clone(), req.answers.clone()) {
+    if !validate_answers(poll.questions.0.clone(), req.answers.clone()) {
         return Err(SpacePollError::AnswerMismatch.into());
     }
 
     let existing =
-        SpacePollUserAnswer::find_one(cli, &space_pk, &poll_sk_entity, &member.pk).await?;
+        SpacePollUserAnswer::find_one(&space_pk, &poll_sk_entity, &member.pk).await?;
 
     if existing.is_some() && !poll.response_editable {
         return Err(SpacePollError::EditNotAllowed.into());
@@ -252,15 +252,12 @@ pub async fn respond_poll(
             .await?;
     }
 
-    // DynamoDB record
-    if existing.is_some() {
-        let (pk, sk) = SpacePollUserAnswer::keys(&member.pk, &poll_sk_entity, &space_pk);
+    // Postgres record (was DynamoDB)
+    if let Some(mut existing_answer) = existing {
         let now = crate::common::utils::time::get_now_timestamp_millis();
-        SpacePollUserAnswer::updater(pk, sk)
-            .with_answers(req.answers)
-            .with_created_at(now)
-            .execute(cli)
-            .await?;
+        existing_answer.answers = PollUserAnswers(req.answers);
+        existing_answer.created_at = now;
+        existing_answer.save().await?;
     } else {
         let respondent = get_respondent_from_panels(cli, &space_pk, &member.pk).await?;
         let answer_record = SpacePollUserAnswer::new(
@@ -270,18 +267,22 @@ pub async fn respond_poll(
             respondent,
             member.clone(),
         );
-        answer_record.create(cli).await?;
+        answer_record.save().await?;
+        // Phase 5: emit so the outbox poller dispatches "PollXpRecord"
+        // (handle_poll_xp) — the Postgres analogue of the old EventBridge path.
+        crate::common::events::outbox::EventOutbox::emit_insert(
+            crate::common::events::outbox::topic::POLL_USER_ANSWER,
+            &answer_record,
+        )
+        .await
+        .ok();
 
-        SpacePoll::updater(&space_pk, &poll_sk_entity)
-            .increase_user_response_count(1)
-            .execute(cli)
-            .await?;
+        SpacePoll::bump_response_count(poll.id, 1).await?;
 
-        let agg_item =
-            crate::features::spaces::space_common::models::aggregate::DashboardAggregate::inc_poll_responses(
-                &space_pk, 1,
-            );
-        crate::transact_write_items!(cli, vec![agg_item]).ok();
+        let _ = crate::features::spaces::space_common::models::aggregate::DashboardAggregate::inc_poll_responses(
+            &space_pk, 1,
+        )
+        .await;
 
         // Reward payout + XP recording run on EventBridge via SPACE_POLL_USER_ANSWER#
         // INSERT → handle_poll_xp. See features/activity/services/handle_xp_event.rs.

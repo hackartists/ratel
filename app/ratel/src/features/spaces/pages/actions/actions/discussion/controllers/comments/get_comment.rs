@@ -12,33 +12,20 @@ pub async fn get_comment(
     comment_sk: SpacePostCommentEntityType,
 ) -> Result<DiscussionCommentResponse> {
     SpacePost::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let _ = space_id;
 
-    let discussion_sk_entity: EntityType = discussion_sk.into();
-    let space_post_pk: SpacePostPartition = match &discussion_sk_entity {
-        EntityType::SpacePost(id) => SpacePostPartition(id.clone()),
-        _ => return Err(SpaceActionDiscussionError::InvalidDiscussionId.into()),
-    };
-    let post_pk: Partition = space_post_pk.into();
+    let space_post_pk = SpacePostPartition(discussion_sk.0);
     let comment_sk_entity: EntityType = comment_sk.into();
 
-    let comment = SpacePostComment::get(cli, &post_pk, Some(comment_sk_entity))
+    let comment = SpacePostComment::get_by_entity(&space_post_pk, &comment_sk_entity)
         .await?
         .ok_or(SpaceActionDiscussionError::NotFound)?;
 
     let liked = if let Some(ref u) = user.0 {
-        let (like_pk, like_sk) = SpacePostCommentLike::keys_from_partition(
-            post_pk.clone(),
-            comment.sk.clone(),
-            &u.pk,
-        );
-        SpacePostCommentLike::get(cli, &like_pk, Some(like_sk))
+        let set = SpacePostCommentLike::liked_keys(&space_post_pk.0, &u.pk(), vec![comment.like_key()])
             .await
-            .ok()
-            .flatten()
-            .is_some()
+            .unwrap_or_default();
+        set.contains(&comment.like_key())
     } else {
         false
     };

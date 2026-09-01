@@ -114,6 +114,11 @@ pub trait ArcadeWallet: Send + Sync {
 /// reads `ArcadeSettings` per call (cheap, no in-process cache yet).
 #[derive(Clone)]
 pub struct DdbArcadeWallet {
+    // Kept for constructor-signature compatibility with call sites built
+    // around `cfg.dynamodb()`; the wallet's own storage (User points,
+    // ArcadeWalletBalance/Transaction) is Postgres now (see
+    // `write_txn` / `convert_rp_to_chip`).
+    #[allow(dead_code)]
     cli: aws_sdk_dynamodb::Client,
 }
 
@@ -139,7 +144,7 @@ impl DdbArcadeWallet {
         delta: i64,
         ref_round_id: Option<String>,
     ) -> crate::common::Result<(String, i64)> {
-        let mut balance = ArcadeWalletBalance::get_or_default(&self.cli, user_id).await?;
+        let mut balance = ArcadeWalletBalance::get_or_default(user_id).await?;
         let new_balance = balance.chip_balance + delta;
         if new_balance < 0 {
             return Err(ArcadeError::WalletInsufficientChip.into());
@@ -148,24 +153,25 @@ impl DdbArcadeWallet {
         let now = Self::now();
         balance.chip_balance = new_balance;
         balance.updated_at = now;
-        balance.upsert(&self.cli).await.map_err(|e| {
+        balance.save().await.map_err(|e| {
             crate::error!("DdbArcadeWallet balance upsert failed: {e}");
             ArcadeError::StorageFailure
         })?;
 
         let txn_id = Self::fresh_txn_id();
-        let (txn_pk, txn_sk) = ArcadeWalletTransaction::keys(user_id, &txn_id);
+        let now_val = now;
         let txn = ArcadeWalletTransaction {
-            pk: txn_pk,
-            sk: txn_sk,
-            created_at: now,
-            updated_at: now,
+            id: uuid::Uuid::now_v7(),
+            user_id: user_id.to_string(),
+            txn_id: txn_id.clone(),
+            created_at: now_val,
+            updated_at: now_val,
             kind,
             amount: delta,
             balance_after: new_balance,
             ref_round_id,
         };
-        txn.create(&self.cli).await.map_err(|e| {
+        txn.insert_row().await.map_err(|e| {
             crate::error!("DdbArcadeWallet txn create failed: {e}");
             ArcadeError::StorageFailure
         })?;
@@ -177,7 +183,7 @@ impl DdbArcadeWallet {
 #[async_trait]
 impl ArcadeWallet for DdbArcadeWallet {
     async fn balance(&self, user_id: &str) -> crate::common::Result<i64> {
-        let b = ArcadeWalletBalance::get_or_default(&self.cli, user_id).await?;
+        let b = ArcadeWalletBalance::get_or_default(user_id).await?;
         Ok(b.chip_balance)
     }
 
@@ -186,7 +192,7 @@ impl ArcadeWallet for DdbArcadeWallet {
         user_id: &str,
         rp_amount: i64,
     ) -> crate::common::Result<ChipReceipt> {
-        let settings = ArcadeSettings::get_or_default(&self.cli).await.unwrap_or_default();
+        let settings = ArcadeSettings::get_or_default().await.unwrap_or_default();
         if rp_amount < settings.min_convert_rp {
             return Err(ArcadeError::WalletAmountOutOfRange.into());
         }
@@ -196,9 +202,12 @@ impl ArcadeWallet for DdbArcadeWallet {
         // chip write below — design doc § A5 says we're fine eating
         // that risk in v1.
         use crate::common::models::auth::User;
-        let user_pk = Partition::User(user_id.to_string());
-        let user_sk = EntityType::User;
-        let user_row = User::get(&self.cli, &user_pk, Some(user_sk.clone()))
+        use postgres::PostgresEntity;
+        let user_uuid = uuid::Uuid::parse_str(user_id).map_err(|e| {
+            crate::error!("convert_rp_to_chip invalid user id {user_id}: {e}");
+            ArcadeError::StorageFailure
+        })?;
+        let user_row = User::get_by_id(user_uuid)
             .await
             .map_err(|e| {
                 crate::error!("convert_rp_to_chip user load failed: {e}");
@@ -212,15 +221,30 @@ impl ArcadeWallet for DdbArcadeWallet {
         // Debit RP first; if the chip credit fails afterwards we'd
         // need a reverse-credit job — v1 accepts the asymmetry
         // (operator can manually reconcile via Adjustment txns).
-        User::updater(&user_pk, &user_sk)
-            .decrease_points(rp_amount)
-            .with_updated_at(crate::common::utils::time::get_now_timestamp_millis())
-            .execute(&self.cli)
-            .await
-            .map_err(|e| {
-                crate::error!("convert_rp_to_chip RP debit failed: {e}");
-                ArcadeError::StorageFailure
-            })?;
+        // Atomic `SET points = points - $delta` in SQL (replaces the
+        // DynamoDB `decrease_points` atomic `ADD`), never a
+        // read-modify-write of the value we already loaded above.
+        {
+            use postgres::sqlx::{Postgres, QueryBuilder};
+            let table = User::table_name();
+            let now = crate::common::utils::time::get_now_timestamp_millis();
+            let mut qb = QueryBuilder::<Postgres>::new(format!(
+                "UPDATE \"{table}\" SET \"points\" = \"points\" - "
+            ));
+            postgres::Value::from(rp_amount).push_bind(&mut qb);
+            qb.push(", \"updated_at\" = ");
+            postgres::Value::from(now).push_bind(&mut qb);
+            qb.push(" WHERE \"id\" = ");
+            postgres::Value::from(user_uuid).push_bind(&mut qb);
+            User::repository()
+                .db()
+                .execute(qb)
+                .await
+                .map_err(|e| {
+                    crate::error!("convert_rp_to_chip RP debit failed: {e}");
+                    ArcadeError::StorageFailure
+                })?;
+        }
 
         let chips = rp_amount * (settings.rp_to_chip_ratio_bps as i64) / 10_000;
         let (txn_id, balance_after) = self

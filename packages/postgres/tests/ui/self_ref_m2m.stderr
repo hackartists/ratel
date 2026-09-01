@@ -1,0 +1,13 @@
+error: self-referential many_to_many requires explicit join_table, from_key, to_key
+  --> tests/ui/self_ref_m2m.rs:14:5
+   |
+14 | /     #[postgres(many_to_many)]
+15 | |     pub related: Vec<Self>,
+   | |__________________________^
+
+error: self-referential many_to_many requires explicit join_table, from_key, to_key
+  --> tests/ui/self_ref_m2m.rs:21:5
+   |
+21 | /     #[postgres(many_to_many)]
+22 | |     pub related: Vec<SelfRefVecIdent>,
+   | |_____________________________________^

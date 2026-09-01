@@ -524,7 +524,11 @@ pub fn AdminMainPage() -> Element {
                                             style: "color:#ef4444;margin-right:12px;",
                                             r#type: "button",
                                             onclick: {
-                                                let uid = flag.user_pk.strip_prefix("USER#").unwrap_or(&flag.user_pk).to_string();
+                                                let uid = flag
+                                                    .user_pk
+                                                    .strip_prefix("USER#")
+                                                    .unwrap_or(&flag.user_pk)
+                                                    .to_string();
                                                 move |_| {
                                                     let uid = uid.clone();
                                                     async move {
@@ -539,7 +543,11 @@ pub fn AdminMainPage() -> Element {
                                             class: "admin-arena__table-link",
                                             r#type: "button",
                                             onclick: {
-                                                let uid = flag.user_pk.strip_prefix("USER#").unwrap_or(&flag.user_pk).to_string();
+                                                let uid = flag
+                                                    .user_pk
+                                                    .strip_prefix("USER#")
+                                                    .unwrap_or(&flag.user_pk)
+                                                    .to_string();
                                                 move |_| {
                                                     let uid = uid.clone();
                                                     async move {

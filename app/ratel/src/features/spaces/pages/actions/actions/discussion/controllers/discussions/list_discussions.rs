@@ -7,22 +7,9 @@ pub async fn list_discussions(
     bookmark: Option<String>,
 ) -> Result<ListResponse<SpacePost>> {
     SpacePost::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let space_pk: Partition = space_id.into();
 
-    let (posts, next_bookmark) = if let Some(category_name) = category {
-        let opt = SpacePost::opt_with_bookmark(bookmark)
-            .scan_index_forward(false)
-            .limit(20);
-        let pk = format!("{}#{}", space_pk, category_name);
-        SpacePost::find_by_category(cli, pk, opt).await?
-    } else {
-        let opt = SpacePost::opt_with_bookmark(bookmark)
-            .scan_index_forward(false)
-            .limit(20);
-        SpacePost::find_by_space_ordered(cli, space_pk, opt).await?
-    };
+    let (posts, next_bookmark) =
+        SpacePost::list_by_space(&space_id, category, bookmark, 20).await?;
 
     Ok(ListResponse {
         bookmark: next_bookmark,

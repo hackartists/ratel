@@ -16,10 +16,10 @@ pub fn ConfigCard(
 
     let action = action_setting();
     let action_id_str = follow_id().to_string();
-    let saved_credits = action.credits;
+    let saved_credits = action.credits as u64;
     let action_status = action.status.clone();
     let initial_prerequisite = action.prerequisite;
-    let initial_depends_on = action.depends_on.clone();
+    let initial_depends_on = action.depends_on.0.clone();
     let initial_status = action.status.clone();
 
     let action_id_for_signal = action_id_str.clone();

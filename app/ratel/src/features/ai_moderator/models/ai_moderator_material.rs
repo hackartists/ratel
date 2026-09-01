@@ -1,15 +1,30 @@
+#[cfg(feature = "server")]
 use crate::features::ai_moderator::*;
 #[cfg(feature = "server")]
-#[allow(unused_imports)]
-use rmcp::schemars;
+use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use uuid::Uuid;
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, DynamoEntity, PartialEq)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+/// A reference material (PDF) attached to a discussion's AI moderator config.
+///
+/// Postgres migration: the DynamoDB single-table key
+/// `pk = CompositePartition(SpacePartition, discussion_sk)` +
+/// `sk = EntityType::AiModeratorMaterial(material_id)` becomes a surrogate
+/// `id` PK — the old `material_id` (a `now_v7` uuid) *is* the surrogate PK now.
+/// `space_id` / `discussion_id` are cross-feature references (owned by the
+/// spaces feature) stored as plain strings — **no** FK for now.
+#[cfg(feature = "server")]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, PostgresEntity)]
+#[postgres(table = "ai_moderator_materials")]
 pub struct AiModeratorMaterial {
-    pub pk: CompositePartition<SpacePartition, String>,
-    pub sk: EntityType,
+    pub id: Uuid,
+    #[postgres(index)]
+    pub space_id: String,
+    #[postgres(index)]
+    pub discussion_id: String,
     pub file_name: String,
     pub file_url: String,
+    #[postgres(order)]
     pub created_at: i64,
 }
 
@@ -22,10 +37,10 @@ impl AiModeratorMaterial {
         file_url: String,
     ) -> Self {
         let now = crate::common::utils::time::get_now_timestamp_millis();
-        let material_id = uuid::Uuid::now_v7().to_string();
         Self {
-            pk: CompositePartition(space_id, discussion_sk),
-            sk: EntityType::AiModeratorMaterial(material_id),
+            id: Uuid::now_v7(),
+            space_id: space_id.to_string(),
+            discussion_id: discussion_sk,
             file_name,
             file_url,
             created_at: now,

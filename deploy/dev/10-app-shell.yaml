@@ -1,0 +1,112 @@
+# app-shell — the ratel Dioxus fullstack server for the DEV environment.
+# Image: built by dev-workflow's build-images job with the REAL dev
+# compile-time env (DYNAMO_TABLE_PREFIX=ratel-dev, DYNAMO_ENDPOINT=none →
+# real AWS DynamoDB, real AWS creds baked via option_env!, no
+# bypass/local-dev/lambda features), packaged with app/ratel/Dockerfile and
+# pushed as ratel-app-shell:dev-<sha>. ${SHA_TAG} pins each deploy to its
+# commit, which is what triggers the rolling update.
+#
+# Runtime env mirrors what the AWS path injected at RUNTIME:
+#   - IP/PORT (the container listener, same as the compose/testing image)
+#   - ratel-dev-secrets (envFrom, optional): LAUNCHPAD_* + QDRANT_API_KEY —
+#     the exact set cdk/bin/cdk.ts used to inject into the Lambda runtime
+#     env (read via std::env::var at runtime, no rebuild needed).
+#   - GOOGLE_APPLICATION_CREDENTIALS + the optional ratel-dev-firebase
+#     Secret volume: the FCM service-account JSON the lambda bundle carried
+#     at .gcp/firebase-service-account.json. Optional — fcm.rs skips
+#     gracefully when the file is missing (push disabled).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-shell
+  namespace: ratel-dev
+  labels:
+    app: app-shell
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: app-shell
+  template:
+    metadata:
+      labels:
+        app: app-shell
+    spec:
+      # qdrant (jemalloc) aborts on the Pi node's 16K page-size kernel,
+      # and the Pi is the small node anyway — pin every preview/dev pod to
+      # the 4K-page main node (same class asset pins its e2e pod to).
+      nodeSelector:
+        biyard.io/node-class: main
+      containers:
+        - name: app-shell
+          image: registry.infra.svc.cluster.local:5000/ratel-app-shell:${SHA_TAG}
+          imagePullPolicy: IfNotPresent # sha-unique tag — content never changes under it
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: IP
+              value: 0.0.0.0
+            - name: PORT
+              value: "8080"
+            # ICP replica. config/server/icp.rs checks std::env::var("IC_URL")
+            # before the option_env! value baked at build time, so pointing the
+            # app at the in-cluster subnet needs no rebuild — the image keeps
+            # its compile-time default and this simply wins at runtime.
+            #
+            # Served by the `icp` chart (infra/helm/icp), deployed into the
+            # shared `infra` namespace alongside postgres/minio/qdrant — a
+            # 4-node subnet is four pods and four PVCs, too heavy to copy per
+            # namespace, and the chain outlives any single app deployment
+            # (a PR-preview namespace is torn down; its chain should not be).
+            #
+            # The Service load-balances across the replicas: every node in a
+            # subnet holds the same state, so any of them can answer.
+            - name: IC_URL
+              value: http://icp.infra.svc.cluster.local:4100
+            # Postgres migration: the app resolves its global pool from
+            # DATABASE_URL and migrates the inventory schema on boot (with retry;
+            # see common/run.rs). Reuses the shared infra Postgres — a dedicated
+            # `ratel-dev` database keeps dev isolated from prod (`ratel`) and gives
+            # the outbox poller's pg_advisory_lock its own per-database namespace.
+            - name: DATABASE_URL
+              value: postgres://ratel:ratel@postgres.infra.svc.cluster.local:5432/ratel-dev
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /usr/src/app/.gcp/firebase-service-account.json
+          envFrom:
+            - secretRef:
+                name: ratel-dev-secrets
+                optional: true
+          volumeMounts:
+            - name: firebase
+              mountPath: /usr/src/app/.gcp
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+      volumes:
+        - name: firebase
+          secret:
+            secretName: ratel-dev-firebase
+            optional: true # absent secret ⇒ empty dir ⇒ FCM gracefully disabled
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-shell
+  namespace: ratel-dev
+spec:
+  selector:
+    app: app-shell
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

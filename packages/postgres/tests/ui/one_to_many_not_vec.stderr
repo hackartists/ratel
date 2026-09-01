@@ -1,0 +1,5 @@
+error: one_to_many requires a Vec<T> field
+  --> tests/ui/one_to_many_not_vec.rs:16:16
+   |
+16 |     pub child: Child,
+   |                ^^^^^

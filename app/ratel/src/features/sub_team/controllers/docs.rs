@@ -1,18 +1,20 @@
 use crate::common::*;
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 use crate::features::social::pages::member::dto::TeamRole;
 use crate::features::sub_team::models::{
-    version_sk_prefix, SubTeamDocument, SubTeamDocumentVersion, SUB_TEAM_DOCUMENT_MAX_BODY_BYTES,
+    SubTeamDocument, SubTeamDocumentVersion, SUB_TEAM_DOCUMENT_MAX_BODY_BYTES,
 };
 use crate::features::sub_team::types::{
     CreateSubTeamDocumentRequest, ReorderDocumentsRequest, SubTeamDocumentResponse,
     SubTeamDocumentVersionResponse, SubTeamError, UpdateSubTeamDocumentRequest,
 };
+#[cfg(feature = "server")]
+use crate::features::sub_team::models::json::FileList;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
-const DOC_SK_PREFIX: &str = "SUB_TEAM_DOCUMENT";
-const LIST_PAGE_LIMIT: i32 = 100;
-const VERSION_PAGE_LIMIT: i32 = 100;
-
+#[cfg(feature = "server")]
 fn sort_docs(items: &mut [SubTeamDocument]) {
     items.sort_by(|a, b| a.order.cmp(&b.order).then(a.created_at.cmp(&b.created_at)));
 }
@@ -27,23 +29,14 @@ pub async fn list_sub_team_docs_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
 
-    // Trailing `#` is critical — without it the prefix also matches
-    // `SUB_TEAM_DOCUMENT_VERSION#…` snapshot rows.
-    let opts = SubTeamDocument::opt()
-        .sk(format!("{DOC_SK_PREFIX}#"))
-        .limit(LIST_PAGE_LIMIT);
-    let (mut items, next) = SubTeamDocument::query(cli, team.pk.clone(), opts)
-        .await
-        .map_err(|e| {
-            crate::error!("list_sub_team_docs query failed: {e}");
-            SubTeamError::DocumentNotFound
-        })?;
+    let mut items = SubTeamDocument::list_for_team(&team.partition()).await.map_err(|e| {
+        crate::error!("list_sub_team_docs query failed: {e}");
+        SubTeamError::DocumentNotFound
+    })?;
     sort_docs(&mut items);
     let items: Vec<SubTeamDocumentResponse> = items.into_iter().map(Into::into).collect();
-    Ok((items, next).into())
+    Ok((items, None).into())
 }
 
 // ── POST create ─────────────────────────────────────────────────
@@ -57,9 +50,6 @@ pub async fn create_sub_team_doc_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-
     if body.body.as_bytes().len() > SUB_TEAM_DOCUMENT_MAX_BODY_BYTES {
         return Err(SubTeamError::DocumentBodyTooLarge.into());
     }
@@ -68,7 +58,7 @@ pub async fn create_sub_team_doc_handler(
     let attachments = body.attachments.unwrap_or_default();
 
     let mut doc = SubTeamDocument::new(
-        team.pk.clone(),
+        team.partition(),
         body.title.clone(),
         body.body.clone(),
         body.required,
@@ -77,71 +67,53 @@ pub async fn create_sub_team_doc_handler(
         attachments.clone(),
     );
 
-    // Bylaws / ClubBylaws docs are dual-written: the SubTeamDocument
-    // is the canonical record, and a backing `Post` (with the same
-    // category) carries likes/comments + the public detail page.
-    // Plain (uncategorised) docs skip the backing post entirely — that
-    // preserves the Documents tab "required reading" workflow.
+    // Bylaws / ClubBylaws docs are dual-written: the SubTeamDocument is the
+    // canonical record, and a backing `Post` carries likes/comments.
     if let Some(cat) = body.category.as_ref() {
         let trimmed = cat.trim();
         if !trimmed.is_empty() {
+            use crate::features::posts::models::pg_json::{FileVec, StringVec};
             use crate::features::posts::models::Post;
-            use crate::features::posts::types::{PostStatus, PostType, Visibility};
+            use crate::features::posts::types::{Author, PostStatus, PostType, Visibility};
             doc.category = Some(trimmed.to_string());
 
-            let now = crate::common::utils::time::get_now_timestamp_millis();
-            let backing_post = Post {
-                pk: Partition::Feed(uuid::Uuid::now_v7().to_string()),
-                sk: EntityType::Post,
-                created_at: now,
-                updated_at: now,
-                title: doc.title.clone(),
-                body: ContentBody::html(doc.body.clone()),
-                post_type: PostType::Post,
-                status: PostStatus::Published,
-                visibility: Some(Visibility::Public),
-                shares: 0,
-                likes: 0,
-                comments: 0,
-                reports: 0,
-                user_pk: team.pk.clone(),
-                author_display_name: team.display_name.clone(),
-                author_profile_url: team.profile_url.clone(),
-                author_username: team.username.clone(),
-                author_type: crate::common::types::UserType::Team,
-                space_pk: None,
-                space_type: None,
-                space_visibility: None,
-                booster: None,
-                rewards: None,
-                urls: vec![],
-                // Dual-write the doc's attachments onto the backing
-                // Post so the post-detail page can surface the same
-                // file list the apply-page modal shows.
-                attachments: attachments.clone(),
-                categories: vec![trimmed.to_string()],
-                announcement_id: None,
-                announcement_parent_team_id: None,
-                pinned_as_announcement: false,
-            };
-            if let Err(e) = backing_post.create(cli).await {
+            let mut backing_post = Post::new(
+                doc.title.clone(),
+                doc.body.clone(),
+                PostType::Post,
+                Author {
+                    pk: team.partition(),
+                    display_name: team.display_name.clone(),
+                    profile_url: team.profile_url.clone(),
+                    username: team.username.clone(),
+                    user_type: crate::common::types::UserType::Team,
+                },
+            );
+            backing_post.status = PostStatus::Published;
+            backing_post.visibility = Some(Visibility::Public);
+            backing_post.attachments = FileVec(attachments.clone());
+            backing_post.categories = StringVec(vec![trimmed.to_string()]);
+
+            if let Err(e) = backing_post.save().await {
                 crate::error!("create_sub_team_doc backing post create failed: {e}");
                 return Err(SubTeamError::DocumentNotFound.into());
             }
-            doc.backing_post_id = Some(backing_post.pk.to_string());
+            // Stored as the full `"FEED#…"` partition string — matches what
+            // `pages/bylaws/component.rs` parses back into a `Partition` for
+            // navigation, and what `list_team_bylaws_handler` below matches
+            // against.
+            doc.backing_post_id = Some(Partition::Feed(backing_post.feed_id()).to_string());
         }
     }
 
-    doc.create(cli).await.map_err(|e| {
+    SubTeamDocument::repository().insert(&doc).await.map_err(|e| {
         crate::error!("create_sub_team_doc execute failed: {e}");
         SubTeamError::DocumentNotFound
     })?;
 
-    // Immutable v1 snapshot. A failure here doesn't roll the doc back
-    // — we log and continue; the doc itself is the canonical record
-    // and a later edit will produce v2 snapshot regardless.
-    let snapshot = SubTeamDocumentVersion::snapshot_of(team.pk.clone(), &doc);
-    if let Err(e) = snapshot.create(cli).await {
+    // Immutable v1 snapshot. Best-effort — a failure doesn't roll the doc back.
+    let snapshot = SubTeamDocumentVersion::snapshot_of(team.partition(), &doc);
+    if let Err(e) = SubTeamDocumentVersion::repository().insert(&snapshot).await {
         crate::error!("create_sub_team_doc snapshot write failed: {e}");
     }
 
@@ -160,11 +132,7 @@ pub async fn update_sub_team_doc_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let sk = EntityType::SubTeamDocument(doc_id);
-
-    let mut existing = SubTeamDocument::get(cli, &team.pk, Some(sk.clone()))
+    let mut existing = SubTeamDocument::find_in_team(&team.partition(), &doc_id)
         .await
         .map_err(|e| {
             crate::error!("update_sub_team_doc get failed: {e}");
@@ -172,13 +140,18 @@ pub async fn update_sub_team_doc_handler(
         })?
         .ok_or(SubTeamError::DocumentNotFound)?;
 
+    // NOTE: `updated_at` is applied exactly once, at the end (`if changed`).
+    // The Postgres UPDATE builder emits one `SET col = $n` per setter call and
+    // rejects duplicates ("multiple assignments to same column"); the
+    // DynamoDB-era code set `updated_at` here *and* again in the body branch,
+    // which now errors. Track the timestamp on `existing` and apply it once.
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let mut updater = SubTeamDocument::updater(&team.pk, &sk).with_updated_at(now);
+    let mut upd = SubTeamDocument::update();
     existing.updated_at = now;
     let mut changed = false;
 
     if let Some(title) = body.title {
-        updater = updater.with_title(title.clone());
+        upd = upd.title(title.clone());
         existing.title = title;
         changed = true;
     }
@@ -187,111 +160,85 @@ pub async fn update_sub_team_doc_handler(
         if new_body.as_bytes().len() > SUB_TEAM_DOCUMENT_MAX_BODY_BYTES {
             return Err(SubTeamError::DocumentBodyTooLarge.into());
         }
-        // Use the model helper to recompute body_hash + updated_at.
+        // Model helper recomputes body_hash + updated_at (applied once below).
         existing.update_body(new_body.clone());
-        updater = updater
-            .with_body(new_body)
-            .with_body_hash(existing.body_hash.clone())
-            .with_updated_at(existing.updated_at);
+        upd = upd.body(new_body).body_hash(existing.body_hash.clone());
         changed = true;
     }
 
     if let Some(required) = body.required {
-        updater = updater.with_required(required);
+        upd = upd.required(required);
         existing.required = required;
         changed = true;
     }
 
     if let Some(order) = body.order {
-        updater = updater.with_order(order);
+        upd = upd.order(order);
         existing.order = order;
         changed = true;
     }
 
     let mut attachments_synced_to_post = false;
     if let Some(attachments) = body.attachments {
-        updater = updater.with_attachments(attachments.clone());
-        existing.attachments = attachments;
+        upd = upd.attachments(FileList(attachments.clone()));
+        existing.attachments = FileList(attachments);
         attachments_synced_to_post = true;
         changed = true;
     }
 
     if changed {
-        // Bump version and stamp editor. Treat legacy rows (`version
-        // == 0`) as v1 so the first edit lands at v2 (rather than v1)
-        // — matches the composer's `v{version}` rendering.
+        // Bump version and stamp editor. `updated_at` is set exactly once here
+        // (see the note at the top of this fn) — `existing.updated_at` already
+        // reflects the change time (bumped by `update_body` when the body
+        // changed, else `now`).
         let next_version = existing.version.max(1) + 1;
         let editor = user.username.clone();
-        updater = updater
-            .with_version(next_version)
-            .with_editor_username(editor.clone());
+        upd = upd
+            .version(next_version)
+            .editor_username(editor.clone())
+            .updated_at(existing.updated_at);
         existing.version = next_version;
         existing.editor_username = editor;
 
-        updater.execute(cli).await.map_err(|e| {
-            crate::error!("update_sub_team_doc execute failed: {e}");
-            SubTeamError::DocumentNotFound
-        })?;
+        SubTeamDocument::repository()
+            .update(existing.id, upd)
+            .await
+            .map_err(|e| {
+                crate::error!("update_sub_team_doc execute failed: {e}");
+                SubTeamError::DocumentNotFound
+            })?;
 
-        // Sync the new attachments onto the backing Post (bylaws /
-        // ClubBylaws dual-write path) so the post-detail page stays in
-        // step with the doc's attachment list. Uses raw `update_item`
-        // touching ONLY the `attachments` attribute — the
-        // macro-generated `Post::updater(...)` would re-derive
-        // `gsi5_sk` from a default-initialised inner struct
-        // (`status: Draft`, `visibility: None`), corrupting the live
-        // row's GSI5 sort key and breaking
-        // `find_by_user_and_status` ("Published" begins-with query).
-        // Same constraint as the prior fanout demote bug — see
-        // `announcement_fanout.rs::demote_prior_direct_posts`.
+        // Sync the new attachments onto the backing Post (separate table —
+        // touches ONLY `attachments` via a targeted Postgres `UPDATE`).
         if attachments_synced_to_post {
             if let Some(backing_id) = existing.backing_post_id.as_ref() {
-                if let Ok(post_pk) = backing_id.parse::<Partition>() {
-                    match serde_dynamo::to_attribute_value::<_, aws_sdk_dynamodb::types::AttributeValue>(
-                        &existing.attachments,
-                    ) {
-                        Ok(av) => {
-                            if let Err(e) = cli
-                                .update_item()
-                                .table_name(
-                                    crate::features::posts::models::Post::table_name(),
-                                )
-                                .key(
-                                    "pk",
-                                    aws_sdk_dynamodb::types::AttributeValue::S(
-                                        post_pk.to_string(),
-                                    ),
-                                )
-                                .key(
-                                    "sk",
-                                    aws_sdk_dynamodb::types::AttributeValue::S(
-                                        "POST".to_string(),
-                                    ),
-                                )
-                                .update_expression("SET attachments = :a")
-                                .expression_attribute_values(":a", av)
-                                .send()
-                                .await
-                            {
-                                crate::error!(
-                                    "update_sub_team_doc backing post attachments sync failed: {e}"
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            crate::error!(
-                                "update_sub_team_doc attachments serialize failed: {e}"
-                            );
-                        }
+                let post_uuid = backing_id
+                    .parse::<Partition>()
+                    .ok()
+                    .and_then(|p| match p {
+                        Partition::Feed(id) => uuid::Uuid::parse_str(&id).ok(),
+                        _ => None,
+                    });
+                if let Some(post_uuid) = post_uuid {
+                    use crate::features::posts::models::{Post, pg_json::FileVec};
+                    if let Err(e) = Post::repository()
+                        .update(
+                            post_uuid,
+                            Post::update().attachments(FileVec(existing.attachments.0.clone())),
+                        )
+                        .await
+                    {
+                        crate::error!(
+                            "update_sub_team_doc backing post attachments sync failed: {e}"
+                        );
                     }
                 }
             }
         }
 
-        // Immutable snapshot at the new version. Best-effort — see
-        // the create handler for the same rationale.
-        let snapshot = SubTeamDocumentVersion::snapshot_of(team.pk.clone(), &existing);
-        if let Err(e) = snapshot.create(cli).await {
+        // Immutable snapshot at the new version. Best-effort.
+        let snapshot = SubTeamDocumentVersion::snapshot_of(team.partition(), &existing);
+        if let Err(e) = SubTeamDocumentVersion::repository().insert(&snapshot).await {
             crate::error!("update_sub_team_doc snapshot write failed: {e}");
         }
     }
@@ -307,32 +254,25 @@ pub async fn delete_sub_team_doc_handler(team_pk: TeamPartition, doc_id: String)
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
-    let doc_id_for_versions = doc_id.clone();
-    let sk = EntityType::SubTeamDocument(doc_id);
 
-    SubTeamDocument::delete(cli, &team.pk, Some(sk))
+    // Load first so the delete stays scoped to the owning team.
+    if let Some(existing) = SubTeamDocument::find_in_team(&team.partition(), &doc_id)
         .await
-        .map_err(|e| {
-            crate::error!("delete_sub_team_doc execute failed: {e}");
-            SubTeamError::DocumentNotFound
-        })?;
+        .ok()
+        .flatten()
+    {
+        SubTeamDocument::repository()
+            .delete(existing.id)
+            .await
+            .map_err(|e| {
+                crate::error!("delete_sub_team_doc execute failed: {e}");
+                SubTeamError::DocumentNotFound
+            })?;
+    }
 
-    // Cascade-remove every snapshot row for this doc. Failures are
-    // logged but do not surface — the canonical doc row is gone, and
-    // orphan snapshots are harmless beyond storage.
-    let prefix = version_sk_prefix(&doc_id_for_versions);
-    let opts = SubTeamDocumentVersion::opt()
-        .sk(prefix)
-        .limit(VERSION_PAGE_LIMIT);
-    if let Ok((versions, _)) = SubTeamDocumentVersion::query(cli, team.pk.clone(), opts).await {
-        for v in versions {
-            if let Err(e) = SubTeamDocumentVersion::delete(cli, &team.pk, Some(v.sk.clone())).await
-            {
-                crate::error!("delete_sub_team_doc snapshot cleanup failed: {e}");
-            }
-        }
+    // Cascade-remove every snapshot row for this doc. Best-effort.
+    if let Err(e) = SubTeamDocumentVersion::delete_for_doc(&team.partition(), &doc_id).await {
+        crate::error!("delete_sub_team_doc snapshot cleanup failed: {e}");
     }
 
     Ok(String::new())
@@ -349,13 +289,8 @@ pub async fn list_sub_team_doc_versions_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
 
-    let opts = SubTeamDocumentVersion::opt()
-        .sk(version_sk_prefix(&doc_id))
-        .limit(VERSION_PAGE_LIMIT);
-    let (mut items, next) = SubTeamDocumentVersion::query(cli, team.pk.clone(), opts)
+    let mut items = SubTeamDocumentVersion::list_for_doc(&team.partition(), &doc_id)
         .await
         .map_err(|e| {
             crate::error!("list_sub_team_doc_versions query failed: {e}");
@@ -364,7 +299,7 @@ pub async fn list_sub_team_doc_versions_handler(
     // Highest version first — most recent at the top.
     items.sort_by(|a, b| b.version.cmp(&a.version));
     let items: Vec<SubTeamDocumentVersionResponse> = items.into_iter().map(Into::into).collect();
-    Ok((items, next).into())
+    Ok((items, None).into())
 }
 
 // ── POST reorder ────────────────────────────────────────────────
@@ -378,23 +313,21 @@ pub async fn reorder_sub_team_docs_handler(
     if !role.is_admin_or_owner() {
         return Err(Error::UnauthorizedAccess);
     }
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let now = crate::common::utils::time::get_now_timestamp_millis();
 
     for (idx, doc_id) in body.doc_ids.iter().enumerate() {
-        let sk = EntityType::SubTeamDocument(doc_id.clone());
-        let existing = SubTeamDocument::get(cli, &team.pk, Some(sk.clone()))
+        let existing = SubTeamDocument::find_in_team(&team.partition(), doc_id)
             .await
             .ok()
             .flatten();
-        if existing.is_none() {
+        let Some(existing) = existing else {
             continue;
-        }
-        let _ = SubTeamDocument::updater(&team.pk, &sk)
-            .with_order(idx as i32)
-            .with_updated_at(now)
-            .execute(cli)
+        };
+        let _ = SubTeamDocument::repository()
+            .update(
+                existing.id,
+                SubTeamDocument::update().order(idx as i32).updated_at(now),
+            )
             .await
             .map_err(|e| {
                 crate::error!("reorder_sub_team_docs per-row failed: {e}");
@@ -406,14 +339,6 @@ pub async fn reorder_sub_team_docs_handler(
 }
 
 // ── GET public bylaws list (no admin gate) ───────────────────────
-//
-// Bylaws page entry point. Lists this team's documents filtered by
-// category (`"Bylaws"` / `"ClubBylaws"`) and enriches each response
-// with the backing post's likes/comments (single batch_get).
-//
-// Public — no role check — because the bylaws page is a read-only
-// reader surface. Admin-only listing keeps using
-// `list_sub_team_docs_handler` for the Documents tab.
 #[get(
     "/api/teams/:team_pk/sub-teams/bylaws?category",
     user: crate::features::auth::OptionalUser
@@ -423,14 +348,9 @@ pub async fn list_team_bylaws_handler(
     category: Option<String>,
 ) -> Result<ListResponse<SubTeamDocumentResponse>> {
     let _ = user;
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
     let pk: Partition = team_pk.into();
 
-    let opts = SubTeamDocument::opt()
-        .sk(format!("{DOC_SK_PREFIX}#"))
-        .limit(LIST_PAGE_LIMIT);
-    let (mut items, next) = SubTeamDocument::query(cli, pk, opts).await.map_err(|e| {
+    let mut items = SubTeamDocument::list_for_team(&pk).await.map_err(|e| {
         crate::error!("list_team_bylaws query failed: {e}");
         SubTeamError::DocumentNotFound
     })?;
@@ -445,27 +365,26 @@ pub async fn list_team_bylaws_handler(
         })
         .collect();
 
-    // Batch-get backing posts so likes/comments come from the canonical
-    // engagement source.
+    // Batch-get backing posts so likes/comments come from the canonical source.
     use crate::features::posts::models::Post;
     use std::collections::HashMap;
-    let post_keys: Vec<(Partition, EntityType)> = filtered
+    let post_ids: Vec<uuid::Uuid> = filtered
         .iter()
         .filter_map(|d| {
-            d.backing_post_id
-                .as_ref()
-                .and_then(|s| s.parse::<Partition>().ok())
-                .map(|pk| (pk, EntityType::Post))
+            d.backing_post_id.as_ref().and_then(|s| match s.parse::<Partition>() {
+                Ok(Partition::Feed(id)) => uuid::Uuid::parse_str(&id).ok(),
+                _ => None,
+            })
         })
         .collect();
-    let engagement: HashMap<String, (i64, i64)> = if post_keys.is_empty() {
+    let engagement: HashMap<String, (i64, i64)> = if post_ids.is_empty() {
         HashMap::new()
     } else {
-        Post::batch_get(cli, post_keys)
+        Post::get_many(post_ids)
             .await
             .unwrap_or_default()
             .into_iter()
-            .map(|p| (p.pk.to_string(), (p.likes, p.comments)))
+            .map(|p| (Partition::Feed(p.feed_id()).to_string(), (p.likes, p.comments)))
             .collect()
     };
 
@@ -483,5 +402,5 @@ pub async fn list_team_bylaws_handler(
             resp
         })
         .collect();
-    Ok((items, next).into())
+    Ok((items, None).into())
 }

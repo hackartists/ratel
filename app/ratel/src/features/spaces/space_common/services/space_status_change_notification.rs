@@ -9,8 +9,6 @@ use crate::features::auth::UserTeam;
 use crate::features::posts::models::{Post, TeamOwner};
 use crate::features::spaces::space_common::types::SpaceStatusChangeError;
 
-const PAGE_SIZE: i32 = 100;
-const MAX_PAGES: usize = 10;
 const EMAIL_CHUNK_SIZE: usize = 50;
 
 /// Handle a space status transition by resolving the audience and creating
@@ -23,24 +21,30 @@ pub async fn handle_space_status_change(event: SpaceStatusChangeEvent) -> Result
         "handle_space_status_change: received event",
     );
 
-    let cfg = crate::common::CommonConfig::default();
-    let cli = cfg.dynamodb();
+    let event_space_pk: Partition = event.space_pk.parse().map_err(|_| {
+        crate::error!(
+            "handle_space_status_change: invalid space_pk {}",
+            event.space_pk
+        );
+        SpaceStatusChangeError::PostNotFound
+    })?;
 
     // 1. Resolve audience user_pks first — cheap early-exit for no-op transitions.
     let user_pks = match (&event.old_status, &event.new_status) {
         (_, SpaceStatus::Open) => {
-            let space = match load_space(cli, &event.space_pk).await? {
+            let space = match load_space(&event_space_pk).await? {
                 Some(s) => s,
                 None => return Ok(()),
             };
-            match &space.user_pk {
-                Partition::Team(_) => resolve_team_member_user_pks(cli, &space.user_pk).await?,
+            let user_pk: Partition = space.user_pk.parse().unwrap_or_default();
+            match &user_pk {
+                Partition::Team(_) => resolve_team_member_user_pks(&user_pk).await?,
                 _ => return Ok(()),
             }
         }
         (Some(SpaceStatus::Open), SpaceStatus::Ongoing)
         | (Some(SpaceStatus::Ongoing), SpaceStatus::Finished) => {
-            resolve_space_participant_user_pks(cli, &event.space_pk).await?
+            resolve_space_participant_user_pks(&event_space_pk).await?
         }
         _ => return Ok(()),
     };
@@ -51,20 +55,19 @@ pub async fn handle_space_status_change(event: SpaceStatusChangeEvent) -> Result
     }
 
     // 2. Load space + post for content (title, URL).
-    let space = match load_space(cli, &event.space_pk).await? {
+    let space = match load_space(&event_space_pk).await? {
         Some(s) => s,
         None => return Ok(()),
     };
-    let post_pk = space.pk.clone().to_post_key()?;
-    let post = Post::get(cli, &post_pk, Some(&EntityType::Post))
-        .await?
-        .ok_or_else(|| {
-            tracing::error!("handle_space_status_change: post not found for {}", post_pk);
-            SpaceStatusChangeError::PostNotFound
-        })?;
+    let space_pk = space.partition();
+    let post_pk = space_pk.clone().to_post_key()?;
+    let post = load_post(&post_pk).await?.ok_or_else(|| {
+        tracing::error!("handle_space_status_change: post not found for {}", post_pk);
+        SpaceStatusChangeError::PostNotFound
+    })?;
 
-    // 3. Resolve emails via batch_get + dedupe.
-    let emails = resolve_emails(cli, user_pks.clone()).await?;
+    // 3. Resolve emails, deduped.
+    let emails = resolve_emails(user_pks.clone()).await?;
     if emails.is_empty() {
         tracing::info!("handle_space_status_change: no emails resolved, skipping");
         return Ok(());
@@ -72,7 +75,7 @@ pub async fn handle_space_status_change(event: SpaceStatusChangeEvent) -> Result
 
     // 4. Pick copy and CTA URL.
     let (headline, body) = status_change_copy(&event.new_status, &post.title);
-    let cta_url = build_space_url(&event.space_pk);
+    let cta_url = build_space_url(&event_space_pk);
 
     tracing::info!(
         space_pk = %event.space_pk,
@@ -81,7 +84,7 @@ pub async fn handle_space_status_change(event: SpaceStatusChangeEvent) -> Result
     );
 
     // 5. Fan inbox rows per participant. Idempotent on (user, space_pk, new_status).
-    let space_id: SpacePartition = space.pk.clone().into();
+    let space_id: SpacePartition = space_pk.clone().into();
     let space_title = post.title.clone();
     for user_pk in &user_pks {
         let payload = InboxPayload::SpaceStatusChanged {
@@ -111,7 +114,7 @@ pub async fn handle_space_status_change(event: SpaceStatusChangeEvent) -> Result
             cta_url: cta_url.clone(),
             space_title: post.title.clone(),
         });
-        if let Err(e) = notification.create(cli).await {
+        if let Err(e) = notification.save().await {
             tracing::error!("handle_space_status_change: failed to create notification row: {e}");
             // Continue; don't abort fan-out on a single failed chunk.
         }
@@ -120,46 +123,36 @@ pub async fn handle_space_status_change(event: SpaceStatusChangeEvent) -> Result
     Ok(())
 }
 
-async fn load_space(
-    cli: &aws_sdk_dynamodb::Client,
-    space_pk: &Partition,
-) -> Result<Option<SpaceCommon>> {
-    Ok(SpaceCommon::get(cli, space_pk, Some(&EntityType::SpaceCommon)).await?)
+async fn load_space(space_pk: &Partition) -> Result<Option<SpaceCommon>> {
+    Ok(SpaceCommon::get_by_partition(space_pk).await?)
 }
 
-pub(crate) async fn resolve_team_member_user_pks(
-    cli: &aws_sdk_dynamodb::Client,
-    team_pk: &Partition,
-) -> Result<Vec<Partition>> {
+/// Fetch the `Post` backing a space by its (relabeled) `Partition::Feed` key.
+async fn load_post(post_pk: &Partition) -> Result<Option<Post>> {
+    let id = match post_pk {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).ok(),
+        _ => None,
+    };
+    match id {
+        Some(id) => Ok(Post::get_by_feed_id(id).await?),
+        None => Ok(None),
+    }
+}
+
+pub(crate) async fn resolve_team_member_user_pks(team_pk: &Partition) -> Result<Vec<Partition>> {
     let mut user_pks: HashSet<String> = HashSet::new();
 
-    // Paginate through UserTeam::find_by_team.
-    let user_team_sk = EntityType::UserTeam(team_pk.to_string());
-    let mut bookmark: Option<String> = None;
-    for page in 0..MAX_PAGES {
-        let mut opt = crate::features::auth::UserTeamQueryOption::builder().limit(PAGE_SIZE);
-        if let Some(bm) = bookmark.as_ref() {
-            opt = opt.bookmark(bm.clone());
-        }
-        let (rows, next) = UserTeam::find_by_team(cli, &user_team_sk, opt).await?;
-        for row in rows {
-            user_pks.insert(row.pk.to_string());
-        }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
-        }
-        if page + 1 == MAX_PAGES {
-            tracing::warn!(
-                team_pk = %team_pk,
-                "resolve_team_member_user_pks: hit MAX_PAGES cap; additional members truncated"
-            );
-        }
+    for row in UserTeam::find_by_team(team_pk).await? {
+        user_pks.insert(row.user_pk);
     }
 
     // Always include the team owner.
-    if let Ok(Some(owner)) = TeamOwner::get(cli, team_pk, Some(&EntityType::TeamOwner)).await {
-        user_pks.insert(owner.user_pk.to_string());
+    if let Partition::Team(id) = team_pk {
+        if let Ok(id) = uuid::Uuid::parse_str(id) {
+            if let Ok(Some(owner)) = TeamOwner::find_by_team(id).await {
+                user_pks.insert(owner.user_pk);
+            }
+        }
     }
 
     Ok(user_pks
@@ -169,16 +162,14 @@ pub(crate) async fn resolve_team_member_user_pks(
 }
 
 pub(crate) async fn resolve_space_participant_user_pks(
-    cli: &aws_sdk_dynamodb::Client,
     space_pk: &Partition,
 ) -> Result<Vec<Partition>> {
     use crate::common::models::space::SpaceParticipant;
 
     let mut user_pks: HashSet<String> = HashSet::new();
-    let mut opt = SpaceParticipant::opt_all();
-    let (rows, _next) = SpaceParticipant::find_by_space(cli, space_pk, opt).await?;
+    let rows = SpaceParticipant::find_by_space(space_pk).await?;
     for row in rows {
-        user_pks.insert(row.user_pk.to_string());
+        user_pks.insert(row.user_pk);
     }
 
     Ok(user_pks
@@ -187,24 +178,18 @@ pub(crate) async fn resolve_space_participant_user_pks(
         .collect())
 }
 
-pub(crate) async fn resolve_emails(
-    cli: &aws_sdk_dynamodb::Client,
-    user_pks: Vec<Partition>,
-) -> Result<Vec<String>> {
-    let keys: Vec<(Partition, EntityType)> = user_pks
-        .into_iter()
-        .map(|pk| (pk, EntityType::User))
-        .collect();
-
-    let users: Vec<User> = if keys.is_empty() {
-        vec![]
-    } else {
-        User::batch_get(cli, keys).await?
-    };
-
+pub(crate) async fn resolve_emails(user_pks: Vec<Partition>) -> Result<Vec<String>> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut out: Vec<String> = Vec::new();
-    for u in users {
+
+    for pk in user_pks {
+        let Partition::User(id) = pk else { continue };
+        let Ok(id) = uuid::Uuid::parse_str(&id) else {
+            continue;
+        };
+        let Ok(Some(u)) = User::get_by_id(id).await else {
+            continue;
+        };
         if u.email.is_empty() {
             continue;
         }

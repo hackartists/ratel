@@ -9,6 +9,10 @@ use serde_with::{DeserializeFromStr, SerializeDisplay};
     Clone, Copy, Debug, Default, PartialEq, Eq, SerializeDisplay, DeserializeFromStr, DynamoEnum,
 )]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+// Postgres migration: `status` is a native PG enum column on `space_reports`
+// (labels default to snake_case: `draft` / `published`). The DynamoEnum /
+// SerializeDisplay impls stay for the DynamoDB-era sk form and the wire DTOs.
+#[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 pub enum ReportStatus {
     #[default]
     Draft,

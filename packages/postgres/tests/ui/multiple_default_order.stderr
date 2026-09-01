@@ -1,0 +1,11 @@
+error: at most one field may have #[postgres(default_order)]
+  --> tests/ui/multiple_default_order.rs:10:1
+   |
+10 | / pub struct MultipleDefaultOrder {
+11 | |     pub id: Uuid,
+12 | |     #[postgres(default_order)]
+13 | |     pub created_at: i64,
+14 | |     #[postgres(default_order)]
+15 | |     pub updated_at: i64,
+16 | | }
+   | |_^

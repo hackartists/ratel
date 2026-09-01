@@ -6,6 +6,8 @@ use crate::common::models::space::SpaceCommon;
 use crate::common::SpaceUserRole;
 #[cfg(feature = "server")]
 use crate::features::posts::models::Post;
+#[cfg(feature = "server")]
+use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateContentRequest {
@@ -23,20 +25,41 @@ pub async fn update_space_content(
 
     let space_partition = Partition::Space(space_pk.to_string());
     let post_partition = space_partition.clone().to_post_key()?;
-    let conf = ServerConfig::default();
-    let dynamo = conf.dynamodb();
 
-    let update_space = SpaceCommon::updater(&space_partition, EntityType::SpaceCommon)
-        .with_content(req.content.clone())
-        .execute(dynamo);
-    let update_post = Post::updater(&post_partition, EntityType::Post)
-        .with_body(ContentBody::html(req.content))
-        .execute(dynamo);
+    let space = SpaceCommon::get_by_partition(&space_partition)
+        .await
+        .map_err(|e| {
+            crate::error!("failed to load space for content update: {e:?}");
+            SpaceError::UpdateFailed
+        })?
+        .ok_or(SpaceError::UpdateFailed)?;
+    let post_uuid = match &post_partition {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).map_err(|e| {
+            crate::error!("invalid post id for content update: {e:?}");
+            SpaceError::UpdateFailed
+        })?,
+        _ => return Err(SpaceError::UpdateFailed.into()),
+    };
 
-    tokio::try_join!(update_space, update_post).map_err(|e| {
-        crate::error!("failed to update space/post content: {e:?}");
-        SpaceError::UpdateFailed
-    })?;
+    // Sequential, NOT `tokio::try_join!`: racing two pooled-connection writes
+    // means a cancellation can drop one mid-`.await`, wedging its sqlx
+    // connection on the untimed release-ping and permanently leaking the pool
+    // permit (see character/get_character). Two independent updates give the
+    // same result run in sequence.
+    SpaceCommon::repository()
+        .update(space.id, SpaceCommon::update().content(req.content.clone()))
+        .await
+        .map_err(|e| {
+            crate::error!("failed to update space content: {e:?}");
+            SpaceError::UpdateFailed
+        })?;
+    Post::repository()
+        .update(post_uuid, Post::update().body(ContentBody::html(req.content)))
+        .await
+        .map_err(|e| {
+            crate::error!("failed to update post content: {e:?}");
+            SpaceError::UpdateFailed
+        })?;
 
     Ok(())
 }

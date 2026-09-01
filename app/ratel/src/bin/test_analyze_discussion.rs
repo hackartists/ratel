@@ -4,14 +4,14 @@
 //!
 //! Usage:
 //!   cargo run --bin test_analyze_discussion --features server -- \
-//!     <space_uuid> <report_id> <discussion_id_and_request_uuid>
+//!     <space_uuid> <report_id> <request_id>
 //!
-//! The `discussion_id_and_request_uuid` is the second tuple field of
-//! `EntityType::SpaceAnalyzeDiscussionResult(report_id, "{discussion_id}#{request_uuid}")`.
-//! In the DDB console it's everything after `SpaceAnalyzeDiscussionResult#{report_id}#`.
-//! Easiest way to get one: trigger an analyze run from the UI (which
-//! INSERTs the row), copy the row's sk, then re-run it locally with
-//! this binary to iterate on the analysis logic.
+//! The `request_id` is the discussion-analysis row's surrogate uuid
+//! (its `request_id` / `id` column). Easiest way to get one: trigger an
+//! analyze run from the UI (which INSERTs the row), copy the row's
+//! `request_id`, then re-run it locally with this binary to iterate on
+//! the analysis logic. (`space_uuid`/`report_id` are still accepted for
+//! symmetry with the other drivers and are validated against the row.)
 
 #[cfg(not(feature = "server"))]
 fn main() {
@@ -23,7 +23,6 @@ fn main() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use app_shell::common::CommonConfig;
-    use app_shell::common::types::{EntityType, Partition};
     use app_shell::features::spaces::pages::apps::apps::analyzes::SpaceAnalyzeDiscussionResult;
     use app_shell::features::spaces::pages::apps::apps::analyzes::services::discussion_analysis;
 
@@ -34,20 +33,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let usage = "usage: test_analyze_discussion <space_uuid> <report_id> <discussion_id_and_request_uuid>";
+    let usage = "usage: test_analyze_discussion <space_uuid> <report_id> <request_id>";
     let mut args = std::env::args().skip(1);
     let space_uuid = args.next().ok_or(usage)?;
     let report_id = args.next().ok_or(usage)?;
-    let discussion_request = args.next().ok_or(usage)?;
+    let request_id = args.next().ok_or(usage)?;
 
     let cfg = CommonConfig::default();
     let cli = cfg.dynamodb();
 
-    let space_pk = Partition::Space(space_uuid.clone());
-    let sk = EntityType::SpaceAnalyzeDiscussionResult(report_id.clone(), discussion_request.clone());
+    let row_id = uuid::Uuid::parse_str(&request_id)
+        .map_err(|_| "request_id must be the discussion-analysis row's uuid")?;
 
-    println!("Loading discussion-analysis row space={space_uuid} report={report_id} disc#req={discussion_request} …");
-    let row = SpaceAnalyzeDiscussionResult::get(cli, &space_pk, Some(sk))
+    println!("Loading discussion-analysis row space={space_uuid} report={report_id} request={request_id} …");
+    let row = SpaceAnalyzeDiscussionResult::repository()
+        .get(row_id)
         .await?
         .ok_or("discussion-analysis row not found")?;
     println!(

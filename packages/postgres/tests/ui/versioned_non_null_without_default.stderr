@@ -1,0 +1,6 @@
+error: a versioned non-null field needs sql_default; automatic defaults exist only for String, numeric types, and bool without a SQL type override
+ --> tests/ui/versioned_non_null_without_default.rs:7:5
+  |
+7 | /     #[postgres(version = 1)]
+8 | |     owner_id: Uuid,
+  | |__________________^

@@ -17,71 +17,41 @@ pub async fn list_comments(
     since: Option<i64>,
 ) -> Result<ListResponse<DiscussionCommentResponse>> {
     SpacePost::can_view(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    let discussion_sk_entity: EntityType = discussion_sk.into();
+    let space_post_pk = SpacePostPartition(discussion_sk.0);
+    let post_id = space_post_pk.0.clone();
 
-    let space_post_pk: SpacePostPartition = match &discussion_sk_entity {
-        EntityType::SpacePost(id) => SpacePostPartition(id.clone()),
-        _ => return Err(SpaceActionDiscussionError::InvalidDiscussionId.into()),
-    };
-    let space_post_pk_p: Partition = space_post_pk.clone().into();
-
-    // Polling branch: fetch only top-level comments newer than `since`, ordered
-    // newest-first. Uses the base table (PK=post, SK begins_with SPACE_POST_COMMENT#)
-    // with `scan_index_forward=false`; SK is a UUID v7 which is lexicographically
-    // time-ordered, so descending SK order matches descending `created_at`. This
-    // lets us early-terminate via `take_while` once we pass the `since` cutoff.
+    // Polling branch fetches only top-level comments newer than `since`,
+    // newest-first, unpaginated. Otherwise a normal newest-first page. The
+    // client re-ranks by `comment_score`, so server order is just a stable
+    // fetch order.
     let (comments, next_bookmark): (Vec<SpacePostComment>, Option<String>) =
         if let Some(since_ts) = since {
-            let sk_prefix = EntityType::SpacePostComment(String::new()).to_string();
-            let opt = SpacePostComment::opt()
-                .sk(sk_prefix)
-                .scan_index_forward(false)
-                .limit(50);
-            let (items, _) =
-                SpacePostComment::query(cli, space_post_pk_p.clone(), opt).await?;
-            let filtered: Vec<_> = items
-                .into_iter()
-                .take_while(|c| c.created_at > since_ts)
-                .collect();
-            (filtered, None)
+            let items = SpacePostComment::list_top_level_since(&post_id, since_ts, 50).await?;
+            (items, None)
         } else {
-            // Base table `sk begins_with "SPACE_POST_COMMENT#"` naturally
-            // excludes replies (they use the `SPACE_POST_COMMENT_REPLY#`
-            // prefix), so limit=50 maps to 50 real top-level comments
-            // instead of being diluted by reply rows. The client re-ranks
-            // by `comment_score`, so server-side sk DESC (newest-first via
-            // UUID v7) is just a stable fetch order, not the display order.
-            let sk_prefix = EntityType::SpacePostComment(String::new()).to_string();
-            let opt = SpacePostComment::opt_with_bookmark(bookmark)
-                .sk(sk_prefix)
-                .scan_index_forward(false)
-                .limit(100);
-            SpacePostComment::query(cli, space_post_pk_p.clone(), opt).await?
+            SpacePostComment::list_top_level(&post_id, bookmark, 100).await?
         };
+
 
     // Moderation: drop auto-hidden comments (App Store req #2) and comments
     // authored by someone the viewer personally blocked (req #4).
     let blocked = crate::common::models::moderation::blocked_author_set(
-        cli,
-        user.0.as_ref().map(|u| &u.pk),
+        user.0.as_ref().map(|u| u.pk()).as_ref(),
     )
     .await;
     let comments = crate::common::models::moderation::retain_visible(
         comments,
         &blocked,
         |c| c.hidden,
-        |c| &c.author_pk,
+        |c| c.author_pk.as_str(),
     );
 
-    // Check which comments the current user has liked
+    // Check which comments the current user has liked.
     let liked_set: HashSet<String> = if let Some(ref u) = user.0 {
-        let keys: Vec<_> = comments.iter().map(|c| c.like_keys(&u.pk)).collect();
-        let likes = SpacePostCommentLike::batch_get(cli, keys)
+        let keys: Vec<String> = comments.iter().map(|c| c.like_key()).collect();
+        SpacePostCommentLike::liked_keys(&post_id, &u.pk(), keys)
             .await
-            .unwrap_or_default();
-        likes.into_iter().map(|l| l.sk.to_string()).collect()
+            .unwrap_or_default()
     } else {
         HashSet::new()
     };
@@ -106,19 +76,8 @@ pub async fn list_comments(
     let responses: Vec<DiscussionCommentResponse> = comments
         .into_iter()
         .map(|c| {
-            let like_key = if let Some(ref u) = user.0 {
-                let (_, sk) = SpacePostCommentLike::keys_from_partition(
-                    space_post_pk_p.clone(),
-                    c.sk.clone(),
-                    &u.pk,
-                );
-                sk.to_string()
-            } else {
-                String::new()
-            };
-            let liked = liked_set.contains(&like_key);
-            let reported = reported_set.contains(&c.sk.to_string());
-            (c, liked, reported).into()
+            let liked = liked_set.contains(&c.like_key());
+            (c, liked).into()
         })
         .collect();
 

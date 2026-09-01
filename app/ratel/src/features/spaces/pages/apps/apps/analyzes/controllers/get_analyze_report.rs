@@ -68,8 +68,7 @@ pub async fn get_analyze_report(
     let report_id_str = report_id.to_string();
 
     // 1. Report metadata.
-    let report_sk = EntityType::SpaceAnalyzeReport(report_id_str.clone());
-    let report_row = SpaceAnalyzeReport::get(cli, &space_pk, Some(report_sk))
+    let report_row = SpaceAnalyzeReport::get_for_space(&space_pk, &report_id_str)
         .await?
         .ok_or(Error::NotFound("Analyze report not found".into()))?;
     let report_dto = AnalyzeReport {
@@ -77,24 +76,23 @@ pub async fn get_analyze_report(
         name: report_row.name.clone(),
         status: report_row.status,
         created_at: report_row.created_at,
-        filters: report_row.filters.clone(),
+        filters: report_row.filters.0.clone(),
     };
 
     // 2. Result row (1:1 with report). Absent while status is
     //    InProgress; the list page gates navigation on Finish so this
     //    should normally exist.
-    let result_sk = EntityType::SpaceAnalyzeReportResult(report_id_str.clone());
-    let result_row = SpaceAnalyzeReportResult::get(cli, &space_pk, Some(result_sk)).await?;
+    let result_row = SpaceAnalyzeReportResult::get_for_report(&space_pk, &report_id_str).await?;
     let result_payload = result_row.map(|r| AnalyzeReportResultPayload {
         respondent_count: r.respondent_count,
-        poll_aggregates: r.poll_aggregates,
-        quiz_aggregates: r.quiz_aggregates,
-        follow_aggregates: r.follow_aggregates,
+        poll_aggregates: r.poll_aggregates.0,
+        quiz_aggregates: r.quiz_aggregates.0,
+        follow_aggregates: r.follow_aggregates.0,
     });
 
     // 3. Sidebar discussion list — re-uses `list_analyze_discussions`'s
     //    payload shape for symmetry with the create wizard's picker.
-    let mut discussions = fetch_discussion_candidates(cli, &space_pk).await?;
+    let mut discussions = fetch_discussion_candidates(&space_pk).await?;
 
     // 4. Decorate each discussion with cross-filter aware counts so
     //    the sidebar can show "X 댓글 · Y명 참여" for the matched
@@ -156,27 +154,21 @@ async fn decorate_with_matched_counts(
 
 #[cfg(feature = "server")]
 async fn fetch_discussion_candidates(
-    cli: &aws_sdk_dynamodb::Client,
     space_pk: &Partition,
 ) -> Result<Vec<AnalyzeDiscussionItem>> {
     use crate::features::spaces::pages::actions::actions::discussion::SpacePost;
 
     // Mirrors `list_analyze_discussions`: paginate through every
-    // `SpacePost` for the space (the discussion entity uses GSI3 to
-    // be queryable by space_pk + updated_at). Older paths via
-    // `SpaceAction::query` returned 0 because Discussion's canonical
-    // row lives on `SpacePost`, not on the generic `SpaceAction` sk.
+    // `SpacePost` for the space, newest-updated first.
+    let space_partition: SpacePartition = space_pk.clone().into();
     let mut bookmark: Option<String> = None;
     let mut items: Vec<AnalyzeDiscussionItem> = Vec::new();
     loop {
-        let opt = SpacePost::opt_with_bookmark(bookmark.clone())
-            .scan_index_forward(false)
-            .limit(50);
         let (posts, next) =
-            SpacePost::find_by_space_ordered(cli, space_pk.clone(), opt).await?;
+            SpacePost::list_by_space(&space_partition, None, bookmark.clone(), 50).await?;
         for post in posts {
             items.push(AnalyzeDiscussionItem {
-                discussion_id: post.sk.clone().into(),
+                discussion_id: post.post_id.into(),
                 title: post.title.trim().to_string(),
                 comment_count: post.comments,
                 matched_comment_count: 0,
@@ -211,28 +203,15 @@ pub async fn list_analyze_discussion_results(
     #[mcp(description = "Pagination bookmark. Omit for first page.")] bookmark: Option<String>,
 ) -> Result<ListResponse<SpaceAnalyzeDiscussionResult>> {
     SpaceApp::can_edit(role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
     let space_pk: Partition = space_id.into();
 
-    // Sk pattern: SPACE_ANALYZE_DISCUSSION_RESULT#{report_id}#{discussion_id}#{uuid}
-    // begins_with prefix groups every history row for this pair.
-    // Use the canonical SCREAMING_SNAKE prefix that DynamoEnum
-    // emits — building it from the variant name (`PascalCase`) here
-    // would silently miss every row. We confirmed the on-disk shape
-    // by reading a row in the DDB console: it really is uppercase
-    // with underscores, matching the auto-analysis writes.
-    let sk_prefix = format!(
-        "SPACE_ANALYZE_DISCUSSION_RESULT#{}#{}#",
-        report_id, discussion_id
-    );
-    let mut opt = SpaceAnalyzeDiscussionResult::opt()
-        .sk(sk_prefix)
-        .scan_index_forward(false)
-        .limit(20);
-    if let Some(b) = bookmark {
-        opt = opt.bookmark(b);
-    }
-    let (items, bookmark) = SpaceAnalyzeDiscussionResult::query(cli, space_pk, opt).await?;
+    let (items, bookmark) = SpaceAnalyzeDiscussionResult::list_history(
+        &space_pk,
+        &report_id.to_string(),
+        &discussion_id.to_string(),
+        bookmark,
+        20,
+    )
+    .await?;
     Ok(ListResponse { items, bookmark })
 }

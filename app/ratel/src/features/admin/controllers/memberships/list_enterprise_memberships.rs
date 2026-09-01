@@ -1,5 +1,4 @@
 use crate::common::models::auth::{AdminUser, User};
-use crate::common::types::MembershipPartition;
 use crate::features::admin::*;
 use crate::features::admin::types::AdminError;
 #[cfg(feature = "server")]
@@ -9,6 +8,7 @@ use crate::features::membership::models::{
 use crate::features::membership::models::{
     Membership, MembershipTier, TeamMembership, UserMembership,
 };
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
 
 use super::MembershipGrantTargetType;
@@ -35,20 +35,27 @@ enum EnterpriseMembershipPhase {
     Team,
 }
 
-fn parse_bookmark(bookmark: Option<String>) -> Result<(EnterpriseMembershipPhase, Option<String>)> {
+/// `page` is a 1-based page number into the (user or team) membership listing
+/// for the enterprise tier — the Postgres-era replacement for the old
+/// DynamoDB opaque scan continuation token.
+fn parse_bookmark(bookmark: Option<String>) -> Result<(EnterpriseMembershipPhase, i64)> {
     match bookmark {
-        None => Ok((EnterpriseMembershipPhase::User, None)),
+        None => Ok((EnterpriseMembershipPhase::User, 1)),
         Some(bookmark) if bookmark == TEAM_PHASE_BOOKMARK => {
-            Ok((EnterpriseMembershipPhase::Team, None))
+            Ok((EnterpriseMembershipPhase::Team, 1))
         }
-        Some(bookmark) if bookmark.starts_with(USER_BOOKMARK_PREFIX) => Ok((
-            EnterpriseMembershipPhase::User,
-            Some(bookmark[USER_BOOKMARK_PREFIX.len()..].to_string()),
-        )),
-        Some(bookmark) if bookmark.starts_with(TEAM_BOOKMARK_PREFIX) => Ok((
-            EnterpriseMembershipPhase::Team,
-            Some(bookmark[TEAM_BOOKMARK_PREFIX.len()..].to_string()),
-        )),
+        Some(bookmark) if bookmark.starts_with(USER_BOOKMARK_PREFIX) => {
+            let page = bookmark[USER_BOOKMARK_PREFIX.len()..]
+                .parse::<i64>()
+                .map_err(|_| AdminError::InvalidBookmark)?;
+            Ok((EnterpriseMembershipPhase::User, page))
+        }
+        Some(bookmark) if bookmark.starts_with(TEAM_BOOKMARK_PREFIX) => {
+            let page = bookmark[TEAM_BOOKMARK_PREFIX.len()..]
+                .parse::<i64>()
+                .map_err(|_| AdminError::InvalidBookmark)?;
+            Ok((EnterpriseMembershipPhase::Team, page))
+        }
         Some(bookmark) => {
             crate::error!("invalid bookmark: {bookmark}");
             Err(AdminError::InvalidBookmark.into())
@@ -60,42 +67,34 @@ fn parse_bookmark(bookmark: Option<String>) -> Result<(EnterpriseMembershipPhase
 pub async fn list_enterprise_memberships(
     bookmark: Option<String>,
 ) -> Result<ListResponse<EnterpriseMembershipGrantListItem>> {
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
+    use postgres::PostgresEntity;
+    use postgres::ops::EnumOp;
 
     let enterprise_tier = MembershipTier::Enterprise(ENTERPRISE_NAME.to_string());
-    let Some(enterprise_membership) = Membership::get(
-        cli,
-        Partition::Membership(enterprise_tier.to_string()),
-        Some(EntityType::Membership),
-    )
-    .await?
+    let Some(enterprise_membership) = Membership::repository()
+        .find_one(Membership::query().tier(EnumOp::Eq(enterprise_tier.clone())))
+        .await
+        .map_err(Error::from)?
     else {
         return Ok(ListResponse::default());
     };
 
-    let (phase, bookmark) = parse_bookmark(bookmark)?;
-    let membership_pk: MembershipPartition = enterprise_membership.pk.clone().into();
+    let (phase, page) = parse_bookmark(bookmark)?;
     let max_credits_per_space = enterprise_membership.max_credits_per_space;
     let mut items = Vec::with_capacity(PAGE_SIZE as usize);
 
     if matches!(phase, EnterpriseMembershipPhase::User) {
-        let mut user_opt = UserMembership::opt().limit(PAGE_SIZE);
-        if let Some(bookmark) = bookmark.clone() {
-            user_opt = user_opt.bookmark(bookmark);
-        }
+        let user_page = UserMembership::find_by_membership_page(
+            enterprise_tier.clone(),
+            page,
+            PAGE_SIZE as i64,
+        )
+        .await?;
 
-        let (user_memberships, next_user_bookmark) =
-            UserMembership::find_by_membership(cli, membership_pk.clone(), user_opt).await?;
+        for membership in user_page.items {
+            let membership = ensure_user_membership_monthly_refill(membership).await?;
 
-        for membership in user_memberships {
-            if items.len() >= PAGE_SIZE as usize {
-                break;
-            }
-            let membership = ensure_user_membership_monthly_refill(cli, membership).await?;
-
-            let Some(user) = User::get(cli, membership.pk.clone(), Some(EntityType::User)).await?
-            else {
+            let Some(user) = User::find_by_pk_str(&membership.user_pk).await? else {
                 continue;
             };
 
@@ -107,73 +106,64 @@ pub async fn list_enterprise_memberships(
             });
         }
 
-        if next_user_bookmark.is_some() {
+        if page < user_page.total_pages {
             return Ok(ListResponse {
                 items,
-                bookmark: next_user_bookmark
-                    .map(|bookmark| format!("{USER_BOOKMARK_PREFIX}{bookmark}")),
+                bookmark: Some(format!("{USER_BOOKMARK_PREFIX}{}", page + 1)),
             });
         }
 
-        if items.len() == PAGE_SIZE as usize {
-            let (team_memberships, _) = TeamMembership::find_by_membership(
-                cli,
-                membership_pk.clone(),
-                TeamMembership::opt().limit(1),
-            )
-            .await?;
-
-            return Ok(ListResponse {
-                items,
-                bookmark: if team_memberships.is_empty() {
-                    None
-                } else {
-                    Some(TEAM_PHASE_BOOKMARK.to_string())
-                },
-            });
-        }
-    }
-
-    let remaining = PAGE_SIZE - items.len() as i32;
-    if remaining > 0 {
-        let mut team_opt = TeamMembership::opt().limit(remaining);
-        if let Some(bookmark) = match phase {
-            EnterpriseMembershipPhase::User => None,
-            EnterpriseMembershipPhase::Team => bookmark,
-        } {
-            team_opt = team_opt.bookmark(bookmark);
-        }
-
-        let (team_memberships, next_team_bookmark) =
-            TeamMembership::find_by_membership(cli, membership_pk, team_opt).await?;
-
-        for membership in team_memberships {
-            #[cfg(feature = "server")]
-            let membership = ensure_team_membership_monthly_refill(cli, membership).await?;
-            #[cfg(not(feature = "server"))]
-            let membership = membership;
-            let Some(team) = Team::get(cli, membership.pk.clone(), Some(EntityType::Team)).await?
-            else {
-                continue;
-            };
-
-            items.push(EnterpriseMembershipGrantListItem {
-                target_type: MembershipGrantTargetType::Team,
-                username: team.username,
-                remaining_credits: membership.remaining_credits,
-                max_credits_per_space,
-            });
-        }
+        let team_probe =
+            TeamMembership::find_by_membership_page(enterprise_tier.clone(), 1, 1).await?;
 
         return Ok(ListResponse {
             items,
-            bookmark: next_team_bookmark
-                .map(|bookmark| format!("{TEAM_BOOKMARK_PREFIX}{bookmark}")),
+            bookmark: if team_probe.items.is_empty() {
+                None
+            } else {
+                Some(TEAM_PHASE_BOOKMARK.to_string())
+            },
+        });
+    }
+
+    let team_page = TeamMembership::find_by_membership_page(
+        enterprise_tier,
+        page,
+        PAGE_SIZE as i64,
+    )
+    .await?;
+
+    for membership in team_page.items {
+        let membership = ensure_team_membership_monthly_refill(membership).await?;
+
+        let team = {
+            use std::str::FromStr;
+            match Partition::from_str(&membership.team_pk) {
+                Ok(Partition::Team(team_id)) => match uuid::Uuid::parse_str(&team_id) {
+                    Ok(team_id) => Team::get_by_id(team_id).await?,
+                    Err(_) => None,
+                },
+                _ => None,
+            }
+        };
+        let Some(team) = team else {
+            continue;
+        };
+
+        items.push(EnterpriseMembershipGrantListItem {
+            target_type: MembershipGrantTargetType::Team,
+            username: team.username,
+            remaining_credits: membership.remaining_credits,
+            max_credits_per_space,
         });
     }
 
     Ok(ListResponse {
         items,
-        bookmark: None,
+        bookmark: if page < team_page.total_pages {
+            Some(format!("{TEAM_BOOKMARK_PREFIX}{}", page + 1))
+        } else {
+            None
+        },
     })
 }

@@ -353,11 +353,11 @@ fn DiscussionResultsView(latest: Option<SpaceAnalyzeDiscussionResult>) -> Elemen
             }
         },
         AnalyzeReportStatus::Finish => rsx! {
-            TfidfCard { rows: row.tfidf_terms.clone() }
+            TfidfCard { rows: row.tfidf_terms.0.clone() }
             LdaCard { row: row.clone() }
             NetworkCard {
-                nodes: row.network_nodes.clone(),
-                edges: row.network_edges.clone(),
+                nodes: row.network_nodes.0.clone(),
+                edges: row.network_edges.0.clone(),
             }
         },
     }

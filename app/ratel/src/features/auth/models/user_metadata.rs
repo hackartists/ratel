@@ -4,9 +4,16 @@ use crate::features::auth::*;
 #[allow(unused_imports)]
 use rmcp::schemars;
 
-#[derive(Debug, Clone, Serialize, Deserialize, DynamoEntity)]
+/// Aggregate view over a user's row + linkage rows. On DynamoDB this was a
+/// single-table `find_by_email` GSurface (gsi3) that returned every entity
+/// sharing the `EMAIL#…` partition in one query. Postgres has no single-table
+/// analog — each entity is now its own table — so this type is no longer a
+/// persisted entity; it survives only as the server-side shape that the
+/// `UserDetailResponse` aggregation folds over. Callers build the `Vec` by
+/// composing per-table point reads instead of one GSI query.
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-#[dynamo(pk_prefix = "EMAIL", index = "gsi3", name = "find_by_email")]
 pub enum UserMetadata {
     User(User),
     UserRefreshToken(UserRefreshToken),
@@ -42,7 +49,7 @@ pub struct UserResponse {
 impl From<User> for UserResponse {
     fn from(user: User) -> Self {
         Self {
-            pk: user.pk.to_string(),
+            pk: user.pk().to_string(),
             email: user.email,
             nickname: user.display_name,
             profile_url: user.profile_url,
@@ -73,6 +80,7 @@ pub struct UserDetailResponse {
     pub has_billing_key: bool,
 }
 
+#[cfg(feature = "server")]
 impl From<Vec<UserMetadata>> for UserDetailResponse {
     fn from(items: Vec<UserMetadata>) -> Self {
         let mut res = Self::default();

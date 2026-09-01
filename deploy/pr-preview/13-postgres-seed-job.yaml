@@ -1,0 +1,76 @@
+# postgres-seed — one-shot Job that loads the Playwright fixtures into Postgres,
+# the migration-era replacement for the DynamoDB seed the localstack-init Job
+# performs (test users hi+user1@…, hiteam, memberships, attribute codes, …).
+#
+# Source of truth: scripts/postgres-seed.sql — a data-only, schema-independent
+# dump (column-inserts, --disable-triggers) generated from the same
+# scripts/dynamodb-data/*.json fixtures via the etl_migrate mapping, so the
+# seeded rows are byte-for-byte the DynamoDB fixtures re-expressed as Postgres
+# rows. The e2e job mounts it from a ConfigMap it creates right before applying
+# these manifests:
+#   pr-preview-postgres-seed  ← scripts/postgres-seed.sql   (mounts at /seed)
+#
+# Ordering: the seed is DATA-only, so the app-shell must have migrated the
+# schema first (it creates every table from its PostgresEntity inventory on
+# boot). The initContainer blocks until the `users` table exists — i.e. until
+# app-shell has run its migration — so the seed never races an empty database.
+# The e2e workflow additionally waits for this Job's Complete condition before
+# running Playwright, so tests never race the fixtures.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-seed
+  namespace: ratel-pr-${PR_NUM}
+  labels:
+    app: postgres-seed
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: postgres-seed
+    spec:
+      nodeSelector:
+        biyard.io/node-class: main
+      restartPolicy: Never
+      initContainers:
+        # Block until app-shell has migrated the schema (the `users` table is
+        # created from the PostgresEntity inventory on boot). psql exits 0 only
+        # once the relation exists, so the until-loop gates the data load on a
+        # ready schema without needing to reach app-shell over HTTP.
+        - name: wait-for-schema
+          image: postgres:16-alpine
+          env:
+            - name: PGPASSWORD
+              value: ratel
+          command:
+            - sh
+            - -c
+            - |
+              until psql -h postgres -U ratel -d ratel -tAc "select to_regclass('public.users')" 2>/dev/null | grep -q '^users$'; do
+                echo "waiting for app-shell to migrate the schema (users table)..."
+                sleep 3
+              done
+              echo "schema ready — loading seed"
+      containers:
+        - name: seed
+          image: postgres:16-alpine
+          env:
+            - name: PGPASSWORD
+              value: ratel
+          # ON_ERROR_STOP so a failed INSERT fails the Job (surfaces in the
+          # workflow's `wait --for=condition=complete`) instead of silently
+          # leaving Playwright to fail on missing fixtures.
+          command:
+            - sh
+            - -c
+            - |
+              psql -h postgres -U ratel -d ratel -v ON_ERROR_STOP=1 -f /seed/postgres-seed.sql
+              echo "postgres seed loaded"
+          volumeMounts:
+            - name: seed
+              mountPath: /seed
+      volumes:
+        - name: seed
+          configMap:
+            name: pr-preview-postgres-seed

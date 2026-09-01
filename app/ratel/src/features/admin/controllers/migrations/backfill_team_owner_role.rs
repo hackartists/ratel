@@ -1,6 +1,8 @@
 use crate::common::models::auth::AdminUser;
 use crate::features::admin::*;
+#[cfg(feature = "server")]
 use crate::features::auth::UserTeam;
+#[cfg(feature = "server")]
 use crate::features::posts::models::TeamOwner;
 use crate::features::social::pages::member::dto::TeamRole;
 
@@ -22,129 +24,95 @@ pub struct BackfillTeamOwnerRoleResponse {
 /// `UserTeam` row that should carry `role = Owner`.
 ///
 /// Idempotency:
-/// Per-row `GetItem` checks whether the `role` attribute is *present* on
-/// disk (independent of serde's default-on-missing behaviour). Any row
-/// that already carries an explicit `role` value — Owner / Admin / Member
-/// — is skipped, so a manually-demoted owner is never silently re-promoted.
+/// The original DynamoDB implementation did a raw `GetItem` to check whether
+/// the `role` attribute was physically *present* on disk (independent of
+/// serde's default-on-missing behaviour). Postgres has no sparse-attribute
+/// equivalent — the `role` column is NOT NULL, so every row already carries
+/// a concrete value. This version instead treats any already-non-`Member`
+/// role as "already set" (mirrors `backfill_user_team_role`'s idempotency
+/// check), so a manually-demoted owner is never silently re-promoted, but a
+/// row that was never explicitly set (still defaulted to `Member`) is.
 #[post("/api/admin/migrations/backfill-team-owner-role", _user: AdminUser)]
 pub async fn backfill_team_owner_role() -> Result<BackfillTeamOwnerRoleResponse> {
-    use aws_sdk_dynamodb::types::AttributeValue;
-    use std::collections::HashMap;
-
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-
-    let table_name = format!(
-        "{}-main",
-        std::env::var("DYNAMO_TABLE_PREFIX").unwrap_or_else(|_| "ratel-dev".to_string())
-    );
+    use crate::features::auth::TeamRoleJson;
+    use postgres::PostgresEntity;
+    use postgres::ops::StringOp;
 
     let mut response = BackfillTeamOwnerRoleResponse::default();
-    let mut last_key: Option<HashMap<String, AttributeValue>> = None;
 
+    const PAGE_SIZE: i64 = 100;
+    let mut page_num: i64 = 1;
     loop {
-        // Scan filter: every TeamOwner row has `sk = "TEAM_OWNER"` (unit
-        // EntityType variant). DynamoDB doesn't accept reserved word `sk`
-        // directly in filter_expression, so alias it via #s.
-        let mut scan = cli
-            .scan()
-            .table_name(&table_name)
-            .filter_expression("#s = :owner_sk")
-            .expression_attribute_names("#s", "sk")
-            .expression_attribute_values(
-                ":owner_sk",
-                AttributeValue::S("TEAM_OWNER".to_string()),
-            )
-            .limit(100);
-        if let Some(key) = last_key.take() {
-            scan = scan.set_exclusive_start_key(Some(key));
+        let page = TeamOwner::repository()
+            .find(TeamOwner::query().page(page_num).page_size(PAGE_SIZE))
+            .await
+            .map_err(|e| {
+                crate::error!("scan failed: {e}");
+                crate::common::Error::NotFound(format!("scan failed: {e}"))
+            })?;
+
+        if page.items.is_empty() {
+            break;
         }
 
-        let page = scan.send().await.map_err(|e| {
-            crate::error!("scan failed: {e}");
-            crate::common::Error::NotFound(format!("scan failed: {e}"))
-        })?;
-
-        for item in page.items.unwrap_or_default() {
+        for team_owner in page.items {
             response.team_owners_scanned += 1;
 
-            let team_owner: TeamOwner = match serde_dynamo::from_item(item) {
-                Ok(t) => t,
-                Err(e) => {
-                    crate::error!("failed to deserialize TeamOwner: {e}");
-                    continue;
-                }
-            };
+            let team_pk_str = Partition::Team(team_owner.team_id.to_string()).to_string();
 
-            // Derive the membership row's sort key from the team's pk.
-            // The UserTeam sk format is `USER_TEAM#{team_pk_string}`.
-            let user_team_sk = crate::common::types::EntityType::UserTeam(
-                team_owner.pk.to_string(),
-            );
-
-            // Raw GetItem so we can inspect whether `role` is physically
-            // present on the stored row — `UserTeam` model deserialization
-            // would mask this via `#[serde(default)]`.
-            let get_result = cli
-                .get_item()
-                .table_name(&table_name)
-                .key("pk", AttributeValue::S(team_owner.user_pk.to_string()))
-                .key("sk", AttributeValue::S(user_team_sk.to_string()))
-                .send()
+            let existing = UserTeam::repository()
+                .find_one(
+                    UserTeam::query()
+                        .user_pk(StringOp::Eq(team_owner.user_pk.clone()))
+                        .team_pk(StringOp::Eq(team_pk_str.clone())),
+                )
                 .await
                 .map_err(|e| {
                     crate::error!(
-                        "UserTeam get_item failed for user={} team={}: {e}",
-                        team_owner.user_pk,
-                        team_owner.pk,
+                        "UserTeam lookup failed for user={} team={}: {e}",
+                        team_owner.user_pk, team_pk_str,
                     );
-                    crate::common::Error::NotFound(format!("get failed: {e}"))
+                    crate::common::Error::NotFound(format!("lookup failed: {e}"))
                 })?;
 
-            let raw = match get_result.item {
-                Some(it) => it,
-                None => {
-                    // TeamOwner exists but no membership row — data
-                    // inconsistency from legacy. Log + skip rather than
-                    // upserting a partial row.
-                    tracing::warn!(
-                        user_pk = %team_owner.user_pk,
-                        team_pk = %team_owner.pk,
-                        "TeamOwner has no matching UserTeam row — skipping"
-                    );
-                    response.user_team_missing += 1;
-                    continue;
-                }
+            let Some(user_team) = existing else {
+                // TeamOwner exists but no membership row — data
+                // inconsistency from legacy. Log + skip rather than
+                // upserting a partial row.
+                tracing::warn!(
+                    user_pk = %team_owner.user_pk,
+                    team_pk = %team_pk_str,
+                    "TeamOwner has no matching UserTeam row — skipping"
+                );
+                response.user_team_missing += 1;
+                continue;
             };
 
-            let has_role_attr = raw
-                .get("role")
-                .map(|v| !matches!(v, AttributeValue::Null(_)))
-                .unwrap_or(false);
-            if has_role_attr {
+            if !matches!(user_team.role.0, TeamRole::Member) {
                 response.skipped_already_set += 1;
                 continue;
             }
 
-            UserTeam::updater(&team_owner.user_pk, &user_team_sk)
-                .with_role(TeamRole::Owner)
-                .execute(cli)
+            UserTeam::repository()
+                .update(
+                    user_team.id,
+                    UserTeam::update().role(TeamRoleJson(TeamRole::Owner)),
+                )
                 .await
                 .map_err(|e| {
                     crate::error!(
                         "UserTeam update failed for user={} team={}: {e}",
-                        team_owner.user_pk,
-                        team_owner.pk,
+                        team_owner.user_pk, team_pk_str,
                     );
                     crate::common::Error::NotFound(format!("update failed: {e}"))
                 })?;
             response.updated += 1;
         }
 
-        match page.last_evaluated_key {
-            Some(key) if !key.is_empty() => last_key = Some(key),
-            _ => break,
+        if page_num >= page.total_pages {
+            break;
         }
+        page_num += 1;
     }
 
     tracing::info!(

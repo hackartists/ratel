@@ -1,4 +1,6 @@
+#[cfg(feature = "server")]
 use crate::features::posts::models::Team;
+#[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::follow::models::SpaceFollowUser;
 use crate::features::spaces::pages::actions::actions::follow::*;
 use crate::features::spaces::pages::actions::actions::follow::types::SpaceFollowError;
@@ -34,9 +36,6 @@ pub async fn add_follow_users(
     req: AddFollowUsersRequest,
 ) -> Result<AddFollowUsersResponse> {
     SpaceFollowAction::can_edit(&role)?;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
-    use crate::features::auth::models::user::UserQueryOption;
 
     let mut added_identifiers = vec![];
     let mut seen = std::collections::HashSet::<String>::new();
@@ -53,34 +52,21 @@ pub async fn add_follow_users(
             continue;
         }
 
-        let users = if is_email {
-            crate::features::auth::User::find_by_email(
-                cli,
-                &identifier,
-                UserQueryOption::builder().limit(1),
-            )
-            .await?
-            .0
+        let target_user = if is_email {
+            crate::common::models::auth::User::find_by_email(&identifier).await?
         } else {
-            match crate::features::auth::User::find_by_username(
-                cli,
-                &identifier,
-                UserQueryOption::builder().limit(1),
-            )
-            .await
-            {
-                Ok((users, _)) => users,
+            match crate::common::models::auth::User::find_by_username(&identifier).await {
+                Ok(user) => user,
                 Err(err) => {
                     error!("Failed to query user by username: {:?}", err);
-                    vec![]
+                    None
                 }
             }
         };
-        let target_user = users.into_iter().next();
         let follow_user = if let Some(target_user) = target_user {
             SpaceFollowUser::new(
                 space_id.clone(),
-                target_user.pk,
+                target_user.pk(),
                 target_user.display_name,
                 target_user.profile_url,
                 target_user.username,
@@ -88,13 +74,11 @@ pub async fn add_follow_users(
                 target_user.description,
             )
         } else if !is_email {
-            let (teams, _) =
-                Team::find_by_username_prefix(cli, &identifier, Team::opt().limit(5)).await?;
-            let target_team = teams.into_iter().find(|team| team.username == identifier);
+            let target_team = Team::find_by_username(&identifier).await?;
             if let Some(team) = target_team {
                 SpaceFollowUser::new(
                     space_id.clone(),
-                    team.pk,
+                    team.partition(),
                     team.display_name,
                     team.profile_url,
                     team.username,
@@ -108,12 +92,14 @@ pub async fn add_follow_users(
             return Err(Error::NotFound(format!("User not found: {}", identifier)));
         };
 
-        let (pk, sk) = SpaceFollowUser::keys(&space_id, &follow_user.user_pk);
-        if SpaceFollowUser::get(cli, &pk, Some(sk)).await?.is_some() {
+        if SpaceFollowUser::get_one(&space_id, &follow_user.user_partition())
+            .await?
+            .is_some()
+        {
             continue;
         }
 
-        follow_user.upsert(cli).await?;
+        follow_user.save().await?;
         added_identifiers.push(identifier);
     }
 

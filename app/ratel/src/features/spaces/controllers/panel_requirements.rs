@@ -1,8 +1,8 @@
 use crate::common::attribute::Gender;
 use crate::common::models::auth::{OptionalUser, User};
-use crate::features::spaces::models::{
-    CollectiveAttribute, PanelAttribute, SpacePanelQuota, VerifiableAttribute,
-};
+use crate::features::spaces::models::{CollectiveAttribute, PanelAttribute, VerifiableAttribute};
+#[cfg(feature = "server")]
+use crate::features::spaces::models::SpacePanelQuota;
 use crate::features::spaces::*;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "server")]
@@ -57,12 +57,20 @@ pub async fn get_panel_requirements(
 
     let user: Option<User> = user.into();
     let (age, gender, university, has_university) = if let Some(user) = user {
-        let user_attributes = user.get_attributes(dynamo).await?;
+        let user_attributes = user.get_attributes().await?;
+        // Postgres migration: `VerifiedAttributes.gender` is the bare
+        // snake_case string ("male" / "female") rather than the typed
+        // `Gender` enum — parse it back the same way serde would.
+        let gender = match user_attributes.gender.as_deref() {
+            Some("male") => Some(Gender::Male),
+            Some("female") => Some(Gender::Female),
+            _ => None,
+        };
         (
             user_attributes
                 .age()
                 .and_then(|value| u8::try_from(value).ok()),
-            user_attributes.gender,
+            gender,
             user_attributes.university.clone(),
             user_attributes
                 .university
@@ -122,15 +130,10 @@ pub async fn get_panel_requirements(
 
 #[cfg(feature = "server")]
 pub(crate) async fn list_panel_quotas(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     space_pk: &Partition,
 ) -> crate::common::Result<Vec<SpacePanelQuota>> {
-    let (panel_quotas, _) = SpacePanelQuota::query(
-        cli,
-        CompositePartition(space_pk.clone(), Partition::PanelAttribute),
-        SpacePanelQuota::opt_all().sk("SPACE_PANEL_ATTRIBUTE#".to_string()),
-    )
-    .await?;
+    let panel_quotas = SpacePanelQuota::list_by_space(space_pk).await?;
 
     Ok(panel_quotas
         .into_iter()
@@ -152,10 +155,10 @@ pub(crate) fn panel_matches_user(
 
 #[cfg(feature = "server")]
 pub(crate) fn panel_attributes(panel: &SpacePanelQuota) -> Vec<PanelAttribute> {
-    if panel.attributes_vec.is_empty() && !matches!(panel.attributes, PanelAttribute::None) {
+    if panel.attributes_vec.0.is_empty() && !matches!(panel.attributes, PanelAttribute::None) {
         vec![panel.attributes]
     } else {
-        panel.attributes_vec.clone()
+        panel.attributes_vec.0.clone()
     }
 }
 
@@ -181,7 +184,14 @@ pub(crate) async fn matched_panel_attributes(
     let age = verified_attributes
         .age()
         .and_then(|value| u8::try_from(value).ok());
-    let gender = verified_attributes.gender;
+    // Postgres migration: `VerifiedAttributes.gender` is the bare
+    // snake_case string ("male" / "female") rather than the typed
+    // `Gender` enum — parse it back the same way serde would.
+    let gender = match verified_attributes.gender.as_deref() {
+        Some("male") => Some(Gender::Male),
+        Some("female") => Some(Gender::Female),
+        _ => None,
+    };
     let has_university = verified_attributes
         .university
         .as_ref()

@@ -1,7 +1,6 @@
 use super::*;
 use crate::common::models::notification::Notification;
 use crate::common::models::space::{SpaceCommon, SpaceStatusChangeEvent};
-use crate::common::types::EntityType;
 use crate::common::types::Partition;
 use crate::common::types::SpaceStatus;
 use crate::common::types::{NotificationData, SpacePublishState, SpaceVisibility};
@@ -10,9 +9,10 @@ use crate::features::posts::models::{Team, TeamOwner};
 use crate::features::social::pages::member::dto::TeamRole;
 use crate::common::models::space::SpaceParticipant;
 use crate::features::spaces::space_common::services::handle_space_status_change;
+use postgres::PostgresEntity;
 
 /// Smoke test: handler accepts an event for an unknown transition and returns Ok.
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_unknown_transition_is_noop() {
     let ctx = TestContext::setup().await;
     let _ = ctx; // force setup so DynamoDB schema exists
@@ -28,9 +28,9 @@ async fn test_handle_unknown_transition_is_noop() {
     assert!(result.is_ok(), "expected Ok, got {:?}", result);
 }
 
-/// Helper: insert a minimal team-owned space directly into DynamoDB.
+/// Helper: insert a minimal team-owned space directly into Postgres.
 async fn insert_team_space(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     team_pk: Partition,
     status: Option<SpaceStatus>,
 ) -> SpaceCommon {
@@ -40,29 +40,32 @@ async fn insert_team_space(
     let post_pk = Partition::Feed(post_id);
 
     let mut space = SpaceCommon::default();
-    space.pk = space_pk.clone();
-    space.sk = EntityType::SpaceCommon;
+    space.id = uuid::Uuid::now_v7();
+    space.space_pk = space_pk.to_string();
     space.created_at = now;
     space.updated_at = now;
     space.status = status;
     space.publish_state = SpacePublishState::Published;
     space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk.clone();
-    space.user_pk = team_pk;
+    space.post_pk = post_pk.to_string();
+    space.user_pk = team_pk.to_string();
     space.author_display_name = "team".to_string();
     space.author_profile_url = String::new();
     space.author_username = "team".to_string();
 
-    space.create(&ctx.ddb).await.unwrap();
+    space.create().await.unwrap();
 
     // Also create a minimal Post row so the handler can load it.
+    let post_uuid = match &post_pk {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).unwrap(),
+        _ => unreachable!(),
+    };
     let post = crate::features::posts::models::Post {
-        pk: post_pk,
-        sk: EntityType::Post,
+        id: post_uuid,
         title: "Test Space".to_string(),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.unwrap();
+    post.create().await.unwrap();
 
     space
 }
@@ -83,7 +86,11 @@ async fn create_team_with_members(
     .await
     .unwrap();
 
-    let team = Team::get(&ctx.ddb, &team_pk, Some(EntityType::Team))
+    let team_uuid = match &team_pk {
+        Partition::Team(id) => uuid::Uuid::parse_str(id).unwrap(),
+        _ => panic!("expected a team partition"),
+    };
+    let team = Team::get_by_id(team_uuid)
         .await
         .unwrap()
         .expect("team record should exist");
@@ -92,7 +99,7 @@ async fn create_team_with_members(
     for _ in 0..member_count {
         let member = create_test_user(&ctx.ddb).await;
         let user_team = UserTeam::new(
-            member.pk.clone(),
+            member.pk(),
             team_pk.clone(),
             team.display_name.clone(),
             team.profile_url.clone(),
@@ -100,68 +107,35 @@ async fn create_team_with_members(
             team.dao_address.clone(),
             TeamRole::Member,
         );
-        user_team.create(&ctx.ddb).await.unwrap();
+        user_team.create().await.unwrap();
         members.push(member);
     }
 
     (team_pk, members)
 }
 
-/// Shared scan helper used by every assertion in this file. DynamoDB scans are
-/// slow but acceptable in tests against the `ratel-local` table.
-async fn scan_items_with_sk_prefix<T: serde::de::DeserializeOwned>(
-    ctx: &TestContext,
-    sk_prefix: &str,
-) -> Vec<T> {
-    use aws_sdk_dynamodb::types::AttributeValue;
-
-    let table_name = format!(
-        "{}-main",
-        option_env!("DYNAMO_TABLE_PREFIX").unwrap_or("ratel-local")
-    );
-
-    let mut out: Vec<T> = Vec::new();
-    let mut esk = None;
-    loop {
-        let mut req = ctx
-            .ddb
-            .scan()
-            .table_name(&table_name)
-            .filter_expression("begins_with(sk, :p)")
-            .expression_attribute_values(":p", AttributeValue::S(sk_prefix.to_string()));
-        if let Some(k) = esk {
-            req = req.set_exclusive_start_key(Some(k));
-        }
-        let page = req.send().await.expect("scan failed");
-        for item in page.items.unwrap_or_default() {
-            if let Ok(parsed) = serde_dynamo::from_item::<_, T>(item) {
-                out.push(parsed);
-            }
-        }
-        match page.last_evaluated_key {
-            Some(k) => esk = Some(k),
-            None => break,
-        }
-    }
-    out
-}
-
+/// Shared query helper used by every assertion in this file. Loads every
+/// Notification row and filters client-side, mirroring the old DynamoDB scan.
 async fn notifications_matching(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     filter: impl Fn(&Notification) -> bool,
 ) -> Vec<Notification> {
-    let rows: Vec<Notification> = scan_items_with_sk_prefix(ctx, "NOTIFICATION#").await;
+    let rows = Notification::repository()
+        .find(Notification::query())
+        .await
+        .expect("query notifications failed")
+        .items;
     rows.into_iter().filter(|n| filter(n)).collect()
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_publish_to_open_notifies_team_members() {
     let ctx = TestContext::setup().await;
 
     let (team_pk, members) = create_team_with_members(&ctx, 2).await;
     let space = insert_team_space(&ctx, team_pk.clone(), None).await;
 
-    let event = SpaceStatusChangeEvent::new(space.pk.clone(), None, SpaceStatus::Open);
+    let event = SpaceStatusChangeEvent::new(space.partition(), None, SpaceStatus::Open);
 
     handle_space_status_change(event)
         .await
@@ -204,9 +178,9 @@ async fn test_handle_publish_to_open_notifies_team_members() {
 
 // ── Task 10 ──────────────────────────────────────────────────────────────────
 
-/// Helper: insert a minimal user-owned (non-team) space directly into DynamoDB.
+/// Helper: insert a minimal user-owned (non-team) space directly into Postgres.
 async fn insert_user_space(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     user_pk: Partition,
     status: Option<SpaceStatus>,
 ) -> SpaceCommon {
@@ -216,35 +190,38 @@ async fn insert_user_space(
     let post_pk = Partition::Feed(post_id);
 
     let mut space = SpaceCommon::default();
-    space.pk = space_pk.clone();
-    space.sk = EntityType::SpaceCommon;
+    space.id = uuid::Uuid::now_v7();
+    space.space_pk = space_pk.to_string();
     space.created_at = now;
     space.updated_at = now;
     space.status = status;
     space.publish_state = SpacePublishState::Published;
     space.visibility = SpaceVisibility::Public;
-    space.post_pk = post_pk.clone();
-    space.user_pk = user_pk;
+    space.post_pk = post_pk.to_string();
+    space.user_pk = user_pk.to_string();
     space.author_display_name = "user".to_string();
     space.author_profile_url = String::new();
     space.author_username = "user".to_string();
-    space.create(&ctx.ddb).await.unwrap();
+    space.create().await.unwrap();
 
+    let post_uuid = match &post_pk {
+        Partition::Feed(id) => uuid::Uuid::parse_str(id).unwrap(),
+        _ => unreachable!(),
+    };
     let post = crate::features::posts::models::Post {
-        pk: post_pk,
-        sk: EntityType::Post,
+        id: post_uuid,
         title: "User Space".to_string(),
         ..Default::default()
     };
-    post.create(&ctx.ddb).await.unwrap();
+    post.create().await.unwrap();
 
     space
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_publish_to_open_skips_user_authored() {
     let ctx = TestContext::setup().await;
-    let space = insert_user_space(&ctx, ctx.test_user.0.pk.clone(), None).await;
+    let space = insert_user_space(&ctx, ctx.test_user.0.pk(), None).await;
 
     let before = notifications_matching(&ctx, |n| {
         matches!(n.data, NotificationData::SendSpaceStatusUpdate { .. })
@@ -253,7 +230,7 @@ async fn test_handle_publish_to_open_skips_user_authored() {
     .len();
 
     handle_space_status_change(SpaceStatusChangeEvent::new(
-        space.pk.clone(),
+        space.partition(),
         None,
         SpaceStatus::Open,
     ))
@@ -279,27 +256,27 @@ async fn test_handle_publish_to_open_skips_user_authored() {
 
 /// Helper: insert a SpaceParticipant row for the given user in the given space.
 async fn insert_participant_for(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     space_pk: &Partition,
     user: &crate::features::auth::User,
 ) {
     let sp = SpaceParticipant::new_non_anonymous(space_pk.clone(), user.clone());
-    sp.create(&ctx.ddb).await.unwrap();
+    sp.create().await.unwrap();
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_open_to_ongoing_notifies_participants() {
     let ctx = TestContext::setup().await;
     let space =
-        insert_user_space(&ctx, ctx.test_user.0.pk.clone(), Some(SpaceStatus::Open)).await;
+        insert_user_space(&ctx, ctx.test_user.0.pk(), Some(SpaceStatus::Open)).await;
 
     let p1 = create_test_user(&ctx.ddb).await;
     let p2 = create_test_user(&ctx.ddb).await;
-    insert_participant_for(&ctx, &space.pk, &p1).await;
-    insert_participant_for(&ctx, &space.pk, &p2).await;
+    insert_participant_for(&ctx, &space.partition(), &p1).await;
+    insert_participant_for(&ctx, &space.partition(), &p2).await;
 
     handle_space_status_change(SpaceStatusChangeEvent::new(
-        space.pk.clone(),
+        space.partition(),
         Some(SpaceStatus::Open),
         SpaceStatus::Ongoing,
     ))
@@ -327,17 +304,17 @@ async fn test_handle_open_to_ongoing_notifies_participants() {
 
 // ── Task 12 ──────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_ongoing_to_finished_notifies_participants() {
     let ctx = TestContext::setup().await;
     let space =
-        insert_user_space(&ctx, ctx.test_user.0.pk.clone(), Some(SpaceStatus::Ongoing)).await;
+        insert_user_space(&ctx, ctx.test_user.0.pk(), Some(SpaceStatus::Ongoing)).await;
 
     let p1 = create_test_user(&ctx.ddb).await;
-    insert_participant_for(&ctx, &space.pk, &p1).await;
+    insert_participant_for(&ctx, &space.partition(), &p1).await;
 
     handle_space_status_change(SpaceStatusChangeEvent::new(
-        space.pk.clone(),
+        space.partition(),
         Some(SpaceStatus::Ongoing),
         SpaceStatus::Finished,
     ))
@@ -371,11 +348,11 @@ async fn test_handle_ongoing_to_finished_notifies_participants() {
 
 // ── Task 13 ──────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_no_recipients_is_noop_participants() {
     let ctx = TestContext::setup().await;
     let space =
-        insert_user_space(&ctx, ctx.test_user.0.pk.clone(), Some(SpaceStatus::Open)).await;
+        insert_user_space(&ctx, ctx.test_user.0.pk(), Some(SpaceStatus::Open)).await;
     // No participants inserted.
 
     let before = notifications_matching(&ctx, |n| {
@@ -385,7 +362,7 @@ async fn test_handle_no_recipients_is_noop_participants() {
     .len();
 
     handle_space_status_change(SpaceStatusChangeEvent::new(
-        space.pk.clone(),
+        space.partition(),
         Some(SpaceStatus::Open),
         SpaceStatus::Ongoing,
     ))
@@ -403,11 +380,11 @@ async fn test_handle_no_recipients_is_noop_participants() {
 
 // ── Task 13a ─────────────────────────────────────────────────────────────────
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_handle_dedupes_duplicate_emails() {
     let ctx = TestContext::setup().await;
     let space =
-        insert_user_space(&ctx, ctx.test_user.0.pk.clone(), Some(SpaceStatus::Open)).await;
+        insert_user_space(&ctx, ctx.test_user.0.pk(), Some(SpaceStatus::Open)).await;
 
     // Create two users with the same email to simulate an email collision.
     let p1 = create_test_user(&ctx.ddb).await;
@@ -424,13 +401,13 @@ async fn test_handle_dedupes_duplicate_emails() {
         username2,
         None,
     );
-    p2.create(&ctx.ddb).await.unwrap();
+    p2.create().await.unwrap();
 
-    insert_participant_for(&ctx, &space.pk, &p1).await;
-    insert_participant_for(&ctx, &space.pk, &p2).await;
+    insert_participant_for(&ctx, &space.partition(), &p1).await;
+    insert_participant_for(&ctx, &space.partition(), &p2).await;
 
     handle_space_status_change(SpaceStatusChangeEvent::new(
-        space.pk.clone(),
+        space.partition(),
         Some(SpaceStatus::Open),
         SpaceStatus::Ongoing,
     ))
@@ -498,17 +475,17 @@ async fn create_draft_space(ctx: &TestContext) -> (String, String) {
     (post_pk_str, space_id)
 }
 
-/// Scan DynamoDB for SpaceStatusChangeEvent rows whose space_pk matches.
+/// Query SpaceStatusChangeEvent rows for the given space.
 async fn find_status_change_events_for(
-    ctx: &TestContext,
+    _ctx: &TestContext,
     space_pk: &Partition,
 ) -> Vec<SpaceStatusChangeEvent> {
-    let rows: Vec<SpaceStatusChangeEvent> =
-        scan_items_with_sk_prefix(ctx, "SPACE_STATUS_CHANGE_EVENT#").await;
-    rows.into_iter().filter(|r| &r.space_pk == space_pk).collect()
+    SpaceStatusChangeEvent::find_by_space(space_pk)
+        .await
+        .expect("query status change events failed")
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_publish_creates_status_change_event() {
     let ctx = TestContext::setup().await;
     let (_post_pk_str, space_id) = create_draft_space(&ctx).await;
@@ -528,7 +505,7 @@ async fn test_publish_creates_status_change_event() {
     assert_eq!(events[0].new_status, SpaceStatus::Open);
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_start_creates_status_change_event() {
     let ctx = TestContext::setup().await;
     let (_post_pk_str, space_id) = create_draft_space(&ctx).await;
@@ -558,7 +535,7 @@ async fn test_start_creates_status_change_event() {
         && e.new_status == SpaceStatus::Ongoing));
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_finish_creates_status_change_event() {
     let ctx = TestContext::setup().await;
     let (_post_pk_str, space_id) = create_draft_space(&ctx).await;
@@ -600,7 +577,7 @@ async fn test_finish_creates_status_change_event() {
     );
 }
 
-#[tokio::test]
+#[by_macros::pg_test]
 async fn test_title_update_creates_no_status_change_event() {
     let ctx = TestContext::setup().await;
     let (_post_pk_str, space_id) = create_draft_space(&ctx).await;

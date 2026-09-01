@@ -19,10 +19,10 @@ use crate::features::arcade::wallet::{ArcadeWallet, DdbArcadeWallet};
 
 #[cfg(feature = "server")]
 fn user_inner_id(user: &User) -> String {
-    user.pk
+    user.pk()
         .to_string()
         .strip_prefix("USER#")
-        .unwrap_or(&user.pk.to_string())
+        .unwrap_or(&user.pk().to_string())
         .to_string()
 }
 
@@ -39,7 +39,7 @@ pub async fn get_wallet_handler() -> Result<WalletStateResponse> {
         crate::error!("get_wallet_handler balance read failed: {e}");
         ArcadeError::StorageFailure
     })?;
-    let settings = ArcadeSettings::get_or_default(cli).await.unwrap_or_default();
+    let settings = ArcadeSettings::get_or_default().await.unwrap_or_default();
 
     Ok(WalletStateResponse {
         chip_balance,

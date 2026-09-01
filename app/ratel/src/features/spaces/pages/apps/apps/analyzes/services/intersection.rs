@@ -72,32 +72,24 @@ pub async fn intersect_filters(
 /// for empty-filter previews and as the candidate pool for quiz
 /// matching (which has no quiz-only GSI).
 pub async fn list_participant_user_pks(
-    cli: &aws_sdk_dynamodb::Client,
+    // No longer used — `SpaceParticipant` is Postgres-backed now and reads
+    // from the global connection pool. Kept so call sites don't need to
+    // change.
+    _cli: &aws_sdk_dynamodb::Client,
     space_pk: &Partition,
 ) -> Result<Vec<Partition>> {
     use crate::common::models::space::SpaceParticipant;
+    use std::str::FromStr;
 
-    let mut bookmark: Option<String> = None;
-    let mut user_pks: Vec<Partition> = Vec::new();
+    let rows = SpaceParticipant::find_by_space(space_pk).await?;
 
-    loop {
-        let mut opt = SpaceParticipant::opt().limit(100);
-        if let Some(b) = bookmark.clone() {
-            opt = opt.bookmark(b);
-        }
-        let (rows, next) = SpaceParticipant::find_by_space(cli, space_pk.clone(), opt).await?;
-        for row in rows {
-            if row.user_pk != Partition::None {
-                user_pks.push(row.user_pk);
-            }
-        }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
-        }
-    }
-
-    Ok(user_pks)
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            let user_pk = Partition::from_str(&row.user_pk).unwrap_or_default();
+            (user_pk != Partition::None).then_some(user_pk)
+        })
+        .collect())
 }
 
 pub async fn count_all_participants(
@@ -121,13 +113,14 @@ async fn match_filter(
 }
 
 async fn match_poll(
-    cli: &aws_sdk_dynamodb::Client,
+    // No longer used — `SpacePollUserAnswer` is Postgres-backed now and
+    // reads from the global connection pool. Kept so call sites don't need
+    // to change.
+    _cli: &aws_sdk_dynamodb::Client,
     space_pk: &Partition,
     filter: &AnalyzeReportFilter,
 ) -> Result<(HashSet<String>, i64, Vec<MatchedRecordRef>)> {
-    use crate::features::spaces::pages::actions::actions::poll::{
-        SpacePollUserAnswer, SpacePollUserAnswerQueryOption,
-    };
+    use crate::features::spaces::pages::actions::actions::poll::SpacePollUserAnswer;
 
     let q_idx: usize = match filter.question_id.parse() {
         Ok(v) => v,
@@ -138,47 +131,30 @@ async fn match_poll(
         Err(_) => return Ok((HashSet::new(), 0, Vec::new())),
     };
     let poll_sk = EntityType::SpacePoll(filter.item_id.clone());
-    let gsi_sk = EntityType::SpacePollUserAnswer(space_pk.to_string(), poll_sk.to_string());
 
-    let mut bookmark: Option<String> = None;
     let mut matched: HashSet<String> = HashSet::new();
     let mut records: Vec<MatchedRecordRef> = Vec::new();
     let mut matched_count: i64 = 0;
 
-    loop {
-        let opt = if let Some(b) = bookmark.clone() {
-            SpacePollUserAnswerQueryOption::builder().bookmark(b)
-        } else {
-            SpacePollUserAnswerQueryOption::builder()
-        };
-        let (rows, next) = SpacePollUserAnswer::find_by_space_pk(cli, &gsi_sk, opt).await?;
-        for row in rows {
-            if let Some(answer) = row.answers.get(q_idx) {
-                if answer.to_option_indices().contains(&o_idx) {
-                    matched_count += 1;
-                    let user_key = row
-                        .user_pk
-                        .as_ref()
-                        .map(|pk| pk.to_string())
-                        .unwrap_or_else(|| row.pk.to_string());
-                    matched.insert(user_key.clone());
-                    if records.len() < PER_FILTER_RECORD_CAP {
-                        records.push(MatchedRecordRef {
-                            source: AnalyzeFilterSource::Poll,
-                            filter_idx: 0,
-                            user_pk: user_key,
-                            item_id: filter.item_id.clone(),
-                            sub_id: String::new(),
-                            question_idx: q_idx as u32,
-                            option_idx: o_idx,
-                        });
-                    }
+    let rows = SpacePollUserAnswer::list_by_poll(space_pk, &poll_sk).await?;
+    for row in rows {
+        if let Some(answer) = row.answers.get(q_idx) {
+            if answer.to_option_indices().contains(&o_idx) {
+                matched_count += 1;
+                let user_key = row.actor_pk.clone();
+                matched.insert(user_key.clone());
+                if records.len() < PER_FILTER_RECORD_CAP {
+                    records.push(MatchedRecordRef {
+                        source: AnalyzeFilterSource::Poll,
+                        filter_idx: 0,
+                        user_pk: user_key,
+                        item_id: filter.item_id.clone(),
+                        sub_id: String::new(),
+                        question_idx: q_idx as u32,
+                        option_idx: o_idx,
+                    });
                 }
             }
-        }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
         }
     }
 
@@ -215,8 +191,7 @@ async fn match_quiz(
         let quiz_id = quiz_id.clone();
         let user_pk = user_pk.clone();
         async move {
-            let attempt =
-                SpaceQuizAttempt::find_latest_by_quiz_user(cli, &quiz_id, &user_pk).await;
+            let attempt = SpaceQuizAttempt::find_latest_by_quiz_user(&quiz_id, &user_pk).await;
             (user_pk, attempt)
         }
     });
@@ -284,7 +259,7 @@ async fn match_discussion(
                     filter_idx: 0,
                     user_pk: user_key,
                     item_id: item_id.clone(),
-                    sub_id: row.sk.to_string(),
+                    sub_id: row.comment_entity().to_string(),
                     question_idx: 0,
                     option_idx: 0,
                 });
@@ -297,14 +272,16 @@ async fn match_discussion(
 }
 
 async fn match_follow(
-    cli: &aws_sdk_dynamodb::Client,
+    // No longer used — `UserFollow` is Postgres-backed now and reads from
+    // the global connection pool. Kept so call sites don't need to change.
+    _cli: &aws_sdk_dynamodb::Client,
     filter: &AnalyzeReportFilter,
 ) -> Result<(HashSet<String>, i64, Vec<MatchedRecordRef>)> {
     use crate::common::models::auth::UserFollow;
 
     // Follow chip's `option_id` carries the target user's partition key
-    // string ("USER#..." or "TEAM#..."). Query every UserFollow row
-    // pinned to that target — each row's `user_pk` is one follower.
+    // string ("USER#..." or "TEAM#..."). Page through every `Follower` row
+    // owned by that target — each row's `user_pk` is one follower.
     let target_pk_str = if filter.option_id.is_empty() {
         return Ok((HashSet::new(), 0, Vec::new()));
     } else {
@@ -315,24 +292,20 @@ async fn match_follow(
         Err(_) => return Ok((HashSet::new(), 0, Vec::new())),
     };
 
-    let mut bookmark: Option<String> = None;
     let mut matched: HashSet<String> = HashSet::new();
     let mut records: Vec<MatchedRecordRef> = Vec::new();
     let mut matched_count: i64 = 0;
-    let follower_sk = EntityType::Follower(String::default()).to_string();
 
+    let mut page: i64 = 1;
+    const PAGE_SIZE: i64 = 100;
     loop {
-        let mut opt = UserFollow::opt().sk(follower_sk.clone()).limit(100);
-        if let Some(b) = bookmark.clone() {
-            opt = opt.bookmark(b);
-        }
-        let (rows, next) = UserFollow::query(cli, target_pk.clone(), opt).await?;
-        // Every UserFollow row pinned to this target IS a match —
-        // there's no further filtering for follow chips, so scanned
-        // count == matched count.
-        matched_count += rows.len() as i64;
-        for row in rows {
-            let user_key = row.user_pk.to_string();
+        let result = UserFollow::list_followers_page(&target_pk, page, PAGE_SIZE).await?;
+        // Every UserFollow row pinned to this target IS a match — there's
+        // no further filtering for follow chips, so scanned count ==
+        // matched count.
+        matched_count += result.items.len() as i64;
+        for row in result.items {
+            let user_key = row.user_pk.clone();
             matched.insert(user_key.clone());
             if records.len() < PER_FILTER_RECORD_CAP {
                 records.push(MatchedRecordRef {
@@ -346,9 +319,10 @@ async fn match_follow(
                 });
             }
         }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
+        if page < result.total_pages {
+            page += 1;
+        } else {
+            break;
         }
     }
 
@@ -356,39 +330,59 @@ async fn match_follow(
 }
 
 /// Walk every top-level comment AND reply on a post, invoking
-/// `visitor` for each row. Replies live under the same DDB partition
-/// as the parent post but use a different sk prefix
-/// (`SPACE_POST_COMMENT_REPLY#` vs `SPACE_POST_COMMENT#`), so a
-/// single `begins_with("SPACE_POST_COMMENT#")` filter — which the
-/// older callers in this module used — silently skipped every reply.
-/// Two paginated queries cover both prefixes; merging happens
-/// implicitly via the shared visitor closure.
+/// `visitor` for each row. Postgres migration: both top-level comments
+/// and replies carry the same `post_id` column (distinguished only by
+/// `parent_comment_id`), so one paginated `post_id` query now covers
+/// both — replacing the old DynamoDB two-prefix scan
+/// (`SPACE_POST_COMMENT#` / `SPACE_POST_COMMENT_REPLY#`).
 pub async fn iter_post_comments<F>(
-    cli: &aws_sdk_dynamodb::Client,
+    // No longer used — `SpacePostComment` is Postgres-backed now and reads
+    // from the global connection pool. Kept so call sites don't need to
+    // change.
+    _cli: &aws_sdk_dynamodb::Client,
     post_pk: Partition,
     mut visitor: F,
 ) -> Result<()>
 where
     F: FnMut(crate::features::spaces::pages::actions::actions::discussion::SpacePostComment),
 {
-    use crate::features::spaces::pages::actions::actions::discussion::SpacePostComment;
+    use crate::features::spaces::pages::actions::actions::discussion::{
+        SpacePostComment, SpacePostCommentColumn,
+    };
+    use postgres::ops::StringOp;
+    use postgres::{Order, PostgresEntity};
 
-    for prefix in ["SPACE_POST_COMMENT#", "SPACE_POST_COMMENT_REPLY#"] {
-        let mut bookmark: Option<String> = None;
+    let post_id = match &post_pk {
+        Partition::SpacePost(id) => id.clone(),
+        other => other.to_string(),
+    };
+
+    {
+        let mut page: i64 = 1;
+        const PAGE_SIZE: i64 = 100;
         loop {
-            let mut opt = SpacePostComment::opt().sk(prefix.to_string()).limit(100);
-            if let Some(b) = bookmark.clone() {
-                opt = opt.bookmark(b);
-            }
-            let (rows, next) = SpacePostComment::query(cli, post_pk.clone(), opt).await?;
-            for row in rows {
+            let result = SpacePostComment::repository()
+                .find(
+                    SpacePostComment::query()
+                        .post_id(StringOp::Eq(post_id.clone()))
+                        .order_by(SpacePostCommentColumn::CreatedAt, Order::Asc)
+                        .page(page)
+                        .page_size(PAGE_SIZE),
+                )
+                .await
+                .map_err(crate::common::Error::from)?;
+
+            for row in result.items {
                 visitor(row);
             }
-            match next {
-                Some(b) => bookmark = Some(b),
-                None => break,
+
+            if page < result.total_pages {
+                page += 1;
+            } else {
+                break;
             }
         }
     }
+
     Ok(())
 }

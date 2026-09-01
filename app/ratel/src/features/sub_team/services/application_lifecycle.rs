@@ -7,41 +7,39 @@ use crate::features::sub_team::models::{
     SubTeamApplication, SubTeamApplicationStatus, SubTeamLink,
 };
 use crate::features::sub_team::types::SubTeamError;
+use postgres::PostgresEntity;
+use uuid::Uuid;
 
-const PAGE_SIZE: i32 = 100;
-const MAX_PAGES: usize = 10;
+/// Parse a `Partition::Team(id)` into its `Uuid` — Postgres `Team`/`TeamOwner`
+/// rows are keyed by the raw uuid, not the `"TEAM#…"` partition string.
+fn team_uuid(team_pk: &Partition) -> Option<Uuid> {
+    match team_pk {
+        Partition::Team(id) => Uuid::parse_str(id).ok(),
+        _ => None,
+    }
+}
 
 /// Resolve admin+owner user pks for a team (owner record + UserTeam rows whose
 /// role is Admin/Owner). Used by the application-lifecycle notifications to
 /// address parent-side decision messages to the right set of recipients.
 pub async fn resolve_team_admins(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     team_pk: &Partition,
 ) -> Result<Vec<Partition>> {
     use crate::features::social::pages::member::dto::TeamRole;
 
     let mut user_pks: HashSet<String> = HashSet::new();
 
-    if let Ok(Some(owner)) = TeamOwner::get(cli, team_pk, Some(&EntityType::TeamOwner)).await {
-        user_pks.insert(owner.user_pk.to_string());
+    if let Some(uuid) = team_uuid(team_pk) {
+        if let Ok(Some(owner)) = TeamOwner::find_by_team(uuid).await {
+            user_pks.insert(owner.user_pk.clone());
+        }
     }
 
-    let user_team_sk = EntityType::UserTeam(team_pk.to_string());
-    let mut bookmark: Option<String> = None;
-    for _ in 0..MAX_PAGES {
-        let mut opt = crate::features::auth::UserTeamQueryOption::builder().limit(PAGE_SIZE);
-        if let Some(bm) = bookmark.as_ref() {
-            opt = opt.bookmark(bm.clone());
-        }
-        let (rows, next) = UserTeam::find_by_team(cli, &user_team_sk, opt).await?;
-        for row in rows {
-            if matches!(row.role, TeamRole::Admin | TeamRole::Owner) {
-                user_pks.insert(row.pk.to_string());
-            }
-        }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
+    let rows = UserTeam::find_by_team(team_pk).await?;
+    for row in rows {
+        if matches!(row.role.0, TeamRole::Admin | TeamRole::Owner) {
+            user_pks.insert(row.user_pk.clone());
         }
     }
 
@@ -59,40 +57,30 @@ pub async fn resolve_team_admins(
 /// 버그). We collect distinct user pks from UserTeam rows first, then
 /// only add the owner if their pk is not already present.
 pub async fn count_team_members(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     team_pk: &Partition,
 ) -> Result<i64> {
-    let user_team_sk = EntityType::UserTeam(team_pk.to_string());
     let mut user_pks: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut bookmark: Option<String> = None;
-    for _ in 0..MAX_PAGES {
-        let mut opt = crate::features::auth::UserTeamQueryOption::builder().limit(PAGE_SIZE);
-        if let Some(bm) = bookmark.as_ref() {
-            opt = opt.bookmark(bm.clone());
-        }
-        let (rows, next) = UserTeam::find_by_team(cli, &user_team_sk, opt).await?;
-        for row in rows {
-            user_pks.insert(row.pk.to_string());
-        }
-        match next {
-            Some(b) => bookmark = Some(b),
-            None => break,
-        }
+    let rows = UserTeam::find_by_team(team_pk).await?;
+    for row in rows {
+        user_pks.insert(row.user_pk.clone());
     }
-    if let Ok(Some(owner)) = TeamOwner::get(cli, team_pk, Some(&EntityType::TeamOwner)).await {
-        user_pks.insert(owner.user_pk.to_string());
+    if let Some(uuid) = team_uuid(team_pk) {
+        if let Ok(Some(owner)) = TeamOwner::find_by_team(uuid).await {
+            user_pks.insert(owner.user_pk.clone());
+        }
     }
     Ok(user_pks.len() as i64)
 }
 
-/// Load an application by its id from the parent's queue.
+/// Load an application by its id from the parent's queue. `_cli` is retained
+/// for call-site compatibility (the lookup is now Postgres-backed).
 pub async fn get_application(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     parent_pk: &Partition,
     application_id: &str,
 ) -> Result<SubTeamApplication> {
-    let sk = EntityType::SubTeamApplication(application_id.to_string());
-    SubTeamApplication::get(cli, parent_pk, Some(sk))
+    SubTeamApplication::find_in_parent(parent_pk, application_id)
         .await
         .map_err(|e| {
             crate::error!("get_application query failed: {e}");
@@ -121,49 +109,71 @@ pub async fn approve_application(
     }
 
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let parent_team_id = match &parent_team.pk {
-        Partition::Team(id) => id.clone(),
-        _ => {
-            crate::error!("approve_application: unexpected parent pk variant");
-            return Err(SubTeamError::ApplicationStateMismatch.into());
-        }
-    };
+    let parent_team_id = parent_team.id.to_string();
     let sub_team_id = app.sub_team_id.clone();
     let sub_team_pk: Partition = Partition::Team(sub_team_id.clone());
 
-    // 1. application update — store the welcome message in
-    //    `decision_reason` so the applicant's status page can surface
-    //    it under the "환영 메시지" feedback card. Empty string is OK
-    //    (admin skipped the optional note).
-    let app_update = SubTeamApplication::updater(&parent_team.pk, &app.sk)
-        .with_status(SubTeamApplicationStatus::Approved)
-        .with_decision_reason(welcome_message)
-        .with_decided_at(now)
-        .with_updated_at(now)
-        .transact_write_item();
-
-    // 2. child team update — set parent_team_id, clear pending_parent_team_id
-    let team_update = Team::updater(&sub_team_pk, EntityType::Team)
-        .with_parent_team_id(parent_team_id.clone())
-        .remove_pending_parent_team_id()
-        .with_updated_at(now)
-        .transact_write_item();
-
+    // ── Postgres transaction: application status + SubTeamLink (atomic) ──
+    // The DynamoDB version did app-update + team-update + link-create in one
+    // transact_write. `Team` stays in DynamoDB while application + link moved to
+    // Postgres, so the atomic set is now the two Postgres writes; the child
+    // `Team` linkage follows in a separate DynamoDB write.
+    let tx = postgres::Tx::begin().await.map_err(|e| {
+        crate::error!("approve_application tx begin failed: {e}");
+        Error::from(SubTeamError::ApplicationStateMismatch)
+    })?;
+    // 1. application update — store the welcome message in `decision_reason`.
+    SubTeamApplication::repository()
+        .with_tx(&tx)
+        .update(
+            app.id,
+            SubTeamApplication::update()
+                .status(SubTeamApplicationStatus::Approved)
+                .decision_reason(welcome_message)
+                .decided_at(now)
+                .updated_at(now),
+        )
+        .await
+        .map_err(|e| {
+            crate::error!("approve_application app update failed: {e}");
+            Error::from(SubTeamError::ApplicationStateMismatch)
+        })?;
     // 3. create SubTeamLink
     let link = SubTeamLink::new(
-        parent_team.pk.clone(),
+        parent_team.partition(),
         sub_team_id.clone(),
         approver_user_pk.to_string(),
         app.application_id.clone(),
     );
-    let link_create = link.create_transact_write_item();
-
-    cli.transact_write_items()
-        .set_transact_items(Some(vec![app_update, team_update, link_create]))
-        .send()
+    SubTeamLink::repository()
+        .with_tx(&tx)
+        .insert(&link)
         .await
         .map_err(|e| {
-            crate::error!("approve_application transact_write failed: {:?}", e);
+            crate::error!("approve_application link create failed: {e}");
+            Error::from(SubTeamError::ApplicationStateMismatch)
+        })?;
+    tx.commit().await.map_err(|e| {
+        crate::error!("approve_application tx commit failed: {e}");
+        Error::from(SubTeamError::ApplicationStateMismatch)
+    })?;
+
+    // 2. child team update — set parent_team_id, clear pending (Postgres).
+    let sub_team_uuid = Uuid::parse_str(&sub_team_id).map_err(|e| {
+        crate::error!("approve_application: invalid sub_team_id: {e}");
+        Error::from(SubTeamError::ApplicationStateMismatch)
+    })?;
+    Team::repository()
+        .update(
+            sub_team_uuid,
+            Team::update()
+                .parent_team_id(Some(parent_team_id.clone()))
+                .pending_parent_team_id(None)
+                .updated_at(now),
+        )
+        .await
+        .map_err(|e| {
+            crate::error!("approve_application team update failed: {:?}", e);
             Error::from(SubTeamError::ApplicationStateMismatch)
         })?;
 
@@ -207,34 +217,41 @@ pub async fn reject_application(
         return Err(SubTeamError::ApplicationStateMismatch.into());
     }
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let parent_team_id = match &parent_team.pk {
-        Partition::Team(id) => id.clone(),
-        _ => {
-            crate::error!("reject_application: unexpected parent pk variant");
-            return Err(SubTeamError::ApplicationStateMismatch.into());
-        }
-    };
+    let parent_team_id = parent_team.id.to_string();
     let sub_team_id = app.sub_team_id.clone();
     let sub_team_pk: Partition = Partition::Team(sub_team_id.clone());
 
-    let app_update = SubTeamApplication::updater(&parent_team.pk, &app.sk)
-        .with_status(SubTeamApplicationStatus::Rejected)
-        .with_decision_reason(reason.clone())
-        .with_decided_at(now)
-        .with_updated_at(now)
-        .transact_write_item();
-
-    let team_update = Team::updater(&sub_team_pk, EntityType::Team)
-        .remove_pending_parent_team_id()
-        .with_updated_at(now)
-        .transact_write_item();
-
-    cli.transact_write_items()
-        .set_transact_items(Some(vec![app_update, team_update]))
-        .send()
+    // Application status (Postgres) then child pending-clear (DynamoDB) — no
+    // longer one atomic transact_write (split store).
+    SubTeamApplication::repository()
+        .update(
+            app.id,
+            SubTeamApplication::update()
+                .status(SubTeamApplicationStatus::Rejected)
+                .decision_reason(reason.clone())
+                .decided_at(now)
+                .updated_at(now),
+        )
         .await
         .map_err(|e| {
-            crate::error!("reject_application transact_write failed: {:?}", e);
+            crate::error!("reject_application app update failed: {e}");
+            Error::from(SubTeamError::ApplicationStateMismatch)
+        })?;
+
+    let sub_team_uuid = Uuid::parse_str(&sub_team_id).map_err(|e| {
+        crate::error!("reject_application: invalid sub_team_id: {e}");
+        Error::from(SubTeamError::ApplicationStateMismatch)
+    })?;
+    Team::repository()
+        .update(
+            sub_team_uuid,
+            Team::update()
+                .pending_parent_team_id(None)
+                .updated_at(now),
+        )
+        .await
+        .map_err(|e| {
+            crate::error!("reject_application team update failed: {:?}", e);
             Error::from(SubTeamError::ApplicationStateMismatch)
         })?;
 
@@ -276,22 +293,19 @@ pub async fn return_application(
         return Err(SubTeamError::ApplicationStateMismatch.into());
     }
     let now = crate::common::utils::time::get_now_timestamp_millis();
-    let parent_team_id = match &parent_team.pk {
-        Partition::Team(id) => id.clone(),
-        _ => {
-            crate::error!("return_application: unexpected parent pk variant");
-            return Err(SubTeamError::ApplicationStateMismatch.into());
-        }
-    };
+    let parent_team_id = parent_team.id.to_string();
     let sub_team_id = app.sub_team_id.clone();
     let sub_team_pk: Partition = Partition::Team(sub_team_id.clone());
 
-    SubTeamApplication::updater(&parent_team.pk, &app.sk)
-        .with_status(SubTeamApplicationStatus::Returned)
-        .with_decision_reason(comment.clone())
-        .with_decided_at(now)
-        .with_updated_at(now)
-        .execute(cli)
+    SubTeamApplication::repository()
+        .update(
+            app.id,
+            SubTeamApplication::update()
+                .status(SubTeamApplicationStatus::Returned)
+                .decision_reason(comment.clone())
+                .decided_at(now)
+                .updated_at(now),
+        )
         .await
         .map_err(|e| {
             crate::error!("return_application execute failed: {e}");
@@ -354,20 +368,18 @@ pub async fn notify_parent_of_submission(
 /// `username` from its team id before building the link. Fallback is
 /// the team home (`/:username`) when the lookup fails.
 async fn build_sub_team_apply_status_url(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     sub_team_id: &str,
 ) -> String {
-    let pk = Partition::Team(sub_team_id.to_string());
-    let username = crate::features::posts::models::Team::get(
-        cli,
-        &pk,
-        Some(EntityType::Team),
-    )
-    .await
-    .ok()
-    .flatten()
-    .map(|t| t.username)
-    .unwrap_or_default();
+    let username = match Uuid::parse_str(sub_team_id) {
+        Ok(uuid) => crate::features::posts::models::Team::get_by_id(uuid)
+            .await
+            .ok()
+            .flatten()
+            .map(|t| t.username)
+            .unwrap_or_default(),
+        Err(_) => String::new(),
+    };
     if username.is_empty() {
         // Better to land on the home route than a 404 with the bare id.
         format!("/{sub_team_id}")
@@ -379,20 +391,18 @@ async fn build_sub_team_apply_status_url(
 /// URL of the parent's "Sub-team management" page. Route is
 /// `/:username/sub-teams/manage`.
 async fn build_sub_team_management_url(
-    cli: &aws_sdk_dynamodb::Client,
+    _cli: &aws_sdk_dynamodb::Client,
     parent_team_id: &str,
 ) -> String {
-    let pk = Partition::Team(parent_team_id.to_string());
-    let username = crate::features::posts::models::Team::get(
-        cli,
-        &pk,
-        Some(EntityType::Team),
-    )
-    .await
-    .ok()
-    .flatten()
-    .map(|t| t.username)
-    .unwrap_or_default();
+    let username = match Uuid::parse_str(parent_team_id) {
+        Ok(uuid) => crate::features::posts::models::Team::get_by_id(uuid)
+            .await
+            .ok()
+            .flatten()
+            .map(|t| t.username)
+            .unwrap_or_default(),
+        Err(_) => String::new(),
+    };
     if username.is_empty() {
         format!("/{parent_team_id}")
     } else {

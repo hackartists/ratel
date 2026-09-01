@@ -19,26 +19,38 @@ pub async fn reply_to_comment_handler(
     comment_id: PostCommentEntityType,
     req: ReplyToPostCommentRequest,
 ) -> Result<PostComment> {
-    let conf = crate::features::posts::config::get();
-    let cli = conf.dynamodb();
+    let post_uuid = uuid::Uuid::parse_str(&post_id.0)
+        .map_err(|_| Error::NotFound("Post not found".into()))?;
+    let parent_et: EntityType = comment_id.into();
+    let parent_uuid = match &parent_et {
+        EntityType::PostComment(id) | EntityType::PostCommentReply(_, id) => {
+            uuid::Uuid::parse_str(id)
+                .map_err(|_| Error::NotFound("Comment not found".into()))?
+        }
+        _ => return Err(crate::features::posts::types::PostError::ReplyFailed.into()),
+    };
 
-    let post_pk: Partition = post_id.clone().into();
-    let comment_sk: EntityType = comment_id.into();
+    tracing::debug!("Handling reply to comment: {:?}", parent_uuid);
 
-    tracing::debug!("Handling reply to comment: {:?}", comment_sk);
-
-    let parent_pk_str = post_pk.to_string();
-    let parent_sk_str = comment_sk.to_string();
+    // Preserved notification key shape (parent comment's canonical keys).
+    let parent_pk_str = Partition::Feed(post_uuid.to_string()).to_string();
+    let parent_sk_str = EntityType::PostComment(parent_uuid.to_string()).to_string();
 
     let comment = PostComment::reply(
-        cli,
-        post_pk,
-        comment_sk,
+        post_uuid,
+        parent_uuid,
         req.content,
         req.images,
         user.clone(),
     )
     .await?;
+
+    crate::common::events::outbox::EventOutbox::emit_insert(
+        crate::common::events::outbox::topic::POST_COMMENT,
+        &comment,
+    )
+    .await
+    .ok();
 
     // Essence indexing happens via the DynamoDB Stream pipeline.
 
@@ -50,9 +62,8 @@ pub async fn reply_to_comment_handler(
 
     // Send mention notifications
     crate::common::utils::mention::create_mention_notifications(
-        cli,
         &comment.content,
-        &user.pk,
+        &user.pk(),
         &user.display_name,
         &cta_url,
     )
@@ -68,13 +79,13 @@ pub async fn reply_to_comment_handler(
                     source: crate::common::utils::reply_notification::ReplyCommentSource::Post,
                     parent_comment_pk: parent_pk_str,
                     parent_comment_sk: parent_sk_str,
-                    replier_pk: user.pk.to_string(),
+                    replier_pk: user.pk().to_string(),
                     replier_name: user.display_name.clone(),
                     reply_content: comment.content.clone(),
                     cta_url,
                 },
             );
-        if let Err(e) = notification.create(cli).await {
+        if let Err(e) = notification.create().await {
             tracing::error!("Failed to enqueue reply-on-comment notification: {}", e);
         }
     }

@@ -18,22 +18,25 @@ pub async fn unsubscribe_discussion(
         return Err(SpaceActionDiscussionError::CannotUnsubscribeOwnDiscussion.into());
     }
     let _ = space_id;
-    let common_config = crate::common::CommonConfig::default();
-    let cli = common_config.dynamodb();
 
-    let discussion_sk_entity: EntityType = discussion_sk.into();
-    let space_post_pk = match &discussion_sk_entity {
-        EntityType::SpacePost(id) => SpacePostPartition(id.clone()),
-        _ => return Err(SpaceActionDiscussionError::InvalidDiscussionId.into()),
-    };
+    let space_post_pk = SpacePostPartition(discussion_sk.0);
 
-    let (pk, sk) = SpacePostSubscription::keys(&space_post_pk, &member.pk);
     // Deleting a non-existent row is a no-op, so unsubscribe is idempotent.
-    let item = SpacePostSubscription::delete_transact_write_item(&pk, &sk);
-    crate::transact_write_items!(cli, vec![item]).map_err(|e| {
-        crate::error!("unsubscribe_discussion failed: {e}");
-        SpaceActionDiscussionError::CreateFailed
-    })?;
+    if let Some(existing) = SpacePostSubscription::get_one(&space_post_pk, &member.pk)
+        .await
+        .map_err(|e| {
+            crate::error!("unsubscribe_discussion failed: {e}");
+            SpaceActionDiscussionError::CreateFailed
+        })?
+    {
+        SpacePostSubscription::repository()
+            .delete(existing.id)
+            .await
+            .map_err(|e| {
+                crate::error!("unsubscribe_discussion failed: {e}");
+                SpaceActionDiscussionError::CreateFailed
+            })?;
+    }
 
     Ok(())
 }

@@ -1,0 +1,127 @@
+{{- if and (ne .Values.addressing.mode "clusterIp") (gt (int .Values.replicaCount) 1) }}
+{{- fail "addressing.mode=podIp only supports replicaCount=1. A multi-node subnet needs one shared registry, and that is generated ahead of the pods against the pinned ClusterIPs — pod IPs are not known in time. Use addressing.mode=clusterIp for replicaCount > 1." }}
+{{- end }}
+# StatefulSet rather than Deployment: each replica owns identity (node-100..)
+# and state (consensus pool + checkpoints), so pods need stable names and
+# stable volumes. The shared subnet material comes from the pre-install
+# genconfig Job via the `-subnet` Secret; OrderedReady just keeps start-up
+# predictable while peers find each other.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "icp.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "icp.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "icp.name" . }}-headless
+  replicas: {{ .Values.replicaCount }}
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: {{- include "icp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "icp.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Roll pods when the startup script changes.
+        checksum/entrypoint: {{ include (print $.Template.BasePath "/entrypoint-configmap.yaml") . | sha256sum }}
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "icp.name" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # The replica needs a long grace period: killing it mid-write is how
+      # the dev canister state was lost once before.
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: replica
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "/entrypoint/entrypoint.sh"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.http }}
+              protocol: TCP
+            - name: xnet
+              containerPort: {{ .Values.ports.xnet }}
+              protocol: TCP
+            - name: p2p
+              containerPort: {{ .Values.ports.p2pUdp }}
+              protocol: UDP
+          env:
+            - name: RUST_BACKTRACE
+              value: "1"
+            # XNet binds whatever the registry advertises for this node, and
+            # that is a Service ClusterIP here — virtual, so the pod cannot
+            # bind it and start-up dies with "Cannot assign requested
+            # address". This overrides only the bind side; the registry entry
+            # peers dial is untouched. (Requires the XNET_BIND_ADDR patch in
+            # the ic fork.)
+            - name: XNET_BIND_ADDR
+              value: "0.0.0.0:{{ .Values.ports.xnet }}"
+          # Consensus needs a moment before it answers, and first boot also
+          # unpacks the subnet material and copies state-10X.
+          startupProbe:
+            httpGet: { path: /api/v4/height, port: http }
+            periodSeconds: 5
+            failureThreshold: 60      # up to 5 minutes
+          readinessProbe:
+            httpGet: { path: /api/v4/height, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /api/v4/height, port: http }
+            periodSeconds: 30
+            failureThreshold: 5
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: entrypoint
+              mountPath: /entrypoint
+            {{- if eq .Values.addressing.mode "clusterIp" }}
+            - name: subnet
+              mountPath: /subnet
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: entrypoint
+          configMap:
+            name: {{ include "icp.name" . }}-entrypoint
+            defaultMode: 0755
+        {{- if eq .Values.addressing.mode "clusterIp" }}
+        # Written once by the pre-install genconfig Job. Every replica unpacks
+        # the same material, which is what puts them in ONE subnet.
+        - name: subnet
+          secret:
+            secretName: {{ include "icp.name" . }}-subnet
+        {{- end }}
+        {{- if not .Values.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.persistence.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

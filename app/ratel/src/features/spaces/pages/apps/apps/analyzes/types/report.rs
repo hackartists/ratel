@@ -17,7 +17,10 @@ use rmcp::schemars;
 /// aggregation) flip it to `Finish` once analysis completes, or `Failed`
 /// on irrecoverable error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(
+    feature = "server",
+    derive(rmcp::schemars::JsonSchema, postgres::PostgresEnum)
+)]
 #[serde(rename_all = "snake_case")]
 pub enum AnalyzeReportStatus {
     #[default]
