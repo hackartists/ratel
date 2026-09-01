@@ -749,7 +749,7 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
           # Postgres migration: the postgres-seed Job loads the same Playwright
           # fixtures into Postgres (data-only SQL generated from the
-          # scripts/dynamodb-data/*.json seed via etl_migrate).
+          # scripts/dynamodb-data/*.json seed, as Postgres rows).
           kubectl -n "${NS}" create configmap pr-preview-postgres-seed \
             --from-file=scripts/postgres-seed.sql \
             --dry-run=client -o yaml | kubectl apply -f -

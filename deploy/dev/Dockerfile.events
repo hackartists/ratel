@@ -1,6 +1,5 @@
-# ratel-events — the Redpanda CDC producer (ratel_cdc), worker
-# (ratel_worker), and the one-shot DynamoDB→Postgres migrator
-# (etl_migrate) binaries, built NATIVELY on the arm64 runner with
+# ratel-events — the Redpanda CDC producer (ratel_cdc) + worker
+# (ratel_worker) binaries, built NATIVELY on the arm64 runner with
 # `cargo build --release --features redpanda` and copied in by the
 # dev-workflow build-images job (the build context is a staging dir
 # containing just the two binaries — NOT the repo root).
@@ -30,9 +29,8 @@ RUN for i in 1 2 3; do apt-get update && break || sleep 5; done \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
-COPY ratel_cdc ratel_worker etl_migrate ./
+COPY ratel_cdc ratel_worker ./
 
 # Default to the worker; the k8s Deployments set an explicit command
-# (./ratel_cdc or ./ratel_worker) per role anyway, and the migration Job
-# (deploy/migration/) runs ./etl_migrate.
+# (./ratel_cdc or ./ratel_worker) per role anyway.
 CMD ["./ratel_worker"]

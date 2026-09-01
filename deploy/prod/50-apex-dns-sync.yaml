@@ -13,9 +13,12 @@
 # WHAT IT DOES *NOT* DO
 # ---------------------
 # It never performs the cutover. If the apex is still an ALIAS (the AWS
-# CloudFront path), it logs and exits 0 — so deploying this before the cutover
-# is harmless. Moving the apex off CloudFront is a deliberate, one-time act:
-# `.github/workflows/prod-apex-dns-cutover.yml`.
+# CloudFront path), it logs and exits 0 and does NOT convert the record. That
+# guard is what made this safe to deploy before the cutover; it now also means
+# this job cannot bring the apex back on its own if someone re-points it at
+# CloudFront. Recovering from that is a manual Route53 edit (set the apex to a
+# plain A record at the cluster IP, TTL 60, and delete the AAAA) — after which
+# this job resumes tracking the DDNS name.
 #
 # TTL is 60s so a recovery propagates within a minute; the schedule is every
 # 5 minutes, bounding worst-case downtime after an IP change to ~6 minutes.
@@ -41,7 +44,20 @@ spec:
             biyard.io/node-class: main
           containers:
             - name: sync
-              image: amazon/aws-cli:latest
+              # Pinned, NOT :latest. Two reasons, both about this job failing
+              # silently rather than loudly:
+              #   1. k8s defaults imagePullPolicy to Always for the :latest
+              #      tag, so a */5 schedule hit the registry 288×/day — ~72
+              #      per 6h against Docker Hub's 100/6h anonymous pull limit.
+              #      One noisy neighbour on the same IP and this job starts
+              #      dying with TooManyRequests while DNS quietly drifts.
+              #   2. The script below depends on `getent` because this image
+              #      ships neither nslookup nor dig. :latest can change that
+              #      out from under us on any AWS rebuild.
+              # Verified on 2.36.36 (Amazon Linux 2023): getent/awk/grep/aws
+              # all present and `getent hosts` resolves.
+              image: amazon/aws-cli:2.36.36
+              imagePullPolicy: IfNotPresent
               envFrom:
                 - secretRef:
                     name: apex-dns-sync-aws
