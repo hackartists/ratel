@@ -21,3 +21,9 @@ pub use list_replies::*;
 
 mod like_comment;
 pub use like_comment::*;
+
+mod report_comment;
+pub use report_comment::*;
+
+mod block_user;
+pub use block_user::*;

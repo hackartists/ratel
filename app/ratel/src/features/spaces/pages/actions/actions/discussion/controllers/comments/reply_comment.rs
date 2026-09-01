@@ -57,6 +57,11 @@ pub async fn reply_comment(
         _ => String::new(),
     };
 
+    // Moderation (App Store req #5): a soft-banned author cannot post.
+    if crate::common::models::moderation::is_user_soft_banned(&user.pk()).await {
+        return Err(Error::NoPermission);
+    }
+
     let comment = SpacePostComment::reply(
         space_id.clone(),
         space_post_pk,

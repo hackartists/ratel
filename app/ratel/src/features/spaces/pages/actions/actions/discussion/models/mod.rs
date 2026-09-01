@@ -7,6 +7,9 @@ pub use space_post_comment::*;
 mod space_post_comment_like;
 pub use space_post_comment_like::*;
 
+mod space_post_comment_report;
+pub use space_post_comment_report::*;
+
 mod space_post_subscription;
 pub use space_post_subscription::*;
 

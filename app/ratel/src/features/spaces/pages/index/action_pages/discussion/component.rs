@@ -7,7 +7,7 @@ use crate::common::components::CommentImageGrid;
 use crate::common::utils::mention::{apply_mention_markup, parse_mention_segments, ContentSegment};
 use crate::features::spaces::pages::actions::actions::discussion::controllers::list_replies;
 use crate::features::spaces::pages::actions::actions::discussion::{
-    DiscussionCommentResponse, DiscussionStatus,
+    DiscussionCommentResponse, DiscussionStatus, ReportReason,
 };
 use crate::features::spaces::pages::index::action_pages::discussion::*;
 use crate::features::spaces::pages::index::action_pages::quiz::ActiveActionOverlaySignal;
@@ -481,7 +481,7 @@ pub fn DiscussionArenaPage(
                             class: "comments-scroll",
                             "data-thread-active": in_thread,
                             div { class: "comment-list",
-                                for comment in comments().iter().filter(|c| !arena.is_deleted(c)) {
+                                for comment in comments().iter().filter(|c| !arena.is_deleted(c) && !arena.is_author_blocked(c)) {
                                     CommentItem {
                                         key: "{comment.sk}",
                                         comment: comment.clone(),
@@ -504,7 +504,7 @@ pub fn DiscussionArenaPage(
                                 on_submit: move |_| on_submit(()),
                                 placeholder: if in_thread { tr.reply_placeholder.to_string() } else { tr.comment_placeholder.to_string() },
                                 disabled: comment_text().trim().is_empty()
-                                                                                                                                    && pending_images.read().is_empty(),
+                                                                                                                                                                    && pending_images.read().is_empty(),
                                 on_mention_query_change,
                                 on_composer_focus,
                                 priority_user_pks: top_priority,
@@ -709,6 +709,72 @@ fn CommentText(content: String) -> Element {
 /// header (name + time + overflow menu), content (view or edit), and the
 /// actions row with the like button. Callers slot extra action buttons
 /// (e.g. the top-level "Reply" button) via `children`.
+/// Report-comment form shown inside the shared `Popup` (opened via
+/// `use_popup().with_title(...).open(...)`). The Popup provides the overlay,
+/// title bar, and close button; this component is only the body.
+#[component]
+fn ReportDialog(on_submit: EventHandler<(ReportReason, String)>) -> Element {
+    let tr: DiscussionArenaTranslate = use_translate();
+    let mut popup = use_popup();
+    let mut report_reason = use_signal(|| ReportReason::Spam);
+    let mut report_detail = use_signal(String::new);
+
+    let reason_options = [
+        (ReportReason::Spam, tr.reason_spam),
+        (ReportReason::Harassment, tr.reason_harassment),
+        (ReportReason::HateSpeech, tr.reason_hate),
+        (ReportReason::Violence, tr.reason_violence),
+        (ReportReason::SexualContent, tr.reason_sexual),
+        (ReportReason::Other, tr.reason_other),
+    ];
+
+    rsx! {
+        div {
+            class: "flex flex-col gap-5 max-w-full w-100",
+            "data-testid": "report-dialog",
+            p { class: "text-sm leading-6 whitespace-pre-wrap text-c-secondary", "{tr.report_desc}" }
+            div { class: "flex flex-col gap-1",
+                for (val, label) in reason_options {
+                    label { class: "flex gap-2 items-center py-1.5 text-sm cursor-pointer text-text-primary",
+                        input {
+                            r#type: "radio",
+                            name: "report-reason",
+                            checked: report_reason() == val,
+                            onclick: move |_| report_reason.set(val),
+                        }
+                        span { "{label}" }
+                    }
+                }
+            }
+            textarea {
+                class: "p-2 w-full text-sm rounded-lg border bg-input-box-bg border-input-box-border text-text-primary",
+                "data-testid": "report-detail",
+                rows: "2",
+                placeholder: "{tr.report_detail_placeholder}",
+                value: "{report_detail}",
+                oninput: move |e| report_detail.set(e.value()),
+            }
+            div { class: "flex flex-col gap-2.5 w-full",
+                button {
+                    class: "py-2.5 px-4 w-full text-sm font-bold text-white rounded-lg cursor-pointer hover:opacity-90",
+                    style: "background-color: #ef4444;",
+                    "data-testid": "report-submit",
+                    onclick: move |_| {
+                        on_submit.call((report_reason(), report_detail()));
+                        popup.close();
+                    },
+                    "{tr.report_submit}"
+                }
+                button {
+                    class: "py-2.5 px-4 w-full text-sm font-medium rounded-lg border cursor-pointer border-border text-c-secondary hover:bg-hover",
+                    onclick: move |_| popup.close(),
+                    "{tr.report_cancel}"
+                }
+            }
+        }
+    }
+}
+
 #[component]
 fn CommentCardBody(
     comment: DiscussionCommentResponse,
@@ -729,6 +795,9 @@ fn CommentCardBody(
     let mut like_comment_action = arena.like_comment;
     let mut update_comment_action = arena.update_comment;
     let mut delete_comment_action = arena.delete_comment;
+    let mut report_comment_action = arena.report_comment;
+    let mut block_user_action = arena.block_user;
+    let already_reported = arena.is_reported(&comment);
 
     let user_ctx = crate::features::auth::hooks::use_user_context();
     let is_own = user_ctx
@@ -742,6 +811,8 @@ fn CommentCardBody(
     let mut menu_open = use_signal(|| false);
     let mut editing = use_signal(|| false);
     let mut edit_text = use_signal(|| comment.content.clone());
+    // Report opens the shared Popup (see `ReportDialog`).
+    let mut popup = use_popup();
     let original_content = comment.content.clone();
     let time_ago = format_time_ago(comment.created_at);
 
@@ -777,6 +848,12 @@ fn CommentCardBody(
         delete_comment_action.call(comment_sk().to_string());
     };
 
+    // Moderation handlers (App Store UGC req #3/#4).
+    let author_pk_str = comment.author_pk.to_string();
+    let on_block = move |_| {
+        menu_open.set(false);
+        block_user_action.call(author_pk_str.clone());
+    };
     // Hoist overlay reads — each render loop can hit 3+ sites per comment,
     // and `effective_*` hashes `sk.to_string()` every call.
     let liked = arena.effective_liked(&comment);
@@ -826,6 +903,61 @@ fn CommentCardBody(
                                         "data-testid": "comment-menu-delete",
                                         onclick: on_delete,
                                         "{tr.delete_btn}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !is_own && can_comment && !editing() {
+                        div { class: "comment-menu",
+                            button {
+                                class: "comment-menu__trigger",
+                                "data-testid": "comment-menu-trigger",
+                                aria_label: "{tr.more_options}",
+                                onclick: move |_| menu_open.set(!menu_open()),
+                                svg {
+                                    view_box: "0 0 24 24",
+                                    fill: "currentColor",
+                                    xmlns: "http://www.w3.org/2000/svg",
+                                    circle { cx: "5", cy: "12", r: "1.6" }
+                                    circle { cx: "12", cy: "12", r: "1.6" }
+                                    circle { cx: "19", cy: "12", r: "1.6" }
+                                }
+                            }
+                            if menu_open() {
+                                div { class: "comment-menu__dropdown",
+                                    if already_reported {
+                                        button {
+                                            class: "comment-menu__item",
+                                            disabled: true,
+                                            "data-testid": "comment-menu-reported",
+                                            "{tr.reported_btn}"
+                                        }
+                                    } else {
+                                        button {
+                                            class: "comment-menu__item",
+                                            "data-testid": "comment-menu-report",
+                                            onclick: move |_| {
+                                                menu_open.set(false);
+                                                let sk = comment_sk().to_string();
+                                                popup
+                                                    .with_title(tr.report_title.to_string())
+                                                    .open(rsx! {
+                                                    ReportDialog {
+                                                        on_submit: move |(reason, detail): (ReportReason, String)| {
+                                                            report_comment_action.call(sk.clone(), reason, detail);
+                                                        },
+                                                    }
+                                                });
+                                            },
+                                            "{tr.report_btn}"
+                                        }
+                                    }
+                                    button {
+                                        class: "comment-menu__item comment-menu__item--danger",
+                                        "data-testid": "comment-menu-block",
+                                        onclick: on_block,
+                                        "{tr.block_btn}"
                                     }
                                 }
                             }
@@ -1059,7 +1191,10 @@ fn CommentItem(
 
             if show_replies() {
                 div { class: "comment-replies",
-                    for reply in sorted_replies().iter().filter(|r| !arena.is_deleted(r)) {
+                    for reply in sorted_replies()
+                        .iter()
+                        .filter(|r| !arena.is_deleted(r) && !arena.is_author_blocked(r))
+                    {
                         ReplyItem {
                             key: "{reply.sk}",
                             reply: reply.clone(),

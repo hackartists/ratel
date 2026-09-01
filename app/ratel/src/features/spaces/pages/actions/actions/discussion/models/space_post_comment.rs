@@ -70,6 +70,22 @@ pub struct SpacePostComment {
     #[serde(default)]
     pub replies: i64,
 
+    /// Moderation: auto-hidden (report threshold reached) or admin-hidden.
+    /// Excluded from every listing.
+    ///
+    /// `version = 1`: added after the v0 baseline, so an EXISTING database gets
+    /// `ALTER TABLE ... ADD COLUMN` instead of a v0 checksum mismatch (which
+    /// would abort startup). `bool` gets an automatic `DEFAULT FALSE`, so rows
+    /// written by an older server still satisfy the NOT NULL constraint.
+    #[serde(default)]
+    #[cfg_attr(feature = "server", postgres(version = 1))]
+    pub hidden: bool,
+    /// Distinct reporters of this comment — drives the auto-hide threshold.
+    /// `version = 1` for the same reason; integers default to `0`.
+    #[serde(default)]
+    #[cfg_attr(feature = "server", postgres(version = 1))]
+    pub report_count: i64,
+
     /// Author as full `Partition` string (`USER#…`).
     #[cfg_attr(feature = "server", postgres(index))]
     pub author_pk: String,
@@ -129,6 +145,8 @@ impl SpacePostComment {
             author_profile_url: author.profile_url.clone(),
             likes: 0,
             replies: 0,
+            hidden: false,
+            report_count: 0,
         }
     }
 
