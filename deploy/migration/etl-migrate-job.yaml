@@ -90,7 +90,17 @@ spec:
               echo "── export COMPLETED: $ITEMS items at s3://$EXPORT_BUCKET/$PREFIX"
 
               aws s3 sync "s3://$EXPORT_BUCKET/$PREFIX/data/" /data/raw/
-              for f in /data/raw/*.json.gz; do gunzip -c "$f"; done > /data/all-items.ndjson
+
+              # The aws-cli image (Amazon Linux minimal) ships no gunzip/gzip/
+              # zcat/tar — python3 is the only decompressor present, and it is
+              # guaranteed because the CLI itself is written in it. Verified
+              # against the image before shipping this.
+              python3 - <<'PYEOF' > /data/all-items.ndjson
+              import glob, gzip, shutil, sys
+              for f in sorted(glob.glob('/data/raw/*.json.gz')):
+                  with gzip.open(f, 'rb') as fh:
+                      shutil.copyfileobj(fh, sys.stdout.buffer)
+              PYEOF
 
               LINES=$(wc -l < /data/all-items.ndjson)
               echo "── downloaded $LINES lines (export reported $ITEMS items)"
