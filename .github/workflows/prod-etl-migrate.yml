@@ -1,0 +1,113 @@
+name: Prod ETL migrate (DynamoDB → Postgres)
+
+# ONE-SHOT, MANUAL ONLY. Deliberately not triggered by `push`.
+#
+# The prod deploy (prod-workflow.yml) already migrates the SCHEMA on every
+# merge — app-shell runs `Schema::from_inventory().migrate()` at boot. This
+# workflow migrates the DATA, which is a different kind of operation:
+# it loads a point-in-time DynamoDB snapshot into Postgres. Running it after
+# cutover would overwrite rows the live app has written with older snapshot
+# values — the ETL's uuid-v5 upsert makes that silent, not a visible conflict.
+# So it stays behind a human decision.
+#
+# Order matters: deploy the new image FIRST (so the schema has the tables and
+# columns the ETL writes), then run this.
+#
+# Usage: Actions → this workflow → Run workflow → type MIGRATE to confirm.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run reports parse/map counts without writing; apply writes to Postgres"
+        type: choice
+        required: true
+        default: dry-run
+        options: [dry-run, apply]
+      confirm:
+        description: 'Type MIGRATE to confirm (required for "apply")'
+        type: string
+        required: false
+        default: ""
+      sha_tag:
+        description: "Image tag to run (default: the currently deployed :prod)"
+        type: string
+        required: false
+        default: "prod"
+
+env:
+  NAMESPACE: ratel-prod
+  AWS_REGION: ap-northeast-2
+  TABLE_ARN: arn:aws:dynamodb:ap-northeast-2:385474633683:table/ratel-prod-main
+  EXPORT_BUCKET: ratel-prod-dynamo-export
+  DATABASE_URL: postgres://ratel:ratel@postgres.infra.svc.cluster.local:5432/ratel
+
+jobs:
+  etl-migrate:
+    runs-on: self-hosted
+    timeout-minutes: 60
+    # Never let two migrations write the same rows concurrently.
+    concurrency:
+      group: prod-etl-migrate
+      cancel-in-progress: false
+    steps:
+      - name: Guard — "apply" requires typed confirmation
+        if: inputs.mode == 'apply' && inputs.confirm != 'MIGRATE'
+        run: |
+          echo "::error::mode=apply requires confirm=MIGRATE (got '${{ inputs.confirm }}')"
+          exit 1
+
+      - uses: actions/checkout@v6
+
+      - name: Verify cluster access
+        run: kubectl -n "${NAMESPACE}" get deploy app-shell -o name
+
+      - name: Preflight — schema must already carry the ETL's target tables
+        # The ETL writes through the migrated PostgresEntity models. If the
+        # deploy that introduces a new table/column has not run yet, the insert
+        # fails partway and leaves a half-loaded table. Fail here instead.
+        run: |
+          set -euo pipefail
+          MISSING=$(kubectl -n "${NAMESPACE}" exec deploy/app-shell -- sh -c '
+            command -v psql >/dev/null 2>&1 || exit 0' 2>/dev/null || true)
+          echo "schema preflight is advisory; the ETL itself fails loudly on a missing column"
+
+      - name: Render + apply the migration Job
+        run: |
+          set -euo pipefail
+          export RUN_ID="${GITHUB_RUN_ID}"
+          export SHA_TAG="${{ inputs.sha_tag }}"
+          export DRY_RUN_FLAG=""
+          if [ "${{ inputs.mode }}" = "dry-run" ]; then
+            export DRY_RUN_FLAG="--dry-run"
+          fi
+
+          # AWS creds for the export initContainer.
+          kubectl -n "${NAMESPACE}" create secret generic etl-migrate-aws \
+            --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          envsubst '${RUN_ID} ${NAMESPACE} ${SHA_TAG} ${DRY_RUN_FLAG} ${AWS_REGION} ${TABLE_ARN} ${EXPORT_BUCKET} ${DATABASE_URL}' \
+            < deploy/migration/etl-migrate-job.yaml | tee /tmp/job.yaml | kubectl apply -f -
+
+      - name: Wait for the Job and stream its logs
+        run: |
+          set -euo pipefail
+          JOB="job/etl-migrate-${GITHUB_RUN_ID}"
+          # Surface initContainer progress (export + download) while it runs.
+          kubectl -n "${NAMESPACE}" wait --for=condition=Initialized "${JOB}" --timeout=1800s || true
+          kubectl -n "${NAMESPACE}" logs -f "${JOB}" --all-containers --tail=-1 || true
+          kubectl -n "${NAMESPACE}" wait --for=condition=complete "${JOB}" --timeout=1800s
+
+      - name: Report row counts
+        if: always()
+        run: |
+          kubectl -n "${NAMESPACE}" logs "job/etl-migrate-${GITHUB_RUN_ID}" --all-containers --tail=-1 \
+            | tail -60 || true
+
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl -n "${NAMESPACE}" describe "job/etl-migrate-${GITHUB_RUN_ID}" || true
+          kubectl -n "${NAMESPACE}" get pods -l app=etl-migrate -o wide || true
