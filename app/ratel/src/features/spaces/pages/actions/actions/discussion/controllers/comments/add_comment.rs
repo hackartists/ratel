@@ -54,6 +54,11 @@ pub async fn add_comment(
         .await?
         .ok_or(SpaceActionDiscussionError::NotFound)?;
 
+    // Moderation (App Store req #5): a soft-banned author cannot post.
+    if crate::common::models::moderation::is_user_soft_banned(&user.pk()).await {
+        return Err(Error::NoPermission);
+    }
+
     let comment = SpacePost::comment(
         space_id.clone(),
         space_post_id,

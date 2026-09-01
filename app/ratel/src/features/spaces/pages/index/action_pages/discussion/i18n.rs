@@ -99,6 +99,66 @@ translate! {
         en: "Delete",
         ko: "삭제",
     },
+    report_btn: {
+        en: "Report",
+        ko: "신고",
+    },
+    reported_btn: {
+        en: "Reported",
+        ko: "신고됨",
+    },
+    block_btn: {
+        en: "Block user",
+        ko: "사용자 차단",
+    },
+    report_title: {
+        en: "Report comment",
+        ko: "댓글 신고",
+    },
+    report_desc: {
+        en: "Tell us why this comment is objectionable. Repeated reports hide the comment and flag the user for review within 24 hours.",
+        ko: "이 댓글이 부적절한 이유를 선택해 주세요. 신고가 누적되면 댓글이 숨겨지고 24시간 내 검토를 위해 사용자가 표시됩니다.",
+    },
+    reason_spam: {
+        en: "Spam",
+        ko: "스팸",
+    },
+    reason_harassment: {
+        en: "Harassment",
+        ko: "괴롭힘",
+    },
+    reason_hate: {
+        en: "Hate speech",
+        ko: "혐오 발언",
+    },
+    reason_violence: {
+        en: "Violence",
+        ko: "폭력",
+    },
+    reason_sexual: {
+        en: "Sexual content",
+        ko: "성적 콘텐츠",
+    },
+    reason_other: {
+        en: "Other",
+        ko: "기타",
+    },
+    report_detail_placeholder: {
+        en: "Add details (optional)",
+        ko: "상세 내용 (선택)",
+    },
+    report_submit: {
+        en: "Submit report",
+        ko: "신고하기",
+    },
+    report_cancel: {
+        en: "Cancel",
+        ko: "취소",
+    },
+    block_confirm: {
+        en: "Block this user? Their comments will be hidden from you.",
+        ko: "이 사용자를 차단할까요? 이 사용자의 댓글이 나에게 보이지 않게 됩니다.",
+    },
     save_btn: {
         en: "Save",
         ko: "저장",

@@ -7,10 +7,11 @@ use crate::common::RewardCondition;
 use crate::common::RewardPeriod;
 use crate::common::RewardUserBehavior;
 use crate::features::admin::controllers::{
-    create_reward, create_test_account, delete_test_account, get_analyze_quota,
-    grant_enterprise_membership, list_enterprise_memberships, list_rewards, list_test_accounts,
-    update_analyze_quota, update_reward, AnalyzeQuotaResponse, CreateGlobalRewardRequest,
-    CreateTestAccountRequest, GrantEnterpriseMembershipRequest, MembershipGrantTargetType,
+    admin_block_user, admin_dismiss_user, create_reward, create_test_account, delete_test_account,
+    get_analyze_quota, grant_enterprise_membership, list_enterprise_memberships,
+    list_moderation_flags, list_rewards, list_test_accounts, update_analyze_quota, update_reward,
+    AnalyzeQuotaResponse, CreateGlobalRewardRequest, CreateTestAccountRequest,
+    GrantEnterpriseMembershipRequest, MembershipGrantTargetType, ModerationFlagResponse,
     RewardResponse, UpdateAnalyzeQuotaRequest, UpdateGlobalRewardRequest,
 };
 use crate::features::admin::models::reward_types::{
@@ -32,6 +33,11 @@ pub fn AdminMainPage() -> Element {
             ListResponse<crate::features::admin::controllers::EnterpriseMembershipGrantListItem>,
             _,
         >(move |bookmark| async move { list_enterprise_memberships(bookmark).await })?;
+
+    // Moderation queue: users flagged `PendingReview` by accumulated reports.
+    let mut moderation_flags = use_loader(move || async move {
+        list_moderation_flags(Some("PendingReview".to_string()), None).await
+    })?;
 
     let mut show_form = use_signal(|| false);
     let mut editing = use_signal(|| Option::<RewardResponse>::None);
@@ -152,6 +158,7 @@ pub fn AdminMainPage() -> Element {
 
     let rewards: Vec<RewardResponse> = rewards_state.items;
     let enterprise_memberships = enterprise_memberships_query.items();
+    let moderation_list: Vec<ModerationFlagResponse> = moderation_flags().items;
 
     let is_editing = editing.read().is_some();
     let show_form_val = *show_form.read();
@@ -474,6 +481,86 @@ pub fn AdminMainPage() -> Element {
 
                         if enterprise_memberships_query.has_more() {
                             {enterprise_memberships_query.more_element()}
+                        }
+                    }
+                }
+            }
+            // ── Comment moderation queue (App Store UGC) ──────────
+            section { class: "admin-arena__section",
+                div { class: "admin-arena__section-head",
+                    span { class: "admin-arena__section-title", "신고 관리" }
+                }
+                p { class: "admin-arena__section-description",
+                    "신고 누적으로 검토 대기 중인 사용자입니다. 차단 시 소프트밴(기존 댓글 숨김 + 새 댓글 작성 금지), 기각 시 숨긴 댓글이 복원됩니다."
+                }
+                table { class: "admin-arena__table",
+                    thead {
+                        tr {
+                            th { "사용자" }
+                            th { "신고 수" }
+                            th { class: "text-right", "조치" }
+                        }
+                    }
+                    tbody {
+                        if moderation_list.is_empty() {
+                            tr {
+                                td {
+                                    class: "admin-arena__table-empty",
+                                    colspan: "3",
+                                    "검토 대기 중인 신고가 없습니다."
+                                }
+                            }
+                        } else {
+                            for flag in moderation_list.iter() {
+                                tr { key: "{flag.user_pk}",
+                                    td {
+                                        div { "{flag.display_name}" }
+                                        div { style: "color:#888;font-size:12px;", "@{flag.username}" }
+                                    }
+                                    td { "{flag.report_count}" }
+                                    td { class: "text-right",
+                                        button {
+                                            class: "admin-arena__table-link",
+                                            style: "color:#ef4444;margin-right:12px;",
+                                            r#type: "button",
+                                            onclick: {
+                                                let uid = flag
+                                                    .user_pk
+                                                    .strip_prefix("USER#")
+                                                    .unwrap_or(&flag.user_pk)
+                                                    .to_string();
+                                                move |_| {
+                                                    let uid = uid.clone();
+                                                    async move {
+                                                        let _ = admin_block_user(uid).await;
+                                                        moderation_flags.restart();
+                                                    }
+                                                }
+                                            },
+                                            "차단"
+                                        }
+                                        button {
+                                            class: "admin-arena__table-link",
+                                            r#type: "button",
+                                            onclick: {
+                                                let uid = flag
+                                                    .user_pk
+                                                    .strip_prefix("USER#")
+                                                    .unwrap_or(&flag.user_pk)
+                                                    .to_string();
+                                                move |_| {
+                                                    let uid = uid.clone();
+                                                    async move {
+                                                        let _ = admin_dismiss_user(uid).await;
+                                                        moderation_flags.restart();
+                                                    }
+                                                }
+                                            },
+                                            "기각"
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
