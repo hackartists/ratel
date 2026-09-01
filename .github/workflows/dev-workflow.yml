@@ -288,11 +288,7 @@ jobs:
         # runtime config (RATEL_*) is env-read at runtime by design.
         run: |
           cd app/ratel
-          # `etl_migrate` rides the same image as prod does — deploy/dev/
-          # Dockerfile.events is shared by both workflows and COPYs all three
-          # binaries, so dev must build it too or the image build fails.
-          cargo build --release --features redpanda \
-            --bin ratel_cdc --bin ratel_worker --bin etl_migrate
+          cargo build --release --features redpanda --bin ratel_cdc --bin ratel_worker
 
       - name: Verify events binary linkage (ldd)
         # deploy/dev/Dockerfile.events documents the base-image reasoning:
@@ -302,7 +298,7 @@ jobs:
         # library would be missing at runtime.
         run: |
           set -euo pipefail
-          for bin in target/release/ratel_cdc target/release/ratel_worker target/release/etl_migrate; do
+          for bin in target/release/ratel_cdc target/release/ratel_worker; do
             echo "── ldd ${bin}"
             ldd "$bin"
             if ldd "$bin" | grep -q "not found"; then
@@ -318,7 +314,7 @@ jobs:
           set -euo pipefail
           rm -rf .build/events
           mkdir -p .build/events
-          cp target/release/ratel_cdc target/release/ratel_worker target/release/etl_migrate .build/events/
+          cp target/release/ratel_cdc target/release/ratel_worker .build/events/
           export NAME=ratel-events
           export CONTEXT=.build/events
           export DOCKERFILE=deploy/dev/Dockerfile.events

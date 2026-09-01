@@ -4,7 +4,7 @@
 #
 # Source of truth: scripts/postgres-seed.sql — a data-only, schema-independent
 # dump (column-inserts, --disable-triggers) generated from the same
-# scripts/dynamodb-data/*.json fixtures via the etl_migrate mapping, so the
+# scripts/dynamodb-data/*.json fixtures, translated to the Postgres schema, so the
 # seeded rows are byte-for-byte the DynamoDB fixtures re-expressed as Postgres
 # rows. The e2e job mounts it from a ConfigMap it creates right before applying
 # these manifests:

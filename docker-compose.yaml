@@ -74,7 +74,7 @@ services:
   # hiteam, memberships, attribute codes) the migration-era replacement for the
   # DynamoDB seed localstack-init performs. Source of truth is the data-only
   # scripts/postgres-seed.sql (generated from the same scripts/dynamodb-data
-  # fixtures via etl_migrate). It is DATA-only, so it waits for app-shell to
+  # fixtures, as Postgres rows). It is DATA-only, so it waits for app-shell to
   # migrate the schema first (depends_on app-shell-testing healthy) and loads
   # once; a fresh namespace/volume every run means no reset is needed.
   postgres-seed:
