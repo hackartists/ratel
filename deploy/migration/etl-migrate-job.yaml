@@ -1,0 +1,115 @@
+# One-shot DynamoDB → Postgres data migration.
+#
+# DELIBERATELY OUTSIDE `deploy/prod/`: the prod deploy step applies
+# `deploy/prod/*.yaml` on every push to main. This Job must NOT run on every
+# merge — it loads a point-in-time DynamoDB snapshot into Postgres, so a
+# re-run after cutover would overwrite rows written by the live app with
+# stale snapshot values (the ETL is idempotent by uuid-v5 upsert, which is
+# exactly why it silently rewrites newer data). It is applied only by
+# `.github/workflows/prod-etl-migrate.yml`, which is `workflow_dispatch`-only
+# and requires a typed confirmation.
+#
+# Flow:
+#   initContainer `export-and-fetch`  — start a DynamoDB export-to-S3, wait for
+#                                       it, download + decompress into /data
+#   container     `etl`               — run ./etl_migrate against that ndjson
+#
+# The export is created fresh at run time rather than pinned to an ARN, so the
+# snapshot is never stale. Exports read the PITR backup, not the live table —
+# no read-capacity cost, no impact on prod DynamoDB.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: etl-migrate-${RUN_ID}
+  namespace: ${NAMESPACE}
+  labels:
+    app: etl-migrate
+spec:
+  # A failed migration must be inspected, never silently retried: a partial
+  # run followed by an automatic retry makes the failure point unknowable.
+  backoffLimit: 0
+  # Clean up a day after finishing so the logs stay available for review.
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: etl-migrate
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        biyard.io/node-class: main
+      volumes:
+        - name: data
+          emptyDir: {}
+      initContainers:
+        - name: export-and-fetch
+          image: amazon/aws-cli:latest
+          env:
+            - name: AWS_REGION
+              value: ${AWS_REGION}
+            - name: AWS_DEFAULT_REGION
+              value: ${AWS_REGION}
+            - name: TABLE_ARN
+              value: ${TABLE_ARN}
+            - name: EXPORT_BUCKET
+              value: ${EXPORT_BUCKET}
+          envFrom:
+            - secretRef:
+                name: etl-migrate-aws
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              echo "── starting DynamoDB export of ${TABLE_ARN}"
+              ARN=$(aws dynamodb export-table-to-point-in-time \
+                --table-arn "$TABLE_ARN" \
+                --s3-bucket "$EXPORT_BUCKET" \
+                --s3-prefix "etl/$(date +%Y%m%d-%H%M%S)" \
+                --export-format DYNAMODB_JSON \
+                --query 'ExportDescription.ExportArn' --output text)
+              echo "   export arn: $ARN"
+
+              # Exports of this table take ~2-3 min; poll for up to 30.
+              for i in $(seq 1 90); do
+                ST=$(aws dynamodb describe-export --export-arn "$ARN" \
+                      --query 'ExportDescription.ExportStatus' --output text)
+                [ "$ST" = "IN_PROGRESS" ] || break
+                sleep 20
+              done
+              [ "$ST" = "COMPLETED" ] || { echo "::error:: export ended $ST"; exit 1; }
+
+              MANIFEST=$(aws dynamodb describe-export --export-arn "$ARN" \
+                          --query 'ExportDescription.ExportManifest' --output text)
+              ITEMS=$(aws dynamodb describe-export --export-arn "$ARN" \
+                          --query 'ExportDescription.ItemCount' --output text)
+              PREFIX=$(dirname "$MANIFEST")
+              echo "── export COMPLETED: $ITEMS items at s3://$EXPORT_BUCKET/$PREFIX"
+
+              aws s3 sync "s3://$EXPORT_BUCKET/$PREFIX/data/" /data/raw/
+              for f in /data/raw/*.json.gz; do gunzip -c "$f"; done > /data/all-items.ndjson
+
+              LINES=$(wc -l < /data/all-items.ndjson)
+              echo "── downloaded $LINES lines (export reported $ITEMS items)"
+              # Row-count parity: a short file means a partial download, and
+              # importing it would look like a successful but lossy migration.
+              [ "$LINES" = "$ITEMS" ] || { echo "::error:: count mismatch"; exit 1; }
+      containers:
+        - name: etl
+          image: registry.infra.svc.cluster.local:5000/ratel-events:${SHA_TAG}
+          command: ["./etl_migrate"]
+          args: ["${DRY_RUN_FLAG}", "/data/all-items.ndjson"]
+          env:
+            # Same Postgres the app-shell Deployment resolves. The schema must
+            # already be migrated — that happens when app-shell boots the new
+            # image (Schema::from_inventory().migrate()), so deploy first.
+            - name: DATABASE_URL
+              value: ${DATABASE_URL}
+            - name: RUST_LOG
+              value: info
+          volumeMounts:
+            - name: data
+              mountPath: /data

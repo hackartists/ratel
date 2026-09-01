@@ -287,7 +287,11 @@ jobs:
         # runtime config (RATEL_*) is env-read at runtime by design.
         run: |
           cd app/ratel
-          cargo build --release --features redpanda --bin ratel_cdc --bin ratel_worker
+          # `etl_migrate` rides the same image so the one-shot DynamoDB→Postgres
+          # migration Job (deploy/migration/) has a binary to run. It is NOT part
+          # of any Deployment — the Job invokes it explicitly.
+          cargo build --release --features redpanda \
+            --bin ratel_cdc --bin ratel_worker --bin etl_migrate
 
       - name: Verify events binary linkage (ldd)
         # deploy/dev/Dockerfile.events documents the base-image reasoning:
@@ -297,7 +301,7 @@ jobs:
         # library would be missing at runtime.
         run: |
           set -euo pipefail
-          for bin in target/release/ratel_cdc target/release/ratel_worker; do
+          for bin in target/release/ratel_cdc target/release/ratel_worker target/release/etl_migrate; do
             echo "── ldd ${bin}"
             ldd "$bin"
             if ldd "$bin" | grep -q "not found"; then
@@ -315,7 +319,7 @@ jobs:
           set -euo pipefail
           rm -rf .build/events
           mkdir -p .build/events
-          cp target/release/ratel_cdc target/release/ratel_worker .build/events/
+          cp target/release/ratel_cdc target/release/ratel_worker target/release/etl_migrate .build/events/
           export NAME=ratel-events
           export CONTEXT=.build/events
           export DOCKERFILE=deploy/dev/Dockerfile.events
