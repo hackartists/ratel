@@ -1,0 +1,131 @@
+name: Prod apex DNS cutover (ratel.foundation)
+
+# Moves `ratel.foundation` OFF AWS CloudFront and onto the k3s cluster —
+# the last step that makes prod match dev (dev.ratel.foundation has always
+# resolved straight to the cluster via the *.ratel.foundation wildcard).
+#
+# MANUAL ONLY, and deliberately separate from the deploy: a DNS change is not
+# rolled back by `git revert`; it takes a second change plus TTL expiry. Deploy
+# first, verify on https://ratel-prod.biyard.co, then cut over.
+#
+# WHAT CHANGES
+#   A     ratel.foundation  ALIAS→CloudFront  ⇒  A <cluster IP>, TTL 60
+#   AAAA  ratel.foundation  ALIAS→CloudFront  ⇒  DELETED
+#
+# The AAAA deletion is not optional: the cluster has no IPv6 address, so
+# leaving an IPv6 ALIAS in place would keep sending dual-stack clients to
+# CloudFront while IPv4 clients hit the cluster — a split-brain that looks
+# like "the site is stale for some people".
+#
+# Only the apex A/AAAA are touched. MX, TXT, DKIM, the wildcard CNAME and
+# every subdomain are left exactly as they are.
+#
+# Rollback: run again with direction=to-cloudfront.
+
+on:
+  workflow_dispatch:
+    inputs:
+      direction:
+        description: "to-cluster = cut over to k3s; to-cloudfront = roll back to AWS"
+        type: choice
+        required: true
+        default: to-cluster
+        options: [to-cluster, to-cloudfront]
+      confirm:
+        description: "Type the apex hostname (ratel.foundation) to confirm"
+        type: string
+        required: true
+
+env:
+  ZONE_ID: Z0577765JDCTI15L7B84
+  APEX: ratel.foundation
+  DDNS: hackartist.iptime.org
+  # The CloudFront distribution that serves the apex today (rollback target).
+  CF_DNS: d1nvo0kp4qvehv.cloudfront.net
+  CF_ZONE: Z2FDTNDATAQYW2   # fixed CloudFront hosted-zone id
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  cutover:
+    runs-on: self-hosted
+    timeout-minutes: 15
+    concurrency:
+      group: prod-apex-dns
+      cancel-in-progress: false
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Guard — confirmation must match the apex hostname
+        run: |
+          [ "${{ inputs.confirm }}" = "${APEX}" ] || {
+            echo "::error::confirm must be '${APEX}' (got '${{ inputs.confirm }}')"; exit 1; }
+
+      - name: Show the current apex records
+        run: |
+          aws route53 list-resource-record-sets --hosted-zone-id "${ZONE_ID}" \
+            --query "ResourceRecordSets[?Name=='${APEX}.'&&(Type=='A'||Type=='AAAA')]" --output json
+
+      - name: Preflight — the cluster must already serve the apex
+        # Cutting over to an ingress that does not answer for this Host, or
+        # whose certificate is not issued yet, takes prod down for a full TTL.
+        # Prove both BEFORE touching DNS by resolving the host to the cluster
+        # ourselves (--resolve) and requiring a valid certificate.
+        if: inputs.direction == 'to-cluster'
+        run: |
+          set -euo pipefail
+          IP=$(getent hosts "${DDNS}" | awk '{print $1; exit}')
+          [ -n "$IP" ] || { echo "::error::cannot resolve ${DDNS}"; exit 1; }
+          echo "cluster IP: ${IP}"
+
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+                   --resolve "${APEX}:443:${IP}" "https://${APEX}/")
+          echo "https://${APEX} via ${IP} → HTTP ${CODE}"
+          case "$CODE" in
+            2*|3*) ;;
+            *) echo "::error::cluster does not serve ${APEX} yet (HTTP ${CODE}) — deploy first"; exit 1 ;;
+          esac
+
+      - name: Apply the change
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.direction }}" = "to-cluster" ]; then
+            IP=$(getent hosts "${DDNS}" | awk '{print $1; exit}')
+            cat > /tmp/change.json <<JSON
+          {"Comment":"apex → k3s cluster","Changes":[
+            {"Action":"UPSERT","ResourceRecordSet":{
+              "Name":"${APEX}.","Type":"A","TTL":60,
+              "ResourceRecords":[{"Value":"${IP}"}]}},
+            {"Action":"DELETE","ResourceRecordSet":{
+              "Name":"${APEX}.","Type":"AAAA",
+              "AliasTarget":{"HostedZoneId":"${CF_ZONE}","DNSName":"${CF_DNS}.","EvaluateTargetHealth":false}}}
+          ]}
+          JSON
+          else
+            cat > /tmp/change.json <<JSON
+          {"Comment":"apex → CloudFront (rollback)","Changes":[
+            {"Action":"UPSERT","ResourceRecordSet":{
+              "Name":"${APEX}.","Type":"A",
+              "AliasTarget":{"HostedZoneId":"${CF_ZONE}","DNSName":"${CF_DNS}.","EvaluateTargetHealth":false}}},
+            {"Action":"UPSERT","ResourceRecordSet":{
+              "Name":"${APEX}.","Type":"AAAA",
+              "AliasTarget":{"HostedZoneId":"${CF_ZONE}","DNSName":"${CF_DNS}.","EvaluateTargetHealth":false}}}
+          ]}
+          JSON
+          fi
+          cat /tmp/change.json
+          ID=$(aws route53 change-resource-record-sets --hosted-zone-id "${ZONE_ID}" \
+                 --change-batch file:///tmp/change.json --query 'ChangeInfo.Id' --output text)
+          echo "change: ${ID}"
+          aws route53 wait resource-record-sets-changed --id "${ID}"
+          echo "propagated to all Route53 nameservers"
+
+      - name: Verify
+        run: |
+          set -euo pipefail
+          echo "── apex records now"
+          aws route53 list-resource-record-sets --hosted-zone-id "${ZONE_ID}" \
+            --query "ResourceRecordSets[?Name=='${APEX}.'&&(Type=='A'||Type=='AAAA')]" --output json
+          echo "── resolution (may lag by up to the old TTL)"
+          dig +short "${APEX}" || true
+          curl -s -o /dev/null -w "https://${APEX} → HTTP %{http_code}\n" --max-time 15 "https://${APEX}/" || true
