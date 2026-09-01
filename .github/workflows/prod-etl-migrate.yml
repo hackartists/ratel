@@ -131,10 +131,33 @@ jobs:
       - name: Wait for the Job and stream its logs
         run: |
           set -euo pipefail
-          JOB="job/etl-migrate-${GITHUB_RUN_ID}"
-          # Surface initContainer progress (export + download) while it runs.
-          kubectl -n "${NAMESPACE}" wait --for=condition=Initialized "${JOB}" --timeout=1800s || true
+          NAME="etl-migrate-${GITHUB_RUN_ID}"
+          JOB="job/${NAME}"
+
+          # `kubectl wait` on a Job only understands the Job conditions
+          # (Complete / Failed) — `Initialized` is a POD condition, so waiting
+          # for it here never succeeds and burns the full --timeout before the
+          # `|| true` lets us continue. Wait on the pod instead.
+          #
+          # The pod is `Ready` only while the app container runs; a fast job can
+          # be `Completed` before we look. Accept either, and cap the wait at the
+          # export window (~3 min) rather than the job timeout.
+          POD=""
+          for _ in $(seq 1 60); do
+            POD=$(kubectl -n "${NAMESPACE}" get pods -l job-name="${NAME}" \
+                    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+            [ -n "${POD}" ] && break
+            sleep 5
+          done
+          echo "pod: ${POD:-<not scheduled>}"
+
+          # Follow the app container. `logs -f` returns on its own when the
+          # container exits, and the initContainer's output is replayed by the
+          # report step below, so nothing is lost if this starts late.
           kubectl -n "${NAMESPACE}" logs -f "${JOB}" --all-containers --tail=-1 || true
+
+          # The real verdict. A Job that failed leaves Complete unset, so this
+          # is what turns a bad migration into a red workflow.
           kubectl -n "${NAMESPACE}" wait --for=condition=complete "${JOB}" --timeout=1800s
 
       - name: Report row counts
