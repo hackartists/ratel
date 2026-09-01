@@ -40,22 +40,6 @@ pub async fn list_replies(
         HashSet::new()
     };
 
-    // Which replies the current user has already reported (UI hides "Report").
-    let reported_set: HashSet<String> = if let Some(ref u) = user.0 {
-        let keys: Vec<_> = replies
-            .iter()
-            .filter_map(|r| SpacePostCommentReport::keys(&space_post_pk, &r.sk, &u.pk))
-            .collect();
-        SpacePostCommentReport::batch_get(cli, keys)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|r| r.comment_sk.to_string())
-            .collect()
-    } else {
-        HashSet::new()
-    };
-
     let responses: Vec<DiscussionCommentResponse> = replies
         .into_iter()
         .map(|r| {

@@ -158,13 +158,7 @@ pub enum EntityType {
     SpacePostComment(String),
     SpacePostCommentReply(String, String),
     SpacePostCommentLike(String, String),
-    SpacePostCommentReport(String, String), // (comment_id, reporter_id) — one row per reporter
     SpacePostSubscription(String),
-
-    // Moderation (App Store UGC compliance)
-    UserModerationFlag,      // per-user moderation state (sk under UserModeration pk)
-    UserBlockTarget(String), // blocked user_pk (sk under UserBlock pk)
-    ModerationSettingItem,   // singleton sk (under ModerationSetting pk)
 
     // Space - Topic feature
     Topic(String),                     // TOPIC#{topic_name}

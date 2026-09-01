@@ -56,23 +56,6 @@ pub async fn list_comments(
         HashSet::new()
     };
 
-    // Check which comments the current user has already reported (dedup shown
-    // in the UI so the "Report" action is hidden after the first report).
-    let reported_set: HashSet<String> = if let Some(ref u) = user.0 {
-        let keys: Vec<_> = comments
-            .iter()
-            .filter_map(|c| SpacePostCommentReport::keys(&space_post_pk_p, &c.sk, &u.pk))
-            .collect();
-        SpacePostCommentReport::batch_get(cli, keys)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|r| r.comment_sk.to_string())
-            .collect()
-    } else {
-        HashSet::new()
-    };
-
     let responses: Vec<DiscussionCommentResponse> = comments
         .into_iter()
         .map(|c| {
