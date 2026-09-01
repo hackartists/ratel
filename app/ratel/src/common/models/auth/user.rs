@@ -28,6 +28,10 @@ use postgres::PostgresEntity;
 /// callers keep referencing users by the `Partition::User(..)` **string** form
 /// via [`User::pk`]; only the storage layer changed.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+// Serialize through `UserWire` so every response carrying a user still emits the
+// legacy `pk`/`sk` keys. See `UserWire` for why. Deserialization is unaffected —
+// the derive still reads this struct's own fields.
+#[serde(into = "UserWire")]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(PostgresEntity))]
 #[cfg_attr(feature = "server", postgres(table = "users"))]
@@ -100,6 +104,89 @@ impl User {
     /// where it used to read the `pk` field directly.
     pub fn pk(&self) -> Partition {
         Partition::User(self.id.to_string())
+    }
+}
+
+/// The wire form of [`User`]. Identical to `User` plus the legacy `pk`/`sk` keys.
+///
+/// WHY THIS EXISTS
+/// ---------------
+/// The shipped Android build (the last release before the DynamoDB→Postgres cut)
+/// deserializes `User` with
+///
+/// ```ignore
+/// pub pk: Partition,     // required — no #[serde(default)]
+/// pub sk: EntityType,    // required — no #[serde(default)]
+/// ```
+///
+/// Moving the model to Postgres replaced those keys with `id`, which silently
+/// changed the *wire contract* as well as the storage layout: the struct is both
+/// the table row and the API response body. That build now fails to parse every
+/// response carrying a user — login, signup, `/api/auth/me`, account switching —
+/// with `missing field 'pk'`, surfacing in the app as a bare "internal error".
+/// Verification-code endpoints kept working because their response
+/// (`{"expired_at":..}`) carries no user, which is why mail still arrives while
+/// login does not.
+///
+/// Both keys are derivable from `id` (`pk = USER#{id}`, `sk = USER`), so they are
+/// recomputed on the way out rather than stored — no column, no schema version
+/// bump, no checksum change. Newer clients ignore the two extra keys.
+///
+/// Adding a field to `User` without adding it here is a compile error, so the two
+/// cannot drift.
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+pub struct UserWire {
+    /// `Partition::User(id)` — renders as `USER#{id}`.
+    pub pk: Partition,
+    /// Always `EntityType::User`; the old model had one row shape per user.
+    pub sk: EntityType,
+
+    pub id: Uuid,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub display_name: String,
+    pub profile_url: String,
+    pub email: String,
+    pub username: String,
+    pub phone: Option<String>,
+    pub term_agreed: bool,
+    pub informed_agreed: bool,
+    pub user_type: UserType,
+    pub followers_count: i64,
+    pub followings_count: i64,
+    pub description: String,
+    pub password: Option<String>,
+    pub points: i64,
+    pub interstitial_seen: bool,
+    pub deleted_at: Option<i64>,
+}
+
+impl From<User> for UserWire {
+    fn from(u: User) -> Self {
+        Self {
+            pk: Partition::User(u.id.to_string()),
+            sk: EntityType::User,
+
+            id: u.id,
+            created_at: u.created_at,
+            updated_at: u.updated_at,
+            display_name: u.display_name,
+            profile_url: u.profile_url,
+            email: u.email,
+            username: u.username,
+            phone: u.phone,
+            term_agreed: u.term_agreed,
+            informed_agreed: u.informed_agreed,
+            user_type: u.user_type,
+            followers_count: u.followers_count,
+            followings_count: u.followings_count,
+            description: u.description,
+            password: u.password,
+            points: u.points,
+            interstitial_seen: u.interstitial_seen,
+            deleted_at: u.deleted_at,
+        }
     }
 }
 
@@ -424,5 +511,92 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self> {
         Ok(OptionalUser(extract_user_from_parts(parts, state).await.ok()))
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// A faithful copy of the `User` struct as it exists in the shipped Android
+    /// build (commit 38ac1fcd8, 2026-06-12 — the last release before the
+    /// DynamoDB→Postgres cut). Field names, types and serde attributes are
+    /// copied verbatim from that revision. `pk`/`sk` carry no `#[serde(default)]`
+    /// there, which is the whole point of these tests.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedUser {
+        pk: Partition,
+        sk: EntityType,
+        created_at: i64,
+        updated_at: i64,
+        display_name: String,
+        profile_url: String,
+        email: String,
+        username: String,
+        #[serde(default)]
+        phone: Option<String>,
+        term_agreed: bool,
+        informed_agreed: bool,
+        user_type: UserType,
+        followers_count: i64,
+        followings_count: i64,
+        description: String,
+        password: Option<String>,
+        points: i64,
+        #[serde(default)]
+        interstitial_seen: bool,
+    }
+
+    fn sample_user() -> User {
+        User {
+            id: Uuid::now_v7(),
+            username: "victor".into(),
+            email: "victor@biyard.co".into(),
+            ..Default::default()
+        }
+    }
+
+    /// The fix: a user serialized by this server is parseable by the shipped app.
+    #[test]
+    fn shipped_build_can_parse_current_user() {
+        let json = serde_json::to_value(sample_user()).expect("serialize");
+
+        assert!(json.get("pk").is_some(), "wire form must carry `pk`");
+        assert!(json.get("sk").is_some(), "wire form must carry `sk`");
+
+        serde_json::from_value::<ShippedUser>(json)
+            .expect("shipped build must be able to deserialize this");
+    }
+
+    /// The bug: drop the two legacy keys — exactly what this server emitted
+    /// between the Postgres migration and this patch — and the shipped build
+    /// fails. Its transport maps that failure to `Error::Internal`, which the
+    /// app renders as a bare "internal error" on login.
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(sample_user()).expect("serialize");
+        let obj = json.as_object_mut().unwrap();
+        obj.remove("pk");
+        obj.remove("sk");
+
+        let err = serde_json::from_value::<ShippedUser>(json)
+            .expect_err("must fail — this is the reported bug");
+        assert!(
+            err.to_string().contains("missing field `pk`"),
+            "expected a missing-`pk` error, got: {err}"
+        );
+    }
+
+    /// `pk` must round-trip as the `USER#{id}` partition string the old client
+    /// stores and sends back on later calls.
+    #[test]
+    fn legacy_pk_is_the_user_partition_string() {
+        let user = sample_user();
+        let id = user.id.to_string();
+        let json = serde_json::to_value(&user).expect("serialize");
+
+        assert_eq!(json["pk"], serde_json::json!(format!("USER#{id}")));
+        assert_eq!(json["sk"], serde_json::json!("USER"));
     }
 }
