@@ -4,9 +4,10 @@ name: Production deploy
 # `main`, replacing the AWS deploy path (Lambda build → cdk deploy → S3 sync +
 # CloudFront invalidation) this workflow used to run. Modeled on
 # dev-workflow.yml (the dev migration, docs/k3s-migration/06-dev-deploy.md).
-# The AWS prod stack is NOT touched: it keeps serving its last-deployed
-# version at ratel.foundation until that DNS is flipped; `cdk/` and
-# `make build-lambda` stay in the repo for an eventual return.
+# The apex has since been cut over, so this cluster IS ratel.foundation. The
+# AWS stacks are still deployed but receive no traffic, and `cdk/` — the code
+# that defined them — has been removed from the repo; managing or tearing
+# them down now means the console, the AWS CLI, or restoring cdk/ from git.
 #
 # Architecture:
 # - The CI runners are k8s PODS in the cluster (biyard org runners, arm64,
@@ -523,9 +524,10 @@ jobs:
   # NOTE: the `ratel-app-lambda` job (Lambda build via `make build-lambda`,
   # S3 sync + CloudFront invalidation, lambda zip artifact) and the cdk
   # `deploy` job were REMOVED when prod moved to the home k3s cluster (see
-  # the file header). `cdk/`, `make build-lambda`, and the AWS secrets stay
-  # in place for an eventual return; the AWS prod stack keeps serving its
-  # last-deployed version at ratel.foundation until that DNS is flipped.
+  # the file header). `cdk/` and `make build-lambda` have since been deleted
+  # too. The AWS secrets stay because they are still used — by the apex DNS
+  # sync CronJob and cert-manager's Route53 solver. The AWS stacks remain
+  # deployed but take no traffic: the apex now resolves to this cluster.
   # Static assets are no longer synced to S3/CloudFront — the k3s app-shell
   # serves its own `public/` tree, and CloudFront keeps its last-synced copy
   # for the AWS fallback path.
