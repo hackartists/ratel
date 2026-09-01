@@ -1,0 +1,105 @@
+# Keeps the `ratel.foundation` apex A record pointed at the cluster's current
+# public IP.
+#
+# WHY THIS EXISTS
+# ---------------
+# Every other host reaches the cluster through a CNAME to the DDNS name
+# (`*.ratel.foundation` → hackartist.iptime.org), so a home-IP change is
+# followed automatically. The zone apex CANNOT be a CNAME (DNS forbids it at a
+# zone's root), so it must be a literal A record — which does NOT follow the
+# DDNS name. Without this CronJob, an ISP IP change takes `ratel.foundation`
+# down while every subdomain keeps working, and nothing self-heals.
+#
+# WHAT IT DOES *NOT* DO
+# ---------------------
+# It never performs the cutover. If the apex is still an ALIAS (the AWS
+# CloudFront path), it logs and exits 0 — so deploying this before the cutover
+# is harmless. Moving the apex off CloudFront is a deliberate, one-time act:
+# `.github/workflows/prod-apex-dns-cutover.yml`.
+#
+# TTL is 60s so a recovery propagates within a minute; the schedule is every
+# 5 minutes, bounding worst-case downtime after an IP change to ~6 minutes.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: apex-dns-sync
+  namespace: ratel-prod
+  labels:
+    app: apex-dns-sync
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          nodeSelector:
+            biyard.io/node-class: main
+          containers:
+            - name: sync
+              image: amazon/aws-cli:latest
+              envFrom:
+                - secretRef:
+                    name: apex-dns-sync-aws
+                    optional: true
+              env:
+                - name: AWS_REGION
+                  value: ap-northeast-2
+                - name: AWS_DEFAULT_REGION
+                  value: ap-northeast-2
+                - name: ZONE_ID
+                  value: Z0577765JDCTI15L7B84
+                - name: APEX
+                  value: ratel.foundation
+                - name: DDNS
+                  value: hackartist.iptime.org
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+
+                  # Current apex A record. `aws route53` returns the alias
+                  # target for an ALIAS record and the literal IP for a plain
+                  # A record — the two are distinguishable, which is what
+                  # gates the "never cut over on our own" rule below.
+                  REC=$(aws route53 list-resource-record-sets \
+                          --hosted-zone-id "$ZONE_ID" \
+                          --query "ResourceRecordSets[?Name=='${APEX}.'&&Type=='A']" \
+                          --output json)
+
+                  if echo "$REC" | grep -q '"AliasTarget"'; then
+                    echo "apex is still an ALIAS (pre-cutover) — nothing to sync"
+                    exit 0
+                  fi
+
+                  CUR=$(echo "$REC" | grep -oE '"Value": *"[0-9.]+"' | head -1 | grep -oE '[0-9.]+' || true)
+                  # `getent hosts` — the aws-cli image (Amazon Linux) ships
+                  # neither nslookup nor dig, but getent is present and goes
+                  # through the same resolver the pod uses. Verified against
+                  # the image before shipping this.
+                  NEW=$(getent hosts "$DDNS" | awk '{print $1; exit}')
+
+                  case "$NEW" in
+                    ''|*[!0-9.]*) echo "::warning:: DDNS lookup failed; leaving DNS untouched"; exit 0 ;;
+                  esac
+
+                  if [ "$CUR" = "$NEW" ]; then
+                    echo "apex ${APEX} already ${NEW} — no change"
+                    exit 0
+                  fi
+
+                  echo "apex ${APEX}: ${CUR:-<none>} → ${NEW} (DDNS moved)"
+                  cat > /tmp/change.json <<JSON
+                  {"Changes":[{"Action":"UPSERT","ResourceRecordSet":{
+                    "Name":"${APEX}.","Type":"A","TTL":60,
+                    "ResourceRecords":[{"Value":"${NEW}"}]}}]}
+                  JSON
+                  aws route53 change-resource-record-sets \
+                    --hosted-zone-id "$ZONE_ID" \
+                    --change-batch file:///tmp/change.json >/dev/null
+                  echo "updated"
