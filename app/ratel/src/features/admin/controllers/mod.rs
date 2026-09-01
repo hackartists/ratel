@@ -1,3 +1,5 @@
+pub mod moderation;
+pub use moderation::*;
 pub mod analyze_quota;
 pub mod migrations;
 pub mod memberships;

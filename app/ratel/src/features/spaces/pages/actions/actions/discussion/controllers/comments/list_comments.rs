@@ -32,6 +32,20 @@ pub async fn list_comments(
             SpacePostComment::list_top_level(&post_id, bookmark, 100).await?
         };
 
+
+    // Moderation: drop auto-hidden comments (App Store req #2) and comments
+    // authored by someone the viewer personally blocked (req #4).
+    let blocked = crate::common::models::moderation::blocked_author_set(
+        user.0.as_ref().map(|u| u.pk()).as_ref(),
+    )
+    .await;
+    let comments = crate::common::models::moderation::retain_visible(
+        comments,
+        &blocked,
+        |c| c.hidden,
+        |c| c.author_pk.as_str(),
+    );
+
     // Check which comments the current user has liked.
     let liked_set: HashSet<String> = if let Some(ref u) = user.0 {
         let keys: Vec<String> = comments.iter().map(|c| c.like_key()).collect();
