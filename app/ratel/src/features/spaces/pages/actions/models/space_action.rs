@@ -49,6 +49,9 @@ impl From<Vec<String>> for SpaceActionDependsOn {
 /// Stays cross-platform because it is embedded raw in several `*Response` DTOs
 /// (meet/poll/quiz/discussion). The `PostgresEntity` derive is server-only.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+// Serialize through `SpaceActionWire` so the shipped mobile build still finds
+// the legacy `pk`/`sk`/`space_pk` keys. See `SpaceActionWire`.
+#[serde(into = "SpaceActionWire")]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
 #[cfg_attr(feature = "server", postgres(table = "space_actions", unique(space_id, action_id)))]
 pub struct SpaceAction {
@@ -160,5 +163,109 @@ impl SpaceAction {
         let route = Route::SpaceIndexPage { space_id };
         let endpoint = crate::common::CommonConfig::default().env.web_endpoint();
         format!("{}{}", endpoint, route)
+    }
+}
+
+/// Wire form of [`SpaceAction`] — identical plus the three legacy key fields.
+///
+/// Same reason as `UserWire`. This one is embedded raw in the meet / poll / quiz
+/// / discussion response DTOs, so a missing key breaks every action screen and
+/// the space entry page that renders their cards.
+///
+/// The DynamoDB identity was `pk = CompositePartition(SpacePartition, action_id)`
+/// + `sk = SPACE_ACTION`, plus a separate `space_pk` column — all three
+/// recoverable from the `(space_id, action_id)` natural key.
+///
+/// `credits`/`total_points` need no bridging (`u64`→`i64` is the same JSON
+/// number for these counters) and `depends_on` is a `#[serde(transparent)]`
+/// newtype over the old `Vec<String>`.
+// No `JsonSchema` here: `SpaceAction` itself does not derive it, and
+// `SpaceActionDependsOn` has no impl.
+#[derive(Serialize)]
+pub struct SpaceActionWire {
+    /// `CompositePartition(SpacePartition(space_id), action_id)`.
+    pub pk: CompositePartition<SpacePartition, String>,
+    /// Always `EntityType::SpaceAction`.
+    pub sk: EntityType,
+    /// `Partition::Space(space_id)` — the old separate column.
+    pub space_pk: Partition,
+
+    pub id: uuid::Uuid,
+    pub space_id: String,
+    pub action_id: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub title: String,
+    pub description: String,
+    pub space_action_type: SpaceActionType,
+    pub prerequisite: bool,
+    pub credits: i64,
+    pub total_points: i64,
+    pub activity_score: i64,
+    pub additional_score: i64,
+    pub status: Option<SpaceActionStatus>,
+    pub depends_on: SpaceActionDependsOn,
+}
+
+impl From<SpaceAction> for SpaceActionWire {
+    fn from(a: SpaceAction) -> Self {
+        Self {
+            pk: CompositePartition(SpacePartition(a.space_id.clone()), a.action_id.clone()),
+            sk: EntityType::SpaceAction,
+            space_pk: Partition::Space(a.space_id.clone()),
+
+            id: a.id,
+            space_id: a.space_id,
+            action_id: a.action_id,
+            created_at: a.created_at,
+            updated_at: a.updated_at,
+            title: a.title,
+            description: a.description,
+            space_action_type: a.space_action_type,
+            prerequisite: a.prerequisite,
+            credits: a.credits,
+            total_points: a.total_points,
+            activity_score: a.activity_score,
+            additional_score: a.additional_score,
+            status: a.status,
+            depends_on: a.depends_on,
+        }
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on `SpaceAction`.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedKeys {
+        pk: CompositePartition<SpacePartition, String>,
+        sk: EntityType,
+        space_pk: Partition,
+        title: String,
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_space_action() {
+        let a = SpaceAction {
+            space_id: "sp1".into(),
+            action_id: "ac1".into(),
+            title: "t".into(),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&a).expect("serialize");
+        assert_eq!(json["space_pk"], serde_json::json!("SPACE#sp1"));
+        assert_eq!(json["sk"], serde_json::json!("SPACE_ACTION"));
+        serde_json::from_value::<ShippedKeys>(json).expect("shipped build must parse this");
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(SpaceAction::default()).expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+        let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
+        assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
     }
 }

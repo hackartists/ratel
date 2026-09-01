@@ -35,6 +35,9 @@ impl std::ops::Deref for PostFiles {
 /// queries. Stays cross-platform (returned raw to the client). `user_pk` is a
 /// cross-feature ref stored as its full `Partition` string.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+// Serialize through `SpacePostWire` so the shipped mobile build still finds the
+// legacy `pk`/`sk` keys. See `SpacePostWire`.
+#[serde(into = "SpacePostWire")]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
 #[cfg_attr(feature = "server", postgres(table = "space_posts", unique(space_id, post_id)))]
@@ -373,5 +376,101 @@ impl SpacePost {
                 crate::features::spaces::pages::actions::actions::discussion::Error::NoPermission,
             ),
         }
+    }
+}
+
+/// Wire form of [`SpacePost`] — identical plus the legacy `pk`/`sk` keys.
+///
+/// Same reason as `UserWire`: the shipped mobile build declares `pk: Partition`
+/// and `sk: EntityType` as REQUIRED. `SpacePost` reaches that build nested in
+/// `DiscussionResponse`, so without these two keys the whole discussion — and
+/// with it the space screen that renders its action cards — fails to parse.
+///
+/// The DynamoDB identity was `pk = SpacePartition` + `sk = SpacePost#{uuid}`,
+/// both recoverable from the `(space_id, post_id)` natural key.
+///
+/// `user_pk` needs no bridging (it holds the same prefixed `Partition` string)
+/// and `files` is a `#[serde(transparent)]` newtype over the old `Vec<File>`.
+#[derive(Serialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+pub struct SpacePostWire {
+    /// `Partition::Space(space_id)` — renders as `SPACE#{space_id}`.
+    pub pk: Partition,
+    /// `EntityType::SpacePost(post_id)` — renders as `SPACE_POST#{post_id}`.
+    pub sk: EntityType,
+
+    pub id: uuid::Uuid,
+    pub space_id: String,
+    pub post_id: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub title: String,
+    pub html_contents: String,
+    pub category_name: String,
+    pub comments: i64,
+    pub user_pk: String,
+    pub author_display_name: String,
+    pub author_profile_url: String,
+    pub author_username: String,
+    pub files: PostFiles,
+}
+
+impl From<SpacePost> for SpacePostWire {
+    fn from(p: SpacePost) -> Self {
+        Self {
+            pk: Partition::Space(p.space_id.clone()),
+            sk: EntityType::SpacePost(p.post_id.clone()),
+
+            id: p.id,
+            space_id: p.space_id,
+            post_id: p.post_id,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+            title: p.title,
+            html_contents: p.html_contents,
+            category_name: p.category_name,
+            comments: p.comments,
+            user_pk: p.user_pk,
+            author_display_name: p.author_display_name,
+            author_profile_url: p.author_profile_url,
+            author_username: p.author_username,
+            files: p.files,
+        }
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on `SpacePost`.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedKeys {
+        pk: Partition,
+        sk: EntityType,
+        title: String,
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_space_post() {
+        let p = SpacePost {
+            space_id: "sp1".into(),
+            post_id: "po1".into(),
+            title: "t".into(),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&p).expect("serialize");
+        assert_eq!(json["pk"], serde_json::json!("SPACE#sp1"));
+        assert_eq!(json["sk"], serde_json::json!("SPACE_POST#po1"));
+        serde_json::from_value::<ShippedKeys>(json).expect("shipped build must parse this");
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(SpacePost::default()).expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+        let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
+        assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
     }
 }

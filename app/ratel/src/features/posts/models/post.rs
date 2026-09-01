@@ -33,6 +33,9 @@ use super::{PostComment, PostCommentLike, PostLike, Team};
 /// and the in-path enums (`PostType`, `PostStatus`, `Visibility`, `SpaceType`,
 /// `BoosterType`) that carry their own `PostgresJson` codec.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+// Serialize through `PostWire` so the shipped mobile build still finds the
+// legacy `pk`/`sk` keys. See `PostWire`. Deserialization is unaffected.
+#[serde(into = "PostWire")]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(PostgresEntity))]
 #[cfg_attr(feature = "server", postgres(table = "posts"))]
@@ -97,6 +100,94 @@ impl Post {
     /// The feed post's `FeedPartition` wire id (`id.to_string()`).
     pub fn feed_id(&self) -> String {
         self.id.to_string()
+    }
+}
+
+/// Wire form of [`Post`] — identical plus the legacy `pk`/`sk` keys.
+///
+/// Same reason as `UserWire`: the shipped mobile build (the last release before
+/// the DynamoDB→Postgres cut) declares `pk: Partition` and `sk: EntityType` as
+/// REQUIRED, so a payload without them fails to parse and the feed dies whole.
+/// Both are derivable from `id` — that build wrote `pk: Partition::Feed(uid)`
+/// and `sk: EntityType::Post` — so they are recomputed here rather than stored.
+///
+/// The other renamed fields need no bridging: `user_pk`/`space_pk` hold the same
+/// prefixed strings a `Partition` serializes to, and `BodyJson`/`StringVec`/
+/// `FileVec`/`AuthorTypeJson`/`SpaceVisibilityJson` are `#[serde(transparent)]`
+/// newtypes, so their JSON is unchanged from the old `Vec<_>`/`ContentBody`.
+#[derive(Serialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+pub struct PostWire {
+    /// `Partition::Feed(id)` — renders as `FEED#{id}`.
+    pub pk: Partition,
+    /// Always `EntityType::Post`.
+    pub sk: EntityType,
+
+    pub id: Uuid,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub title: String,
+    pub body: BodyJson,
+    pub post_type: PostType,
+    pub status: PostStatus,
+    pub visibility: Option<Visibility>,
+    pub shares: i64,
+    pub likes: i64,
+    pub comments: i64,
+    pub reports: i64,
+    pub user_pk: String,
+    pub author_display_name: String,
+    pub author_profile_url: String,
+    pub author_username: String,
+    pub author_type: AuthorTypeJson,
+    pub space_pk: Option<String>,
+    pub space_type: Option<SpaceType>,
+    pub space_visibility: Option<SpaceVisibilityJson>,
+    pub booster: Option<BoosterType>,
+    pub rewards: Option<i64>,
+    pub urls: StringVec,
+    pub attachments: FileVec,
+    pub categories: StringVec,
+    pub announcement_id: Option<String>,
+    pub announcement_parent_team_id: Option<String>,
+    pub pinned_as_announcement: bool,
+}
+
+impl From<Post> for PostWire {
+    fn from(p: Post) -> Self {
+        Self {
+            pk: Partition::Feed(p.id.to_string()),
+            sk: EntityType::Post,
+
+            id: p.id,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+            title: p.title,
+            body: p.body,
+            post_type: p.post_type,
+            status: p.status,
+            visibility: p.visibility,
+            shares: p.shares,
+            likes: p.likes,
+            comments: p.comments,
+            reports: p.reports,
+            user_pk: p.user_pk,
+            author_display_name: p.author_display_name,
+            author_profile_url: p.author_profile_url,
+            author_username: p.author_username,
+            author_type: p.author_type,
+            space_pk: p.space_pk,
+            space_type: p.space_type,
+            space_visibility: p.space_visibility,
+            booster: p.booster,
+            rewards: p.rewards,
+            urls: p.urls,
+            attachments: p.attachments,
+            categories: p.categories,
+            announcement_id: p.announcement_id,
+            announcement_parent_team_id: p.announcement_parent_team_id,
+            pinned_as_announcement: p.pinned_as_announcement,
+        }
     }
 }
 
@@ -492,5 +583,48 @@ impl Post {
 
     pub fn is_public(&self) -> bool {
         self.visibility == Some(Visibility::Public)
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on `Post` — copied
+    /// verbatim from commit 38ac1fcd8. Neither carries `#[serde(default)]`, so a
+    /// payload missing either one fails to parse and takes the whole feed with it.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedPostKeys {
+        pk: Partition,
+        sk: EntityType,
+        title: String,
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_post() {
+        let post = Post {
+            id: Uuid::now_v7(),
+            title: "hello".into(),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&post).expect("serialize");
+
+        assert_eq!(json["pk"], serde_json::json!(format!("FEED#{}", post.id)));
+        assert_eq!(json["sk"], serde_json::json!("POST"));
+
+        serde_json::from_value::<ShippedPostKeys>(json).expect("shipped build must parse this");
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(Post::default()).expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+
+        let err = serde_json::from_value::<ShippedPostKeys>(json).expect_err("must fail");
+        assert!(
+            err.to_string().contains("missing field `pk`"),
+            "expected missing-`pk`, got: {err}"
+        );
     }
 }

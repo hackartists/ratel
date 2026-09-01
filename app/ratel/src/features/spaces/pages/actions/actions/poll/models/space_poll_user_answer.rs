@@ -52,6 +52,9 @@ impl std::ops::Deref for RespondentJson {
 /// cross-platform because it is embedded in the client-facing
 /// `PollResultResponse`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+// Serialize through `SpacePollUserAnswerWire` so the shipped mobile build still
+// finds the legacy `pk`/`sk` keys. See `SpacePollUserAnswerWire`.
+#[serde(into = "SpacePollUserAnswerWire")]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
 #[cfg_attr(feature = "server", postgres(table = "space_poll_user_answers", unique(actor_pk, space_id, poll_id)))]
@@ -278,5 +281,99 @@ impl SpacePollUserAnswer {
             sample_aligned,
             final_aligned,
         ))
+    }
+}
+
+/// Wire form of [`SpacePollUserAnswer`] — identical plus the legacy `pk`/`sk`.
+///
+/// Same reason as `UserWire`. This is embedded in the client-facing
+/// `PollResultResponse`, which the space entry screen loads for every poll card
+/// — so a missing key takes down the whole space page, not just the poll.
+///
+/// The DynamoDB identity was `pk = user_pk` (the voter's partition) +
+/// `sk = SpacePollUserAnswer#{space}#{poll}`. `actor_pk` still holds that same
+/// `"USER#…"` string, so `pk` is parsed back from it; a malformed value degrades
+/// to `Partition::None` rather than dropping the row.
+///
+/// `answers`/`respondent` need no bridging — both are `#[serde(transparent)]`
+/// newtypes over the old `Vec<Answer>` / `RespondentAttr`. `space_id` widened
+/// from `Option<String>` to `String`, which the old `Option` field still accepts.
+#[derive(Serialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+pub struct SpacePollUserAnswerWire {
+    /// The voter's partition, parsed back from `actor_pk` (`USER#…`).
+    pub pk: Partition,
+    /// `EntityType::SpacePollUserAnswer(space_id, poll_id)`.
+    pub sk: EntityType,
+
+    pub id: uuid::Uuid,
+    pub actor_pk: String,
+    pub poll_id: String,
+    pub space_id: String,
+    pub created_at: i64,
+    pub answers: PollUserAnswers,
+    pub respondent: Option<RespondentJson>,
+    pub user_pk: Option<String>,
+    pub display_name: Option<String>,
+    pub profile_url: Option<String>,
+    pub username: Option<String>,
+}
+
+impl From<SpacePollUserAnswer> for SpacePollUserAnswerWire {
+    fn from(a: SpacePollUserAnswer) -> Self {
+        Self {
+            pk: a.actor_pk.parse().unwrap_or_default(),
+            sk: EntityType::SpacePollUserAnswer(a.space_id.clone(), a.poll_id.clone()),
+
+            id: a.id,
+            actor_pk: a.actor_pk,
+            poll_id: a.poll_id,
+            space_id: a.space_id,
+            created_at: a.created_at,
+            answers: a.answers,
+            respondent: a.respondent,
+            user_pk: a.user_pk,
+            display_name: a.display_name,
+            profile_url: a.profile_url,
+            username: a.username,
+        }
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on this model.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedKeys {
+        pk: Partition,
+        sk: EntityType,
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_answer() {
+        let a = SpacePollUserAnswer {
+            actor_pk: "USER#u1".into(),
+            space_id: "sp1".into(),
+            poll_id: "pl1".into(),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&a).expect("serialize");
+        assert_eq!(json["pk"], serde_json::json!("USER#u1"));
+        serde_json::from_value::<ShippedKeys>(json).expect("shipped build must parse this");
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(SpacePollUserAnswer {
+            actor_pk: "USER#u1".into(),
+            ..Default::default()
+        })
+        .expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+        let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
+        assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
     }
 }
