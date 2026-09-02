@@ -73,6 +73,9 @@ impl std::ops::Deref for NetworkEdges {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+// Serialize through `SpaceAnalyzeDiscussionResultWire` so the shipped mobile
+// build still finds the legacy `pk`/`sk` keys. See that type.
+#[serde(into = "SpaceAnalyzeDiscussionResultWire")]
 #[cfg_attr(
     feature = "server",
     derive(PostgresEntity)
@@ -196,5 +199,117 @@ impl SpaceAnalyzeDiscussionResult {
         };
 
         Ok((p.items, next))
+    }
+}
+
+/// Wire form of [`SpaceAnalyzeDiscussionResult`] — identical plus the legacy
+/// `pk`/`sk` keys.
+///
+/// Same reason as `UserWire`. This model is returned raw inside
+/// `ListResponse<SpaceAnalyzeDiscussionResult>` by the analyze report detail
+/// screen, so without these keys that screen dies on open for the shipped
+/// mobile build.
+///
+/// The DynamoDB identity was `pk = space_pk` plus
+/// `sk = SpaceAnalyzeDiscussionResult(report_id, "{discussion_id}#{request_id}")`
+/// — the second slot packs two ids because the variant takes at most two
+/// fields. `space_pk` still holds the `"SPACE#…"` string, so `pk` is parsed
+/// back from it.
+///
+/// The `TopicRows`/`TermScores`/`NetworkNodes`/`NetworkEdges` wrappers need no
+/// bridging: serde renders a tuple newtype as its inner value, so their JSON is
+/// the same array the old `Vec<_>` fields produced.
+// No `JsonSchema`: the jsonb wrapper types it embeds do not implement it.
+#[derive(Serialize)]
+pub struct SpaceAnalyzeDiscussionResultWire {
+    /// The space partition, parsed back from `space_pk`.
+    pub pk: Partition,
+    /// `SpaceAnalyzeDiscussionResult(report_id, "{discussion_id}#{request_id}")`.
+    pub sk: EntityType,
+
+    pub id: Uuid,
+    pub space_pk: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub status: AnalyzeReportStatus,
+    pub report_id: String,
+    pub discussion_id: String,
+    pub request_id: String,
+    pub params: DiscussionAnalysisParams,
+    pub analyzed_comment_count: i64,
+    pub topics: TopicRows,
+    pub tfidf_terms: TermScores,
+    pub network_nodes: NetworkNodes,
+    pub network_edges: NetworkEdges,
+}
+
+impl From<SpaceAnalyzeDiscussionResult> for SpaceAnalyzeDiscussionResultWire {
+    fn from(v: SpaceAnalyzeDiscussionResult) -> Self {
+        Self {
+            pk: v.space_pk.parse().unwrap_or_default(),
+            sk: EntityType::SpaceAnalyzeDiscussionResult(
+                v.report_id.clone(),
+                format!("{}#{}", v.discussion_id, v.request_id),
+            ),
+
+            id: v.id,
+            space_pk: v.space_pk,
+            created_at: v.created_at,
+            updated_at: v.updated_at,
+            status: v.status,
+            report_id: v.report_id,
+            discussion_id: v.discussion_id,
+            request_id: v.request_id,
+            params: v.params,
+            analyzed_comment_count: v.analyzed_comment_count,
+            topics: v.topics,
+            tfidf_terms: v.tfidf_terms,
+            network_nodes: v.network_nodes,
+            network_edges: v.network_edges,
+        }
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on this model,
+    /// copied from commit 38ac1fcd8. Neither carries `#[serde(default)]`.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedKeys {
+        pk: Partition,
+        sk: EntityType,
+    }
+
+    fn sample() -> SpaceAnalyzeDiscussionResult {
+        SpaceAnalyzeDiscussionResult {
+            space_pk: "SPACE#s1".into(),
+            report_id: "r1".into(),
+            discussion_id: "d1".into(),
+            request_id: "q1".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_row() {
+        let json = serde_json::to_value(sample()).expect("serialize");
+        assert_eq!(json["pk"], serde_json::json!("SPACE#s1"));
+        // Two ids are packed into the variant's second slot.
+        assert_eq!(
+            json["sk"],
+            serde_json::json!("SPACE_ANALYZE_DISCUSSION_RESULT#r1#d1#q1")
+        );
+        serde_json::from_value::<ShippedKeys>(json).expect("shipped build must parse this");
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(sample()).expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+        let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
+        assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
     }
 }
