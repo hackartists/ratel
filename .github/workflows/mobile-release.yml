@@ -156,17 +156,10 @@ jobs:
           ENV: prod
           MOBILE_API_URL: https://ratel.foundation
           ANDROID_TARGET: aarch64-linux-android
-          # versionCode is computed in the run script (GH Actions expressions
-          # have no arithmetic): 1000 + run_number, to stay above manual uploads.
-          # Offset by 200 so this workflow's run numbers stay above what the
-          # old prod-workflow.yml already shipped. `github.run_number` counts
-          # per workflow FILE, so moving this job here reset it to 1 and the
-          # first run produced 1.0.1 / versionCode 1001 — below the 1182 already
-          # on Play, which rejected it: "You cannot rollout this release because
-          # it does not allow any existing users to upgrade to the newly added
-          # APKs." Renaming or moving this file again resets the counter, so the
-          # offset has to be raised past the highest shipped code if that happens.
-          ANDROID_VERSION_NAME: "1.0.${{ 200 + github.run_number }}"
+          # Both version values are computed in the run script below, because
+          # GH Actions expressions have no arithmetic operators — adding one
+          # inside an expression is a workflow syntax error, not just bad style
+          # ("Unexpected symbol: '+'").
           DYNAMO_TABLE_PREFIX: ratel-prod
           RUSTFLAGS: "-D warnings"
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
@@ -192,10 +185,18 @@ jobs:
           # installed (Makefile's Linux default /opt/android-ndk doesn't exist here).
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
           export NDK_HOME="$ANDROID_NDK_HOME"
-          # Must stay strictly above every code already on Play (see the
-          # ANDROID_VERSION_NAME note above); 1182 was the highest as of 2026-09-02.
-          export ANDROID_VERSION_CODE=$(( 1200 + ${{ github.run_number }} ))
-          echo "versionCode=$ANDROID_VERSION_CODE"
+          # Both must stay strictly above what is already on Play (1182 as of
+          # 2026-09-02). `github.run_number` counts per workflow FILE, so moving
+          # this job out of prod-workflow.yml reset it to 1 and the first run
+          # went out as 1.0.1 / 1001 — under 1182, which Play rejected with
+          # "You cannot rollout this release because it does not allow any
+          # existing users to upgrade to the newly added APKs." Renaming or
+          # moving this file resets the counter again; raise the offsets past
+          # the highest shipped code if that happens.
+          RUN_NO=${{ github.run_number }}
+          export ANDROID_VERSION_CODE=$(( 1200 + RUN_NO ))
+          export ANDROID_VERSION_NAME="1.0.$(( 200 + RUN_NO ))"
+          echo "versionCode=$ANDROID_VERSION_CODE versionName=$ANDROID_VERSION_NAME"
           # release-aab depends on dx-build (web bundle) + a signed AAB build.
           make release-aab
           echo "AAB:"
