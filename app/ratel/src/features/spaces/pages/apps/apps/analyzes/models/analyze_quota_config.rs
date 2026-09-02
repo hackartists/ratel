@@ -12,6 +12,9 @@ use postgres::PostgresEntity;
 /// fixed `config_key` ("global") natural key so the single deployment-wide
 /// row is upsert-addressable.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+// Serialize through `AnalyzeQuotaConfigWire` so the shipped mobile build still finds
+// the legacy `pk`/`sk` keys. See `AnalyzeQuotaConfigWire`.
+#[serde(into = "AnalyzeQuotaConfigWire")]
 #[cfg_attr(
     feature = "server",
     derive(PostgresEntity)
@@ -52,5 +55,68 @@ impl AnalyzeQuotaConfig {
         Ok(row
             .map(|r| r.non_enterprise_limit)
             .unwrap_or(Self::DEFAULT_LIMIT))
+    }
+}
+
+/// Wire form of [`AnalyzeQuotaConfig`] — identical plus the legacy `pk`/`sk`.
+///
+/// Same reason as `UserWire`. Both keys were constants on this singleton row.
+#[derive(Serialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+pub struct AnalyzeQuotaConfigWire {
+    /// Always `Partition::AnalyzeQuotaConfig` (a singleton row).
+    pub pk: Partition,
+    /// Always `EntityType::AnalyzeQuotaConfig`.
+    pub sk: EntityType,
+
+    pub id: Uuid,
+    pub config_key: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub non_enterprise_limit: i64,
+}
+
+impl From<AnalyzeQuotaConfig> for AnalyzeQuotaConfigWire {
+    fn from(v: AnalyzeQuotaConfig) -> Self {
+        Self {
+            pk: Partition::AnalyzeQuotaConfig,
+            sk: EntityType::AnalyzeQuotaConfig,
+
+            id: v.id,
+            config_key: v.config_key,
+            created_at: v.created_at,
+            updated_at: v.updated_at,
+            non_enterprise_limit: v.non_enterprise_limit,
+        }
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on `AnalyzeQuotaConfig`,
+    /// copied from commit 38ac1fcd8. Neither carries `#[serde(default)]`.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedKeys {
+        pk: Partition,
+        sk: EntityType,
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_row() {
+        let v = AnalyzeQuotaConfig::default();
+        let json = serde_json::to_value(&v).expect("serialize");
+        assert_eq!(json["sk"], serde_json::json!("ANALYZE_QUOTA_CONFIG"));
+        serde_json::from_value::<ShippedKeys>(json).expect("shipped build must parse this");
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(AnalyzeQuotaConfig::default()).expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+        let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
+        assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
     }
 }
