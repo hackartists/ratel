@@ -13,6 +13,9 @@ use postgres::PostgresEntity;
 /// cross-feature reference to the space partition — stored as the full
 /// `Partition` string (`"SPACE#<id>"`), **no** FK.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+// Serialize through `SpaceAppWire` so the shipped mobile build still finds
+// the legacy `pk`/`sk` keys. See `SpaceAppWire`.
+#[serde(into = "SpaceAppWire")]
 #[cfg_attr(feature = "server", derive(PostgresEntity))]
 #[cfg_attr(
     feature = "server",
@@ -91,5 +94,75 @@ impl SpaceApp {
             SpaceUserRole::Creator => Ok(()),
             _ => Err(Error::NoPermission),
         }
+    }
+}
+
+/// Wire form of [`SpaceApp`] — identical plus the legacy `pk`/`sk` keys.
+///
+/// This is the one that breaks a space for its **admins only**: the space index
+/// renders `SettingsPanel` behind `is_admin`, whose apps section calls
+/// `get_space_apps` and gets `Vec<SpaceApp>` raw. A participant never issues
+/// that request, which is why the same space opens fine for them and dies for
+/// whoever owns it.
+///
+/// The DynamoDB identity was `(Space(space_id), SpaceApp(app_type))`; `space_pk`
+/// still holds the `"SPACE#…"` string, so `pk` is parsed back from it.
+#[derive(Serialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+pub struct SpaceAppWire {
+    /// The space's partition, parsed back from `space_pk` (`SPACE#…`).
+    pub pk: Partition,
+    /// `EntityType::SpaceApp(app_type)`.
+    pub sk: EntityType,
+
+    pub id: Uuid,
+    pub space_pk: String,
+    pub app_type: SpaceAppType,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl From<SpaceApp> for SpaceAppWire {
+    fn from(v: SpaceApp) -> Self {
+        Self {
+            pk: v.space_pk.parse().unwrap_or_default(),
+            sk: EntityType::SpaceApp(v.app_type.to_string()),
+
+            id: v.id,
+            space_pk: v.space_pk,
+            app_type: v.app_type,
+            created_at: v.created_at,
+            updated_at: v.updated_at,
+        }
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on `SpaceApp`,
+    /// copied from commit 38ac1fcd8. Neither carries `#[serde(default)]`.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedKeys {
+        pk: Partition,
+        sk: EntityType,
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_row() {
+        let v = SpaceApp { space_pk: "SPACE#s1".into(), ..Default::default() };
+        let json = serde_json::to_value(&v).expect("serialize");
+        assert_eq!(json["pk"], serde_json::json!("SPACE#s1"));
+        serde_json::from_value::<ShippedKeys>(json).expect("shipped build must parse this");
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(SpaceApp { space_pk: "SPACE#s1".into(), ..Default::default() }).expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+        let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
+        assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
     }
 }

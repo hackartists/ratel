@@ -35,6 +35,9 @@ impl std::ops::Deref for CommentImages {
 /// (set for replies). The likes-ordering GSIs become `ORDER BY likes DESC`.
 /// Stays cross-platform (returned raw by `update_comment`).
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+// Serialize through `SpacePostCommentWire` so the shipped mobile build still
+// finds the legacy `pk`/`sk` keys. See `SpacePostCommentWire`.
+#[serde(into = "SpacePostCommentWire")]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
 #[cfg_attr(feature = "server", postgres(table = "space_post_comments", unique(post_id, comment_id)))]
@@ -415,5 +418,125 @@ impl SpacePostComment {
         })?;
 
         Ok(comment)
+    }
+}
+
+/// Wire form of [`SpacePostComment`] — identical plus the legacy key fields.
+///
+/// Same reason as `UserWire`: the shipped mobile build declares `pk: Partition`
+/// and `sk: EntityType` as REQUIRED, so a discussion thread that carries even
+/// one comment fails to parse there.
+///
+/// The DynamoDB identity was `pk = SpacePost(post_id)` plus either
+/// `sk = SpacePostComment#{id}` for a top-level comment or
+/// `sk = SpacePostCommentReply#{parent}#{id}` for a reply — the reply form is
+/// reconstructed here from `parent_comment_id`, which is empty for a top-level
+/// comment.
+///
+/// `space_pk` and `parent_comment_sk` are re-emitted too. Both are `Option` in
+/// that build, so their absence parses — but a reply would come back detached
+/// and render as a top-level comment. The three `*_align` fields it also
+/// declares are `#[serde(default)]` DynamoDB GSI sort-key helpers with no
+/// meaning under Postgres, so they are deliberately left out.
+///
+/// `images` needs no bridging (`CommentImages` is `#[serde(transparent)]`), nor
+/// do `likes`/`replies` (`u64`→`i64` is the same JSON number), nor `author_pk`,
+/// which holds the same prefixed `Partition` string.
+#[derive(Serialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+pub struct SpacePostCommentWire {
+    /// `Partition::SpacePost(post_id)`.
+    pub pk: Partition,
+    /// `SpacePostComment#{id}`, or `SpacePostCommentReply#{parent}#{id}`.
+    pub sk: EntityType,
+    /// The owning space's partition, when known.
+    pub space_pk: Option<Partition>,
+    /// Old spelling of `parent_comment_id`, in `EntityType` form.
+    pub parent_comment_sk: Option<EntityType>,
+
+    pub id: uuid::Uuid,
+    pub post_id: String,
+    pub comment_id: String,
+    pub parent_comment_id: String,
+    pub space_id: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub content: String,
+    pub images: CommentImages,
+    pub likes: i64,
+    pub replies: i64,
+    pub hidden: bool,
+    pub report_count: i64,
+    pub author_pk: String,
+    pub author_display_name: String,
+    pub author_username: String,
+    pub author_profile_url: String,
+}
+
+impl From<SpacePostComment> for SpacePostCommentWire {
+    fn from(c: SpacePostComment) -> Self {
+        let is_reply = !c.parent_comment_id.is_empty();
+        Self {
+            pk: Partition::SpacePost(c.post_id.clone()),
+            sk: if is_reply {
+                EntityType::SpacePostCommentReply(
+                    c.parent_comment_id.clone(),
+                    c.comment_id.clone(),
+                )
+            } else {
+                EntityType::SpacePostComment(c.comment_id.clone())
+            },
+            space_pk: c.space_id.clone().map(Partition::Space),
+            parent_comment_sk: is_reply
+                .then(|| EntityType::SpacePostComment(c.parent_comment_id.clone())),
+
+            id: c.id,
+            post_id: c.post_id,
+            comment_id: c.comment_id,
+            parent_comment_id: c.parent_comment_id,
+            space_id: c.space_id,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+            content: c.content,
+            images: c.images,
+            likes: c.likes,
+            replies: c.replies,
+            hidden: c.hidden,
+            report_count: c.report_count,
+            author_pk: c.author_pk,
+            author_display_name: c.author_display_name,
+            author_username: c.author_username,
+            author_profile_url: c.author_profile_url,
+        }
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on `SpacePostComment`,
+    /// copied from commit 38ac1fcd8. Neither carries `#[serde(default)]`.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedKeys {
+        pk: Partition,
+        sk: EntityType,
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_row() {
+        let v = SpacePostComment { post_id: "p1".into(), comment_id: "c1".into(), ..Default::default() };
+        let json = serde_json::to_value(&v).expect("serialize");
+        assert_eq!(json["pk"], serde_json::json!("SPACE_POST#p1"));
+        serde_json::from_value::<ShippedKeys>(json).expect("shipped build must parse this");
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(SpacePostComment { post_id: "p1".into(), comment_id: "c1".into(), ..Default::default() }).expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+        let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
+        assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
     }
 }
