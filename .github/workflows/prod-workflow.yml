@@ -606,11 +606,26 @@ jobs:
             target
             app/ratel-tauri/dx-tauri-target
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown,aarch64-linux-android
-          cache: false
+      # Same idempotent shape as build-images above, not
+      # `actions-rust-lang/setup-rust-toolchain`. That action always runs
+      # `rustup toolchain install stable`, which fails on these runners
+      # because the image already ships a stable toolchain — it was fine on
+      # the GitHub-hosted runners this job used to target, where the image
+      # starts empty.
+      - name: Install Rust toolchain + Android/wasm targets
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            if [ -x "$HOME/.cargo/bin/rustup" ]; then
+              export PATH="$HOME/.cargo/bin:$PATH"
+            else
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+              export PATH="$HOME/.cargo/bin:$PATH"
+            fi
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+          rustup toolchain list | grep -q '^stable' || rustup toolchain install stable --profile minimal
+          # `rustup target add` is idempotent, so no guard needed here.
+          rustup target add wasm32-unknown-unknown aarch64-linux-android
 
       - uses: actions/setup-node@v4
         with:
