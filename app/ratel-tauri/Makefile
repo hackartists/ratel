@@ -325,15 +325,23 @@ testflight: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj dx-build
 	@IPA=$$(find src-tauri/gen/apple/build -name "*.ipa" 2>/dev/null | xargs ls -t 2>/dev/null | head -1); \
 	if [ -z "$$IPA" ]; then echo "ERROR: no .ipa produced under src-tauri/gen/apple/build"; exit 1; fi; \
 	echo "==> Validating $$IPA"; \
-	xcrun altool --validate-app --type ios --file "$$IPA" \
+	altool_run() { \
+		out=$$("$$@" 2>&1); rc=$$?; \
+		printf '%s\n' "$$out"; \
+		[ $$rc -eq 0 ] || return $$rc; \
+		printf '%s\n' "$$out" | grep -qiE 'VERIFY FAILED|UPLOAD FAILED|Failed to (validate|upload) package|\*\*\* Error' && return 1; \
+		return 0; \
+	}; \
+	altool_run xcrun altool --validate-app --type ios --file "$$IPA" \
 		--apiKey "$(ASC_KEY_ID)" --apiIssuer "$(ASC_ISSUER_ID)" || \
 		{ echo "ERROR: validation failed (fix before uploading)"; exit 1; }; \
 	echo "==> Uploading $$IPA to App Store Connect / TestFlight"; \
-	xcrun altool --upload-app --type ios --file "$$IPA" \
-		--apiKey "$(ASC_KEY_ID)" --apiIssuer "$(ASC_ISSUER_ID)"
-	@echo
-	@echo "Uploaded. App Store Connect → TestFlight processes the build in a few"
-	@echo "minutes; add it to a test group (and complete export-compliance) to install."
+	altool_run xcrun altool --upload-app --type ios --file "$$IPA" \
+		--apiKey "$(ASC_KEY_ID)" --apiIssuer "$(ASC_ISSUER_ID)" || \
+		{ echo "ERROR: upload failed"; exit 1; }; \
+	echo; \
+	echo "Uploaded. App Store Connect → TestFlight processes the build in a few"; \
+	echo "minutes; add it to a test group (and complete export-compliance) to install."
 
 # Write a one-off JSON override merging per-ENV CSP and the DEV_URL into
 # /tmp/tauri-override.json. Tauri's `--config` accepts a file path, which
