@@ -581,10 +581,19 @@ jobs:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
       CARGO_HTTP_MULTIPLEXING: "false"
     steps:
+      # `PULL_KEY_REPO_V2`, not `PULL_KEY_REPO`. The original key stopped
+      # authenticating and was replaced in f0a38d447 (2026-08-26); that fix
+      # was written against the AWS-era workflow and got lost when the k3s
+      # migration rewrote this file, which is why the first self-hosted run
+      # burned a retry on "Permission denied (publickey)" before falling back
+      # to HTTPS.
+      #
+      # Kept (rather than dropped as the other jobs did) so a submodule added
+      # later is fetched without anyone remembering to re-add this.
       - uses: actions/checkout@v6
         with:
           submodules: recursive
-          ssh-key: ${{ secrets.PULL_KEY_REPO }}
+          ssh-key: ${{ secrets.PULL_KEY_REPO_V2 }}
 
       - name: Restore cache
         uses: actions/cache/restore@v5

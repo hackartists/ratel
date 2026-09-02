@@ -26,8 +26,10 @@ on:
         required: true
 
 jobs:
+  # Gate the expensive job behind a free one: `ios-release` needs this to pass,
+  # so a mistyped confirmation never spins up the 10x-billed macOS runner.
   guard:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Require typed confirmation
         run: |
@@ -46,8 +48,10 @@ jobs:
           # Always ship what is on `main`, never the branch the button was
           # pressed from — a TestFlight build must match what prod serves.
           ref: main
+          # `PULL_KEY_REPO_V2` — see the note on android-release in
+          # prod-workflow.yml. The old `PULL_KEY_REPO` no longer authenticates.
           submodules: recursive
-          ssh-key: ${{ secrets.PULL_KEY_REPO }}
+          ssh-key: ${{ secrets.PULL_KEY_REPO_V2 }}
 
       # Apple now requires the iOS 26 SDK (Xcode 26+) for App Store uploads.
       - uses: maxim-lobanov/setup-xcode@v1
