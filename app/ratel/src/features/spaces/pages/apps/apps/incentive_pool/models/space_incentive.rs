@@ -9,6 +9,9 @@ use postgres::PostgresEntity;
 /// becomes the `unique(space_pk)` natural key. `space_pk` is the full
 /// `Partition` string (cross-feature reference to the space); no FK.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+// Serialize through `SpaceIncentiveWire` so the shipped mobile build still finds
+// the legacy `pk`/`sk` keys. See `SpaceIncentiveWire`.
+#[serde(into = "SpaceIncentiveWire")]
 #[cfg_attr(feature = "server", derive(PostgresEntity))]
 #[cfg_attr(feature = "server", postgres(table = "space_incentives"))]
 pub struct SpaceIncentive {
@@ -75,5 +78,77 @@ impl SpaceIncentive {
             return Err(Error::NoPermission);
         }
         Ok(())
+    }
+}
+
+/// Wire form of [`SpaceIncentive`] — identical plus the legacy `pk`/`sk` keys.
+///
+/// Same reason as `UserWire`. The DynamoDB identity was the
+/// `(Space(space_id), SpaceIncentive)` singleton.
+#[derive(Serialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+pub struct SpaceIncentiveWire {
+    /// The space's partition, parsed back from `space_pk` (`SPACE#…`).
+    pub pk: Partition,
+    /// Always `EntityType::SpaceIncentive` (one row per space).
+    pub sk: EntityType,
+
+    pub id: Uuid,
+    pub space_pk: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub contract_address: String,
+    pub deploy_block: i64,
+    pub last_block: i64,
+    pub remaining_count: i64,
+    pub total_count: i64,
+}
+
+impl From<SpaceIncentive> for SpaceIncentiveWire {
+    fn from(v: SpaceIncentive) -> Self {
+        Self {
+            pk: v.space_pk.parse().unwrap_or_default(),
+            sk: EntityType::SpaceIncentive,
+
+            id: v.id,
+            space_pk: v.space_pk,
+            created_at: v.created_at,
+            updated_at: v.updated_at,
+            contract_address: v.contract_address,
+            deploy_block: v.deploy_block,
+            last_block: v.last_block,
+            remaining_count: v.remaining_count,
+            total_count: v.total_count,
+        }
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on `SpaceIncentive`,
+    /// copied from commit 38ac1fcd8. Neither carries `#[serde(default)]`.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedKeys {
+        pk: Partition,
+        sk: EntityType,
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_row() {
+        let v = SpaceIncentive { space_pk: "SPACE#s1".into(), ..Default::default() };
+        let json = serde_json::to_value(&v).expect("serialize");
+        assert_eq!(json["pk"], serde_json::json!("SPACE#s1"));
+        serde_json::from_value::<ShippedKeys>(json).expect("shipped build must parse this");
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(SpaceIncentive { space_pk: "SPACE#s1".into(), ..Default::default() }).expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+        let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
+        assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
     }
 }

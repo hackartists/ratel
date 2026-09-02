@@ -11,6 +11,9 @@ use postgres::PostgresEntity;
 /// natural key. `incentive_address` is stored lowercase (as the old pk
 /// inner was) — a cross-feature/on-chain reference, no FK.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+// Serialize through `SpaceIncentiveTokenWire` so the shipped mobile build still finds
+// the legacy `pk`/`sk` keys. See `SpaceIncentiveTokenWire`.
+#[serde(into = "SpaceIncentiveTokenWire")]
 #[cfg_attr(feature = "server", derive(PostgresEntity))]
 #[cfg_attr(
     feature = "server",
@@ -134,5 +137,73 @@ impl SpaceIncentiveToken {
             .upsert_on(&["incentive_address", "token_address"], &item)
             .await?;
         Ok(())
+    }
+}
+
+/// Wire form of [`SpaceIncentiveToken`] — identical plus the legacy `pk`/`sk`.
+///
+/// Same reason as `UserWire`. The address was lowercased when the DynamoDB key
+/// was built, so the same normalization is applied here.
+#[derive(Serialize)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+pub struct SpaceIncentiveTokenWire {
+    /// `Partition::SpaceIncentive(incentive_address)` — lowercased, as written.
+    pub pk: Partition,
+    /// `EntityType::SpaceIncentiveToken(token_address)`.
+    pub sk: EntityType,
+
+    pub id: Uuid,
+    pub incentive_address: String,
+    pub token_address: String,
+    pub symbol: String,
+    pub decimals: i64,
+    pub balance: String,
+    pub updated_at: i64,
+}
+
+impl From<SpaceIncentiveToken> for SpaceIncentiveTokenWire {
+    fn from(v: SpaceIncentiveToken) -> Self {
+        Self {
+            pk: Partition::SpaceIncentive(v.incentive_address.to_lowercase()),
+            sk: EntityType::SpaceIncentiveToken(v.token_address.clone()),
+
+            id: v.id,
+            incentive_address: v.incentive_address,
+            token_address: v.token_address,
+            symbol: v.symbol,
+            decimals: v.decimals,
+            balance: v.balance,
+            updated_at: v.updated_at,
+        }
+    }
+}
+
+#[cfg(test)]
+mod shipped_client_compat_tests {
+    use super::*;
+
+    /// The identity fields the shipped mobile build declares on `SpaceIncentiveToken`,
+    /// copied from commit 38ac1fcd8. Neither carries `#[serde(default)]`.
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    struct ShippedKeys {
+        pk: Partition,
+        sk: EntityType,
+    }
+
+    #[test]
+    fn shipped_build_can_parse_current_row() {
+        let v = SpaceIncentiveToken { incentive_address: "0xABC".into(), token_address: "0xT1".into(), ..Default::default() };
+        let json = serde_json::to_value(&v).expect("serialize");
+        assert_eq!(json["pk"], serde_json::json!("SPACE_INCENTIVE#0xabc"));
+        serde_json::from_value::<ShippedKeys>(json).expect("shipped build must parse this");
+    }
+
+    #[test]
+    fn shipped_build_breaks_without_legacy_keys() {
+        let mut json = serde_json::to_value(SpaceIncentiveToken { incentive_address: "0xABC".into(), token_address: "0xT1".into(), ..Default::default() }).expect("serialize");
+        json.as_object_mut().unwrap().remove("pk");
+        let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
+        assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
     }
 }
