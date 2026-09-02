@@ -644,10 +644,25 @@ jobs:
 
       - name: Install dioxus-cli + tauri-cli
         run: |
-          # `--locked` pins dioxus-cli's published lockfile (git2 0.20); the
-          # source-build fallback otherwise grabs git2 0.21 and breaks auth-git2.
-          cargo binstall -y --locked dioxus-cli
-          cargo binstall -y --locked --version "^2.0.0" tauri-cli
+          # Source-build dx, do NOT binstall it — same reason build-images
+          # spells out above: binstall's prebuilt binary is linked against a
+          # newer glibc than this runner image ships, so it dies at launch
+          # with `GLIBC_2.39 not found` (seen again here on the first
+          # self-hosted run of this job). binstall will also happily overwrite
+          # a working source-built dx already on the runner disk, so guard it.
+          #
+          # `--locked` pins dioxus-cli's published Cargo.lock (git2 0.20);
+          # without it the build picks git2 0.21 and breaks auth-git2 0.5.8.
+          #
+          # ~/.cargo/bin persists between runs on the self-hosted runner, so
+          # this is a one-time cost per runner, not per build.
+          if dx --version >/dev/null 2>&1; then
+            echo "working dx already present: $(dx --version)"
+          else
+            cargo install dioxus-cli --locked --force
+          fi
+          # cargo-tauri has no such problem — keep the fast prebuilt path.
+          command -v cargo-tauri >/dev/null || cargo binstall -y --locked --version "^2.0.0" tauri-cli
 
       - name: Write upload keystore + signing config
         working-directory: app/ratel-tauri/src-tauri/gen/android
