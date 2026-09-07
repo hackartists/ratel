@@ -1,33 +1,9 @@
 //! Android push wiring (tauri-web only): registers the native-injected FCM
 //! token with the backend once the user is logged in, and routes
 //! notification-tap deep links into the app router. No-op on web/server.
-
-/// Convert a notification `cta_url` into an in-app **relative** route.
-///
-/// `cta_url`s are stored absolute (e.g. `https://dev.ratel.foundation/spaces/…`)
-/// because email links need a full URL. But `nav.push` on an absolute URL does
-/// a full-page navigation that leaves the embedded WebView bundle
-/// (`tauri.localhost`) for the remote web build — where the whole tauri-web
-/// layer (FCM token registration, the native `api_request` transport) is inert.
-/// Stripping the scheme+host keeps the tap inside the SPA. Already-relative
-/// `cta_url`s (e.g. `/spaces/{id}`) pass through unchanged.
-#[cfg(feature = "tauri-web")]
-fn deep_link_path(url: &str) -> String {
-    if let Some(rest) = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-    {
-        // Drop `scheme://host`, keep the path (+ query / fragment).
-        match rest.find('/') {
-            Some(i) => rest[i..].to_string(),
-            None => "/".to_string(),
-        }
-    } else if url.starts_with('/') {
-        url.to_string()
-    } else {
-        format!("/{url}")
-    }
-}
+//!
+//! Deep links go through `deep_link_path` — see that module for why an
+//! absolute `cta_url` must never reach `nav.push` on the Tauri shell.
 
 #[cfg(feature = "tauri-web")]
 pub fn use_push() {
@@ -36,6 +12,7 @@ pub fn use_push() {
     use crate::features::notifications::controllers::{
         register_device_handler, RegisterDeviceRequest,
     };
+    use crate::features::notifications::deep_link::deep_link_path;
     use dioxus::document::eval as dx_eval;
 
     #[derive(serde::Deserialize, Clone, PartialEq)]
