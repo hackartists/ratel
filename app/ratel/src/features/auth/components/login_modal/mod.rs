@@ -55,16 +55,21 @@ async fn submit_email_login(
     }
 
     loading.set(true);
+    // Mobile needs a device-scoped refresh token — it's the only thing that
+    // survives an app restart. `None` on web, where the browser cookie already
+    // does. See `login_device_id`.
+    let device_id = crate::features::auth::services::login_device_id().await;
     let result = login_handler(LoginRequest::Email {
         email: email.read().clone(),
         code: code.read().clone(),
-        device_id: None,
+        device_id,
     })
     .await;
     loading.set(false);
 
     match result {
         Ok(user) => {
+            crate::features::auth::services::remember_refresh_token(user.refresh_token.as_ref());
             user_ctx.set(UserContext {
                 user: Some(user.user),
                 refresh_token: user.refresh_token,
@@ -152,7 +157,7 @@ pub fn LoginModal(#[props(optional)] on_success: Option<Callback<()>>) -> Elemen
                 // Send a stable per-install device id so the server can
                 // mint a refresh_token. Without it, the next app restart
                 // would 401 on every authenticated call.
-                let device_id = crate::features::auth::services::device_id::get_or_create().await;
+                let device_id = crate::features::auth::services::login_device_id().await;
                 let result = login_handler(LoginRequest::OAuth {
                     provider: OauthProvider::Google,
                     access_token: user_info.access_token,
@@ -163,11 +168,9 @@ pub fn LoginModal(#[props(optional)] on_success: Option<Callback<()>>) -> Elemen
 
                 match result {
                     Ok(user) => {
-                        if let Some(token) = user.refresh_token.as_ref() {
-                            crate::features::auth::services::restore_session::save_refresh_token(
-                                token,
-                            );
-                        }
+                        crate::features::auth::services::remember_refresh_token(
+                            user.refresh_token.as_ref(),
+                        );
                         user_ctx.set(UserContext {
                             user: Some(user.user),
                             refresh_token: user.refresh_token,
