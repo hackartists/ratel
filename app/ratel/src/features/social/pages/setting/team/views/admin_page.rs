@@ -1,6 +1,6 @@
 use super::super::components::DeleteTeamPopup;
 use super::super::controllers::TeamResponse;
-use super::super::controllers::{delete_team_handler, update_team_handler, UpdateTeamRequest};
+use super::super::controllers::{update_team_handler, UpdateTeamRequest};
 use super::super::*;
 use crate::common::*;
 use crate::features::membership::controllers::{
@@ -38,6 +38,9 @@ fn format_last_saved(ts_millis: i64) -> String {
 pub fn AdminPage(username: String, team: TeamResponse) -> Element {
     let tr: TeamSettingsTranslate = use_translate();
     let mut popup = use_popup();
+    // `TeamContext` is `Copy`, so resolving it here (a hook call, which must
+    // run during render) lets the nested delete closure move it in freely.
+    let mut team_ctx = crate::common::contexts::use_team_context();
     let navigator = use_navigator();
 
     let mut toast = use_toast();
@@ -117,7 +120,9 @@ pub fn AdminPage(username: String, team: TeamResponse) -> Element {
                     let username = username.clone();
                     let navigator = navigator.clone();
                     spawn(async move {
-                        let result = delete_team_handler(username).await;
+                        // Via the context so the cached team list is updated —
+                        // see `TeamContext::delete_team`.
+                        let result = team_ctx.delete_team(username).await;
                         popup.close();
                         if result.is_ok() {
                             navigator.push("/");
