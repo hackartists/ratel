@@ -58,6 +58,8 @@ pub fn run() {
             commands::api_request::api_request,
             commands::external_url::open_external_url,
             commands::google_sign_in::google_sign_in,
+            commands::native_file::print_page,
+            commands::native_file::save_file,
             commands::s3_upload::s3_put_object,
         ])
         .run(tauri::generate_context!())

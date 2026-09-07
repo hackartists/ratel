@@ -269,7 +269,17 @@ build-ios: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj dx-build
 
 # Simulator build — no Apple team / code signing needed. Verifies the iOS
 # app compiles + bundles and produces a .app runnable on the Simulator.
-build-ios-sim: install-tauri-cli $(IOS_CARGO_CONFIG) gsi-copy dx-build
+# `gen-xcodeproj` is a prerequisite because `cargo tauri ios build` does NOT
+# re-run xcodegen, and the pbxproj lists sources individually even though
+# project.yml globs the `Sources` directory. A newly added .m/.h (e.g.
+# RatelFiles) is therefore invisible to the build: it compiles clean and
+# reports BUILD SUCCEEDED without the file, and the feature fails only at
+# runtime. Regenerating first keeps the project in step with the directory.
+build-ios-sim: install-tauri-cli $(IOS_CARGO_CONFIG) gsi-copy gen-xcodeproj dx-build
+	# The CLI moves the freshly built .app into gen/apple/build/arm64-sim with a
+	# plain rename, which fails with "Directory not empty (os error 66)" when a
+	# previous build left one there — i.e. every run after the first. Clear it.
+	@rm -rf src-tauri/gen/apple/build/arm64-sim
 	cd src-tauri && $(IOS_ENV) cargo tauri ios build --target aarch64-sim --debug
 
 # ── TestFlight (App Store Connect) ───────────────────────────────────

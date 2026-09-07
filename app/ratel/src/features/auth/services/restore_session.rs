@@ -29,6 +29,36 @@ pub fn clear_refresh_token() {
     storage::remove(REFRESH_TOKEN_STORAGE_KEY);
 }
 
+/// The stable device id to attach to a login/signup request, so the server
+/// mints a refresh token for this install.
+///
+/// `Some` only on the native mobile shell. Web and desktop keep the session in
+/// the browser's own cookie jar, which already survives restarts (30-day
+/// expiry, see `get_session_layer`); handing those targets a second long-lived
+/// credential in `localStorage` would widen the XSS blast radius for nothing —
+/// `try_restore_session` never runs there.
+pub async fn login_device_id() -> Option<String> {
+    #[cfg(feature = "tauri-web")]
+    {
+        crate::features::auth::services::device_id::get_or_create().await
+    }
+    #[cfg(not(feature = "tauri-web"))]
+    {
+        None
+    }
+}
+
+/// Persist the refresh token a login/signup response carried, if any.
+///
+/// Pair with [`login_device_id`] at every call site that authenticates: without
+/// the saved token the next app launch has nothing to exchange and the user
+/// lands back on the login screen.
+pub fn remember_refresh_token(token: Option<&String>) {
+    if let Some(token) = token {
+        save_refresh_token(token);
+    }
+}
+
 /// Best-effort restore. Always safe to call — never throws to the caller.
 /// Logs the outcome under `RatelRust` so failures show up in `adb
 /// logcat` during debugging.

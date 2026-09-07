@@ -265,8 +265,10 @@ function renderPieChart(req = {}) {
   return true;
 }
 
-async function downloadExcel(req = {}) {
-  const fileName = String(req.file_name || "poll-analysis.xlsx");
+/// Build the workbook described by `req`. Shared by both delivery paths so the
+/// spreadsheet is byte-identical whether the browser saves it or the native
+/// shell does.
+function buildWorkbook(req = {}) {
   const sheetName = String(req.sheet_name || "Responses");
   const rows =
     Array.isArray(req.rows) && req.rows.length > 0
@@ -289,12 +291,33 @@ async function downloadExcel(req = {}) {
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-  XLSX.writeFileXLSX(workbook, fileName, { compression: true });
+  return workbook;
+}
 
+/// Browser path: let XLSX click a hidden `<a download>`.
+///
+/// Only usable on the web. In a Tauri WebView this silently does nothing
+/// (Android drops the download without a DownloadListener, iOS WKWebView
+/// ignores the `download` attribute) — the mobile shell calls
+/// `buildExcelBase64` instead and saves the bytes natively.
+async function downloadExcel(req = {}) {
+  const fileName = String(req.file_name || "poll-analysis.xlsx");
+  XLSX.writeFileXLSX(buildWorkbook(req), fileName, { compression: true });
   return true;
 }
 
+/// Native path: return the .xlsx bytes as base64 so Rust can hand them to the
+/// `save_file` Tauri command. Nothing is written here.
+async function buildExcelBase64(req = {}) {
+  return XLSX.write(buildWorkbook(req), {
+    bookType: "xlsx",
+    type: "base64",
+    compression: true,
+  });
+}
+
 const analyzes = {
+  buildExcelBase64,
   downloadExcel,
   renderBarChart,
   renderPieChart,

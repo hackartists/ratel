@@ -61,3 +61,10 @@ reqwest = { version = "0.13", default-features = false, features = [
 # inset (body 666 vs 759). objc2 0.6 matches what tauri 2.9 / wry resolve.
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6"
+
+# Android-only: `native_file::save_file` / `print_page` call into
+# `MainActivity` (MediaStore save, PrintManager print) through the JNI handle
+# `window.with_webview` hands back. Pinned to the same 0.21 line tauri/wry
+# already resolve to, so `JValue` types match across the boundary.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
