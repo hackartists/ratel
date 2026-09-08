@@ -110,6 +110,11 @@ fn SourceRow(source: EssenceResponse) -> Element {
     let tr: EssenceSourcesTranslate = use_translate();
     let mut hook = use_essence_sources()?;
     let mut menu_open = use_signal(|| false);
+    // One menu per row, so the dismissal anchor has to be this row's own
+    // element — a shared class would resolve to the first row for every
+    // instance and close row N the moment it was pressed.
+    let menu_dom_id = use_hook(|| format!("essence-src-menu-{}", uuid::Uuid::now_v7()));
+    use_dismiss_on_outside_click(menu_open, format!("#{menu_dom_id}"));
     let nav = use_navigator();
 
     let id_for_delete = source.id.clone();
@@ -182,6 +187,7 @@ fn SourceRow(source: EssenceResponse) -> Element {
 
             div {
                 class: "essence-src-menu-wrap",
+                id: "{menu_dom_id}",
                 onclick: move |evt| evt.stop_propagation(),
                 button {
                     class: "essence-src-more",

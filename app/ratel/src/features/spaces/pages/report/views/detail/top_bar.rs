@@ -3,13 +3,31 @@ use crate::features::spaces::pages::report::hooks::SaveStatus;
 use crate::features::spaces::pages::report::*;
 use crate::*;
 
-/// Trigger the browser's native print dialog, scoped to the report
-/// body via the `@media print` styles in `main.css`. The user can pick
-/// "Save as PDF" as the destination from the system print dialog —
-/// no extra dependency needed, the printed HTML is the same content
-/// the browser already renders so figures (charts / tables) survive
-/// without rasterization.
-fn trigger_pdf_print() {
+/// Export the report as a PDF, scoped to the report body via the
+/// `@media print` styles in `main.css`.
+///
+/// On the web this is the browser's print dialog — the user picks
+/// "Save as PDF" as the destination. No extra dependency needed, and
+/// the printed HTML is the same content the browser already renders,
+/// so figures (charts / tables) survive without rasterization.
+///
+/// The mobile shell has no such dialog: `window.print()` is a silent
+/// no-op in both Android System WebView and iOS WKWebView, so this
+/// button did nothing at all in the shipped apps. There the job goes to
+/// the native `print_page` command, which renders the same print-media
+/// output through `PrintManager` (Android) / `UIPrintPageRenderer`
+/// (iOS). See `common::utils::native_file`.
+///
+/// The fork is decided at RUNTIME (`is_native_shell`), not by a Cargo feature:
+/// the web fullstack build enables `tauri-web` too, so gating on the flag put
+/// the native branch in the web bundle and dropped `window.print` from it.
+async fn trigger_pdf_print(job_name: String) -> crate::common::Result<()> {
+    use crate::common::utils::native_file;
+
+    if native_file::is_native_shell().await {
+        return native_file::print_page(&job_name).await;
+    }
+
     let _ = dioxus::document::eval(
         r#"
         // Use a tiny delay so any pending Dioxus re-render settles
@@ -19,6 +37,7 @@ fn trigger_pdf_print() {
         setTimeout(function () { window.print(); }, 50);
         "#,
     );
+    Ok(())
 }
 
 /// Top chrome row — back arrow + breadcrumb + autosave + Share /
@@ -29,6 +48,7 @@ pub fn TopBar() -> Element {
     let tr: ReportDetailTranslate = use_translate();
     let nav = use_navigator();
     let mut ctx = use_report_detail_context();
+    let mut toast = use_toast();
     let autosave_label = match ctx.save_status() {
         SaveStatus::Idle | SaveStatus::Saved => tr.autosave_just_now.to_string(),
         SaveStatus::Unsaved => tr.autosave_unsaved.to_string(),
@@ -77,7 +97,17 @@ pub fn TopBar() -> Element {
                     class: "report-detail__topbar-btn",
                     "aria-label": tr.pdf_download_btn,
                     "data-testid": "pdf-download",
-                    onclick: move |_| trigger_pdf_print(),
+                    onclick: move |_| async move {
+                        // The report title names the exported file, so a
+                        // saved PDF is identifiable in Files / Downloads
+                        // rather than landing as "document.pdf".
+                        if trigger_pdf_print(ctx.initial_title()).await.is_err() {
+                            // `Error::OnlyWebFunction` is what bubbles up here;
+                            // its own translation ("web only") would confuse a
+                            // user standing in the app, so say what happened.
+                            toast.warn(tr.pdf_download_failed);
+                        }
+                    },
                     svg {
                         view_box: "0 0 24 24",
                         fill: "none",

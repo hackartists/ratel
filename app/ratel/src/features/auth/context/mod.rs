@@ -14,6 +14,15 @@ pub struct AuthContext {
 impl AuthContext {
     pub fn init() -> Result<Self, Loading> {
         let user_ctx = use_loader(move || async move {
+            // Mobile: the native `api_request` cookie jar lives in a
+            // `OnceLock` — process lifetime only — so the session cookie is
+            // gone the moment the app is killed. Exchange the cached refresh
+            // token for a fresh server session BEFORE the first authenticated
+            // call, or `get_me` 401s and every launch dumps the user back on
+            // the login screen. No-op when nothing is cached.
+            #[cfg(feature = "tauri-web")]
+            crate::features::auth::services::try_restore_session().await;
+
             let res = Ok::<_, Error>(match get_me_handler().await {
                 Ok(resp) => UserContext {
                     user: resp.user,

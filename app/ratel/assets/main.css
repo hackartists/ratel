@@ -2472,11 +2472,12 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 
 /* ─── Mobile ──────────────────────────────────────────────── */
 @media (max-width: 640px) {
+  /* Wrap, never scroll: below 700px the toolbar isn't rendered at all
+     (the sheet replaces it), so the only sizes reaching this rule have
+     room for a second row. */
   .ratel-editor .re-toolbar {
     padding: 8px;
     gap: 4px;
-    overflow-x: auto;
-    flex-wrap: nowrap;
   }
   .ratel-editor .re-toolbar__group { padding: 0 2px; }
   .ratel-editor .re-toolbar__group + .re-toolbar__group {
@@ -2495,6 +2496,333 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
     min-height: 280px;
     /* iOS auto-zooms inputs under 16px; keep editor at 16px+ */
     font-size: 16px;
+  }
+}
+
+
+/* ─── Mobile format surface (Slack-style bottom sheet) ────────
+   Above 980px none of this renders and the desktop toolbar is the only
+   format UI — untouched. Below it the toolbar is the problem: every
+   surface that embeds the editor turns it into a single-row horizontal
+   scroller there, which leaves ~4 of 22 commands visible and the rest
+   behind a swipe nobody discovers. So the toolbar is hidden and
+   replaced by a compact always-on bar (undo/redo, "Aa", image, link)
+   plus a bottom sheet holding the full set, grouped and labelled.
+
+   The sheet's buttons reuse `.re-tb-btn` + `data-cmd`, so they inherit
+   the toolbar's pressed-state styling and the editor's existing click
+   delegation without a second code path. */
+.ratel-editor .re-mobile-bar,
+.ratel-editor .re-fmt-sheet {
+  display: none;
+}
+
+/* Phones get the sheet; everything with room keeps the real toolbar.
+   Width alone can't express that — an iPhone 15 Pro Max on its side is
+   932px wide (it would take the toolbar) while an iPad mini upright is
+   744px (it would lose one). So the switch is on device shape: narrow
+   OR short. Every iPad in either orientation lands on the toolbar,
+   which wraps to two or three rows and never scrolls; every phone in
+   either orientation lands on the sheet. */
+@media (max-width: 700px), (max-height: 520px) {
+  .ratel-editor .re-toolbar {
+    display: none !important;
+  }
+
+  /* ── Compact bar ──────────────────────────────────────── */
+  .ratel-editor .re-mobile-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 10px;
+    background: var(--re-toolbar-bg);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--re-border-subtle);
+  }
+  .ratel-editor .re-mobile-bar__btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    flex-shrink: 0;
+  }
+  .ratel-editor .re-mobile-bar__btn svg {
+    width: 18px;
+    height: 18px;
+  }
+  /* The "Insert data" affordance is a primary action on the surfaces
+     that pass it, so it keeps the accent treatment it has on desktop. */
+  .ratel-editor .re-mobile-bar__btn--insert {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 1px solid var(--re-border-active);
+    background: rgba(252, 179, 0, 0.12);
+    color: var(--re-accent);
+    cursor: pointer;
+    padding: 0;
+    /* Pushed hard right so the buttons before it keep a fixed position
+       whether or not the host surface passes an insert-data handler. */
+    margin-left: auto;
+  }
+
+  .ratel-editor .re-mobile-bar__fmt {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 40px;
+    padding: 0 12px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    border: 1px solid var(--re-border-strong);
+    background: var(--re-input-bg-focus);
+    color: var(--re-text-primary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .ratel-editor .re-mobile-bar__fmt[aria-expanded="true"] {
+    border-color: var(--re-border-active);
+    background: rgba(252, 179, 0, 0.12);
+    color: var(--re-accent);
+  }
+  .ratel-editor .re-mobile-bar__fmt-glyph {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  /* The glyph alone reads as "text formatting" once you have seen it;
+     the word is what makes it discoverable the first time, so it is
+     dropped only when the bar genuinely runs out of room. 360dp is the
+     single most common Android width (it is what the test AVD reports),
+     so the cutoff sits below it, not on it. With undo/redo moved into the
+     sheet the bar needs ~254px there, leaving ~48px of slack. */
+  @media (max-width: 340px) {
+    .ratel-editor .re-mobile-bar__fmt-label {
+      display: none;
+    }
+  }
+
+  /* ── Bottom sheet ─────────────────────────────────────── */
+  .ratel-editor .re-fmt-sheet[data-open="true"] {
+    display: block;
+    position: fixed;
+    inset: 0;
+    /* Above the app's bottom bars and drawers, below nothing else the
+       editor owns. Matches the z-index the selection bubble uses. */
+    z-index: 120;
+  }
+  .ratel-editor .re-fmt-sheet__scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+  }
+  .ratel-editor .re-fmt-sheet__panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    /* Sit on top of the soft keyboard, not behind it. `--kb-inset` is the
+       keyboard height, published on <html> by app.rs from `visualViewport`
+       — the same variable `.composer-arena` sizes itself with. 0 when the
+       keyboard is closed. */
+    bottom: var(--kb-inset, 0px);
+    max-height: 72vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--re-toolbar-bg);
+    backdrop-filter: blur(24px);
+    border-top: 1px solid var(--re-border-strong);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
+    color: var(--re-text-primary);
+    font-family: 'Outfit', sans-serif;
+    /* Clear the home indicator / gesture bar. */
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: re-fmt-sheet-in 0.18s ease-out;
+  }
+  @keyframes re-fmt-sheet-in {
+    from {
+      transform: translateY(14px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  .ratel-editor .re-fmt-sheet__grip {
+    width: 36px;
+    height: 4px;
+    margin: 8px auto 2px;
+    border-radius: 2px;
+    background: var(--re-border-strong);
+    flex-shrink: 0;
+  }
+  .ratel-editor .re-fmt-sheet__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px 10px;
+    border-bottom: 1px solid var(--re-border-subtle);
+    flex-shrink: 0;
+  }
+  .ratel-editor .re-fmt-sheet__title {
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .ratel-editor .re-fmt-sheet__done {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--re-accent);
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 6px 4px;
+    cursor: pointer;
+  }
+  .ratel-editor .re-fmt-sheet__body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 12px 12px;
+  }
+  .ratel-editor .re-fmt-sheet__section {
+    padding: 9px 4px;
+  }
+  .ratel-editor .re-fmt-sheet__section + .re-fmt-sheet__section {
+    border-top: 1px solid var(--re-border-subtle);
+  }
+  .ratel-editor .re-fmt-sheet__label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--re-text-dim);
+  }
+  /* A fixed 4-column grid rather than wrapping flex: it keeps the tiles
+     the same width in every section, so the sheet reads as one grid
+     instead of five differently-ragged rows. Sections with 5 or 6
+     commands simply spill onto a second row at the same pitch. */
+  .ratel-editor .re-fmt-sheet__row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .ratel-editor .re-fmt-sheet__blocks {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  /* Command tile: the toolbar's icon button plus the word for it. On a
+     phone there is no hover, so `data-tip` never fires and an icon-only
+     grid would be a guessing game. */
+  .ratel-editor .re-fmt-btn {
+    width: auto;
+    min-width: 0;
+    height: auto;
+    min-height: 58px;
+    flex-direction: column;
+    gap: 5px;
+    padding: 9px 4px;
+    border-color: var(--re-border-subtle);
+    background: var(--re-input-bg);
+  }
+  .ratel-editor .re-fmt-btn svg {
+    width: 19px;
+    height: 19px;
+  }
+  .ratel-editor .re-fmt-btn__label {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.15;
+    text-align: center;
+    /* Long labels ("Clear formatting") must not stretch the tile past
+       its neighbours — the row is a fixed grid, the word wraps. */
+    overflow-wrap: anywhere;
+  }
+  .ratel-editor .re-fmt-btn[aria-pressed="true"] {
+    border-color: var(--re-border-active);
+  }
+
+  /* Block pills. Each renders in the style it applies, so the choice is
+     legible without reading the label. */
+  .ratel-editor .re-fmt-block {
+    appearance: none;
+    min-width: 0;
+    padding: 11px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--re-border-subtle);
+    background: var(--re-input-bg);
+    color: var(--re-text-primary);
+    font-family: 'Outfit', sans-serif;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease,
+      color 0.15s ease;
+  }
+  .ratel-editor .re-fmt-block.re-block__item--active {
+    border-color: var(--re-border-active);
+    background: rgba(252, 179, 0, 0.12);
+    color: var(--re-accent);
+  }
+  .ratel-editor .re-fmt-block--p {
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .ratel-editor .re-fmt-block--h1 {
+    font-size: 18px;
+    font-weight: 800;
+  }
+  .ratel-editor .re-fmt-block--h2 {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .ratel-editor .re-fmt-block--h3 {
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .ratel-editor .re-fmt-block--quote {
+    font-size: 14px;
+    font-style: italic;
+    color: var(--re-text-muted);
+  }
+  .ratel-editor .re-fmt-block--code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--re-text-muted);
+  }
+
+  /* Surfaces that move the toolbar to the end of the editor's flex
+     column (composer, sub-team compose, report editor) want the compact
+     bar in that same slot — a sticky top bar there would float over the
+     writing area it is supposed to sit under. */
+  .composer-arena .ratel-editor .re-mobile-bar,
+  .sub-team-broadcast-compose .ratel-editor .re-mobile-bar,
+  .sub-team-doc-compose .ratel-editor .re-mobile-bar,
+  .report-detail .ratel-editor .re-mobile-bar {
+    position: relative;
+    top: auto;
+    order: 5;
+    flex-shrink: 0;
+    width: 100%;
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    border: 1px solid var(--re-border-strong);
+    border-radius: 14px;
+  }
+  .report-detail .ratel-editor .re-mobile-bar {
+    margin: 8px 0 14px;
   }
 }
 
@@ -6289,6 +6617,10 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 .essence-topbar__back {
   width: 38px;
   height: 38px;
+  /* A flex item defaults to `flex-shrink: 1`, so a long title beside it
+     squeezed this fixed square into an oval. Its siblings in the same topbar
+     (badge, progress ring) already carry this — the back button didn't. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
@@ -6440,7 +6772,10 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 }
 .my-ai__topbar-left { display: flex; align-items: center; gap: 14px; }
 .my-ai__back {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0; border-radius: 10px;
   background: var(--my-ai-glass);
   border: 1px solid var(--my-ai-border);
   display: flex; align-items: center; justify-content: center;
@@ -7109,6 +7444,9 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 .post-arena .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
@@ -8158,6 +8496,9 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
@@ -8385,23 +8726,6 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   bottom: calc(100% + 6px);
 }
 @media (max-width: 980px) {
-  /* Mobile: a 2-row pill is too tall on small screens — fall back to
-     a single-row horizontally-scrollable strip pinned to the bottom
-     of the editor flex column. */
-  .composer-arena .ratel-editor .re-toolbar {
-    width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-  }
-  .composer-arena .ratel-editor .re-toolbar::-webkit-scrollbar {
-    height: 4px;
-  }
-  .composer-arena .ratel-editor .re-toolbar::-webkit-scrollbar-thumb {
-    background: var(--re-border-strong);
-    border-radius: 2px;
-  }
   /* In-flow bottom-bar handles its own height — composer-page just
      needs minimal breathing room above it on mobile. */
   .composer-arena .composer-page {
@@ -8953,6 +9277,13 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   align-items: center;
   justify-content: space-between;
   padding: 12px 28px;
+  /* `position: fixed; bottom: 0` anchors to the viewport, and the WebView draws
+     under the system bar (`enableEdgeToEdge()` + `viewport-fit=cover`), so the
+     progress row and the attachment button sat behind Android's 3-button nav.
+     Pad by the real inset instead of a guess — a gesture pill is thin, a
+     3-button bar is not, and it is 0 on desktop. Same fix as the arena panels'
+     `__body`. */
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
   backdrop-filter: blur(20px);
 }
 .bottom-bar__left {
@@ -9185,7 +9516,10 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 }
 .credentials-arena .arena-topbar__left { display: flex; align-items: center; gap: 14px; }
 .credentials-arena .back-btn {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0; border-radius: 10px;
   background: var(--bg-glass); border: 1px solid var(--border-subtle);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.25s ease; padding: 0;
@@ -11627,6 +11961,20 @@ html[data-theme="light"] .team-arena .tm-modal__error,
 .rewards-arena {
   position: relative;
   min-height: 100vh;
+  /* This arena is a flex item of `.social-scroll` (a column flex box), so the
+     default `flex-shrink: 1` squashed its box down to the scrollport height
+     while its content ran on far longer — measured one viewport (740px)
+     against 4165px of reward rows. A sticky element is bounded by its
+     containing block, so `.arena-topbar` unpinned and scrolled away the
+     moment the reader passed that first viewport. Refusing to shrink makes
+     the box match the content and the header stays put for the whole list.
+     Deliberately NOT fixed by giving this arena its own `overflow-y: auto`
+     (the model `.drafts-arena` / `.essence-arena` / `.my-ai` follow): the
+     layout installs pull-to-refresh on `.social-scroll`, and that gesture
+     only fires while `.social-scroll` is the element actually scrolling.
+     NOTE: this rule is duplicated below/above (team_reward + user_reward
+     stylesheets were merged into main.css); keep the two in step. */
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-void);
@@ -11659,7 +12007,16 @@ html[data-theme="light"] .team-arena .tm-modal__error,
 }
 .rewards-arena .arena-topbar__left { display: flex; align-items: center; gap: 14px; }
 .rewards-arena .back-btn {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0; border-radius: 10px;
   background: var(--bg-glass); border: 1px solid var(--border-subtle);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.25s ease; padding: 0;
@@ -14194,6 +14551,12 @@ html[data-theme="light"] .team-arena .ta-settings-action,
   position: relative;
   width: 100%;
   min-height: 100vh;
+  /* Same shape as `.rewards-arena`: a flex item of `.social-scroll` whose
+     default `flex-shrink: 1` squashed the box to the scrollport height while
+     the content ran on much longer. A sticky element is bounded by its
+     containing block, so `.arena-topbar` unpinned about one viewport in.
+     Refusing to shrink makes the box match the content. */
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   /* `overflow-x: hidden` would implicitly set overflow-y to auto and create
@@ -15676,7 +16039,10 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
 }
 .drafts-arena .arena-topbar__left { display: flex; align-items: center; gap: 14px; }
 .drafts-arena .back-btn {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0; border-radius: 10px;
   background: var(--bg-glass); border: 1px solid var(--border-subtle);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.25s ease; padding: 0;
@@ -15990,6 +16356,13 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
   .stats-strip { grid-template-columns: 1fr 1fr; gap: 8px; }
   .stats-strip > *:nth-child(3) { grid-column: 1 / -1; }
   .filter-row { gap: 8px; }
+  /* Let the chips take a full row of their own and wrap onto as many lines
+     as they need. They used to sit on one line with `overflow-x: auto`,
+     which cut "이번주" and the sort control off the right edge — and a
+     sideways-scrollable strip with no affordance is not something people
+     find. The sort control then falls to the next line, which is where the
+     report asked for it ("탭은 최근 편집 위로"). */
+  .filter-chips { flex: 1 1 100%; flex-wrap: wrap; overflow-x: visible; }
   .sort { margin-left: auto; }
   .draft-card { grid-template-columns: 18px 1fr; padding: 14px 16px; gap: 11px; }
   .draft-card__actions { grid-column: 2; justify-self: flex-start; opacity: 1; margin-top: 4px; }
@@ -16031,6 +16404,20 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
 .rewards-arena {
   position: relative;
   min-height: 100vh;
+  /* This arena is a flex item of `.social-scroll` (a column flex box), so the
+     default `flex-shrink: 1` squashed its box down to the scrollport height
+     while its content ran on far longer — measured one viewport (740px)
+     against 4165px of reward rows. A sticky element is bounded by its
+     containing block, so `.arena-topbar` unpinned and scrolled away the
+     moment the reader passed that first viewport. Refusing to shrink makes
+     the box match the content and the header stays put for the whole list.
+     Deliberately NOT fixed by giving this arena its own `overflow-y: auto`
+     (the model `.drafts-arena` / `.essence-arena` / `.my-ai` follow): the
+     layout installs pull-to-refresh on `.social-scroll`, and that gesture
+     only fires while `.social-scroll` is the element actually scrolling.
+     NOTE: this rule is duplicated below/above (team_reward + user_reward
+     stylesheets were merged into main.css); keep the two in step. */
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-void);
@@ -16063,7 +16450,10 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
 }
 .rewards-arena .arena-topbar__left { display: flex; align-items: center; gap: 14px; }
 .rewards-arena .back-btn {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0; border-radius: 10px;
   background: var(--bg-glass); border: 1px solid var(--border-subtle);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.25s ease; padding: 0;
@@ -21169,6 +21559,12 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
 
   position: relative;
   min-height: 100vh;
+  /* Same shape as `.rewards-arena`: a flex item of its scroll container whose
+     default `flex-shrink: 1` squashed the box to the scrollport height while
+     the content ran on much longer. A sticky element is bounded by its
+     containing block, so `.arena-topbar` unpinned about one viewport in.
+     Refusing to shrink makes the box match the content. */
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   isolation: isolate;
@@ -25121,6 +25517,9 @@ html[data-theme="light"] .sga-modal__confirm-danger,
 .topbar__back {
   width: 36px;
   height: 36px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--glass);
   backdrop-filter: blur(16px);
@@ -26820,6 +27219,9 @@ body.comments-panel-resizing {
 .poll-header__back {
   width: 36px;
   height: 36px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--dark, rgba(12, 12, 26, 0.65))
     var(--light, rgba(255, 255, 255, 0.85));
@@ -27349,6 +27751,10 @@ body.comments-panel-resizing {
 .quiz-topbar__left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
 .quiz-topbar__back {
   width: 40px; height: 40px; border-radius: 10px;
+  /* A flex item defaults to `flex-shrink: 1`, so a long title beside it
+     squeezed this fixed square into an oval. Its siblings in the same topbar
+     (badge, progress ring) already carry this — the back button didn't. */
+  flex-shrink: 0;
   background: var(--dark, rgba(12,12,26,0.65)) var(--light, rgba(255,255,255,0.72));
   backdrop-filter: blur(16px);
   border: 1px solid var(--dark, rgba(255,255,255,0.06)) var(--light, rgba(0,0,0,0.08));
@@ -28136,8 +28542,11 @@ body.comments-panel-resizing {
   position: absolute;
   top: 0; right: 0;
   width: 520px;
-  height: 100vh;
-  z-index: 25;
+  /* Fill `.arena`, not the viewport — see `.settings-panel`. */
+  height: 100%;
+  /* Above `.archive-panel` (30): the floating "완료됨" list stayed painted
+     over the open leaderboard at 25. */
+  z-index: 35;
   background: var(--panel-bg);
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);
@@ -28267,6 +28676,9 @@ body.comments-panel-resizing {
   flex: 1;
   overflow-y: auto;
   padding: 20px 28px 28px;
+  /* Clears the nav bar / home indicator so the last participants scroll fully
+     into view (0 on desktop). Matches `.settings-panel__body`. */
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -28502,8 +28914,15 @@ body.comments-panel-resizing {
   top: 0;
   right: 0;
   width: 480px;
-  height: 100vh;
-  z-index: 25;
+  /* Fill the positioned parent (`.arena`, already inside the :root safe-area
+     padding) — the fix `.settings-panel` documents. A flat `100vh` overshoots
+     by the status-bar/nav-bar insets, which is what pushed the last rows
+     (CREATED BY …) under the system bar. */
+  height: 100%;
+  /* Above `.archive-panel` (30). Both are absolutely positioned in the arena,
+     and the full-screen panel must cover the floating "완료됨" list — at 25 the
+     archive stayed painted on top of the open settings sheet. */
+  z-index: 35;
   background: var(--panel-bg);
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);
@@ -28558,6 +28977,12 @@ body.comments-panel-resizing {
   flex: 1;
   overflow-y: auto;
   padding: 28px;
+  /* Clears the Android nav bar / iOS home indicator so the last rows
+     (CREATED BY …) can be scrolled fully into view. `viewport-fit=cover`
+     (index.html) plus `enableEdgeToEdge()` (MainActivity) make the inset
+     report the real bar height — 3-button nav is much taller than the
+     gesture pill — and it is 0 on desktop. */
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -29492,7 +29917,10 @@ body.comments-panel-resizing {
      status-bar/nav-bar insets and pushes the bottom-anchored logout button
      (margin-top:auto) off-screen / behind the system nav bar. */
   height: 100%;
-  z-index: 25;
+  /* Above `.archive-panel` (30). Both are absolutely positioned in the arena,
+     and the full-screen panel must cover the floating "완료됨" list — at 25 the
+     archive stayed painted on top of the open settings sheet. */
+  z-index: 35;
   background: var(--panel-bg);
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);
@@ -30436,6 +30864,9 @@ body.comments-panel-resizing {
 .sub-team-application-status .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--sub-team-glass);
   border: 1px solid var(--sub-team-border);
@@ -31443,6 +31874,9 @@ body.comments-panel-resizing {
 .sub-team-apply .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--sub-team-glass);
   border: 1px solid var(--sub-team-border);
@@ -32238,6 +32672,9 @@ body.comments-panel-resizing {
 .sub-team-broadcast-compose .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--sub-team-glass);
   border: 1px solid var(--sub-team-border);
@@ -34574,6 +35011,9 @@ body.comments-panel-resizing {
 .sub-team-doc-compose .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--sub-team-glass);
   border: 1px solid var(--sub-team-border);
@@ -38291,6 +38731,18 @@ body.comments-panel-resizing {
   .home-arena .home-arena__scroll > .carousel-wrapper {
     margin-top: auto;
   }
+}
+
+/* ...and on phone widths too, for the standalone home. The rule above stops at
+   768px because a phone column is normally full, so centring would have been a
+   no-op — but a narrow *tall* viewport (a resized browser window, a foldable's
+   outer screen) is both under 768px wide and far taller than the content, and
+   there the card was stranded at the top above an ~800px void. An auto margin
+   only claims space that is actually free, so a 360x640 phone is unchanged and
+   only the case with slack gets centred. Scoped to `--standalone` so the home
+   embedded in the team arena keeps its own grid layout. */
+.home-arena--standalone .home-arena__scroll > .carousel-wrapper {
+  margin-top: auto;
 }
 
 /* === src/views/index/pull_to_refresh (mobile only) === */
@@ -42480,14 +42932,52 @@ body.comments-panel-resizing {
    safe area is already handled by the `:root` padding, so the pinned header
    lands just below the status bar with `top: 0`. Desktop is untouched. */
 @media (max-width: 768px) {
+  /* Viewport-anchored, not `height: 100%`. `100%` resolves against `body`,
+     and on mobile `body` is content-driven (tailwind flips it to
+     `overflow: auto` under 900px) — measured at 549px on a 480px-tall
+     viewport. So `100%` meant "as tall as the content", the page grew, and
+     the sticky topbar drifted away with it. A viewport-relative height is
+     always definite. Same fix as `.team-arena`, `.post-arena` and
+     `.composer-arena`; `--kb-inset` is the soft-keyboard height app.rs
+     publishes on <html>. */
   .space-general-arena,
   .space-panels-arena,
   .space-files-arena,
   .analyze-arena {
-    height: 100%;
+    height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--kb-inset, 0px)
+    );
+    max-height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--kb-inset, 0px)
+    );
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+  }
+  /* The space arena and the standalone home are single-screen layouts by
+     design: their base rules are `height: 100%` + `overflow: hidden` with an
+     inner scroll region (`.home-arena__scroll` for home; fixed sections for
+     the space arena). The generic `height: auto` group above overrides that
+     on mobile — same class specificity, declared later — so the arena grew to
+     content height and the DOCUMENT scrolled instead. That is what made the
+     topbar and the filter tabs slide away and read as a half-cut, broken row.
+     Restore the intended model. `100%` (not `100dvh`) is deliberate: `:root`
+     already carries the safe-area insets as padding, so `100dvh` would exceed
+     the visible area by the inset and hand the overflow back to `body`. */
+  .arena,
+  .home-arena--standalone {
+    height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--kb-inset, 0px)
+    );
+    max-height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--kb-inset, 0px)
+    );
+    min-height: 0;
+    overflow: hidden;
   }
   /* Analyze pages (home / create / report / poll·discussion detail) nest the
      real content + its sticky `.arena-topbar` inside an inner `.arena` that was
@@ -42499,6 +42989,91 @@ body.comments-panel-resizing {
     overflow-y: auto;
     overflow-x: hidden;
   }
+
+  /* Analyze LIST arena — one screen, no scroll (mobile only).
+     The list is a stack of fixed heights: a two-line hint (36px of text
+     plus 24px of <p> margin), `.report-carousel` min-height 440, a card
+     min-height 340 and the dots row. Measured against a 360x640 phone
+     that totals 716px inside a 640px arena — 76px of overflow, and the
+     scroll it produced is what dragged the sticky topbar off screen.
+     Rather than shave those numbers (they'd break again on a shorter
+     device), make every level between the arena and the card elastic so
+     the carousel absorbs exactly what's left. Desktop keeps the fixed
+     sizes; the other analyze surfaces (`--create`, `--detail`,
+     `--records`) legitimately scroll and are not matched here. */
+  /* `auto`, not `hidden`. Everything below is sized so the list fits a
+     portrait phone without scrolling, but a viewport too short for the
+     card's own content (landscape, ~360px tall) physically cannot fit —
+     there, scrolling is the correct outcome and clipping is not. */
+  .analyze-arena--list > .arena { overflow-y: auto; overflow-x: hidden; }
+  .analyze-arena--list .arena-topbar { flex-shrink: 0; }
+  /* `.split` is a grid; plain `1fr` floors the row at content height, so
+     `minmax(0, 1fr)` is what actually lets `.main` shrink below it. */
+  .analyze-arena--list .split {
+    flex: 1 1 auto;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .analyze-arena--list .main,
+  .analyze-arena--list .analyze-builder,
+  .analyze-arena--list .builder-list {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .analyze-arena--list .builder-list-head { flex-shrink: 0; }
+  /* The hint reads "use the arrows to flip through analyses" — the
+     arrows are `display: none` under 480px, so on a phone the sentence
+     is both wrong and the single largest fixed block in the stack. */
+  .analyze-arena--list .builder-hint { display: none; }
+  /* 200px is the floor, not 0: the card's own content (status pill,
+     64px icon, title, one chip row) measures 192px, and squashing the
+     carousel past that would clip it inside `__viewport`'s
+     `overflow: hidden` with no scrollbar to reveal it. Keeping the
+     floor lets the overflow travel up to `.arena`, which scrolls. */
+  .analyze-arena--list .report-carousel {
+    flex: 1 1 auto;
+    min-height: 200px;
+  }
+  .analyze-arena--list .report-carousel__viewport { height: 100%; }
+  .analyze-arena--list .report-carousel__track {
+    height: 100%;
+    align-items: stretch;
+  }
+  /* Keep the card at its designed height and let the leftover space be
+     margin — stretching it to fill the carousel just spreads the icon,
+     title and chips apart (the chips are `margin-top: auto`). `min()`
+     is the clamp: the design height when it fits, the carousel height
+     when the screen is too short for it. */
+  .analyze-arena--list .report-card-large {
+    height: min(100%, 360px);
+    min-height: 0;
+    /* Padding is the first thing to give on a short screen; without a
+       clamp the icon + title + chips would paint outside the card. */
+    padding: clamp(14px, 4vh, 28px) 18px;
+    gap: clamp(8px, 2vh, 14px);
+    overflow: hidden;
+  }
+  @media (max-width: 480px) {
+    .analyze-arena--list .report-card-large { height: min(100%, 340px); }
+  }
+  /* One row of dots, always. A wrapped second row would silently steal
+     height from the carousel the moment a space passes ~22 analyses. */
+  .analyze-arena--list .report-carousel__dots {
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .analyze-arena--list .report-carousel__dots::-webkit-scrollbar { display: none; }
+  .analyze-arena--list .report-carousel__dot { flex-shrink: 0; }
+  /* Landscape (and split-screen) leaves ~300px under the topbar. The
+     card's content floor is 192px, so the difference has to come out of
+     the chrome around it or the page scrolls for the sake of padding. */
+  @media (max-height: 620px) {
+    .analyze-arena--list .split { padding-top: 8px; padding-bottom: 8px; }
+    .analyze-arena--list .builder-list { gap: 10px; }
+    .analyze-arena--list .builder-list-head h2 { font-size: 15px; }
+  }
   /* The analyze report/detail variant (`--detail`, e.g. the cross-filter report
      view) kept `height: 100vh` — taller than the safe-area-constrained body — so
      it overflowed instead of scrolling, and its topbar was `position: relative`.
@@ -42506,9 +43081,15 @@ body.comments-panel-resizing {
      already scrolls with a sticky topbar.) `body` prefix raises specificity above
      the variant's own (0,2,0)/(0,3,0) rules. */
   body .analyze-arena.analyze-arena--detail {
-    height: 100%;
+    height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--kb-inset, 0px)
+    );
     min-height: 0;
-    max-height: 100%;
+    max-height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--kb-inset, 0px)
+    );
     overflow-y: auto;
     overflow-x: hidden;
   }
@@ -42528,7 +43109,14 @@ body.comments-panel-resizing {
      `body` prefix bumps specificity above the bare `.reports-arena` base rule,
      which is defined LATER in the source and would otherwise win. */
   body .reports-arena {
-    height: 100%;
+    height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--kb-inset, 0px)
+    );
+    max-height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--kb-inset, 0px)
+    );
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
@@ -42537,6 +43125,81 @@ body.comments-panel-resizing {
     position: sticky;
     top: 0;
     z-index: 30;
+  }
+  /* ...but the carousel row underneath is not actually elastic, so it
+     never gets the chance to scroll: `.carousel-wrapper` is
+     `overflow: hidden` wrapped around a card with a fixed 360px
+     min-height, which means on anything shorter than ~600px the card's
+     footer and the whole dots row are silently CLIPPED — no scrollbar,
+     no indication that content exists below. Measured at 360x560 the
+     dots row disappears completely. Give the wrapper and the track a
+     real floor of zero and let the card shrink into whatever is left.
+     `min()` is the clamp: the designed height when it fits, the track's
+     height when the screen is too short for it — so a 640px phone is
+     pixel-identical to before and only shorter screens change.
+     The `body` prefix is required: the reports card sizing lives in a
+     `@media (max-width: 500px)` block much further down the file and
+     would otherwise win on source order at equal specificity. */
+  /* The wrapper's `overflow: hidden` is the whole bug: per flexbox, a
+     flex item only gets an automatic content-based minimum size while
+     its overflow is `visible`. With `hidden` that floor becomes 0, so
+     the arena squeezed the wrapper past the card and quietly ate the
+     footer and the dots row. Restoring `visible` restores the floor —
+     and it tracks the real content, so it stays correct when Android's
+     font-size setting reflows the description to more lines, which a
+     hard-coded px floor could not. Nothing needs the clip: the track
+     clips its own horizontal scroll, and the edge fades are absolutely
+     positioned inside the wrapper. */
+  body .reports-arena .carousel-wrapper {
+    flex: 1 1 auto;
+    overflow: visible;
+  }
+  /* `1 1 auto` (the track fills the wrapper), NOT `0 1 auto`. With a
+     content-sized basis the card's `height: min(100%, ...)` and the
+     track's auto height chase each other and the card settles at its
+     intrinsic ~325px even on a screen with room for the full 360px.
+     Letting the track fill gives the percentage a definite base. The
+     only visible consequence is that the dots row anchors to the
+     bottom instead of sitting ~20px higher; the card itself lands on
+     exactly the same pixel as before on any screen that already fit. */
+  body .reports-arena .carousel-track {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  body .reports-arena .report-card {
+    /* `min-content`, not 0. `height: min(100%, 360px)` is a preference, but
+       360px stops being enough once Android's font-size setting reflows the
+       create card's description — measured a 2px clip at 130%. A content
+       floor lets the card outgrow the cap in exactly that case, and the
+       arena (`overflow-y: auto`) takes the difference. */
+    min-height: min-content;
+    height: min(100%, 360px);
+  }
+  body .reports-arena .carousel-dots { flex-shrink: 0; }
+  /* Once the card can shrink, its fixed-size children shrink with it —
+     the 64px create icon flattened into a pill on a 480px-tall screen.
+     Pin the shapes and let the description paragraph be the part that
+     gives (the card is `overflow: hidden`, so it is also the backstop). */
+  body .reports-arena .report-card__create-icon,
+  body .reports-arena .report-card__create-cta,
+  body .reports-arena .report-card__top,
+  body .reports-arena .report-card__identity,
+  body .reports-arena .report-card__footer {
+    flex-shrink: 0;
+  }
+  /* 48px of vertical padding is a fifth of the card once the screen is
+     short enough to shrink it. Scoped by HEIGHT so a 640px-tall phone —
+     which already fit the full 360px card — is left exactly as it was. */
+  @media (max-height: 620px) {
+    body .reports-arena .report-card--create { padding: 28px 24px; gap: 14px; }
+    /* 60px of track padding above and below is a third of the space a
+       landscape phone has left after the topbar and the filter row. */
+    body .reports-arena .carousel-track { padding-top: 16px; padding-bottom: 16px; }
+    body .reports-arena .carousel-dots { padding-bottom: 10px; }
+    /* The "— REPORTS —" divider is decoration; the counts row directly
+       under it already names the section. First thing to go when the
+       viewport is too short for the card itself. */
+    body .reports-arena .section-label { display: none; }
   }
 }
 
@@ -44179,6 +44842,9 @@ body.comments-panel-resizing {
   justify-content: center;
   width: 32px;
   height: 32px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
@@ -45222,7 +45888,12 @@ body.comments-panel-resizing {
 }
 .analyze-arena.analyze-arena--detail .bar-row {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
+  /* `minmax(0, auto)` on the value column, not bare `auto`: the value carries
+     the whole option text (`label · count (pct)` — see PollQuestionCard), so an
+     `auto` track sized itself to that max-content, squeezed the `1fr` bar down
+     to a sliver and pushed the tail out of the card. `minmax(0, …)` lets it
+     shrink so the text can wrap instead. */
+  grid-template-columns: 28px 1fr minmax(0, auto);
   align-items: center;
   gap: 12px;
 }
@@ -45253,8 +45924,14 @@ body.comments-panel-resizing {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-primary);
-  white-space: nowrap;
-  min-width: 96px;
+  /* Wraps rather than running off the card. `min-width: 0` is what actually
+     allows it — a grid item's default `min-width: auto` refuses to shrink
+     below its content, which is why the old `nowrap` + `min-width: 96px`
+     overflowed on narrow screens. `anywhere` covers a single long unbroken
+     token (a URL-ish option label). */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
   text-align: right;
 }
 .analyze-arena.analyze-arena--detail .bar-row[data-correct="true"] .bar-row__label,
@@ -48890,24 +49567,6 @@ body.comments-panel-resizing {
 }
 
 @media (max-width: 980px) {
-  /* Single-row horizontally-scrollable toolbar on mobile. */
-  .sub-team-broadcast-compose .ratel-editor .re-toolbar,
-  .sub-team-doc-compose .ratel-editor .re-toolbar {
-    width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-  }
-  .sub-team-broadcast-compose .ratel-editor .re-toolbar::-webkit-scrollbar,
-  .sub-team-doc-compose .ratel-editor .re-toolbar::-webkit-scrollbar {
-    height: 4px;
-  }
-  .sub-team-broadcast-compose .ratel-editor .re-toolbar::-webkit-scrollbar-thumb,
-  .sub-team-doc-compose .ratel-editor .re-toolbar::-webkit-scrollbar-thumb {
-    background: var(--re-border-strong);
-    border-radius: 2px;
-  }
   /* On mobile the side-panel is the shared bottom-sheet drawer
      (position: fixed at bottom, translateY(100%) when closed). The
      composer + editor stay viewport-fit just like post_edit. The
@@ -49418,6 +50077,9 @@ body.comments-panel-resizing {
 .reports-arena .reports-topbar__back {
   width: 36px;
   height: 36px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
@@ -51786,7 +52448,16 @@ html[data-theme="light"] .ff-home .featured-title {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  height: 100dvh;
+  /* Same treatment `.composer-arena` already carries, and for the same
+     reason: this column sits inside `:root`'s safe-area padding, so a full
+     `100dvh` runs past the bottom of the screen and buries its last flex
+     item — the editor's format bar — under the Android nav bar / home
+     indicator. `--kb-inset` (set globally in app.rs from `visualViewport`)
+     collapses it above the soft keyboard as well. Both are 0 on desktop. */
+  height: calc(
+    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+      var(--kb-inset, 0px)
+  );
   overflow: hidden;
   background: var(--rd-bg-void);
   color: var(--rd-text-primary);
@@ -51805,6 +52476,9 @@ html[data-theme="light"] .ff-home .featured-title {
 .report-detail__back {
   width: 34px;
   height: 34px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 9px;
   background: var(--rd-bg-glass);
   border: 1px solid var(--rd-border-subtle);
@@ -52047,20 +52721,6 @@ html[data-theme="light"] .ff-home .featured-title {
   bottom: calc(100% + 6px);
 }
 @media (max-width: 980px) {
-  .report-detail .ratel-editor .re-toolbar {
-    width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-  }
-  .report-detail .ratel-editor .re-toolbar::-webkit-scrollbar {
-    height: 4px;
-  }
-  .report-detail .ratel-editor .re-toolbar::-webkit-scrollbar-thumb {
-    background: var(--re-border-strong);
-    border-radius: 2px;
-  }
 }
 
 .report-detail figure[data-block="chart"] {
@@ -52487,6 +53147,8 @@ html[data-theme="light"] .ff-home .featured-title {
    that's the whole point of viewer mode. */
 .report-detail--viewer .report-detail__chart-actions,
 .report-detail--viewer .ratel-editor .re-toolbar,
+.report-detail--viewer .ratel-editor .re-mobile-bar,
+.report-detail--viewer .ratel-editor .re-fmt-sheet,
 .report-detail--viewer .ratel-editor .re-bubble,
 .report-detail--viewer .ratel-editor .re-table-actions,
 .report-detail--viewer .ratel-editor .re-statusbar {
@@ -52709,6 +53371,8 @@ html[data-theme="light"] .ff-home .featured-title {
   .report-detail__slash-pop,
   .report-detail .confirm-modal,
   .ratel-editor .re-toolbar,
+  .ratel-editor .re-mobile-bar,
+  .ratel-editor .re-fmt-sheet,
   .ratel-editor .re-bubble,
   .ratel-editor .re-table-actions,
   .ratel-editor .re-statusbar,
@@ -53900,4 +54564,771 @@ html[data-theme="light"] .ff-home .featured-title {
 .report-detail .ratel-editor .re-content table th {
   word-break: break-word;
   vertical-align: top;
+}
+
+/* === src/views/index — single-screen fit (mobile only) ===============
+   The arena is meant to be one screen, but on a 360x640 phone its content
+   ran ~197px past the viewport, so the page scrolled and the tab row read as
+   a half-cut strip. Measured on the device by scrolling the region to its end
+   and diffing the two screenshots.
+
+   The reduction is in COMPONENT SIZE — icon buttons, the card's logo, stat
+   tiles, chips, CTA — not in the whitespace between things. An earlier pass
+   shaved padding and margins instead; it reclaimed the pixels but the tab row
+   ended up flush against both screen edges and read as broken. Space between
+   elements is what makes the layout legible, so it is the last thing to go.
+
+   Everything is inside `@media (max-width: 768px)` and scoped to
+   `.home-arena--standalone`, so desktop web is untouched.
+   ==================================================================== */
+@media (max-width: 768px) {
+  /* The caption repeats the selected tab sitting right beneath it. */
+  .home-arena--standalone .section-label {
+    display: none;
+  }
+
+  /* The four pills were ~41px wider than the row. `justify-content: center`
+     spills an overflowing flex line out BOTH sides equally, which ate the
+     28px side padding and left "HOT SPACES" starting 8px from the screen
+     edge — it read as a missing margin, but it was overflow. Shrink the
+     pills until the line fits and the padding comes back on its own. */
+  .home-arena--standalone .section-tabs {
+    gap: 4px;
+  }
+  .home-arena--standalone .section-tab {
+    padding: 5px 6px;
+    font-size: 8px;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  /* Topbar icon buttons: 42 -> 34, glyph 18 -> 15. */
+  .home-arena--standalone .hud-btn {
+    width: 34px;
+    height: 34px;
+  }
+  .home-arena--standalone .hud-btn svg {
+    width: 15px;
+    height: 15px;
+  }
+  .home-arena--standalone .arena-topbar__logo {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Card: shrink its contents rather than its breathing room. */
+  .home-arena--standalone .space-card {
+    padding: 16px 16px 14px;
+  }
+  .home-arena--standalone .space-card__logo {
+    width: 36px;
+    height: 36px;
+  }
+  .home-arena--standalone .space-card__title {
+    font-size: 15px;
+  }
+  .home-arena--standalone .space-card__desc {
+    font-size: 12px;
+  }
+  .home-arena--standalone .space-stat {
+    padding: 6px 5px;
+  }
+  /* `nowrap` matters more than the size here: "4 quests" was wrapping to a
+     second line, which made the whole stat row a line taller than it needed
+     to be. */
+  .home-arena--standalone .space-stat__value {
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .home-arena--standalone .action-chip {
+    padding: 3px 8px;
+    font-size: 9px;
+  }
+  .home-arena--standalone .space-card__cta {
+    padding: 7px 14px;
+  }
+
+  /* Carousel breathing room stays; only the oversized track padding that
+     exists for desktop hover-scaling comes down. */
+  .home-arena--standalone .home-arena__scroll .carousel-track {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  /* 32px of padding around an 8px dot strip is desktop proportion. */
+  .home-arena--standalone .carousel-dots {
+    padding: 8px 0 10px;
+  }
+  .home-arena--standalone .space-card {
+    gap: 12px;
+  }
+
+  /* The two HUD stat cards side by side instead of stacked, with their icon
+     scaled to match. */
+  .home-arena--standalone .bottom-bar {
+    display: grid;
+    /* Back to an even split. Shifting the ratio only moved the problem from
+       one card to the other — widen the right and "YOUR BALANCE" clips,
+       widen the left and "0 ACTIVE SPACES" clips. An even split with type
+       sized to the LONGEST string fits both: at 96px of text width per card,
+       "HOT RIGHT NOW" needs ~76px at 8px and "0 ACTIVE SPACES" ~92px at
+       8.5px. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    /* Desktop's 14/22 vertical padding is the last thing between the row and
+       the screen edge; the row keeps its side padding. */
+    padding: 8px 28px 12px;
+  }
+  .home-arena--standalone .bottom-bar .hud-stat {
+    padding: 7px 9px;
+    gap: 8px;
+    min-width: 0;
+  }
+  .home-arena--standalone .bottom-bar .hud-stat__value {
+    font-size: 8.5px;
+    letter-spacing: 0;
+  }
+  .home-arena--standalone .bottom-bar .hud-stat__body {
+    min-width: 0;
+  }
+  .home-arena--standalone .bottom-bar .hud-stat__icon {
+    width: 26px;
+    height: 26px;
+  }
+  /* Same wrap problem as the stat tiles: at half width "YOUR BALANCE" and
+     "HOT RIGHT NOW" broke onto a second line and took the row with them.
+     With wrapping off they have to fit the column instead, so both lines
+     clip rather than spill past the card edge — which is how "YOUR BALANCE"
+     and "0 ACTIVE SPACES" each took a turn hanging outside. */
+  .home-arena--standalone .bottom-bar .hud-stat__label,
+  .home-arena--standalone .bottom-bar .hud-stat__value {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Sized so the full strings render — the ellipsis above is a guard for
+     longer future copy, not the intended look. "YOUR BALANCE" needs ~69px of
+     the 81px its column gives it; "0 ACTIVE SPACES" ~103px of 111px. */
+  .home-arena--standalone .bottom-bar .hud-stat__label {
+    font-size: 8px;
+    letter-spacing: 0.04em;
+  }
+  /* Short screens (landscape, split-screen, the 427px-tall QVGA profile).
+     The card's own content is the floor, so the room has to come out of the
+     chrome around it — the "— SPACES —" divider is pure decoration and the
+     tab row directly under it already names the section. */
+  @media (max-height: 620px) {
+    .home-arena--standalone .section-label { display: none; }
+    .home-arena--standalone .home-arena__scroll .carousel-track {
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+    .home-arena--standalone .carousel-dots { padding: 6px 0 4px; }
+    .home-arena--standalone .bottom-bar { padding: 6px 8px; }
+    .home-arena--standalone .space-card { padding: 12px 14px; gap: 8px; }
+    .home-arena--standalone .space-card__desc { -webkit-line-clamp: 2; }
+    /* Measured at 360x480 the topbar alone is 104px — the brand row plus a
+       wrapped row of HUD buttons — against a 480px screen. It is the single
+       largest block, so it is where the room actually is. */
+    .home-arena--standalone .arena-topbar { padding: 6px 10px; gap: 6px; }
+    .home-arena--standalone .hud-btn { width: 28px; height: 28px; }
+    .home-arena--standalone .hud-btn svg { width: 14px; height: 14px; }
+    .home-arena--standalone .arena-topbar__logo { width: 26px; height: 26px; }
+    .home-arena--standalone .section-tabs { gap: 4px; }
+  }
+  /* Tighter tier for the genuinely tiny profiles — landscape phones and the
+     427px-tall QVGA definition. The action chips duplicate what the quest
+     count in the stats row already reports, and the excerpt is the one
+     block that degrades gracefully to a single line. */
+  @media (max-height: 500px) {
+    .home-arena--standalone .space-card__chips { display: none; }
+    .home-arena--standalone .space-card__desc { -webkit-line-clamp: 1; }
+    .home-arena--standalone .space-card { gap: 6px; }
+  }
+  /* Below ~420px of usable height the remaining 40px has to come from the
+     furniture around the card. NOTE this threshold is the app's REAL
+     viewport, which is 72dp shorter than the device's screen — Android's
+     24dp status bar plus its 48dp navigation bar. A 427dp-tall device gives
+     the WebView 355dp, which is why measuring against the device size kept
+     saying "fits" while the phone showed a scrollbar. */
+  /* 500, not 420. The threshold is the CSS VIEWPORT, and this app is
+     edge-to-edge: `100dvh` is the whole 427dp screen even though only ~355dp
+     of it is usable (the status and navigation bars are subtracted later, as
+     `env(safe-area-inset-*)` padding on `:root`). Sizing the query to the
+     usable height meant it never matched on the device it was written for.
+     500 viewport ~= 428 usable. */
+  @media (max-height: 500px) {
+    .home-arena--standalone .bottom-bar { padding: 4px 8px; gap: 4px; }
+    .home-arena--standalone .bottom-bar .hud-stat { padding: 3px 6px; }
+    .home-arena--standalone .bottom-bar .hud-stat__icon { display: none; }
+    .home-arena--standalone .carousel-dots { padding: 3px 0 2px; }
+    .home-arena--standalone .home-arena__scroll .carousel-track {
+      padding-top: 4px;
+      padding-bottom: 4px;
+    }
+    .home-arena--standalone .space-card { padding: 10px 12px; gap: 5px; }
+    .home-arena--standalone .section-tabs { gap: 3px; }
+  }
+}
+
+/* The SocialLayout outlet (`.social-scroll`) pads its child: `p-5` /
+   `max-tablet:p-3` / `max-mobile:p-2`. An arena sized to the full viewport
+   therefore ends up (2 x padding) taller than the space it was given, and
+   the outlet scrolls by exactly that much — measured 16px on a 360x640
+   phone and 40px at tablet width. Publishing the padding as a variable lets
+   a full-height arena subtract it without hard-coding the layout's
+   breakpoints in its own rule. Arenas outside this layout inherit nothing
+   and fall back to 0. Keep in sync with `features/social/layout.rs`. */
+.social-scroll { --social-pad: 20px; }
+@media (max-width: 900px) { .social-scroll { --social-pad: 12px; } }
+@media (max-width: 500px) { .social-scroll { --social-pad: 8px; } }
+
+/* Tablet-width fixes for the team arena. Above 768px it falls back to the
+   desktop layout, which has two problems on a tablet-sized screen that
+   desktop never shows:
+
+   1. `min-height: 100vh` ignores the outlet's padding, so the page scrolls
+      by exactly 2 x that padding — measured 24px at 800-900px wide. Capped
+      at 900px so the desktop web build is left exactly as it is.
+   2. "190 ON PAGE" is `white-space: nowrap` with `overflow: visible`, so at
+      130% system font it does not ellipsis — it spills 13px into the next
+      stat and overlaps it. The qualifier is redundant next to the LIKES /
+      COMMENTS label above it, which is why the phone rules already drop it. */
+@media (min-width: 769px) and (max-width: 900px) {
+  .team-arena {
+    min-height: calc(100vh - 2 * var(--social-pad, 0px));
+  }
+}
+@media (max-width: 900px) {
+  .team-arena .hud-stat__value small { display: none; }
+}
+
+/* === team arena — single-screen fit (mobile only) ====================
+   The team home reuses `.home-arena`, but WITHOUT the `--standalone`
+   modifier, so none of the standalone compaction above reached it. On a
+   360x640 phone that left a large dead band between "TEAM POSTS" and the
+   post card: the card carries `min-height: 440px` and the carousel track
+   30/36px of vertical padding, both sized for desktop.
+
+   Same approach as the standalone home — shrink the components, leave the
+   spacing between them alone. Inside `@media (max-width: 768px)` and scoped
+   to `.team-arena`, so desktop web is untouched.
+   ==================================================================== */
+@media (max-width: 768px) {
+  /* Own the box, exactly like `.arena` and `.home-arena--standalone`.
+     `flex-shrink: 0` alone pinned the sticky topbar (the arena stopped
+     being squashed) but handed the overflow to `.social-scroll`, so the
+     page scrolled instead — trading one symptom for the other. Binding the
+     arena to the visible area removes both: nothing outside it can scroll,
+     and the topbar has a scrollport to stick to. `100%` rather than
+     `100dvh` because `:root` already carries the safe-area insets. */
+  .team-arena {
+    /* Anchor to the viewport, not to a percentage chain. Measured: at a
+       360x480 viewport `body` came out 549px — TALLER than the screen —
+       because on mobile `body` is content-driven (tailwind flips it to
+       `overflow: auto` under 900px). Every `height: 100%` below it then
+       resolved against content instead of the screen, which is why neither
+       the `min-height: 0` chain nor the grid row would shrink. Same fix and
+       same reason as `.post-arena` and `.composer-arena`: a viewport-
+       relative height is always definite. `--kb-inset` is the soft-keyboard
+       height app.rs publishes on <html>. */
+    height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--kb-inset, 0px) - 2 * var(--social-pad, 0px)
+    );
+    min-height: 0;
+    max-height: calc(
+      100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+        var(--kb-inset, 0px) - 2 * var(--social-pad, 0px)
+    );
+    /* `auto`, not `hidden`. Everything below is sized to fit a phone in one
+       screen, but a viewport smaller than the card's own irreducible content
+       (320px-wide phones, 130% system font, landscape, the unfolded Fold)
+       cannot fit it — and there `hidden` silently ate the READ SPACE button.
+       Scrolling is the correct outcome; the topbar is `position: fixed`, so
+       it stays put either way. */
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  /* The carousel region takes whatever is left and, if a long post still
+     does not fit, scrolls inside itself — a contained scroll rather than
+     the whole page sliding under the header. */
+  .team-arena .home-arena {
+    height: 100%;
+    min-height: 0;
+    /* `visible`, not `hidden`. When the card is at its `min-content` floor
+       and still taller than the feed row (a post with a thumbnail on a 600px
+       screen), `hidden` cut it here — above the card's own box, so the card
+       looked sliced with no scrollbar anywhere. Letting it spill hands the
+       overflow to `.team-arena`, which scrolls. */
+    overflow: visible;
+    display: grid;
+    /* Grid, not a nested-flex `min-height: 0` chain. That chain had to hold
+       through five levels (arena → content → home-arena → feed → carousel);
+       one link that refused to shrink pushed the bottom bar off screen,
+       which is what kept happening on device even when the harness agreed
+       it fit. Grid states it directly: intro, label and bottom bar take the
+       height they need, the feed row takes the rest. `minmax(0, 1fr)` — not
+       plain `1fr` — is what lets that row go below its content height. */
+       `minmax(min-content, 1fr)` — the floor is the feed's own content, so
+       the row gives back space until the card is at its minimum and then
+       stops, handing the overflow to `.team-arena` above (which scrolls)
+       instead of clipping the card's footer. Plain `minmax(0, 1fr)` had no
+       floor, which is how the CTA disappeared. */
+    grid-template-rows: auto auto minmax(min-content, 1fr) auto;
+  }
+  /* A definite height chain, so the card's `max-height: 100%` has something
+     to resolve against: wrapper takes the leftover space, the track fills
+     the wrapper, the card is capped by the track. Without this the track was
+     content-sized and `100%` meant nothing — the card kept its full height
+     and pushed the bottom bar off a short screen. */
+  /* `visible`, not `hidden`: a flex/grid item only gets an automatic
+     content-based minimum size while its overflow is visible. With `hidden`
+     that floor collapses to 0 and the card is squeezed past its content.
+     The track clips its own horizontal scroll, so nothing needs the clip. */
+  .team-arena .carousel-wrapper {
+    /* `height: 100%` made this a fixed-size grid item, which zeroed the
+       min-content contribution the row's `minmax(min-content, 1fr)` is
+       supposed to read — the row collapsed to 115px against a 279px card.
+       Stretching (the grid default) gives the row the card's real floor. */
+    /* `auto`, not 0 — an explicit 0 overrides the automatic content-based
+       minimum the row's `minmax(min-content, 1fr)` needs to read, which is
+       what left the row at 115px while the card painted over the bottom
+       bar below it. */
+    min-height: auto;
+    overflow: visible;
+    /* `safe` centering: centre while it fits, but never push content past
+       the start edge when it doesn't. Plain `center` overflowed equally in
+       both directions, so the card climbed over the team intro above it. */
+    justify-content: safe center;
+  }
+  .team-arena .carousel-track {
+    height: 100%;
+    /* NOT 0. The track is `overflow-x: auto; overflow-y: hidden` — that
+       hidden axis silently CUTS whatever does not fit vertically, and with a
+       zero floor a 355px-tall viewport squeezed the track to 115px against
+       279px of card: the stats, the hashtags and READ SPACE were not
+       scrolled out of view, they were erased. `min-content` makes the track
+       hold the card, so the overflow travels up to `.team-arena`, which
+       scrolls. */
+    min-height: min-content;
+  }
+  /* 440px of forced card height is what pushed the card to the bottom of
+     the screen and opened the gap above it. Let it size to its content. */
+  .team-arena .post-card {
+    min-height: 0;
+    /* Wider, not narrower: at 260px the Korean body text wrapped to more
+       lines and the card grew TALLER than it did at 300. Height is the
+       constrained axis here, so trade width for lines. */
+    width: 300px;
+    padding: 12px 14px 10px;
+    /* 5, not 8. Six gaps at 8px is 48px — the largest single item in the
+       card's irreducible floor, and every pixel of that floor comes straight
+       out of the thumbnail (which is the only elastic block). */
+    gap: 5px;
+  }
+  .team-arena .post-card__title {
+    font-size: 15px;
+  }
+  /* The card can never be taller than the room left for it. Everything in it
+     except the description is fixed height, so the description absorbs the
+     difference: it takes what is left and shows however many lines fit.
+     That is what makes the whole page fit on one screen without either
+     clipping the bottom bar or introducing a scrollbar — on a short screen
+     the reader simply sees fewer lines of the excerpt. */
+  /* NOT `max-height: 100%`. That capped the card at the track's height and,
+     since the card is `overflow: hidden`, anything past the cap was cut —
+     which is exactly how the READ SPACE button vanished on a short screen
+     (and again at 130% system font, where the fixed rows alone outgrow the
+     cap). The description below is what absorbs the difference; when even a
+     zero-line description does not fit, the card keeps its real height and
+     `.team-arena` scrolls rather than swallowing the footer. */
+  .team-arena .post-card {
+    /* Shrink to fit, but stop at the card's own content. `max-height: 100%`
+       alone cut the footer off (the card is `overflow: hidden`), and dropping
+       the cap entirely was worse — the card then could not shrink at all, so
+       a post with a thumbnail pushed straight off the screen. The pair is
+       what's correct: the cap makes it fit, `min-content` stops the squeeze
+       before READ SPACE is reached, and past that `.team-arena` scrolls. */
+    /* Sized by the track, not by a percentage. `max-height: 100%` silently
+       did nothing here: the track's height comes from a grid row via a
+       `height: 100%` chain, and a percentage max-height against an
+       indefinite chain resolves to `none` — which is why the card kept its
+       full natural height and spilled out of the feed row. Stretching the
+       flex item makes the track's real height the card's height, with no
+       percentage to resolve. */
+    /* A cap, not `none`. The card is stretched by the track so it fills the
+       feed row, which is what makes it fit a short screen — but on a tall
+       narrow viewport (a phone in a resized browser window, a foldable) that
+       same stretch blew it up to well over a thousand pixels with a huge
+       empty middle. 460px is the design height; past that the card stays put
+       and the leftover space becomes margin.
+       A px value on purpose: `100%` here resolves against a grid-derived
+       height chain and silently computes to `none`. */
+    max-height: 460px;
+    /* `min-content`, not 0. `align-items: stretch` on the track is what sizes
+       the card, and with a zero floor a 427px-tall screen squashed it to the
+       badge row and clipped everything under it. The floor stops the squeeze
+       at the card's own content; past that the overflow travels up to
+       `.team-arena`, which scrolls. */
+    min-height: min-content;
+    height: auto;
+  }
+  .team-arena .carousel-track {
+    align-items: stretch;
+    /* Cap the TRACK, not the card. The card is sized by stretching to the
+       track, which is what lets the thumbnail grow — capping the card itself
+       clamps that stretch and leaves the card pinned to the top of the row.
+       Capping the track keeps the stretch intact and, because the wrapper is
+       `justify-content: safe center`, the capped track (and the card in it)
+       ends up vertically centred with the leftover space split above and
+       below. ~470 = the 460px design card height plus the track's padding. */
+    max-height: 470px;
+  }
+  /* The "— TEAM POSTS —" divider is decoration and costs 33px of the ~310px
+     the card actually gets. Without it the thumbnail renders at a usable
+     size instead of a sliver; the card underneath is self-evidently the
+     team's posts. */
+  .team-arena .home-section-label { display: none; }
+  /* Below ~420px of usable height (the app's real viewport — 72dp less than
+     the device screen, for Android's status + navigation bars) the card's
+     own content no longer fits the one-screen grid at all. Forcing it anyway
+     left the card overlapping the bottom bar. Drop the fixed-viewport model
+     here and let the page stack and scroll normally: nothing is cut, nothing
+     overlaps, and only this size scrolls. */
+  /* 500, not 420. The threshold is the CSS VIEWPORT, and this app is
+     edge-to-edge: `100dvh` is the whole 427dp screen even though only ~355dp
+     of it is usable (the status and navigation bars are subtracted later, as
+     `env(safe-area-inset-*)` padding on `:root`). Sizing the query to the
+     usable height meant it never matched on the device it was written for.
+     500 viewport ~= 428 usable. */
+  @media (max-height: 500px) {
+    .team-arena {
+      height: auto;
+      max-height: none;
+      overflow: visible;
+    }
+    .team-arena .home-arena {
+      display: block;
+      height: auto;
+      overflow: visible;
+    }
+    .team-arena .carousel-wrapper,
+    .team-arena .carousel-track {
+      height: auto;
+    }
+  }
+  /* The chrome around the card was taking ~305px of a 624px arena, which is
+     what squeezed the thumbnail down to a 22px strip. Trim the two blocks
+     that carry no content of their own — the bottom bar's padding and the
+     intro's bottom margin — rather than shrinking the card further. */
+  .team-arena .home-bottom-bar { padding: 4px 14px 8px; gap: 6px; }
+  .team-arena .home-bottom-bar__row { gap: 5px; }
+  .team-arena .home-browse-btn { padding: 8px; }
+  .team-arena .home-bottom-bar__row > .hud-stat { padding: 4px 6px; }
+  .team-arena .team-intro { padding: 0 16px 8px; }
+  .team-arena .carousel-dots { padding-bottom: 6px; }
+  .team-arena .post-card__desc {
+    font-size: 12px;
+    line-height: 1.4;
+    /* `0 1 auto`: start at the text's own height (capped at ~3 lines), never
+       grow, and — the part that matters — be allowed to shrink. `1 1 auto`
+       left a floor so the card never got smaller; `1 1 0` collapsed the
+       excerpt to nothing even when there was room. This shows as much of the
+       excerpt as fits and gives the space back when the screen is short. */
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 3.9em;
+    overflow: hidden;
+  }
+  /* Everything else keeps its size — they are the parts that must stay
+     readable and tappable. */
+  .team-arena .post-card__top,
+  .team-arena .post-card__title,
+  .team-arena .post-card__stats,
+  .team-arena .post-card__chips,
+  .team-arena .post-card__footer {
+    flex-shrink: 0;
+  }
+  .team-arena .post-card__stats {
+    gap: 8px;
+    padding: 4px 0;
+  }
+  .team-arena .post-card__stat-value {
+    font-size: 15px;
+  }
+  .team-arena .post-card__chips {
+    gap: 4px;
+  }
+  .team-arena .post-card__chip {
+    padding: 3px 8px;
+    font-size: 9px;
+  }
+  .team-arena .post-card__cta {
+    padding: 6px 12px;
+    font-size: 9px;
+  }
+  .team-arena .carousel-track {
+    padding-left: calc(50vw - 150px);
+    padding-right: calc(50vw - 150px);
+  }
+  .team-arena .carousel-track {
+    padding-top: 10px;
+    padding-bottom: 12px;
+    padding-left: calc(50vw - 130px);
+    padding-right: calc(50vw - 130px);
+  }
+  .team-arena .carousel-dots {
+    padding: 0 28px 10px;
+  }
+  /* `min-height: 320px` on the feed region reserved desktop-sized space
+     even when the (now shorter) card needed far less. */
+  .team-arena .home-feed-region {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .team-arena .home-bottom-bar {
+    padding: 8px 28px 12px;
+  }
+  /* The three counters were `flex: 1 1 160px` in a 304px-wide row, so they
+     wrapped to three stacked cards and ate about a third of the screen —
+     which is why the post card had almost nothing left. One row of three,
+     with the CREATE POST button spanning underneath. */
+  .team-arena .home-bottom-bar__row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .team-arena .home-bottom-bar__row > .home-browse-btn {
+    grid-column: 1 / -1;
+  }
+  /* The category row is removed on mobile, with the divider above it. It is
+     the one part of this screen whose height has no ceiling — a team keeps
+     adding categories and the row keeps wrapping, taking the space straight
+     out of the post card. Everything it offers is filtering, which is a
+     secondary action on a phone; the card is the primary content. */
+  .team-arena .home-bottom-bar__row--filters {
+    display: none;
+  }
+  .team-arena .home-bottom-bar__row > .hud-stat {
+    flex: none;
+    gap: 6px;
+    padding: 6px 8px;
+  }
+  /* The icon is decoration and it costs ~30px of a ~96px column — which is
+     exactly the margin by which "COMMENTS" was still ellipsing to "COMMEN…"
+     even at 7.5px, and by much more once Android's font-size setting scales
+     it. Dropping it gives the label the room to render in full instead. */
+  .team-arena .home-bottom-bar__row > .hud-stat .hud-stat__icon {
+    display: none;
+  }
+  .team-arena .home-bottom-bar__row > .hud-stat .hud-stat__label,
+  .team-arena .home-bottom-bar__row > .hud-stat .hud-stat__value {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* "COMMENTS" is the longest of the three and was clipping to "COMME…" at
+     a third of the row. */
+  .team-arena .home-bottom-bar__row > .hud-stat .hud-stat__label {
+    font-size: 7.5px;
+    letter-spacing: 0.02em;
+  }
+  .team-arena .home-bottom-bar__row > .hud-stat .hud-stat__value {
+    font-size: 11px;
+  }
+  /* Number only. In a third of the row "190 ON PAGE" clipped to "190 ON",
+     and the qualifier adds nothing the label above it doesn't already say. */
+  .team-arena .home-bottom-bar__row > .hud-stat .hud-stat__value small {
+    display: none;
+  }
+
+  /* ── Card内 배분 ── The CTA was escaping the card's bottom edge: with the
+     card capped at the space available and the excerpt already collapsed to
+     zero, the remaining fixed rows still added up to more than the cap, so
+     the last one spilled out and got clipped by the card's own
+     `overflow: hidden`. Shrink those rows so the card's minimum actually
+     fits inside the cap. */
+  .team-arena .post-card__title {
+    font-size: 15px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* The footer is the card's call to action; it is the last thing that may
+     be dropped. Pin it so the excerpt gives up its space first — before this
+     the button was simply clipped away by the card's own `overflow`. */
+  .team-arena .post-card__footer {
+    margin-top: auto;
+    flex-shrink: 0;
+  }
+  /* A post with a thumbnail is the case the excerpt-shrinking alone could not
+     cover: the image is a fixed 140px block, so on a card that also has a
+     two-line title it pushed the button out even with the excerpt at zero.
+     Let the image be the elastic element instead — it shrinks to whatever is
+     left and keeps its crop via `object-fit: cover`. */
+  .team-arena .post-card__thumb {
+    height: auto;
+    /* Basis 0, not auto. With `auto` the flex basis is the image's natural
+       140px, and that natural height is also what the card's `min-content`
+       floor is computed from — so the floor included the thumbnail and the
+       card could not shrink at all. A zero basis keeps the thumbnail out of
+       the floor: it grows into whatever space is left (capped at 140px) and
+       gives all of it back when the screen is short. */
+    flex: 1 1 0;
+    /* 0, not 48px. The thumbnail is the one block that can disappear without
+       losing information — the title, stats and READ SPACE cannot. A 48px
+       floor was enough to push the footer out on a 600px screen. */
+    min-height: 0;
+    max-height: 140px;
+  }
+  .team-arena .post-card__stats {
+    gap: 6px;
+    padding: 6px 0;
+  }
+  .team-arena .post-card__stat-value {
+    font-size: 14px;
+  }
+  .team-arena .post-card__stat-label {
+    font-size: 8px;
+  }
+  .team-arena .post-card__chips {
+    gap: 4px;
+  }
+  .team-arena .post-card__chip {
+    padding: 2px 7px;
+    font-size: 8.5px;
+  }
+  .team-arena .post-card__footer {
+    padding-top: 6px;
+  }
+  .team-arena .post-card__cta {
+    padding: 5px 11px;
+    font-size: 8.5px;
+  }
+}
+
+/* === short-viewport fallback (all arenas) ==========================
+   Every arena on mobile locks itself to the viewport so its header can pin
+   and the page fits one screen. Below ~500px of viewport height that is not
+   achievable: the content's own irreducible height exceeds the screen. What
+   the arenas did instead was CLIP it — `overflow: hidden` on the arena root
+   and on `.carousel-track` erases content rather than scrolling it, so the
+   card's stats, hashtags and its CTA button silently disappeared, and where
+   a floor did hold the card it painted over the bar below.
+
+   Release the lock at this size: everything stacks in normal flow and the
+   page scrolls. Fitting one screen is the goal, never at the cost of content
+   the user cannot reach.
+
+   The threshold is the CSS VIEWPORT. This app is edge-to-edge, so `100dvh`
+   is the whole screen even though ~72dp of it belongs to the status and
+   navigation bars (subtracted later as `env(safe-area-inset-*)` padding on
+   `:root`). 500px of viewport is about 428px of usable height.
+
+   `.post-arena` and `.composer-arena` are deliberately excluded — they own a
+   keyboard-aware scroll model of their own. */
+@media (max-height: 500px) {
+  body .arena,
+  body .home-arena,
+  body .home-arena--standalone,
+  body .team-arena,
+  body .team-arena__content,
+  body .analyze-arena,
+  body .analyze-arena > .arena,
+  body .reports-arena,
+  body .space-general-arena,
+  body .space-panels-arena,
+  body .space-files-arena,
+  body .drafts-arena,
+  body .rewards-arena,
+  body .connections-arena,
+  body .onboarding-arena,
+  body .essence-arena,
+  body .admin-arena {
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    /* NOT `overflow: visible`. That releases the horizontal clip too, and
+       these arenas park off-canvas panels (settings, filters) just outside
+       their right edge — without the clip they became reachable by sideways
+       scrolling and the page slid. `clip` on X keeps them hidden while
+       `visible` on Y is what lets the content that no longer fits reach the
+       page scroller instead of being erased. */
+    overflow-x: clip;
+    overflow-y: visible;
+  }
+  /* Regions that were sized against the (now released) arena. */
+  body .home-arena__scroll,
+  body .carousel-wrapper,
+  body .carousel-track,
+  body .report-carousel,
+  body .report-carousel__viewport,
+  body .report-carousel__track,
+  body .split,
+  body .builder-list,
+  body .home-feed-region {
+    height: auto;
+    max-height: none;
+    min-height: 0;
+  }
+  /* The horizontal carousels keep their own X scroll; only the Y clip goes. */
+  body .carousel-track,
+  body .report-carousel__track {
+    overflow-y: auto;
+  }
+  body .post-card,
+  body .space-card,
+  body .report-card,
+  body .report-card-large {
+    height: auto;
+    max-height: none;
+  }
+}
+
+/* === src/views/legal_close — X button on the legal pages ==============
+   Privacy policy / terms / child safety render as a bare scrolling document
+   with no chrome. In the mobile WebView that left no way back at all, so this
+   sits above the text as the one exit.
+
+   `position: fixed` + the top safe-area inset, not `sticky`: the page's own
+   scroll container is the element this button lives in, and a sticky child of
+   a scroller that starts at its top has nothing to stick to on the first
+   paint. Fixed also keeps it reachable after the reader has scrolled several
+   screens into the document, which is exactly when they want out. */
+.legal-close {
+  --legal-close-fg: var(--dark, #f0f0f5) var(--light, #12121a);
+
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The glyph is 18px but the box stays 40px: a bare icon that small is under
+     the 44px minimum touch target, and the hit area is the part the reader
+     actually needs. No background, border or blur — just the mark. */
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--legal-close-fg);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.legal-close:hover {
+  color: #fcb300;
+}
+.legal-close svg {
+  width: 18px;
+  height: 18px;
+}
+/* The heading is centred and full-width; on a phone the button would sit on
+   top of it, so give the header room rather than moving the button. */
+@media (max-width: 768px) {
+  .legal-close { width: 36px; height: 36px; }
+  .legal-close svg { width: 16px; height: 16px; }
 }

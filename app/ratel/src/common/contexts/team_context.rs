@@ -2,6 +2,7 @@ use crate::{
     common::{types::UserType, Error, TeamItem},
     posts::types::TeamGroupPermissions,
     social::controllers::{create_team_handler, get_user_teams_handler, CreateTeamRequest},
+    social::pages::setting::team::controllers::delete_team_handler,
     *,
 };
 
@@ -55,6 +56,32 @@ impl TeamContext {
         self.teams.push(team_item.clone());
 
         Ok(team_item)
+    }
+
+    /// Delete a team the caller owns, and drop it from the cached list.
+    ///
+    /// The list is a `Loader` installed once at the app root whose only
+    /// reactive dependency is `logged_in`, so nothing re-fetches it after a
+    /// mutation. Both delete call sites just navigate away afterwards, so
+    /// without this the deleted team lingered in "YOUR TEAMS" for the rest of
+    /// the app session — and on mobile, where the process is rarely killed,
+    /// that reads as permanent. Mirrors `create_team`, which pushes on the
+    /// way in.
+    pub async fn delete_team(&mut self, username: String) -> crate::Result<()> {
+        delete_team_handler(username.clone()).await?;
+
+        // Removing an entry shifts every later index, so keep the selection
+        // anchored to the team it actually pointed at rather than to a number
+        // that now means a different team. Falls back to the first team when
+        // the deleted one was the selected one.
+        let selected_pk = self.selected_team().map(|t| t.pk);
+        self.teams.write().retain(|t| t.username != username);
+        let index = selected_pk
+            .and_then(|pk| self.teams.read().iter().position(|t| t.pk == pk))
+            .unwrap_or(0);
+        self.selected_index.set(index);
+
+        Ok(())
     }
 
     pub fn set_teams(&mut self, teams: Vec<TeamItem>) {

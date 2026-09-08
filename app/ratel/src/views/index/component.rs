@@ -91,6 +91,11 @@ pub fn Index() -> Element {
     let mut settings_open = use_signal(|| false);
     let mut teams_open = use_signal(|| false);
     let mut notifications_open = use_signal(|| false);
+    // Press anywhere outside the switcher closes it. The transparent backdrop
+    // that used to do this sat INSIDE `.arena-topbar`, which carries
+    // `z-index: 20` and so establishes a stacking context — the backdrop could
+    // never rise above it, and presses on the page below never reached it.
+    use_dismiss_on_outside_click(teams_open, ".home-arena .hud-teams");
     // Hamburger overlay (replaces the previous Create/Engage/Account
     // dropdown groups with a single flat tile grid).
     let mut menu_open = use_signal(|| false);
@@ -377,12 +382,6 @@ pub fn Index() -> Element {
                                     }
                                     "{t.create_team}"
                                 }
-                            }
-                        }
-                        if teams_open() {
-                            div {
-                                style: "position:fixed;inset:0;z-index:25;",
-                                onclick: move |_| teams_open.set(false),
                             }
                         }
                     }

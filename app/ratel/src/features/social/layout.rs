@@ -55,7 +55,17 @@ pub fn UserLayout(username: ReadSignal<String>) -> Element {
 
     rsx! {
         div {
-            class: "grid overflow-hidden grid-cols-1 w-full h-screen bg-team-bg text-text-primary",
+            // `h-full`, not `h-screen`. `h-screen` is forced to `100dvh`
+            // (`!important`, tailwind.css `@supports` block), but `:root`
+            // carries the safe-area insets as padding — so on a device with
+            // insets this grid is taller than its container by exactly
+            // top+bottom inset. `body` is scrollable under 900px, so that
+            // overflow let the whole page — sticky `.arena-topbar` included —
+            // drift up by the inset amount as soon as the user scrolled.
+            // `100%` fits the padded content box exactly, leaving the inner
+            // `.social-scroll` as the only scroller. 0-inset (web) is
+            // unaffected: there `100%` and `100dvh` are the same height.
+            class: "grid overflow-hidden grid-cols-1 w-full h-full bg-team-bg text-text-primary",
             "data-testid": "social-layout",
             div { class: "hidden overflow-hidden h-screen tablet:flex",
                 TeamSidemenu { key: "{username}", username: username(), logged_in }
@@ -67,7 +77,7 @@ pub fn UserLayout(username: ReadSignal<String>) -> Element {
                 // becomes a `flex: 0 1 auto` item that shrinks to its
                 // intrinsic content width, leaving the right half of
                 // the viewport empty.
-                div { class: "social-scroll flex overflow-auto flex-col flex-1 p-5 w-full bg-background rounded-tl-[10px] max-tablet:p-3 max-mobile:p-2",
+                div { class: "flex overflow-auto flex-col flex-1 p-5 w-full social-scroll bg-background rounded-tl-[10px] max-tablet:p-3 max-mobile:p-2",
                     Outlet::<Route> {}
                 }
             }

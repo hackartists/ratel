@@ -157,7 +157,19 @@
 
     // ── Toolbar wiring ─────────────────────────────────────
     function applyCmd(cmd, value) {
-      editor.focus();
+      // A toolbar/sheet button that took focus leaves the document with no
+      // selection inside the editor, and `execCommand` then has nothing to
+      // act on. `savedRange` tracks the editor's live selection (see the
+      // `selectionchange` listener), so restoring it makes the command
+      // apply to what the user actually had selected. Mattered little on
+      // desktop, where the caret usually survives; it is the whole ball
+      // game for the mobile format sheet, whose buttons sit far from the
+      // text they style.
+      if (document.activeElement !== editor) {
+        restoreSelection();
+      } else {
+        editor.focus();
+      }
       document.execCommand(cmd, false, value || null);
       scheduleUpdate();
     }
@@ -311,6 +323,9 @@
     }
     document.addEventListener("selectionchange", function () {
       if (document.activeElement === editor) {
+        // Snapshot every selection the editor holds, so a command fired
+        // from a control that stole focus can put it back (see applyCmd).
+        savedRange = saveSelection();
         syncToolbarState();
         syncBlockLabel();
       }
@@ -330,8 +345,15 @@
       }
       editor.focus();
       var sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(savedRange);
+      try {
+        sel.removeAllRanges();
+        sel.addRange(savedRange);
+      } catch (_e) {
+        // The saved range can point at nodes a later edit removed. Losing
+        // the caret position is survivable; throwing here would abort the
+        // command the user asked for.
+        savedRange = null;
+      }
     }
     function openModal(name) {
       savedRange = saveSelection();
@@ -521,6 +543,114 @@
         openModal("link");
       }
     });
+
+    // ── Mobile format sheet ───────────────────────────────────
+    // The compact `.re-mobile-bar` and the `.re-fmt-sheet` it opens are
+    // the phone-sized replacement for the wide toolbar (CSS swaps them at
+    // 980px). Their command buttons carry the same `data-cmd` the toolbar
+    // uses, so they were already bound by the `.re-tb-btn` loop above and
+    // are already covered by `syncToolbarState`. Only three things are
+    // left to wire here: open/close, keeping the editor selection alive
+    // across a tap, and the block buttons (which are plain pills, not the
+    // `.re-block` dropdown the toolbar uses).
+    var fmtSheet = root.querySelector(".re-fmt-sheet");
+    var mobileBar = root.querySelector(".re-mobile-bar");
+
+    if (fmtSheet) {
+      // Same trick the bubble uses: swallowing `mousedown` stops focus
+      // from moving to the button, so the editor keeps both focus and
+      // selection — and on a phone the soft keyboard never flickers.
+      // `click` still fires. `applyCmd`'s restore is the backstop for
+      // browsers that move focus anyway.
+      function keepSelection(e) {
+        e.preventDefault();
+      }
+      fmtSheet.addEventListener("mousedown", keepSelection);
+      if (mobileBar) mobileBar.addEventListener("mousedown", keepSelection);
+
+      // Keeping the sheet above the soft keyboard is pure CSS: the panel's
+      // `bottom` is `var(--kb-inset)`, which app.rs already publishes on
+      // <html> from `visualViewport` for exactly this purpose (it is what
+      // `.composer-arena` sizes itself with). An earlier revision of this
+      // file duplicated that listener here — one source of truth is better,
+      // and the global one is already proven on both platforms.
+      function setFmtOpen(open) {
+        fmtSheet.dataset.open = open ? "true" : "false";
+        root.querySelectorAll("[data-fmt-open]").forEach(function (btn) {
+          btn.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+      }
+
+      root.querySelectorAll("[data-fmt-open]").forEach(function (btn) {
+        // Bind the state capture to `pointerdown`, not `click`: this is
+        // the last moment the editor still owns focus, so `syncBlockLabel`
+        // (which bails unless the editor is focused) can light up the
+        // pill matching the caret's current block before the sheet opens.
+        btn.addEventListener("pointerdown", function () {
+          if (document.activeElement === editor) {
+            savedRange = saveSelection();
+            syncToolbarState();
+            syncBlockLabel();
+          }
+        });
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          setFmtOpen(fmtSheet.dataset.open !== "true");
+        });
+      });
+
+      fmtSheet.querySelectorAll("[data-fmt-close]").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          setFmtOpen(false);
+        });
+      });
+
+      // Block pills. The toolbar's equivalents live inside a `.re-block`
+      // dropdown and are wired by that loop; these are bare buttons, so
+      // they need their own handler. `syncBlockLabel`'s active-class pass
+      // targets every `[data-block]` under the root, so highlighting is
+      // already shared with the dropdown.
+      fmtSheet.querySelectorAll("[data-block]").forEach(function (item) {
+        item.addEventListener("click", function (e) {
+          e.preventDefault();
+          applyCmd("formatBlock", "<" + item.dataset.block + ">");
+          // Deliberately left open: styling text is iterative, and Slack
+          // and the platform note apps alike keep the sheet up so the
+          // next command is one tap away.
+          syncBlockLabelFrom(item.dataset.block);
+        });
+      });
+
+      // `syncBlockLabel` needs editor focus to read the caret, which the
+      // sheet may not have restored yet at this point. The tag just
+      // applied is authoritative, so paint it directly.
+      function syncBlockLabelFrom(tag) {
+        root.querySelectorAll("[data-block]").forEach(function (item) {
+          item.classList.toggle(
+            "re-block__item--active",
+            item.dataset.block === tag
+          );
+        });
+        var label = blockLabels[tag] || "Paragraph";
+        root.querySelectorAll(".re-block__label").forEach(function (el) {
+          el.textContent = label;
+        });
+      }
+
+      // Link / image / video / table hand off to a modal, which takes the
+      // screen next. Leaving the sheet stacked under it would give the
+      // user two overlays and two different ways out, so it steps aside.
+      // These handlers run after the shared `.re-tb-btn` one that opens
+      // the modal, since that was registered first.
+      var modalCmds = { link: 1, image: 1, youtube: 1, table: 1 };
+      fmtSheet.querySelectorAll(".re-tb-btn[data-cmd]").forEach(function (btn) {
+        if (!modalCmds[btn.dataset.cmd]) return;
+        btn.addEventListener("click", function () {
+          setFmtOpen(false);
+        });
+      });
+    }
 
     // ── Selection-triggered bubble toolbar (desktop only) ─────
     // On coarse-pointer (touch) devices the OS provides its own selection

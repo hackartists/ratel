@@ -389,6 +389,11 @@ pub fn SignupModal(
                                     code: auth_code.read().clone(),
                                 }
                             };
+                            // Mobile needs a device-scoped refresh token to
+                            // survive an app restart; a fresh signup is a login
+                            // too, so mint one here as well. `None` on web.
+                            let device_id =
+                                crate::features::auth::services::login_device_id().await;
                             let req = SignupRequest {
                                 signup_type,
                                 display_name: display_name.read().clone(),
@@ -398,12 +403,15 @@ pub fn SignupModal(
                                 term_agreed: agreed_tos(),
                                 informed_agreed: agreed_news(),
                                 phone_number: None,
-                                device_id: None,
+                                device_id,
                             };
                             let result = signup_handler(req).await;
                             loading.set(false);
                             match result {
                                 Ok(user) => {
+                                    crate::features::auth::services::remember_refresh_token(
+                                        user.refresh_token.as_ref(),
+                                    );
                                     user_ctx
                                         .set(UserContext {
                                             user: Some(user.user),

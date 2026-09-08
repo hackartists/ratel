@@ -1,6 +1,7 @@
 use crate::common::hooks::{use_infinite_query, InfiniteQuery};
 use crate::common::*;
 use crate::features::notifications::controllers::list_inbox::list_inbox_handler;
+use crate::features::notifications::deep_link::deep_link_path;
 use crate::features::notifications::types::InboxNotificationResponse;
 use crate::notifications::controllers::{mark_all_read_handler, mark_read_handler};
 
@@ -65,7 +66,14 @@ pub fn use_provide_inbox() -> std::result::Result<UseInbox, RenderError> {
         mark_read_handler(inbox_id).await?;
 
         if !cta.is_empty() {
-            nav.push(cta);
+            // `cta_url` is stored absolute (email links need a full URL), and
+            // dioxus-router treats an absolute URL as an EXTERNAL target — a
+            // full-page navigation. On the Tauri shell that drops the WebView
+            // out of the embedded bundle onto the remote web build, which
+            // can't see the session cookie (it lives in the native
+            // `api_request` reqwest jar), so the user arrives signed out.
+            // Strip to a relative route so the tap stays an SPA push.
+            nav.push(deep_link_path(&cta));
         }
 
         Ok::<(), crate::common::Error>(())
@@ -126,7 +134,12 @@ pub fn use_provide_space_inbox(
         mark_read_handler(inbox_id).await?;
 
         if !cta.is_empty() {
-            nav.push(cta);
+            // Same absolute-URL hazard as the global inbox above — see
+            // `deep_link_path`. This is the handler behind the IN-SPACE bell,
+            // which is where the bug actually shows up most: the tap lands on
+            // a space page, so a full-page navigation renders the signed-out
+            // "Sign in to participate" card.
+            nav.push(deep_link_path(&cta));
         }
 
         Ok::<(), crate::common::Error>(())

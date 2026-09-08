@@ -50,19 +50,66 @@ pub struct RenderAnalyzePieChartRequest {
 
 // ── Excel export ──────────────────────────────────────────────────
 
+/// Export the analyze table as an .xlsx and hand it to the user.
+///
+/// Two delivery paths, because a browser download does not exist on mobile:
+///
+///   * **Web** — `download_excel.js` lets XLSX click a hidden `<a download>`.
+///   * **Native shell** — `build_excel_b64.js` returns the bytes instead, and
+///     the `save_file` Tauri command writes them where the platform expects
+///     (Android Downloads, or a share sheet). The in-WebView download the web
+///     path relies on is silently dropped by Android System WebView and
+///     ignored by iOS WKWebView, which is why this fork exists at all.
+///
+/// Either way, `Ok(())` means the file actually reached the user — the old
+/// single path reported success unconditionally, because `writeFileXLSX`
+/// returns normally whether or not the browser saved anything.
+///
+/// The fork is decided at RUNTIME (`is_native_shell`), not by a Cargo feature —
+/// the web fullstack build enables `tauri-web` too, so gating on the flag put
+/// the native branch in the web bundle and dropped `download_excel.js`.
 pub async fn download_analyze_excel(req: DownloadAnalyzeExcelRequest) -> Result<()> {
-    let mut runner = dx_eval(include_str!("web/download_excel.js"));
-    runner
-        .send(serde_json::to_value(&req).map_err(|_| SpaceAppError::ExcelExportFailed)?)
-        .map_err(|_| SpaceAppError::ExcelExportFailed)?;
-    let ok = runner
-        .recv::<Option<bool>>()
-        .await
-        .map_err(|_| SpaceAppError::ExcelExportFailed)?;
-    match ok {
-        Some(true) => Ok(()),
-        _ => Err(SpaceAppError::ExcelExportFailed.into()),
+    use crate::common::utils::native_file;
+
+    let payload = serde_json::to_value(&req).map_err(|_| SpaceAppError::ExcelExportFailed)?;
+
+    if !native_file::is_native_shell().await {
+        let mut runner = dx_eval(include_str!("web/download_excel.js"));
+        runner
+            .send(payload)
+            .map_err(|_| SpaceAppError::ExcelExportFailed)?;
+        let ok = runner
+            .recv::<Option<bool>>()
+            .await
+            .map_err(|_| SpaceAppError::ExcelExportFailed)?;
+        return match ok {
+            Some(true) => Ok(()),
+            _ => Err(SpaceAppError::ExcelExportFailed.into()),
+        };
     }
+
+    use base64::Engine;
+    let mut runner = dx_eval(include_str!("web/build_excel_b64.js"));
+    runner
+        .send(payload)
+        .map_err(|_| SpaceAppError::ExcelExportFailed)?;
+    let b64 = runner
+        .recv::<Option<String>>()
+        .await
+        .map_err(|_| SpaceAppError::ExcelExportFailed)?
+        .ok_or(SpaceAppError::ExcelExportFailed)?;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64.as_bytes())
+        .map_err(|_| SpaceAppError::ExcelExportFailed)?;
+
+    crate::common::utils::native_file::save_file(
+        &req.file_name,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        &bytes,
+    )
+    .await
+    .map_err(|_| SpaceAppError::ExcelExportFailed.into())
 }
 
 // ── Chart helpers (placeholders — call sites land with the chart UI) ─

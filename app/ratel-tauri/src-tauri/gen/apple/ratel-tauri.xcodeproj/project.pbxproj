@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		14D83E626C4DE06AC6BE8730 /* RatelFiles.m in Sources */ = {isa = PBXBuildFile; fileRef = 4987E0B3B4CBC7E3E2F219C9 /* RatelFiles.m */; };
 		23AF57E978C60FF28D579B92 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 620AD1B66431037624B2D114 /* FirebaseMessaging */; };
 		3C016E4FD94228EF2907534F /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE09D73CF90A5A4D3950882E /* CoreGraphics.framework */; };
 		4028B86EFEAF0DE0F23ABB31 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 9D3194FFC40E8462D72D7F85 /* FirebaseCore */; };
@@ -34,7 +35,10 @@
 		3EE62939993AE48C0B60B7C5 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		3FA037AA9E84FCAF46F8FBF1 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		42E0170BC7B708738009965A /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		4987E0B3B4CBC7E3E2F219C9 /* RatelFiles.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RatelFiles.m; sourceTree = "<group>"; };
+		53CE7D87CB64D1A6F2CD1010 /* native_file.rs */ = {isa = PBXFileReference; path = native_file.rs; sourceTree = "<group>"; };
 		54C503CF3C873A001778519C /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		5E16F7E4165A10B528ABBA60 /* RatelFiles.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RatelFiles.h; sourceTree = "<group>"; };
 		664273033048DA3C3D793070 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		6868E527D75F99B21DF296E4 /* ratel-tauri_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "ratel-tauri_iOS.entitlements"; sourceTree = "<group>"; };
 		7919E83D04F32BF05F58C1B4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -192,6 +196,7 @@
 				A97E3C62ECE252854E69463E /* external_url.rs */,
 				1B12D617578B12B42BF7FD16 /* google_sign_in.rs */,
 				C6230B9309E8A70016DB426B /* mod.rs */,
+				53CE7D87CB64D1A6F2CD1010 /* native_file.rs */,
 				3966ED413B46A1F09A688487 /* s3_upload.rs */,
 			);
 			path = commands;
@@ -201,6 +206,8 @@
 			isa = PBXGroup;
 			children = (
 				3EE62939993AE48C0B60B7C5 /* main.mm */,
+				5E16F7E4165A10B528ABBA60 /* RatelFiles.h */,
+				4987E0B3B4CBC7E3E2F219C9 /* RatelFiles.m */,
 				ABF8E4879F690F62B670C4AF /* RatelPush.h */,
 				EF189BDBF1806DDFB6AF6FD4 /* RatelPush.m */,
 				52B1E8D9FC20D3250AFB992E /* bindings */,
@@ -316,6 +323,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				14D83E626C4DE06AC6BE8730 /* RatelFiles.m in Sources */,
 				6B0A813C948DA76079F73BE4 /* RatelPush.m in Sources */,
 				929874E24CFEF13107D3EF26 /* main.mm in Sources */,
 			);

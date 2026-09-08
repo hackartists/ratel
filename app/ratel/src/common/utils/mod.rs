@@ -3,6 +3,7 @@ pub mod discussion_notification;
 pub mod format;
 pub mod html;
 pub mod mention;
+pub mod native_file;
 pub mod reply_notification;
 pub mod storage;
 pub mod time;

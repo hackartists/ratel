@@ -16,9 +16,7 @@ pub use subscription_page::SubscriptionPage;
 #[allow(unused_imports)]
 pub use viewer_page::*;
 
-use super::controllers::{
-    delete_team_handler, get_team_settings_handler, update_team_handler, UpdateTeamRequest,
-};
+use super::controllers::{get_team_settings_handler, update_team_handler, UpdateTeamRequest};
 use super::i18n::TeamSettingsTranslate;
 
 #[component]
@@ -142,7 +140,9 @@ pub fn Home(username: ReadSignal<String>) -> Element {
     let on_delete = move |_| {
         saving.set(true);
         spawn(async move {
-            match delete_team_handler(username()).await {
+            // Goes through the context so the cached "YOUR TEAMS" list drops
+            // the row too — calling the handler directly leaves it stale.
+            match team_ctx.delete_team(username()).await {
                 Ok(_) => {
                     toast.info(tr.delete_success);
                     delete_open.set(false);

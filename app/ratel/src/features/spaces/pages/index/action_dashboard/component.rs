@@ -111,6 +111,10 @@ pub fn ActionDashboard(
     };
 
     let mut show_archive = use_signal(|| false);
+    // Press anywhere outside the panel closes it. Two selectors because the
+    // trigger is not inside the panel — it lives in the bottom bar, and a
+    // press on it must reach its own toggle rather than be read as "outside".
+    use_dismiss_on_outside_click(show_archive, ".archive-panel, .archive-btn");
     let mut completed_action: CompletedActionCard = use_context();
     let archive_action_id = completed_action.0();
 

@@ -12,6 +12,10 @@ translate! {
     share_btn: { en: "Share", ko: "공유" },
     export_btn: { en: "Export", ko: "내보내기" },
     pdf_download_btn: { en: "PDF Download", ko: "PDF 다운로드" },
+    pdf_download_failed: {
+        en: "Couldn't export the PDF on this device.",
+        ko: "이 기기에서 PDF를 내보내지 못했습니다.",
+    },
     publish_btn: { en: "Publish", ko: "발행" },
     publish_modal_title: { en: "Publish report", ko: "보고서 게시" },
     publish_modal_body: {

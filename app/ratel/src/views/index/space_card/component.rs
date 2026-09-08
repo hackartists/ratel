@@ -76,7 +76,21 @@ pub fn ArenaSpaceCard(
 
     rsx! {
 
-        div { class: "space-card space-card--{heat_css}{active_cls}", "data-heat": heat_css,
+        // The whole card enters the space, not just the CTA. Watching real use,
+        // people tap the card body far more often than the button, and until
+        // now that did nothing. `role`/`tabindex` keep it reachable by keyboard
+        // and announced as a control (it's a div, not a Link, because a Link
+        // can't legally contain the CTA button).
+        div {
+            class: "space-card space-card--{heat_css}{active_cls}",
+            "data-heat": heat_css,
+            role: "button",
+            tabindex: "0",
+            onclick: move |_| {
+                if let Some(h) = onenter {
+                    h.call(());
+                }
+            },
             div { class: "space-card__wave" }
 
             div { class: "space-card__top",
@@ -132,7 +146,10 @@ pub fn ArenaSpaceCard(
                 }
                 button {
                     class: "space-card__cta",
-                    onclick: move |_| {
+                    // Stop the bubble: the card root now handles the same
+                    // action, and without this a CTA tap would fire it twice.
+                    onclick: move |evt: MouseEvent| {
+                        evt.stop_propagation();
                         if let Some(h) = onenter {
                             h.call(());
                         }
