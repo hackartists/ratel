@@ -91,9 +91,3 @@ GoogleService-Info.plist
 # Ephemeral Linux build dirs + logs created for the Postgres-migration image builds
 /target-fresh/
 /target-*-build.log
-
-# Gradle's local build cache — regenerated on every Android build, so tracked
-# copies show up as changes after any `make build-android` and conflict on
-# merge. Binary hash/lock files, never source. (`build.gradle.kts` and the
-# other real build inputs alongside them stay tracked.)
-**/.gradle/
