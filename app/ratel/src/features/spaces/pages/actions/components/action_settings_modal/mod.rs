@@ -31,6 +31,8 @@ pub fn ActionSettingsModal(
 
     let selected_action_ids = use_signal(move || initial_action_ids);
     let mut is_add_menu_open = use_signal(|| false);
+    // Press anywhere outside the picker closes it.
+    use_dismiss_on_outside_click(is_add_menu_open, "#action-add-menu");
     let mut is_rewards_enabled = use_signal(|| false);
     let is_applying = use_signal(|| false);
 
@@ -102,7 +104,7 @@ pub fn ActionSettingsModal(
                     }
                 }
 
-                div { class: "relative w-full",
+                div { class: "relative w-full", id: "action-add-menu",
                     Button {
                         size: ButtonSize::Medium,
                         style: ButtonStyle::Text,
@@ -177,7 +179,7 @@ pub fn ActionSettingsModal(
                                     {tr.no_rewards_configured}
                                 }
                             } else {
-                                for (idx , reward) in reward_previews.iter().enumerate() {
+                                for (idx, reward) in reward_previews.iter().enumerate() {
                                     RewardSummaryCard {
                                         key: "reward-preview-{idx}",
                                         reward: reward.clone(),

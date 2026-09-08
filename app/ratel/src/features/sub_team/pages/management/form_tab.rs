@@ -97,7 +97,7 @@ pub fn FormTab() -> Element {
                 }
 
                 div { class: "field-list", id: "field-list",
-                    for (idx , field) in rows.iter().enumerate() {
+                    for (idx, field) in rows.iter().enumerate() {
                         FieldRow {
                             key: "{field.id}",
                             field: field.clone(),
@@ -185,6 +185,10 @@ fn FieldRow(
     let linked_attr = link_data_attr(linked_to);
     let linked_label = link_button_label(linked_to, &tr);
     let mut menu_open: Signal<bool> = use_signal(|| false);
+    // One menu per field row, so the dismissal anchor must be this row's own
+    // element rather than the shared class.
+    let menu_dom_id = use_hook(|| format!("field-link-menu-{}", uuid::Uuid::now_v7()));
+    use_dismiss_on_outside_click(menu_open, format!("#{menu_dom_id}"));
     let btn_linked_attr = if linked_to.is_some() { "set" } else { "none" };
 
     // Drag handle currently doubles as up/down reorder buttons because
@@ -305,7 +309,7 @@ fn FieldRow(
                 // the value from the applicant team's profile at
                 // submit time. Set-only today — clearing isn't
                 // supported via PATCH.
-                span { class: "field-row__link-wrap",
+                span { class: "field-row__link-wrap", id: "{menu_dom_id}",
                     button {
                         class: "field-row__link-btn",
                         "data-linked": "{btn_linked_attr}",
@@ -495,7 +499,7 @@ fn FieldOptionsPanel(
     rsx! {
         div { class: "field-options",
             div { class: "field-options__list",
-                for (idx , opt) in labels.iter().enumerate() {
+                for (idx, opt) in labels.iter().enumerate() {
                     div { key: "opt-{idx}", class: "field-options__item",
                         input {
                             class: "field-options__input",

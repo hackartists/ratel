@@ -111,6 +111,8 @@ pub fn Home(username: String) -> Element {
     let mut filter = use_signal(|| Filter::All);
     let mut sort_mode = use_signal(|| SortMode::Recent);
     let mut sort_open = use_signal(|| false);
+    // Press anywhere outside the control closes it.
+    use_dismiss_on_outside_click(sort_open, "#drafts-sort");
     let menu_open_id = use_signal(|| Option::<String>::None);
 
     let deleted_keys = deleted.read().clone();
@@ -762,8 +764,16 @@ fn EmptyState(
                     path { d: "M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" }
                 }
             }
-            div { class: "empty-state__title", "{title}" }
-            div { class: "empty-state__desc", "{desc}" }
+            div { class: "",
+                {title}
+                empty-state__title {}
+                ","
+            }
+            div { class: "",
+                {desc}
+                empty-state__desc {}
+                ","
+            }
             button { class: "empty-state__cta", onclick: move |_| on_cta.call(()),
                 svg {
                     view_box: "0 0 24 24",

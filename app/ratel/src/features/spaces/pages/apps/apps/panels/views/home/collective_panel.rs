@@ -16,6 +16,8 @@ pub fn CollectivePanelSection(space_id: ReadSignal<SpacePartition>) -> Element {
 
     let panel_list = panels.read().clone();
     let mut show_menu = use_signal(|| false);
+    // Press anywhere outside the control closes it.
+    use_dismiss_on_outside_click(show_menu, "#collective-dropdown");
 
     let has_uni = is_collective_option(PanelOption::University, &panel_list);
     let has_age = is_collective_option(PanelOption::Age, &panel_list);
@@ -35,7 +37,7 @@ pub fn CollectivePanelSection(space_id: ReadSignal<SpacePartition>) -> Element {
                 }
                 if has_movable {
                     div { class: "spa-section__actions",
-                        div { class: "spa-dropdown",
+                        div { class: "spa-dropdown", id: "collective-dropdown",
                             button {
                                 r#type: "button",
                                 class: "spa-btn spa-btn--icon",
