@@ -2472,11 +2472,12 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 
 /* ─── Mobile ──────────────────────────────────────────────── */
 @media (max-width: 640px) {
+  /* Wrap, never scroll: below 700px the toolbar isn't rendered at all
+     (the sheet replaces it), so the only sizes reaching this rule have
+     room for a second row. */
   .ratel-editor .re-toolbar {
     padding: 8px;
     gap: 4px;
-    overflow-x: auto;
-    flex-wrap: nowrap;
   }
   .ratel-editor .re-toolbar__group { padding: 0 2px; }
   .ratel-editor .re-toolbar__group + .re-toolbar__group {
@@ -2495,6 +2496,333 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
     min-height: 280px;
     /* iOS auto-zooms inputs under 16px; keep editor at 16px+ */
     font-size: 16px;
+  }
+}
+
+
+/* ─── Mobile format surface (Slack-style bottom sheet) ────────
+   Above 980px none of this renders and the desktop toolbar is the only
+   format UI — untouched. Below it the toolbar is the problem: every
+   surface that embeds the editor turns it into a single-row horizontal
+   scroller there, which leaves ~4 of 22 commands visible and the rest
+   behind a swipe nobody discovers. So the toolbar is hidden and
+   replaced by a compact always-on bar (undo/redo, "Aa", image, link)
+   plus a bottom sheet holding the full set, grouped and labelled.
+
+   The sheet's buttons reuse `.re-tb-btn` + `data-cmd`, so they inherit
+   the toolbar's pressed-state styling and the editor's existing click
+   delegation without a second code path. */
+.ratel-editor .re-mobile-bar,
+.ratel-editor .re-fmt-sheet {
+  display: none;
+}
+
+/* Phones get the sheet; everything with room keeps the real toolbar.
+   Width alone can't express that — an iPhone 15 Pro Max on its side is
+   932px wide (it would take the toolbar) while an iPad mini upright is
+   744px (it would lose one). So the switch is on device shape: narrow
+   OR short. Every iPad in either orientation lands on the toolbar,
+   which wraps to two or three rows and never scrolls; every phone in
+   either orientation lands on the sheet. */
+@media (max-width: 700px), (max-height: 520px) {
+  .ratel-editor .re-toolbar {
+    display: none !important;
+  }
+
+  /* ── Compact bar ──────────────────────────────────────── */
+  .ratel-editor .re-mobile-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 10px;
+    background: var(--re-toolbar-bg);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--re-border-subtle);
+  }
+  .ratel-editor .re-mobile-bar__btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    flex-shrink: 0;
+  }
+  .ratel-editor .re-mobile-bar__btn svg {
+    width: 18px;
+    height: 18px;
+  }
+  /* The "Insert data" affordance is a primary action on the surfaces
+     that pass it, so it keeps the accent treatment it has on desktop. */
+  .ratel-editor .re-mobile-bar__btn--insert {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 1px solid var(--re-border-active);
+    background: rgba(252, 179, 0, 0.12);
+    color: var(--re-accent);
+    cursor: pointer;
+    padding: 0;
+    /* Pushed hard right so the buttons before it keep a fixed position
+       whether or not the host surface passes an insert-data handler. */
+    margin-left: auto;
+  }
+
+  .ratel-editor .re-mobile-bar__fmt {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 40px;
+    padding: 0 12px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    border: 1px solid var(--re-border-strong);
+    background: var(--re-input-bg-focus);
+    color: var(--re-text-primary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .ratel-editor .re-mobile-bar__fmt[aria-expanded="true"] {
+    border-color: var(--re-border-active);
+    background: rgba(252, 179, 0, 0.12);
+    color: var(--re-accent);
+  }
+  .ratel-editor .re-mobile-bar__fmt-glyph {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  /* The glyph alone reads as "text formatting" once you have seen it;
+     the word is what makes it discoverable the first time, so it is
+     dropped only when the bar genuinely runs out of room. 360dp is the
+     single most common Android width (it is what the test AVD reports),
+     so the cutoff sits below it, not on it. With undo/redo moved into the
+     sheet the bar needs ~254px there, leaving ~48px of slack. */
+  @media (max-width: 340px) {
+    .ratel-editor .re-mobile-bar__fmt-label {
+      display: none;
+    }
+  }
+
+  /* ── Bottom sheet ─────────────────────────────────────── */
+  .ratel-editor .re-fmt-sheet[data-open="true"] {
+    display: block;
+    position: fixed;
+    inset: 0;
+    /* Above the app's bottom bars and drawers, below nothing else the
+       editor owns. Matches the z-index the selection bubble uses. */
+    z-index: 120;
+  }
+  .ratel-editor .re-fmt-sheet__scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+  }
+  .ratel-editor .re-fmt-sheet__panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    /* Sit on top of the soft keyboard, not behind it. `--kb-inset` is the
+       keyboard height, published on <html> by app.rs from `visualViewport`
+       — the same variable `.composer-arena` sizes itself with. 0 when the
+       keyboard is closed. */
+    bottom: var(--kb-inset, 0px);
+    max-height: 72vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--re-toolbar-bg);
+    backdrop-filter: blur(24px);
+    border-top: 1px solid var(--re-border-strong);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
+    color: var(--re-text-primary);
+    font-family: 'Outfit', sans-serif;
+    /* Clear the home indicator / gesture bar. */
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: re-fmt-sheet-in 0.18s ease-out;
+  }
+  @keyframes re-fmt-sheet-in {
+    from {
+      transform: translateY(14px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  .ratel-editor .re-fmt-sheet__grip {
+    width: 36px;
+    height: 4px;
+    margin: 8px auto 2px;
+    border-radius: 2px;
+    background: var(--re-border-strong);
+    flex-shrink: 0;
+  }
+  .ratel-editor .re-fmt-sheet__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px 10px;
+    border-bottom: 1px solid var(--re-border-subtle);
+    flex-shrink: 0;
+  }
+  .ratel-editor .re-fmt-sheet__title {
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .ratel-editor .re-fmt-sheet__done {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--re-accent);
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 6px 4px;
+    cursor: pointer;
+  }
+  .ratel-editor .re-fmt-sheet__body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 12px 12px;
+  }
+  .ratel-editor .re-fmt-sheet__section {
+    padding: 9px 4px;
+  }
+  .ratel-editor .re-fmt-sheet__section + .re-fmt-sheet__section {
+    border-top: 1px solid var(--re-border-subtle);
+  }
+  .ratel-editor .re-fmt-sheet__label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--re-text-dim);
+  }
+  /* A fixed 4-column grid rather than wrapping flex: it keeps the tiles
+     the same width in every section, so the sheet reads as one grid
+     instead of five differently-ragged rows. Sections with 5 or 6
+     commands simply spill onto a second row at the same pitch. */
+  .ratel-editor .re-fmt-sheet__row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .ratel-editor .re-fmt-sheet__blocks {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  /* Command tile: the toolbar's icon button plus the word for it. On a
+     phone there is no hover, so `data-tip` never fires and an icon-only
+     grid would be a guessing game. */
+  .ratel-editor .re-fmt-btn {
+    width: auto;
+    min-width: 0;
+    height: auto;
+    min-height: 58px;
+    flex-direction: column;
+    gap: 5px;
+    padding: 9px 4px;
+    border-color: var(--re-border-subtle);
+    background: var(--re-input-bg);
+  }
+  .ratel-editor .re-fmt-btn svg {
+    width: 19px;
+    height: 19px;
+  }
+  .ratel-editor .re-fmt-btn__label {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.15;
+    text-align: center;
+    /* Long labels ("Clear formatting") must not stretch the tile past
+       its neighbours — the row is a fixed grid, the word wraps. */
+    overflow-wrap: anywhere;
+  }
+  .ratel-editor .re-fmt-btn[aria-pressed="true"] {
+    border-color: var(--re-border-active);
+  }
+
+  /* Block pills. Each renders in the style it applies, so the choice is
+     legible without reading the label. */
+  .ratel-editor .re-fmt-block {
+    appearance: none;
+    min-width: 0;
+    padding: 11px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--re-border-subtle);
+    background: var(--re-input-bg);
+    color: var(--re-text-primary);
+    font-family: 'Outfit', sans-serif;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease,
+      color 0.15s ease;
+  }
+  .ratel-editor .re-fmt-block.re-block__item--active {
+    border-color: var(--re-border-active);
+    background: rgba(252, 179, 0, 0.12);
+    color: var(--re-accent);
+  }
+  .ratel-editor .re-fmt-block--p {
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .ratel-editor .re-fmt-block--h1 {
+    font-size: 18px;
+    font-weight: 800;
+  }
+  .ratel-editor .re-fmt-block--h2 {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .ratel-editor .re-fmt-block--h3 {
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .ratel-editor .re-fmt-block--quote {
+    font-size: 14px;
+    font-style: italic;
+    color: var(--re-text-muted);
+  }
+  .ratel-editor .re-fmt-block--code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--re-text-muted);
+  }
+
+  /* Surfaces that move the toolbar to the end of the editor's flex
+     column (composer, sub-team compose, report editor) want the compact
+     bar in that same slot — a sticky top bar there would float over the
+     writing area it is supposed to sit under. */
+  .composer-arena .ratel-editor .re-mobile-bar,
+  .sub-team-broadcast-compose .ratel-editor .re-mobile-bar,
+  .sub-team-doc-compose .ratel-editor .re-mobile-bar,
+  .report-detail .ratel-editor .re-mobile-bar {
+    position: relative;
+    top: auto;
+    order: 5;
+    flex-shrink: 0;
+    width: 100%;
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    border: 1px solid var(--re-border-strong);
+    border-radius: 14px;
+  }
+  .report-detail .ratel-editor .re-mobile-bar {
+    margin: 8px 0 14px;
   }
 }
 
@@ -8398,23 +8726,6 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   bottom: calc(100% + 6px);
 }
 @media (max-width: 980px) {
-  /* Mobile: a 2-row pill is too tall on small screens — fall back to
-     a single-row horizontally-scrollable strip pinned to the bottom
-     of the editor flex column. */
-  .composer-arena .ratel-editor .re-toolbar {
-    width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-  }
-  .composer-arena .ratel-editor .re-toolbar::-webkit-scrollbar {
-    height: 4px;
-  }
-  .composer-arena .ratel-editor .re-toolbar::-webkit-scrollbar-thumb {
-    background: var(--re-border-strong);
-    border-radius: 2px;
-  }
   /* In-flow bottom-bar handles its own height — composer-page just
      needs minimal breathing room above it on mobile. */
   .composer-arena .composer-page {
@@ -48986,24 +49297,6 @@ body.comments-panel-resizing {
 }
 
 @media (max-width: 980px) {
-  /* Single-row horizontally-scrollable toolbar on mobile. */
-  .sub-team-broadcast-compose .ratel-editor .re-toolbar,
-  .sub-team-doc-compose .ratel-editor .re-toolbar {
-    width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-  }
-  .sub-team-broadcast-compose .ratel-editor .re-toolbar::-webkit-scrollbar,
-  .sub-team-doc-compose .ratel-editor .re-toolbar::-webkit-scrollbar {
-    height: 4px;
-  }
-  .sub-team-broadcast-compose .ratel-editor .re-toolbar::-webkit-scrollbar-thumb,
-  .sub-team-doc-compose .ratel-editor .re-toolbar::-webkit-scrollbar-thumb {
-    background: var(--re-border-strong);
-    border-radius: 2px;
-  }
   /* On mobile the side-panel is the shared bottom-sheet drawer
      (position: fixed at bottom, translateY(100%) when closed). The
      composer + editor stay viewport-fit just like post_edit. The
@@ -51885,7 +52178,16 @@ html[data-theme="light"] .ff-home .featured-title {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  height: 100dvh;
+  /* Same treatment `.composer-arena` already carries, and for the same
+     reason: this column sits inside `:root`'s safe-area padding, so a full
+     `100dvh` runs past the bottom of the screen and buries its last flex
+     item — the editor's format bar — under the Android nav bar / home
+     indicator. `--kb-inset` (set globally in app.rs from `visualViewport`)
+     collapses it above the soft keyboard as well. Both are 0 on desktop. */
+  height: calc(
+    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
+      var(--kb-inset, 0px)
+  );
   overflow: hidden;
   background: var(--rd-bg-void);
   color: var(--rd-text-primary);
@@ -52149,20 +52451,6 @@ html[data-theme="light"] .ff-home .featured-title {
   bottom: calc(100% + 6px);
 }
 @media (max-width: 980px) {
-  .report-detail .ratel-editor .re-toolbar {
-    width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-  }
-  .report-detail .ratel-editor .re-toolbar::-webkit-scrollbar {
-    height: 4px;
-  }
-  .report-detail .ratel-editor .re-toolbar::-webkit-scrollbar-thumb {
-    background: var(--re-border-strong);
-    border-radius: 2px;
-  }
 }
 
 .report-detail figure[data-block="chart"] {
@@ -52589,6 +52877,8 @@ html[data-theme="light"] .ff-home .featured-title {
    that's the whole point of viewer mode. */
 .report-detail--viewer .report-detail__chart-actions,
 .report-detail--viewer .ratel-editor .re-toolbar,
+.report-detail--viewer .ratel-editor .re-mobile-bar,
+.report-detail--viewer .ratel-editor .re-fmt-sheet,
 .report-detail--viewer .ratel-editor .re-bubble,
 .report-detail--viewer .ratel-editor .re-table-actions,
 .report-detail--viewer .ratel-editor .re-statusbar {
@@ -52811,6 +53101,8 @@ html[data-theme="light"] .ff-home .featured-title {
   .report-detail__slash-pop,
   .report-detail .confirm-modal,
   .ratel-editor .re-toolbar,
+  .ratel-editor .re-mobile-bar,
+  .ratel-editor .re-fmt-sheet,
   .ratel-editor .re-bubble,
   .ratel-editor .re-table-actions,
   .ratel-editor .re-statusbar,

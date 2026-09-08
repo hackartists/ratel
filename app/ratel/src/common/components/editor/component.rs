@@ -63,6 +63,11 @@ pub fn Editor(props: EditorProps) -> Element {
     let extra_class = props.class.clone();
     let slash_enabled = props.on_slash.is_some();
     let slash_attr = if slash_enabled { "true" } else { "false" };
+    // Only the mobile format sheet needs translated strings — the desktop
+    // toolbar communicates through icons plus `data-tip` tooltips, which
+    // have no mobile equivalent (there is no hover), so the sheet spells
+    // every command out in words instead.
+    let tr: EditorTranslate = use_translate();
 
     rsx! {
         document::Script { defer: true, src: asset!("./script.js") }
@@ -859,6 +864,833 @@ pub fn Editor(props: EditorProps) -> Element {
                     }
                 }
             }
+            if is_editable {
+                // ── Mobile format surface ─────────────────────────────
+                // Below 980px the wide `.re-toolbar` degrades into a
+                // horizontally-scrollable strip — every command past the
+                // fourth is off-screen and undiscoverable on a phone. CSS
+                // hides the toolbar there and shows this pair instead: a
+                // compact always-visible bar plus a Slack-style bottom
+                // sheet holding the full command set, laid out in labelled
+                // sections rather than one long row.
+                //
+                // Nothing new is wired up: every button carries the same
+                // `data-cmd` / `data-block` the toolbar uses, so the
+                // editor's existing delegated handlers and `aria-pressed`
+                // state sync pick these up unchanged. Desktop rendering is
+                // untouched — both nodes are `display: none` above 980px.
+                div {
+                    class: "re-mobile-bar",
+                    role: "toolbar",
+                    aria_label: "{tr.format}",
+                    button {
+                        aria_expanded: "false",
+                        aria_label: "{tr.format}",
+                        class: "re-mobile-bar__fmt",
+                        "data-fmt-open": "true",
+                        r#type: "button",
+                        span { class: "re-mobile-bar__fmt-glyph", "Aa" }
+                        span { class: "re-mobile-bar__fmt-label", "{tr.format}" }
+                    }
+                    button {
+                        aria_label: "{tr.image}",
+                        class: "re-tb-btn re-mobile-bar__btn",
+                        "data-cmd": "image",
+                        r#type: "button",
+                        svg {
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            stroke_width: "2",
+                            view_box: "0 0 24 24",
+                            rect {
+                                height: "18",
+                                rx: "2",
+                                width: "18",
+                                x: "3",
+                                y: "3",
+                            }
+                            circle { cx: "8.5", cy: "8.5", r: "1.5" }
+                            polyline { points: "21 15 16 10 5 21" }
+                        }
+                    }
+                    button {
+                        aria_label: "{tr.link}",
+                        class: "re-tb-btn re-mobile-bar__btn",
+                        "data-cmd": "link",
+                        r#type: "button",
+                        svg {
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            stroke_width: "2",
+                            view_box: "0 0 24 24",
+                            path { d: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" }
+                            path { d: "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" }
+                        }
+                    }
+                    if let Some(handler) = props.on_insert_data {
+                        button {
+                            aria_label: "{props.insert_data_label}",
+                            class: "re-mobile-bar__btn re-mobile-bar__btn--insert",
+                            r#type: "button",
+                            onclick: move |_| handler.call(()),
+                            svg {
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                stroke_width: "2.2",
+                                view_box: "0 0 24 24",
+                                polyline { points: "22 12 18 12 15 21 9 3 6 12 2 12" }
+                            }
+                        }
+                    }
+                }
+                div { class: "re-fmt-sheet", "data-open": "false",
+                    div {
+                        class: "re-fmt-sheet__scrim",
+                        "data-fmt-close": "true",
+                    }
+                    div {
+                        aria_label: "{tr.format}",
+                        aria_modal: "false",
+                        class: "re-fmt-sheet__panel",
+                        role: "dialog",
+                        div { class: "re-fmt-sheet__grip" }
+                        div { class: "re-fmt-sheet__head",
+                            span { class: "re-fmt-sheet__title", "{tr.format}" }
+                            button {
+                                class: "re-fmt-sheet__done",
+                                "data-fmt-close": "true",
+                                r#type: "button",
+                                "{tr.done}"
+                            }
+                        }
+                        div { class: "re-fmt-sheet__body",
+                            div { class: "re-fmt-sheet__section",
+                                span { class: "re-fmt-sheet__label", "{tr.text_style}" }
+                                div { class: "re-fmt-sheet__blocks",
+                                    button {
+                                        class: "re-fmt-block re-fmt-block--p",
+                                        "data-block": "P",
+                                        r#type: "button",
+                                        "{tr.body}"
+                                    }
+                                    button {
+                                        class: "re-fmt-block re-fmt-block--h1",
+                                        "data-block": "H1",
+                                        r#type: "button",
+                                        "{tr.heading1}"
+                                    }
+                                    button {
+                                        class: "re-fmt-block re-fmt-block--h2",
+                                        "data-block": "H2",
+                                        r#type: "button",
+                                        "{tr.heading2}"
+                                    }
+                                    button {
+                                        class: "re-fmt-block re-fmt-block--h3",
+                                        "data-block": "H3",
+                                        r#type: "button",
+                                        "{tr.heading3}"
+                                    }
+                                    button {
+                                        class: "re-fmt-block re-fmt-block--quote",
+                                        "data-block": "BLOCKQUOTE",
+                                        r#type: "button",
+                                        "{tr.quote}"
+                                    }
+                                    button {
+                                        class: "re-fmt-block re-fmt-block--code",
+                                        "data-block": "PRE",
+                                        r#type: "button",
+                                        "{tr.code_block}"
+                                    }
+                                }
+                            }
+                            div { class: "re-fmt-sheet__section",
+                                span { class: "re-fmt-sheet__label", "{tr.emphasis}" }
+                                div { class: "re-fmt-sheet__row",
+                                    button {
+                                        aria_label: "{tr.bold}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "bold",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2.4",
+                                            view_box: "0 0 24 24",
+                                            path { d: "M6 4h8a4 4 0 0 1 0 8H6z" }
+                                            path { d: "M6 12h9a4 4 0 0 1 0 8H6z" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.bold}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.italic}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "italic",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "19",
+                                                x2: "10",
+                                                y1: "4",
+                                                y2: "4",
+                                            }
+                                            line {
+                                                x1: "14",
+                                                x2: "5",
+                                                y1: "20",
+                                                y2: "20",
+                                            }
+                                            line {
+                                                x1: "15",
+                                                x2: "9",
+                                                y1: "4",
+                                                y2: "20",
+                                            }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.italic}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.underline}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "underline",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            path { d: "M6 4v6a6 6 0 0 0 12 0V4" }
+                                            line {
+                                                x1: "4",
+                                                x2: "20",
+                                                y1: "20",
+                                                y2: "20",
+                                            }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.underline}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.strikethrough}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "strikeThrough",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "4",
+                                                x2: "20",
+                                                y1: "12",
+                                                y2: "12",
+                                            }
+                                            path { d: "M16 6c-1.5-1.3-3.5-2-6-2-3 0-5 1.5-5 4 0 2 1.5 3 5 4" }
+                                            path { d: "M8 18c1.5 1.3 3.5 2 6 2 3 0 5-1.5 5-4 0-1-.4-1.8-1-2.4" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.strikethrough}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.inline_code}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "code-inline",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            polyline { points: "16 18 22 12 16 6" }
+                                            polyline { points: "8 6 2 12 8 18" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.inline_code}" }
+                                    }
+                                }
+                            }
+                            div { class: "re-fmt-sheet__section",
+                                span { class: "re-fmt-sheet__label", "{tr.lists}" }
+                                div { class: "re-fmt-sheet__row",
+                                    button {
+                                        aria_label: "{tr.bullet_list}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "insertUnorderedList",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "8",
+                                                x2: "21",
+                                                y1: "6",
+                                                y2: "6",
+                                            }
+                                            line {
+                                                x1: "8",
+                                                x2: "21",
+                                                y1: "12",
+                                                y2: "12",
+                                            }
+                                            line {
+                                                x1: "8",
+                                                x2: "21",
+                                                y1: "18",
+                                                y2: "18",
+                                            }
+                                            circle { cx: "4", cy: "6", r: "1" }
+                                            circle { cx: "4", cy: "12", r: "1" }
+                                            circle { cx: "4", cy: "18", r: "1" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.bullet_list}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.numbered_list}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "insertOrderedList",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "10",
+                                                x2: "21",
+                                                y1: "6",
+                                                y2: "6",
+                                            }
+                                            line {
+                                                x1: "10",
+                                                x2: "21",
+                                                y1: "12",
+                                                y2: "12",
+                                            }
+                                            line {
+                                                x1: "10",
+                                                x2: "21",
+                                                y1: "18",
+                                                y2: "18",
+                                            }
+                                            path { d: "M4 6h1v4" }
+                                            path { d: "M4 10h2" }
+                                            path { d: "M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.numbered_list}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.outdent}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "outdent",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "5",
+                                                y2: "5",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "19",
+                                                y2: "19",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "11",
+                                                y1: "9",
+                                                y2: "9",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "11",
+                                                y1: "15",
+                                                y2: "15",
+                                            }
+                                            polyline { points: "7 9 3 12 7 15" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.outdent}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.indent}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "indent",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "3",
+                                                x2: "21",
+                                                y1: "5",
+                                                y2: "5",
+                                            }
+                                            line {
+                                                x1: "3",
+                                                x2: "21",
+                                                y1: "19",
+                                                y2: "19",
+                                            }
+                                            line {
+                                                x1: "13",
+                                                x2: "3",
+                                                y1: "9",
+                                                y2: "9",
+                                            }
+                                            line {
+                                                x1: "13",
+                                                x2: "3",
+                                                y1: "15",
+                                                y2: "15",
+                                            }
+                                            polyline { points: "17 9 21 12 17 15" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.indent}" }
+                                    }
+                                }
+                            }
+                            div { class: "re-fmt-sheet__section",
+                                span { class: "re-fmt-sheet__label", "{tr.alignment}" }
+                                div { class: "re-fmt-sheet__row",
+                                    button {
+                                        aria_label: "{tr.align_left}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "justifyLeft",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "17",
+                                                x2: "3",
+                                                y1: "10",
+                                                y2: "10",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "6",
+                                                y2: "6",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "14",
+                                                y2: "14",
+                                            }
+                                            line {
+                                                x1: "17",
+                                                x2: "3",
+                                                y1: "18",
+                                                y2: "18",
+                                            }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.align_left}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.align_center}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "justifyCenter",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "18",
+                                                x2: "6",
+                                                y1: "10",
+                                                y2: "10",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "6",
+                                                y2: "6",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "14",
+                                                y2: "14",
+                                            }
+                                            line {
+                                                x1: "18",
+                                                x2: "6",
+                                                y1: "18",
+                                                y2: "18",
+                                            }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.align_center}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.align_right}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "justifyRight",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "21",
+                                                x2: "7",
+                                                y1: "10",
+                                                y2: "10",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "6",
+                                                y2: "6",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "14",
+                                                y2: "14",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "7",
+                                                y1: "18",
+                                                y2: "18",
+                                            }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.align_right}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.align_justify}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "justifyFull",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "10",
+                                                y2: "10",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "6",
+                                                y2: "6",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "14",
+                                                y2: "14",
+                                            }
+                                            line {
+                                                x1: "21",
+                                                x2: "3",
+                                                y1: "18",
+                                                y2: "18",
+                                            }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.align_justify}" }
+                                    }
+                                }
+                            }
+                            div { class: "re-fmt-sheet__section",
+                                span { class: "re-fmt-sheet__label", "{tr.insert}" }
+                                div { class: "re-fmt-sheet__row",
+                                    button {
+                                        aria_label: "{tr.link}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "link",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            path { d: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" }
+                                            path { d: "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.link}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.unlink}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "unlink",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            path { d: "M18.84 12.25l1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71" }
+                                            path { d: "M5.16 11.75L3.44 13.46a5 5 0 0 0 7.07 7.07l1.71-1.71" }
+                                            line {
+                                                x1: "2",
+                                                x2: "22",
+                                                y1: "2",
+                                                y2: "22",
+                                            }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.unlink}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.image}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "image",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            rect {
+                                                height: "18",
+                                                rx: "2",
+                                                width: "18",
+                                                x: "3",
+                                                y: "3",
+                                            }
+                                            circle {
+                                                cx: "8.5",
+                                                cy: "8.5",
+                                                r: "1.5",
+                                            }
+                                            polyline { points: "21 15 16 10 5 21" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.image}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.video}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "youtube",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            path { d: "M22 8.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v7a4 4 0 0 0 4 4h12a4 4 0 0 0 4-4z" }
+                                            polygon { points: "10 8 16 12 10 16 10 8" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.video}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.table}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "table",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            rect {
+                                                height: "18",
+                                                rx: "2",
+                                                width: "18",
+                                                x: "3",
+                                                y: "3",
+                                            }
+                                            line {
+                                                x1: "3",
+                                                x2: "21",
+                                                y1: "9",
+                                                y2: "9",
+                                            }
+                                            line {
+                                                x1: "3",
+                                                x2: "21",
+                                                y1: "15",
+                                                y2: "15",
+                                            }
+                                            line {
+                                                x1: "9",
+                                                x2: "9",
+                                                y1: "3",
+                                                y2: "21",
+                                            }
+                                            line {
+                                                x1: "15",
+                                                x2: "15",
+                                                y1: "3",
+                                                y2: "21",
+                                            }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.table}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.divider}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "hr",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            line {
+                                                x1: "4",
+                                                x2: "20",
+                                                y1: "12",
+                                                y2: "12",
+                                            }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.divider}" }
+                                    }
+                                }
+                            }
+                            div { class: "re-fmt-sheet__section",
+                                span { class: "re-fmt-sheet__label", "{tr.clear}" }
+                                div { class: "re-fmt-sheet__row",
+                                    button {
+                                        aria_label: "{tr.clear_format}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "removeFormat",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            path { d: "M4 7V4h16v3" }
+                                            line {
+                                                x1: "5",
+                                                x2: "11",
+                                                y1: "20",
+                                                y2: "20",
+                                            }
+                                            line {
+                                                x1: "13",
+                                                x2: "8",
+                                                y1: "4",
+                                                y2: "20",
+                                            }
+                                            line {
+                                                x1: "3",
+                                                x2: "21",
+                                                y1: "3",
+                                                y2: "21",
+                                            }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.clear_format}" }
+                                    }
+                                }
+                            }
+                            // Undo/redo live here rather than in the compact
+                            // bar: the bar has to fit a 360dp phone (the most
+                            // common Android width) without clipping, and of
+                            // everything competing for that space these two are
+                            // the least reached for on a touch keyboard, which
+                            // carries its own undo gesture.
+                            div { class: "re-fmt-sheet__section",
+                                span { class: "re-fmt-sheet__label", "{tr.history}" }
+                                div { class: "re-fmt-sheet__row",
+                                    button {
+                                        aria_label: "{tr.undo}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "undo",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            path { d: "M3 7v6h6" }
+                                            path { d: "M21 17a9 9 0 0 0-15-6.7L3 13" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.undo}" }
+                                    }
+                                    button {
+                                        aria_label: "{tr.redo}",
+                                        class: "re-tb-btn re-fmt-btn",
+                                        "data-cmd": "redo",
+                                        r#type: "button",
+                                        svg {
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            view_box: "0 0 24 24",
+                                            path { d: "M21 7v6h-6" }
+                                            path { d: "M3 17a9 9 0 0 1 15-6.7L21 13" }
+                                        }
+                                        span { class: "re-fmt-btn__label", "{tr.redo}" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             div {
                 autocapitalize: "sentences",
                 class: "re-content",
@@ -1575,4 +2407,53 @@ pub fn Editor(props: EditorProps) -> Element {
             }
         }
     }
+}
+
+translate! {
+    EditorTranslate;
+
+    format: { en: "Format", ko: "서식" },
+    done: { en: "Done", ko: "완료" },
+
+    history: { en: "History", ko: "되돌리기" },
+    undo: { en: "Undo", ko: "실행 취소" },
+    redo: { en: "Redo", ko: "다시 실행" },
+
+    text_style: { en: "Text style", ko: "텍스트 스타일" },
+    body: { en: "Body", ko: "본문" },
+    heading1: { en: "Heading 1", ko: "큰 제목" },
+    heading2: { en: "Heading 2", ko: "중간 제목" },
+    heading3: { en: "Heading 3", ko: "작은 제목" },
+    quote: { en: "Quote", ko: "인용" },
+    code_block: { en: "Code block", ko: "코드 블록" },
+
+    emphasis: { en: "Emphasis", ko: "강조" },
+    bold: { en: "Bold", ko: "굵게" },
+    italic: { en: "Italic", ko: "기울임" },
+    underline: { en: "Underline", ko: "밑줄" },
+    strikethrough: { en: "Strikethrough", ko: "취소선" },
+    inline_code: { en: "Code", ko: "인라인 코드" },
+
+    lists: { en: "Lists", ko: "목록" },
+    bullet_list: { en: "Bulleted", ko: "글머리 기호" },
+    numbered_list: { en: "Numbered", ko: "번호 매기기" },
+    outdent: { en: "Outdent", ko: "내어쓰기" },
+    indent: { en: "Indent", ko: "들여쓰기" },
+
+    alignment: { en: "Alignment", ko: "정렬" },
+    align_left: { en: "Left", ko: "왼쪽" },
+    align_center: { en: "Center", ko: "가운데" },
+    align_right: { en: "Right", ko: "오른쪽" },
+    align_justify: { en: "Justify", ko: "양쪽" },
+
+    insert: { en: "Insert", ko: "삽입" },
+    link: { en: "Link", ko: "링크" },
+    unlink: { en: "Unlink", ko: "링크 해제" },
+    image: { en: "Image", ko: "이미지" },
+    video: { en: "Video", ko: "동영상" },
+    table: { en: "Table", ko: "표" },
+    divider: { en: "Divider", ko: "구분선" },
+
+    clear: { en: "Clear", ko: "지우기" },
+    clear_format: { en: "Clear formatting", ko: "서식 지우기" },
 }
