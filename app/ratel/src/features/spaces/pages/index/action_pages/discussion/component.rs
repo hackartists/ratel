@@ -504,7 +504,7 @@ pub fn DiscussionArenaPage(
                                 on_submit: move |_| on_submit(()),
                                 placeholder: if in_thread { tr.reply_placeholder.to_string() } else { tr.comment_placeholder.to_string() },
                                 disabled: comment_text().trim().is_empty()
-                                                                                                                                                                    && pending_images.read().is_empty(),
+                                                                                                                                                                                                                                    && pending_images.read().is_empty(),
                                 on_mention_query_change,
                                 on_composer_focus,
                                 priority_user_pks: top_priority,
@@ -809,6 +809,13 @@ fn CommentCardBody(
 
     let comment_sk = use_signal(|| comment.sk.clone());
     let mut menu_open = use_signal(|| false);
+    // One menu per comment, so the dismissal anchor must be this comment's own
+    // element — a shared class would resolve to the first comment for every
+    // instance. The component renders the menu twice (comment and reply
+    // layouts), and only one of the two is mounted at a time, so a single id
+    // covers both.
+    let menu_dom_id = use_hook(|| format!("comment-menu-{}", uuid::Uuid::now_v7()));
+    use_dismiss_on_outside_click(menu_open, format!("#{menu_dom_id}"));
     let mut editing = use_signal(|| false);
     let mut edit_text = use_signal(|| comment.content.clone());
     // Report opens the shared Popup (see `ReportDialog`).
@@ -875,7 +882,7 @@ fn CommentCardBody(
                     span { class: "comment-item__name", "{comment.author_display_name}" }
                     span { class: "comment-item__time", "{time_ago}" }
                     if is_own && can_comment && !editing() {
-                        div { class: "comment-menu",
+                        div { class: "comment-menu", id: "{menu_dom_id}",
                             button {
                                 class: "comment-menu__trigger",
                                 "data-testid": "comment-menu-trigger",
@@ -909,7 +916,7 @@ fn CommentCardBody(
                         }
                     }
                     if !is_own && can_comment && !editing() {
-                        div { class: "comment-menu",
+                        div { class: "comment-menu", id: "{menu_dom_id}",
                             button {
                                 class: "comment-menu__trigger",
                                 "data-testid": "comment-menu-trigger",

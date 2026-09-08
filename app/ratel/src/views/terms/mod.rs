@@ -1,4 +1,5 @@
 use crate::*;
+use crate::views::LegalCloseButton;
 use chrono::Datelike;
 
 const COMPANY_NAME_EN: &str = "Biyard Corp.";
@@ -203,6 +204,7 @@ pub fn TermsOfServicePage() -> Element {
 
     rsx! {
         div { class: "overflow-y-auto w-full h-screen bg-bg text-text-primary",
+            LegalCloseButton {}
             div { class: "py-12 px-4 mx-auto w-full max-w-desktop",
                 div { class: "flex flex-col gap-8",
                     div { class: "text-center",

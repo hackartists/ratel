@@ -16,6 +16,8 @@ pub fn PostingAs(
     on_switch: Callback<Option<String>>,
 ) -> Element {
     let mut open = open;
+    // Press anywhere outside the control closes it.
+    use_dismiss_on_outside_click(open, "#as-dropdown");
     let selected_pk = selected_team_pk.clone();
     let teams_now = teams.clone();
     crate::debug!(

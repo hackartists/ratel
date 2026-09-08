@@ -34,6 +34,9 @@ pub fn MentionAutocomplete(
     children: Element,
 ) -> Element {
     let mut show_dropdown = use_signal(|| false);
+    // Press anywhere outside the field + suggestion list closes it.
+    let root_dom_id = use_hook(|| format!("mention-ac-{}", uuid::Uuid::now_v7()));
+    use_dismiss_on_outside_click(show_dropdown, format!("#{root_dom_id}"));
     let mut query = use_signal(String::new);
     let mut at_position = use_signal(|| 0usize);
     let mut selected_index = use_signal(|| 0usize);
@@ -112,6 +115,7 @@ pub fn MentionAutocomplete(
     rsx! {
         div {
             class: "relative",
+            id: "{root_dom_id}",
             // Children's textarea `oninput` bubbles here. Driving the
             // mention recompute from the wrapper's bubbled event keeps the
             // logic out of `use_effect`, which is unreliable on
@@ -182,12 +186,12 @@ pub fn MentionAutocomplete(
                                     },
                                     if !member.profile_url.is_empty() {
                                         img {
-                                            class: "object-cover shrink-0 w-6 h-6 rounded",
+                                            class: "object-cover w-6 h-6 rounded shrink-0",
                                             src: "{member.profile_url}",
                                             alt: "{member.display_name}",
                                         }
                                     } else {
-                                        div { class: "flex shrink-0 justify-center items-center w-6 h-6 text-sm font-medium rounded bg-hover text-foreground-muted",
+                                        div { class: "flex justify-center items-center w-6 h-6 text-sm font-medium rounded shrink-0 bg-hover text-foreground-muted",
                                             "{member.display_name.chars().next().unwrap_or('?')}"
                                         }
                                     }

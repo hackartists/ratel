@@ -77,6 +77,11 @@ pub fn ArenaTopbar(
     let has_user = user_ctx().user.is_some();
 
     let mut dd_open = use_signal(|| false);
+    // Press anywhere outside the switcher closes it. Replaces a transparent
+    // backdrop that lived INSIDE the topbar — which carries its own
+    // `z-index`, so the backdrop could never rise above it and presses on the
+    // page below never reached it.
+    use_dismiss_on_outside_click(dd_open, ".team-arena .arena-topbar__switcher");
 
     let team_ctx = use_team_context();
     let all_teams = team_ctx.teams();
@@ -214,7 +219,7 @@ pub fn ArenaTopbar(
                         onclick: move |e: Event<MouseData>| e.stop_propagation(),
                         div { class: "team-dd__header", "Switch Team" }
                         div { class: "team-dd__list", id: "arena-teams-dd-list",
-                            for (idx , entry) in dd_entries.iter().cloned().enumerate() {
+                            for (idx, entry) in dd_entries.iter().cloned().enumerate() {
                                 TeamDdItem {
                                     key: "{entry.username}",
                                     username: entry.username.clone(),
@@ -260,14 +265,6 @@ pub fn ArenaTopbar(
                             }
                             "Create Team"
                         }
-                    }
-                }
-                if dd_open() {
-                    div {
-                        style: "position:fixed;inset:0;z-index:25;",
-                        onclick: move |_| {
-                            dd_open.set(false);
-                        },
                     }
                 }
 

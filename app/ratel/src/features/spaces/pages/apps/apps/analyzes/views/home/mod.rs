@@ -55,7 +55,10 @@ fn AnalyzesListArena(space_id: ReadSignal<SpacePartition>) -> Element {
     rsx! {
         document::Script { defer: true, src: asset!("./script.js") }
 
-        div { class: "analyze-arena",
+        // `--list` is the hook the mobile single-screen rules hang off.
+        // The other analyze surfaces (`--create`, `--detail`, `--records`)
+        // legitimately scroll; only this one is meant to fit one screen.
+        div { class: "analyze-arena analyze-arena--list",
             div { class: "arena",
                 // ── Topbar ───────────────────────────────────
                 header { class: "arena-topbar", role: "banner",

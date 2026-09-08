@@ -25,6 +25,19 @@ pub fn SpaceIndexPage(space_id: ReadSignal<SpacePartition>) -> Element {
     let user_ctx = crate::features::auth::hooks::use_user_context();
     let has_user = user_ctx().user.is_some();
     let mut active_panel = use_signal(|| ActivePanel::None);
+    // One registration covers every panel on this page, because one signal
+    // drives all of them. `.arena-topbar` is in the list so a press on the
+    // header still reaches the buttons that own the open/close toggle —
+    // otherwise this would close the panel and the button would immediately
+    // reopen it, or vice versa.
+    use_dismiss_on_outside(
+        ".overview-panel, .leaderboard-panel, .settings-panel, .notification-panel, .arena-topbar",
+        move || {
+            if *active_panel.peek() != ActivePanel::None {
+                active_panel.set(ActivePanel::None);
+            }
+        },
+    );
     let action_overlay = use_context_provider(|| ActiveActionOverlaySignal(Signal::new(None)));
     let _completed_quiz = use_context_provider(|| CompletedActionCard(Signal::new(None)));
 
