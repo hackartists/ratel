@@ -6289,6 +6289,10 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 .essence-topbar__back {
   width: 38px;
   height: 38px;
+  /* A flex item defaults to `flex-shrink: 1`, so a long title beside it
+     squeezed this fixed square into an oval. Its siblings in the same topbar
+     (badge, progress ring) already carry this — the back button didn't. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
@@ -6440,7 +6444,10 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 }
 .my-ai__topbar-left { display: flex; align-items: center; gap: 14px; }
 .my-ai__back {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0; border-radius: 10px;
   background: var(--my-ai-glass);
   border: 1px solid var(--my-ai-border);
   display: flex; align-items: center; justify-content: center;
@@ -7109,6 +7116,9 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 .post-arena .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
@@ -8158,6 +8168,9 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
@@ -8953,6 +8966,13 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   align-items: center;
   justify-content: space-between;
   padding: 12px 28px;
+  /* `position: fixed; bottom: 0` anchors to the viewport, and the WebView draws
+     under the system bar (`enableEdgeToEdge()` + `viewport-fit=cover`), so the
+     progress row and the attachment button sat behind Android's 3-button nav.
+     Pad by the real inset instead of a guess — a gesture pill is thin, a
+     3-button bar is not, and it is 0 on desktop. Same fix as the arena panels'
+     `__body`. */
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
   backdrop-filter: blur(20px);
 }
 .bottom-bar__left {
@@ -9185,7 +9205,10 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 }
 .credentials-arena .arena-topbar__left { display: flex; align-items: center; gap: 14px; }
 .credentials-arena .back-btn {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0; border-radius: 10px;
   background: var(--bg-glass); border: 1px solid var(--border-subtle);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.25s ease; padding: 0;
@@ -11659,7 +11682,16 @@ html[data-theme="light"] .team-arena .tm-modal__error,
 }
 .rewards-arena .arena-topbar__left { display: flex; align-items: center; gap: 14px; }
 .rewards-arena .back-btn {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0; border-radius: 10px;
   background: var(--bg-glass); border: 1px solid var(--border-subtle);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.25s ease; padding: 0;
@@ -15676,7 +15708,10 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
 }
 .drafts-arena .arena-topbar__left { display: flex; align-items: center; gap: 14px; }
 .drafts-arena .back-btn {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0; border-radius: 10px;
   background: var(--bg-glass); border: 1px solid var(--border-subtle);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.25s ease; padding: 0;
@@ -16063,7 +16098,10 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
 }
 .rewards-arena .arena-topbar__left { display: flex; align-items: center; gap: 14px; }
 .rewards-arena .back-btn {
-  width: 38px; height: 38px; border-radius: 10px;
+  width: 38px; height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0; border-radius: 10px;
   background: var(--bg-glass); border: 1px solid var(--border-subtle);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.25s ease; padding: 0;
@@ -25121,6 +25159,9 @@ html[data-theme="light"] .sga-modal__confirm-danger,
 .topbar__back {
   width: 36px;
   height: 36px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--glass);
   backdrop-filter: blur(16px);
@@ -26820,6 +26861,9 @@ body.comments-panel-resizing {
 .poll-header__back {
   width: 36px;
   height: 36px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--dark, rgba(12, 12, 26, 0.65))
     var(--light, rgba(255, 255, 255, 0.85));
@@ -27349,6 +27393,10 @@ body.comments-panel-resizing {
 .quiz-topbar__left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
 .quiz-topbar__back {
   width: 40px; height: 40px; border-radius: 10px;
+  /* A flex item defaults to `flex-shrink: 1`, so a long title beside it
+     squeezed this fixed square into an oval. Its siblings in the same topbar
+     (badge, progress ring) already carry this — the back button didn't. */
+  flex-shrink: 0;
   background: var(--dark, rgba(12,12,26,0.65)) var(--light, rgba(255,255,255,0.72));
   backdrop-filter: blur(16px);
   border: 1px solid var(--dark, rgba(255,255,255,0.06)) var(--light, rgba(0,0,0,0.08));
@@ -30458,6 +30506,9 @@ body.comments-panel-resizing {
 .sub-team-application-status .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--sub-team-glass);
   border: 1px solid var(--sub-team-border);
@@ -31465,6 +31516,9 @@ body.comments-panel-resizing {
 .sub-team-apply .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--sub-team-glass);
   border: 1px solid var(--sub-team-border);
@@ -32260,6 +32314,9 @@ body.comments-panel-resizing {
 .sub-team-broadcast-compose .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--sub-team-glass);
   border: 1px solid var(--sub-team-border);
@@ -34596,6 +34653,9 @@ body.comments-panel-resizing {
 .sub-team-doc-compose .back-btn {
   width: 38px;
   height: 38px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--sub-team-glass);
   border: 1px solid var(--sub-team-border);
@@ -44201,6 +44261,9 @@ body.comments-panel-resizing {
   justify-content: center;
   width: 32px;
   height: 32px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
@@ -49451,6 +49514,9 @@ body.comments-panel-resizing {
 .reports-arena .reports-topbar__back {
   width: 36px;
   height: 36px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 10px;
   background: var(--bg-glass);
   border: 1px solid var(--border-subtle);
@@ -51838,6 +51904,9 @@ html[data-theme="light"] .ff-home .featured-title {
 .report-detail__back {
   width: 34px;
   height: 34px;
+  /* Fixed-size flex child: without this the default `flex-shrink: 1` lets a
+     long sibling title squash the square button into an oval. */
+  flex-shrink: 0;
   border-radius: 9px;
   background: var(--rd-bg-glass);
   border: 1px solid var(--rd-border-subtle);
