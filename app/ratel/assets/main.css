@@ -11961,6 +11961,20 @@ html[data-theme="light"] .team-arena .tm-modal__error,
 .rewards-arena {
   position: relative;
   min-height: 100vh;
+  /* This arena is a flex item of `.social-scroll` (a column flex box), so the
+     default `flex-shrink: 1` squashed its box down to the scrollport height
+     while its content ran on far longer — measured one viewport (740px)
+     against 4165px of reward rows. A sticky element is bounded by its
+     containing block, so `.arena-topbar` unpinned and scrolled away the
+     moment the reader passed that first viewport. Refusing to shrink makes
+     the box match the content and the header stays put for the whole list.
+     Deliberately NOT fixed by giving this arena its own `overflow-y: auto`
+     (the model `.drafts-arena` / `.essence-arena` / `.my-ai` follow): the
+     layout installs pull-to-refresh on `.social-scroll`, and that gesture
+     only fires while `.social-scroll` is the element actually scrolling.
+     NOTE: this rule is duplicated below/above (team_reward + user_reward
+     stylesheets were merged into main.css); keep the two in step. */
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-void);
@@ -16336,6 +16350,13 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
   .stats-strip { grid-template-columns: 1fr 1fr; gap: 8px; }
   .stats-strip > *:nth-child(3) { grid-column: 1 / -1; }
   .filter-row { gap: 8px; }
+  /* Let the chips take a full row of their own and wrap onto as many lines
+     as they need. They used to sit on one line with `overflow-x: auto`,
+     which cut "이번주" and the sort control off the right edge — and a
+     sideways-scrollable strip with no affordance is not something people
+     find. The sort control then falls to the next line, which is where the
+     report asked for it ("탭은 최근 편집 위로"). */
+  .filter-chips { flex: 1 1 100%; flex-wrap: wrap; overflow-x: visible; }
   .sort { margin-left: auto; }
   .draft-card { grid-template-columns: 18px 1fr; padding: 14px 16px; gap: 11px; }
   .draft-card__actions { grid-column: 2; justify-self: flex-start; opacity: 1; margin-top: 4px; }
@@ -16377,6 +16398,20 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
 .rewards-arena {
   position: relative;
   min-height: 100vh;
+  /* This arena is a flex item of `.social-scroll` (a column flex box), so the
+     default `flex-shrink: 1` squashed its box down to the scrollport height
+     while its content ran on far longer — measured one viewport (740px)
+     against 4165px of reward rows. A sticky element is bounded by its
+     containing block, so `.arena-topbar` unpinned and scrolled away the
+     moment the reader passed that first viewport. Refusing to shrink makes
+     the box match the content and the header stays put for the whole list.
+     Deliberately NOT fixed by giving this arena its own `overflow-y: auto`
+     (the model `.drafts-arena` / `.essence-arena` / `.my-ai` follow): the
+     layout installs pull-to-refresh on `.social-scroll`, and that gesture
+     only fires while `.social-scroll` is the element actually scrolling.
+     NOTE: this rule is duplicated below/above (team_reward + user_reward
+     stylesheets were merged into main.css); keep the two in step. */
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-void);
