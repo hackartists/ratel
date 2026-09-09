@@ -54964,6 +54964,14 @@ html[data-theme="light"] .ff-home .featured-title {
        and the leftover space becomes margin.
        A px value on purpose: `100%` here resolves against a grid-derived
        height chain and silently computes to `none`. */
+    /* Square by default, taller only when the content needs it.
+       `aspect-ratio` sets the baseline (a 300px-wide card is 300px tall, the
+       shape the design wants); `min-height: min-content` is what lets a long
+       post override it instead of overflowing. The cap keeps a very long one
+       from running off a tall screen — the thumbnail below is the elastic
+       part that gives way first. */
+    aspect-ratio: 1 / 1;
+    min-height: min-content;
     max-height: 460px;
     /* `min-content`, not 0. `align-items: stretch` on the track is what sizes
        the card, and with a zero floor a 427px-tall screen squashed it to the
@@ -54974,7 +54982,21 @@ html[data-theme="light"] .ff-home .featured-title {
     height: auto;
   }
   .team-arena .carousel-track {
-    align-items: stretch;
+    /* `center`, not `stretch`. Stretching made every card as tall as the
+       track, which is why a short post left a void between its hashtags and
+       READ SPACE while the home feed's cards looked right. The card's own
+       aspect ratio decides its height now. */
+    align-items: center;
+    /* ...except for a post with no thumbnail. Stretching is what lets the
+       thumbnail grow into the leftover space; a card without one has nothing
+       elastic in it, so the stretch just opened a tall void between the
+       hashtags and READ SPACE (the footer is `margin-top: auto`). Sizing
+       those to their content is also what makes the home feed's cards look
+       right — the team card was the odd one out.
+
+       `:has()` needs Android WebView 105+ (2022). On anything older the
+       selector simply doesn't match and the card keeps today's stretched
+       behaviour, so this degrades to the status quo rather than breaking. */
     /* Cap the TRACK, not the card. The card is sized by stretching to the
        track, which is what lets the thumbnail grow — capping the card itself
        clamps that stretch and leaves the card pinned to the top of the row.
@@ -55331,4 +55353,18 @@ html[data-theme="light"] .ff-home .featured-title {
 @media (max-width: 768px) {
   .legal-close { width: 36px; height: 36px; }
   .legal-close svg { width: 16px; height: 16px; }
+}
+
+/* === src/common/components/popup — description width ==================
+   The popup box sizes to its content, so an unbounded one-line description
+   sets the modal's width: the 400px report dialog stretched to ~880px, the
+   width of the sentence. Cap it so the text wraps inside the box instead.
+   400px matches the `w-100` most dialog bodies use.
+
+   Lives here rather than as a `max-w-[400px]` utility because
+   `assets/tailwind.css` is pre-generated and `dx serve` does not regenerate
+   it — an arbitrary-value class added in RSX renders with no rule behind it
+   (verified: zero `.max-w-*` rules exist in the built stylesheet). */
+.popup-description {
+  max-width: 400px;
 }
