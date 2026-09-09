@@ -120,4 +120,17 @@ pub enum FileExtension {
     MOV,
     #[serde(alias = "mkv", alias = "MKV")]
     MKV,
+    #[serde(alias = "m4a", alias = "M4A")]
+    M4A,
+    #[serde(alias = "mp3", alias = "MP3")]
+    MP3,
+    #[serde(alias = "wav", alias = "WAV")]
+    WAV,
+    /// Anything we do not have a dedicated type for. `from_ext_str` used to
+    /// fall back to `default()` — i.e. JPG — so a `.m4a` podcast (or a `.txt`,
+    /// a `.hwp`, …) claimed to be an image and was rendered into the file
+    /// panel's "Image previews" grid as a broken `<img>`: a black tile with
+    /// the filename as alt text. Unknown must be its own thing.
+    #[serde(other)]
+    ETC,
 }

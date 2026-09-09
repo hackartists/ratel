@@ -33,7 +33,35 @@ fn ext_label(ext: &FileExtension) -> &'static str {
         FileExtension::MP4 => "MP4",
         FileExtension::MOV => "MOV",
         FileExtension::MKV => "MKV",
+        FileExtension::M4A => "M4A",
+        FileExtension::MP3 => "MP3",
+        FileExtension::WAV => "WAV",
+        FileExtension::ETC => "FILE",
     }
+}
+
+/// The extension to *display* with, derived from the filename rather than the
+/// stored `ext`.
+///
+/// Rows written before `from_ext_str` learned about audio carry `ext = JPG`,
+/// because the old fallback for an unknown extension was `default()`. Those
+/// rows are still in the table, so trusting `ext` renders a podcast `.m4a` as
+/// a broken `<img>` in the image grid forever. The filename is authoritative
+/// and needs no backfill; fall back to the stored value only when the name
+/// carries no extension at all.
+fn effective_ext(file: &File) -> FileExtension {
+    let url = file.url.clone().unwrap_or_default();
+    match FileExtension::from_name_or_url(&file.name, &url) {
+        FileExtension::ETC => file.ext.clone(),
+        derived => derived,
+    }
+}
+
+fn is_audio_ext(ext: &FileExtension) -> bool {
+    matches!(
+        ext,
+        FileExtension::M4A | FileExtension::MP3 | FileExtension::WAV
+    )
 }
 
 fn icon_modifier(ext: &FileExtension) -> &'static str {
@@ -135,12 +163,17 @@ pub fn SpaceFileAppPage(space_id: ReadSignal<SpacePartition>) -> Element {
 
     let image_files: Vec<File> = displayed_files
         .iter()
-        .filter(|f| is_image_ext(&f.ext))
+        .filter(|f| is_image_ext(&effective_ext(f)))
         .cloned()
         .collect();
     let video_files: Vec<File> = displayed_files
         .iter()
-        .filter(|f| is_video_ext(&f.ext))
+        .filter(|f| is_video_ext(&effective_ext(f)))
+        .cloned()
+        .collect();
+    let audio_files: Vec<File> = displayed_files
+        .iter()
+        .filter(|f| is_audio_ext(&effective_ext(f)))
         .cloned()
         .collect();
 
@@ -317,7 +350,7 @@ pub fn SpaceFileAppPage(space_id: ReadSignal<SpacePartition>) -> Element {
                                         class: "sfa-preview-media",
                                         img { src: "{url}", alt: "{file.name}" }
                                         span { class: "sfa-preview-media__label",
-                                            "{ext_label(&file.ext)}"
+                                            "{ext_label(&effective_ext(file))}"
                                         }
                                     }
                                 }
@@ -344,9 +377,50 @@ pub fn SpaceFileAppPage(space_id: ReadSignal<SpacePartition>) -> Element {
                                         key: "video-{file.id}",
                                         class: "sfa-preview-media",
                                         style: "aspect-ratio:16/7",
-                                        video { src: "{url}", controls: true }
+                                        // `nodownload`: the player's ⋮ menu offers a
+                                        // download that cannot work in the Android
+                                        // WebView — it drops the navigation, so the
+                                        // item did nothing at all. Better to not
+                                        // offer it than to offer a dead button.
+                                        video {
+                                            src: "{url}",
+                                            controls: true,
+                                        }
                                         span { class: "sfa-preview-media__label",
-                                            "{ext_label(&file.ext)}"
+                                            "{ext_label(&effective_ext(file))}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Audio previews — these used to land in "Image previews" as
+                // broken tiles, because an unknown extension was typed as JPG.
+                if !audio_files.is_empty() {
+                    section {
+                        class: "sfa-section",
+                        "data-testid": "section-audio-preview",
+                        div { class: "sfa-preview-group__head",
+                            span { class: "sfa-preview-group__title", "Audio previews" }
+                            span { class: "sfa-preview-group__count", "{audio_files.len()}" }
+                        }
+                        div { class: "sfa-audio-list",
+                            for file in audio_files.iter() {
+                                if let Some(url) = file.url.clone().filter(|u| !u.is_empty()) {
+                                    div {
+                                        key: "audio-{file.id}",
+                                        class: "sfa-audio-row",
+                                        div { class: "sfa-audio-row__head",
+                                            span { class: "sfa-audio-row__name", "{file.name}" }
+                                            span { class: "sfa-audio-row__ext",
+                                                "{ext_label(&effective_ext(file))}"
+                                            }
+                                        }
+                                        audio {
+                                            src: "{url}",
+                                            controls: true,
                                         }
                                     }
                                 }
@@ -370,8 +444,10 @@ fn FileRow(file: File, link: Option<FileLinkInfo>) -> Element {
     let can_open = !url.is_empty();
     let size = file.size.clone();
     let name = file.name.clone();
-    let ext_text = ext_label(&file.ext);
-    let icon_cls = icon_modifier(&file.ext);
+    // Same reasoning as the preview grids: legacy rows carry the wrong `ext`.
+    let eff = effective_ext(&file);
+    let ext_text = ext_label(&eff);
+    let icon_cls = icon_modifier(&eff);
 
     let tag_node: Element = match link.as_ref().and_then(|l| {
         let cls = tag_class(&l.link_target)?;

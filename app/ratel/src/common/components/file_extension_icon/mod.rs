@@ -36,7 +36,13 @@ pub fn FileExtensionIcon(
         FileExtension::MOV => rsx! {
             icons::files::Mov { width: size_attr, height: size_attr, class: icon_class }
         },
-        FileExtension::MKV => rsx! {
+        // No dedicated glyph for these yet — the generic file icon reads as
+        // "some file", which is honest, unlike borrowing the image icon.
+        FileExtension::MKV
+        | FileExtension::M4A
+        | FileExtension::MP3
+        | FileExtension::WAV
+        | FileExtension::ETC => rsx! {
             icons::file::File {
                 width: size_attr,
                 height: size_attr,
