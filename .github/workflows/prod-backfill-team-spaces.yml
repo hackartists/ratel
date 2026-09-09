@@ -1,0 +1,97 @@
+# ============================================================================
+# PROD 백필 (수동 버튼): 공론조사 3개 스페이스 액션/댓글 링크 복구
+# ----------------------------------------------------------------------------
+# GitHub Actions → 이 워크플로우 → "Run workflow" 버튼으로 실행.
+#   direction=up   : scripts/migrations/2026-09-09-team-spaces-backfill/up.sql   적용
+#   direction=down : .../down.sql 로 롤백 (되돌리기)
+# 실수 방지: confirm 입력에 정확히 "MIGRATE" 를 타이핑해야 실행된다.
+#
+# 실행 위치: self-hosted 러너(=in-cluster kubectl 자격 보유, prod-workflow.yml
+# deploy 잡과 동일). 러너가 ratel-prod 네임스페이스에 일회용 psql 파드를 띄워
+# 클러스터 내부 Postgres(postgres.infra.svc.cluster.local)로 SQL 을 흘려보낸다.
+#
+# SQL 은 트랜잭션(BEGIN/COMMIT) + 멱등이라 재실행/롤백 모두 안전.
+# 사전 검증: dev-victor fork 파드에서 up/down 왕복 테스트 완료.
+# ============================================================================
+name: "PROD backfill · 공론조사 스페이스"
+
+on:
+  workflow_dispatch:
+    inputs:
+      direction:
+        description: "up = 적용 / down = 롤백"
+        required: true
+        type: choice
+        default: "up"
+        options:
+          - "up"
+          - "down"
+      confirm:
+        description: '실행하려면 정확히 "MIGRATE" 입력'
+        required: true
+        type: string
+
+jobs:
+  backfill:
+    runs-on: self-hosted
+    timeout-minutes: 15
+    # prod DB 쓰기는 한 번에 하나만. 새 실행은 진행 중인 것 뒤에 대기(취소 아님).
+    concurrency:
+      group: ratel-prod-backfill-team-spaces
+      cancel-in-progress: false
+    env:
+      NAMESPACE: ratel-prod
+      # 클러스터 내부 Postgres. 값의 원천은 deploy/prod/10-app-shell.yaml 의
+      # DATABASE_URL (app-shell 이 실제로 쓰는 것과 동일). 변경 시 함께 갱신.
+      DATABASE_URL: postgres://ratel:ratel@postgres.infra.svc.cluster.local:5432/ratel
+      MIGRATION_DIR: scripts/migrations/2026-09-09-team-spaces-backfill
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Guard — confirm 입력 검증
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.inputs.confirm }}" != "MIGRATE" ]; then
+            echo "::error::confirm 입력이 'MIGRATE' 가 아닙니다. 실행을 중단합니다."
+            exit 1
+          fi
+          echo "direction = ${{ github.event.inputs.direction }}"
+
+      - name: Verify cluster access
+        # 러너 파드는 in-cluster kubectl 자격을 갖는다(prod deploy 잡과 동일).
+        run: |
+          set -euo pipefail
+          kubectl get ns "${NAMESPACE}" >/dev/null || {
+            echo "::error::러너에 클러스터 접근 권한이 없음 — k3s 러너 파드가 맞는지 확인"
+            exit 1
+          }
+
+      - name: Pick SQL file
+        id: pick
+        run: |
+          set -euo pipefail
+          dir="${{ github.event.inputs.direction }}"
+          case "$dir" in
+            up)   f="${MIGRATION_DIR}/up.sql" ;;
+            down) f="${MIGRATION_DIR}/down.sql" ;;
+            *)    echo "::error::unknown direction '$dir'"; exit 1 ;;
+          esac
+          test -f "$f" || { echo "::error::SQL 파일 없음: $f"; exit 1; }
+          echo "sql_file=$f" >> "$GITHUB_OUTPUT"
+          echo "적용할 파일: $f"
+
+      - name: Run migration (throwaway psql pod → in-cluster Postgres)
+        run: |
+          set -euo pipefail
+          pod="ratel-backfill-$(date +%s)"
+          echo "── ${pod} 파드로 ${{ steps.pick.outputs.sql_file }} 실행"
+          kubectl run "${pod}" \
+            -n "${NAMESPACE}" \
+            --rm -i --restart=Never \
+            --image=postgres:16-alpine \
+            --command -- \
+            psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f - \
+            < "${{ steps.pick.outputs.sql_file }}"
+
+      - name: Done
+        run: echo "✅ ${{ github.event.inputs.direction }} 완료 — 스페이스에서 액션/댓글 노출 확인"
