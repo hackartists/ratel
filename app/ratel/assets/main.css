@@ -26950,7 +26950,18 @@ body.comments-panel-resizing {
 .option-multi[data-selected="true"] .option-multi__checkbox { border-color: #818cf8; background: #818cf8; }
 .option-multi__check svg { width: 12px; height: 12px; color: #fff; opacity: 0; transform: scale(0); transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1); }
 .option-multi[data-selected="true"] .option-multi__check svg { opacity: 1; transform: scale(1); }
-.option-multi__label { font-size: 15px; font-weight: 500; color: var(--dark, #f0f0f5) var(--light, #1a1a2e); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A poll choice is the question content, not a caption -- truncating it to
+   one line with an ellipsis hid what the option actually said, so a long
+   choice was unreadable and unanswerable. Wrap instead. */
+.option-multi__label {
+  font-size: 15px; font-weight: 500;
+  color: var(--dark, #f0f0f5) var(--light, #1a1a2e);
+  flex: 1; min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  text-align: left;
+}
 .option-multi[data-disabled="true"] { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
 .option-multi__other-input {
@@ -26994,7 +27005,18 @@ body.comments-panel-resizing {
   transform: scale(0); transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
 }
 .option-single[data-selected="true"] .option-single__radio-dot { transform: scale(1); }
-.option-single__label { font-size: 15px; font-weight: 500; color: var(--dark, #f0f0f5) var(--light, #1a1a2e); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A poll choice is the question content, not a caption -- truncating it to
+   one line with an ellipsis hid what the option actually said, so a long
+   choice was unreadable and unanswerable. Wrap instead. */
+.option-single__label {
+  font-size: 15px; font-weight: 500;
+  color: var(--dark, #f0f0f5) var(--light, #1a1a2e);
+  flex: 1; min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  text-align: left;
+}
 .option-single__letter {
   font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
   color: var(--dark, #55556a) var(--light, #9999aa);
@@ -28011,7 +28033,20 @@ body.comments-panel-resizing {
 }
 .option-tile[aria-selected="true"] .option-tile__checkbox svg { opacity: 1; }
 
-.option-tile__text { font-size: 15px; font-weight: 500; color: var(--dark, #8888a8) var(--light, #6b6b80); transition: color 0.3s; }
+/* The quiz card centres its title and description, and the choice text
+   inherited that: a choice long enough to wrap came out centred while short
+   ones sat left, so the list had no common left edge to read down. Choices
+   are read as a list -- align them left and let them fill the row. */
+.option-tile__text {
+  font-size: 15px; font-weight: 500;
+  color: var(--dark, #8888a8) var(--light, #6b6b80);
+  transition: color 0.3s;
+  flex: 1; min-width: 0;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
 .option-tile[aria-selected="true"] .option-tile__text { color: var(--dark, #f0f0f5) var(--light, #12121a); font-weight: 600; }
 
 .option-tile__check {
