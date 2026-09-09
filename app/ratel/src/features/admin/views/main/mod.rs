@@ -35,8 +35,20 @@ pub fn AdminMainPage() -> Element {
         >(move |bookmark| async move { list_enterprise_memberships(bookmark).await })?;
 
     // Moderation queue: users flagged `PendingReview` by accumulated reports.
-    let mut moderation_flags = use_loader(move || async move {
-        list_moderation_flags(Some("PendingReview".to_string()), None).await
+    //
+    // `use_infinite_query`, not `use_loader`. The endpoint pages at 50 and
+    // hands back a bookmark, but the loader passed a hard-coded `None` and
+    // dropped the bookmark on the floor — so the 51st flagged user onwards was
+    // unreachable from this screen, with no way for an admin to act on them.
+    // A report puts a user in this queue on the FIRST report, so 50 fills up
+    // faster than the auto-hide threshold suggests.
+    let mut moderation_flags = use_infinite_query::<
+        String,
+        ModerationFlagResponse,
+        ListResponse<ModerationFlagResponse>,
+        _,
+    >(move |bookmark| async move {
+        list_moderation_flags(Some("PendingReview".to_string()), bookmark).await
     })?;
 
     let mut show_form = use_signal(|| false);
@@ -158,7 +170,7 @@ pub fn AdminMainPage() -> Element {
 
     let rewards: Vec<RewardResponse> = rewards_state.items;
     let enterprise_memberships = enterprise_memberships_query.items();
-    let moderation_list: Vec<ModerationFlagResponse> = moderation_flags().items;
+    let moderation_list: Vec<ModerationFlagResponse> = moderation_flags.items();
 
     let is_editing = editing.read().is_some();
     let show_form_val = *show_form.read();
@@ -564,6 +576,9 @@ pub fn AdminMainPage() -> Element {
                         }
                     }
                 }
+                // Loads the next page of 50 when scrolled into view. Same
+                // sentinel the enterprise-membership table above uses.
+                {moderation_flags.more_element()}
             }
         }
     }

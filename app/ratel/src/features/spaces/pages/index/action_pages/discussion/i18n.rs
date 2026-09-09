@@ -155,6 +155,10 @@ translate! {
         en: "Cancel",
         ko: "취소",
     },
+    report_submitted_toast: {
+        en: "Report submitted.",
+        ko: "신고가 접수되었습니다.",
+    },
     block_confirm: {
         en: "Block this user? Their comments will be hidden from you.",
         ko: "이 사용자를 차단할까요? 이 사용자의 댓글이 나에게 보이지 않게 됩니다.",

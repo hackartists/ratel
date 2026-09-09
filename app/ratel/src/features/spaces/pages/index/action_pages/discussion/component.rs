@@ -709,9 +709,17 @@ fn CommentText(content: String) -> Element {
 /// header (name + time + overflow menu), content (view or edit), and the
 /// actions row with the like button. Callers slot extra action buttons
 /// (e.g. the top-level "Reply" button) via `children`.
-/// Report-comment form shown inside the shared `Popup` (opened via
-/// `use_popup().with_title(...).open(...)`). The Popup provides the overlay,
-/// title bar, and close button; this component is only the body.
+/// Report-comment form shown inside the shared `Popup`, opened via
+/// `use_popup().open(...).with_title(...).with_description(...)`.
+///
+/// The order matters: `open()` REPLACES the whole config (title and
+/// description reset to `None`), so anything set before it is discarded. This
+/// dialog used to call `.with_title(...).open(...)` and consequently rendered
+/// with no heading at all — the long "why are you reporting" sentence was the
+/// first thing in the box, and the close button had nothing to sit beside.
+///
+/// The Popup provides the overlay, heading, description and close button;
+/// this component is only the form body.
 #[component]
 fn ReportDialog(on_submit: EventHandler<(ReportReason, String)>) -> Element {
     let tr: DiscussionArenaTranslate = use_translate();
@@ -732,7 +740,6 @@ fn ReportDialog(on_submit: EventHandler<(ReportReason, String)>) -> Element {
         div {
             class: "flex flex-col gap-5 max-w-full w-100",
             "data-testid": "report-dialog",
-            p { class: "text-sm leading-6 whitespace-pre-wrap text-c-secondary", "{tr.report_desc}" }
             div { class: "flex flex-col gap-1",
                 for (val, label) in reason_options {
                     label { class: "flex gap-2 items-center py-1.5 text-sm cursor-pointer text-text-primary",
@@ -948,14 +955,18 @@ fn CommentCardBody(
                                                 menu_open.set(false);
                                                 let sk = comment_sk().to_string();
                                                 popup
-                                                    .with_title(tr.report_title.to_string())
                                                     .open(rsx! {
-                                                    ReportDialog {
-                                                        on_submit: move |(reason, detail): (ReportReason, String)| {
-                                                            report_comment_action.call(sk.clone(), reason, detail);
-                                                        },
-                                                    }
-                                                });
+                                                        ReportDialog {
+                                                            on_submit: move |
+                                                                (reason, detail): (ReportReason, String)|
+                                                            {
+                                                                report_comment_action
+                                                                    .call(sk.clone(), reason, detail);
+                                                            },
+                                                        }
+                                                    })
+                                                    .with_title(tr.report_title.to_string())
+                                                    .with_description(tr.report_desc.to_string());
                                             },
                                             "{tr.report_btn}"
                                         }
