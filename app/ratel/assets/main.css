@@ -14873,6 +14873,24 @@ html[data-theme="light"] .team-arena .team-arena__bg-scanline,
 /* === src/features/social/pages/team_arena/topbar/style.css === */
 /* ── Team Arena Topbar — direct port from team-arena.html (dark + light) ── */
 
+/* While a dialog is up, the topbar must not stay live above it.
+   `.team-arena__content` is `position: relative; z-index: 10`, so it opens a
+   stacking context: a dialog inside it can never paint above the topbar
+   (z-index: 100) no matter how high its own z-index is — the whole content
+   layer is below. So the icons kept rendering bright over the backdrop and
+   stayed clickable. Drop the topbar beneath the content layer while a dialog
+   exists, and stop it taking pointer events at all.
+
+   The settings backdrop is ALWAYS in the DOM (hidden with opacity/visibility
+   and toggled via `data-open`), unlike the two modal overlays which are
+   rendered behind an `if`. Matching it unconditionally disabled the topbar
+   permanently, so it must be qualified with `[data-open="true"]`. */
+.team-arena:has(.tm-modal-overlay) .arena-topbar,
+.team-arena:has(.td-modal-overlay) .arena-topbar,
+.team-arena:has(.ta-settings-panel__backdrop[data-open="true"]) .arena-topbar {
+  z-index: 5;
+  pointer-events: none;
+}
 .team-arena .arena-topbar {
   position: fixed;
   top: 0;
