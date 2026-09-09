@@ -11641,6 +11641,23 @@ html[data-theme="light"] .team-arena .tm-empty-state,
   padding: 24px;
   animation: tm-modal-overlay-in 0.2s ease;
 }
+/* The invite dialog is its own overlay, not the shared Popup, so it needs the
+   same keyboard handling. `inset: 0` sizes it to the LAYOUT viewport, which
+   keeps its full height when the keyboard opens, so `align-items: center`
+   centred the dialog against space the user cannot see -- measured on a
+   Galaxy S23: visible region [200, 638] but the dialog centred at 390, i.e.
+   ~29px high. Size to the visible area and re-anchor it, exactly like
+   `.popup-backdrop`. */
+.team-arena .tm-modal-overlay {
+  bottom: auto;
+  height: var(--vv-height, 100dvh);
+  transform: translateY(var(--vv-offset-top, 0px));
+}
+.team-arena .tm-modal {
+  max-height: calc(var(--vv-height, 100dvh) - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 @keyframes tm-modal-overlay-in {
   from { opacity: 0; }
   to { opacity: 1; }
