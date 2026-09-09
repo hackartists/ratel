@@ -43,20 +43,125 @@ pub fn App() -> Element {
   (function () {
     var vv = window.visualViewport;
     if (!vv) return;
-    function update() {
-      var kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    // `--kb-inset` drives the modal's height (`.popup-backdrop` /
+    // `.popup-box-capped`), so every write re-lays-out the modal. The WebView
+    // reports the keyboard opening as a STREAM of values, not one step —
+    // measured on a Galaxy S23 the dialog's top edge moved -13, -27, -17, -4
+    // across four frames on a single field change. Each of those is a
+    // separate resize, which reads as shaking, and resizing the box also
+    // clamps the inner scroller (focusing the third field snapped the form
+    // back to the top).
+    //
+    // So settle first, write once: hold the newest measurement and only
+    // publish it after it has stopped changing for a moment. A real
+    // open/close is one large step and survives the wait; the intermediate
+    // frames of an animation never reach CSS.
+    var lastKb = -1;
+    var pendingKb = -1;
+    var settleTimer = null;
+    // Scroll the focused field back into view *inside its own scroller*.
+    // Only ever touches the nearest scrollable ancestor's `scrollTop`, never
+    // the page, and never with `behavior: smooth` -- both of those are what
+    // made the earlier `focusin` + `scrollIntoView` attempt fight the
+    // WebView and shake. A no-op when the field is already visible.
+    function revealFocused() {
+      var el = document.activeElement;
+      if (!el) return;
+      var tag = el.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA" && !el.isContentEditable) return;
+      // Prefer a scroller that is actually overflowing, but fall back to the
+      // first `overflow-y: auto|scroll` ancestor: right after the modal is
+      // capped the overflow may not have been recomputed yet.
+      var sc = el.parentElement, fallback = null;
+      while (sc && sc !== document.body) {
+        var oy = getComputedStyle(sc).overflowY;
+        if (oy === "auto" || oy === "scroll") {
+          if (sc.scrollHeight > sc.clientHeight) break;
+          if (!fallback) fallback = sc;
+        }
+        sc = sc.parentElement;
+      }
+      if (!sc || sc === document.body) sc = fallback;
+      if (!sc) return;
+      var er = el.getBoundingClientRect();
+      var cr = sc.getBoundingClientRect();
+      var m = 12;
+      if (er.bottom > cr.bottom - m) {
+        sc.scrollTop += er.bottom - (cr.bottom - m);
+      } else if (er.top < cr.top + m) {
+        sc.scrollTop -= (cr.top + m) - er.top;
+      }
+    }
+    function publishKb(kb) {
+      if (kb === lastKb) return;
+      // The WebView scrolls a focused input into view at *focus* time. When
+      // the keyboard was already open that is enough. When it was closed the
+      // field was still visible at focus time, so nothing scrolled -- and
+      // then the keyboard opening shrinks the modal out from under it. So
+      // re-reveal the field, but only when the keyboard actually grew.
+      var grew = kb > lastKb;
+      lastKb = kb;
       document.documentElement.style.setProperty("--kb-inset", kb + "px");
-      // iOS WKWebView shifts the *visual* viewport up (offsetTop > 0) to keep a
-      // focused input above the keyboard, dragging `position:fixed` elements up
-      // with it — so the scroll-locked body (topbar) jumps under the status bar
-      // when a modal input is focused. Expose the offset so the lock can apply
-      // an equal counter-translate and stay visually pinned. 0 on Android.
+      // Published together with the keyboard, and only once it has settled:
+      // the modal's height derives from this, so writing it on every frame of
+      // the keyboard animation is exactly the stepping that read as shaking.
+      document.documentElement.style.setProperty(
+        "--vv-height", Math.round(vv.height) + "px");
+      if (grew && kb > 0) {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(revealFocused);
+        });
+        // The capped height and the counter-translate both land a frame or
+        // two later; re-run once things have settled so the measurement is
+        // taken against the final layout. Idempotent -- a no-op when the
+        // field is already in view.
+        setTimeout(revealFocused, 150);
+        setTimeout(revealFocused, 400);
+      }
+    }
+    function update() {
+      // Keyboard height is layout-viewport height minus visual-viewport
+      // height. `offsetTop` is how far the WebView has SCROLLED the visual
+      // viewport inside the layout viewport to reveal a focused field -- it
+      // is not keyboard, and subtracting it was the bug: tapping the third
+      // field made the WebView scroll (off=342), which cancelled the real
+      // keyboard (342) to kb=0, so the modal never shrank and the field
+      // stayed behind the keyboard. Measured on a Galaxy S23:
+      //   ih=780 vvh=438 off=342  ->  old kb=0, correct kb=342
+      var kb = Math.max(0, window.innerHeight - vv.height);
+      if (kb !== pendingKb) {
+        pendingKb = kb;
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(function () { publishKb(pendingKb); }, 150);
+      }
+      // iOS WKWebView shifts the *visual* viewport up (offsetTop > 0) to keep
+      // a focused input above the keyboard, dragging `position: fixed`
+      // elements with it. Expose the offset so the scroll lock can apply an
+      // equal counter-translate. 0 on Android; not debounced because nothing
+      // resizes off it.
       document.documentElement.style.setProperty(
         "--vv-offset-top", Math.round(vv.offsetTop) + "px");
+
     }
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
+    document.documentElement.style.setProperty(
+      "--vv-height", Math.round(vv.height) + "px");
     update();
+
+    // NOTE: there is deliberately no `focusin` handler here. The Android
+    // WebView already scrolls a focused input into view inside its nearest
+    // scrollable ancestor, and an earlier attempt to do it again from JS
+    // fought that scroll -- the two ran against each other on every field
+    // change, so the modal shook and tapping the third field jumped the form
+    // back to the top.
+    //
+    // The one case the WebView does not cover is a tap taken while the
+    // keyboard is CLOSED: the field is already visible at focus time, so
+    // nothing scrolls, and the keyboard then shrinks the modal (via
+    // `--kb-inset` on `.popup-backdrop` / `.popup-box-capped`) out from
+    // under it. `revealFocused` covers exactly that, off the debounced
+    // publish rather than off viewport frames, so it cannot re-enter.
   })();
 "#,
         );

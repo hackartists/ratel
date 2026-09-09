@@ -24,8 +24,8 @@ translate! {
     },
 
     delete_account_title: {
-        en: "Delete your account?",
-        ko: "회원 탈퇴하시겠습니까?",
+        en: "Delete account",
+        ko: "회원 탈퇴",
     },
 
     delete_account_warning: {
