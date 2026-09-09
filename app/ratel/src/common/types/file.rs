@@ -44,11 +44,24 @@ pub enum FileExtension {
     MOV,
     #[serde(alias = "mkv", alias = "MKV")]
     MKV,
+    #[serde(alias = "m4a", alias = "M4A")]
+    M4A,
+    #[serde(alias = "mp3", alias = "MP3")]
+    MP3,
+    #[serde(alias = "wav", alias = "WAV")]
+    WAV,
+    /// Anything we do not have a dedicated type for. `from_ext_str` used to
+    /// fall back to `default()` — i.e. JPG — so a `.m4a` podcast (or a `.txt`,
+    /// a `.hwp`, …) claimed to be an image and was rendered into the file
+    /// panel's "Image previews" grid as a broken `<img>`: a black tile with
+    /// the filename as alt text. Unknown must be its own thing.
+    #[serde(other)]
+    ETC,
 }
 
 impl FileExtension {
     /// Parse a file extension string (e.g., "pdf", "docx") into a `FileExtension`.
-    /// Returns `FileExtension::default()` (JPG) for unrecognized extensions.
+    /// Returns `FileExtension::ETC` for unrecognized extensions.
     pub fn from_ext_str(ext: &str) -> Self {
         if ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg") {
             Self::JPG
@@ -70,8 +83,16 @@ impl FileExtension {
             Self::MOV
         } else if ext.eq_ignore_ascii_case("mkv") {
             Self::MKV
+        } else if ext.eq_ignore_ascii_case("m4a") {
+            Self::M4A
+        } else if ext.eq_ignore_ascii_case("mp3") {
+            Self::MP3
+        } else if ext.eq_ignore_ascii_case("wav") {
+            Self::WAV
         } else {
-            Self::default()
+            // NOT `default()`. That is JPG, so every unrecognised extension
+            // used to pass `is_image_ext` and get rendered as an image.
+            Self::ETC
         }
     }
 
@@ -88,7 +109,9 @@ impl FileExtension {
         if let Some(ext) = std::path::Path::new(path).extension().and_then(|e| e.to_str()) {
             return Self::from_ext_str(ext);
         }
-        Self::default()
+        // No extension anywhere. Same reasoning as `from_ext_str`: guessing
+        // "image" here is what put audio files in the image preview grid.
+        Self::ETC
     }
 }
 
@@ -126,10 +149,22 @@ mod tests {
     }
 
     #[test]
-    fn from_ext_str_unrecognized_falls_back_to_default() {
-        assert_eq!(FileExtension::from_ext_str("txt"), FileExtension::default());
-        assert_eq!(FileExtension::from_ext_str("rs"), FileExtension::default());
-        assert_eq!(FileExtension::from_ext_str(""), FileExtension::default());
+    fn from_ext_str_audio() {
+        assert_eq!(FileExtension::from_ext_str("m4a"), FileExtension::M4A);
+        assert_eq!(FileExtension::from_ext_str("M4A"), FileExtension::M4A);
+        assert_eq!(FileExtension::from_ext_str("mp3"), FileExtension::MP3);
+        assert_eq!(FileExtension::from_ext_str("wav"), FileExtension::WAV);
+    }
+
+    #[test]
+    fn from_ext_str_unrecognized_is_etc_not_an_image() {
+        // Regression: this used to return `default()` (JPG), so a podcast
+        // `.m4a` — and any other unlisted type — passed the file panel's
+        // `is_image_ext` check and was rendered as a broken <img>.
+        for ext in ["txt", "rs", "hwp", "csv", ""] {
+            assert_eq!(FileExtension::from_ext_str(ext), FileExtension::ETC, "{ext}");
+            assert_ne!(FileExtension::from_ext_str(ext), FileExtension::JPG, "{ext}");
+        }
     }
 
     // --- FileExtension::from_name_or_url ---
@@ -158,7 +193,7 @@ mod tests {
     fn from_name_or_url_dotless_filename_and_extensionless_url() {
         assert_eq!(
             FileExtension::from_name_or_url("readme", "https://example.com/assets/uuid"),
-            FileExtension::default(),
+            FileExtension::ETC,
         );
     }
 
@@ -167,7 +202,7 @@ mod tests {
         // .gitignore has no extension per std::path::Path::extension()
         assert_eq!(
             FileExtension::from_name_or_url(".gitignore", "https://example.com/assets/uuid"),
-            FileExtension::default(),
+            FileExtension::ETC,
         );
     }
 
@@ -199,7 +234,7 @@ mod tests {
     fn from_name_or_url_empty_name_and_empty_url() {
         assert_eq!(
             FileExtension::from_name_or_url("", ""),
-            FileExtension::default(),
+            FileExtension::ETC,
         );
     }
 

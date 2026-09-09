@@ -662,6 +662,46 @@ fn CommentComposer(
     }
 }
 
+/// Strip HTML tags from stored rich-text comment content so only the plain
+/// text shows. Block-level closings (`</p>`, `</div>`, `</li>`, `</h*>`) and
+/// `<br>` become newlines; a few common HTML entities are decoded.
+fn strip_html(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut tag = String::new();
+    let mut in_tag = false;
+    for c in input.chars() {
+        match c {
+            '<' => {
+                in_tag = true;
+                tag.clear();
+            }
+            '>' if in_tag => {
+                in_tag = false;
+                let t = tag.trim().to_ascii_lowercase();
+                if t == "br"
+                    || t == "br/"
+                    || t.starts_with("/p")
+                    || t.starts_with("/div")
+                    || t.starts_with("/li")
+                    || t.starts_with("/h")
+                {
+                    out.push('\n');
+                }
+            }
+            _ if in_tag => tag.push(c),
+            _ => out.push(c),
+        }
+    }
+    out.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .trim()
+        .to_string()
+}
+
 /// Renders comment content with mention highlighting and a "Show more"
 /// toggle when the rendered text exceeds 10 visual lines. Used by top-level
 /// `CommentItem` and `ReplyItem` so the truncation behavior stays consistent.
@@ -675,6 +715,8 @@ fn CommentComposer(
 fn CommentText(content: String) -> Element {
     let tr: DiscussionArenaTranslate = use_translate();
     let mut expanded = use_signal(|| false);
+    // Stored content is rich-text HTML; strip tags so only the plain text shows.
+    let content = strip_html(&content);
 
     rsx! {
         div { class: "comment-text", "data-expanded": expanded(),
