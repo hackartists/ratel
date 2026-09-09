@@ -83,7 +83,10 @@ pub fn PopupZone() -> Element {
                     }
 
                     if let Some(description) = description {
-                        div { class: "text-text-primary-muted", "{description}" }
+                        // `.popup-description` caps the width — see main.css.
+                        // Without it the box grows to the sentence's length
+                        // (a 400px report dialog became ~880px wide).
+                        div { class: "popup-description text-text-primary-muted", "{description}" }
                     }
 
                     {content}

@@ -1,6 +1,7 @@
 use crate::common::components::mention_autocomplete::MentionCandidate;
 use crate::common::hooks::{use_infinite_query, use_interval, InfiniteQuery};
 use crate::common::*;
+use crate::features::spaces::pages::index::action_pages::discussion::DiscussionArenaTranslate;
 use crate::features::spaces::pages::actions::actions::discussion::controllers::{
     add_comment, block_user, delete_comment, get_comment, get_discussion_detail, like_comment,
     list_comments, list_replies, reply_comment, report_comment, subscribe_discussion,
@@ -482,6 +483,7 @@ pub fn use_discussion_arena(
     let mut reply_refresh_tick: Signal<u32> = use_signal(|| 0);
 
     let mut toast = use_toast();
+    let tr: DiscussionArenaTranslate = use_translate();
     let like_comment = use_action(move |sk_str: String, next: bool| async move {
         let prev_overlay = like_overlays.read().get(&sk_str).cloned();
         let prev_delta = prev_overlay.as_ref().map(|(_, d)| *d).unwrap_or(0);
@@ -632,8 +634,17 @@ pub fn use_discussion_arena(
         },
     );
 
+    // Resolved before the closure: `use_action`'s future is 'static, so it
+    // cannot borrow the translation struct from the render scope.
+    let report_toast_msg = tr.report_submitted_toast.to_string();
     let report_comment_action = use_action(
-        move |sk_str: String, reason: ReportReason, detail: String| async move {
+        move |sk_str: String, reason: ReportReason, detail: String| {
+            // Cloned in the closure body, NOT inside `async move`. The async
+            // block takes the whole environment by value, so referencing the
+            // String from in there moves it out and the closure degrades to
+            // `FnOnce` — `use_action` needs `FnMut`.
+            let report_toast_msg = report_toast_msg.clone();
+            async move {
             let target_sk = match SpacePostCommentTargetEntityType::from_str(&sk_str) {
                 Ok(v) => v,
                 Err(e) => {
@@ -650,10 +661,15 @@ pub fn use_discussion_arena(
                 tracing::error!("report failed: {:?}", e);
                 toast.error(e);
             } else {
+                // Acknowledge the report. Without this the only feedback was the
+                // "Report" affordance disappearing, which reads as the button
+                // having failed rather than the report having been filed.
+                toast.info(report_toast_msg);
                 // Server-side threshold may auto-hide the comment; refresh to reflect it.
                 comments_query.refresh();
             }
             Ok::<(), crate::common::Error>(())
+            }
         },
     );
 
