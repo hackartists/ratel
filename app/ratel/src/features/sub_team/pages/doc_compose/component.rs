@@ -73,6 +73,10 @@ fn file_ext_label(ext: &FileExtension) -> &'static str {
         FileExtension::MP4 => "MP4",
         FileExtension::MOV => "MOV",
         FileExtension::MKV => "MKV",
+        FileExtension::M4A => "M4A",
+        FileExtension::MP3 => "MP3",
+        FileExtension::WAV => "WAV",
+        FileExtension::ETC => "FILE",
     }
 }
 
@@ -432,9 +436,7 @@ fn DocComposeForm(username: String) -> Element {
                     }
                 }
 
-                aside {
-                    class: "side-panel",
-                    "data-open": drawer_open(),
+                aside { class: "side-panel", "data-open": drawer_open(),
                     // Mobile drawer head — handle + title + close button.
                     // Hidden on desktop via base `.side-panel__head { display: none }`.
                     div { class: "side-panel__head",
@@ -710,15 +712,60 @@ fn DocComposeForm(username: String) -> Element {
                             stroke_width: "2",
                             stroke_linecap: "round",
                             stroke_linejoin: "round",
-                            line { x1: "4", y1: "21", x2: "4", y2: "14" }
-                            line { x1: "4", y1: "10", x2: "4", y2: "3" }
-                            line { x1: "12", y1: "21", x2: "12", y2: "12" }
-                            line { x1: "12", y1: "8", x2: "12", y2: "3" }
-                            line { x1: "20", y1: "21", x2: "20", y2: "16" }
-                            line { x1: "20", y1: "12", x2: "20", y2: "3" }
-                            line { x1: "1", y1: "14", x2: "7", y2: "14" }
-                            line { x1: "9", y1: "8", x2: "15", y2: "8" }
-                            line { x1: "17", y1: "16", x2: "23", y2: "16" }
+                            line {
+                                x1: "4",
+                                y1: "21",
+                                x2: "4",
+                                y2: "14",
+                            }
+                            line {
+                                x1: "4",
+                                y1: "10",
+                                x2: "4",
+                                y2: "3",
+                            }
+                            line {
+                                x1: "12",
+                                y1: "21",
+                                x2: "12",
+                                y2: "12",
+                            }
+                            line {
+                                x1: "12",
+                                y1: "8",
+                                x2: "12",
+                                y2: "3",
+                            }
+                            line {
+                                x1: "20",
+                                y1: "21",
+                                x2: "20",
+                                y2: "16",
+                            }
+                            line {
+                                x1: "20",
+                                y1: "12",
+                                x2: "20",
+                                y2: "3",
+                            }
+                            line {
+                                x1: "1",
+                                y1: "14",
+                                x2: "7",
+                                y2: "14",
+                            }
+                            line {
+                                x1: "9",
+                                y1: "8",
+                                x2: "15",
+                                y2: "8",
+                            }
+                            line {
+                                x1: "17",
+                                y1: "16",
+                                x2: "23",
+                                y2: "16",
+                            }
                         }
                         "{tr.sub_team_options}"
                     }

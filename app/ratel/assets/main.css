@@ -22493,6 +22493,52 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
     grid-template-columns: 1fr;
   }
 }
+/* === src/features/spaces/pages/apps/apps/file/views/home — audio previews === */
+.sfa-audio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sfa-audio-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--dark, rgba(255, 255, 255, 0.03)) var(--light, rgba(0, 0, 0, 0.02));
+  border: 1px solid var(--dark, rgba(255, 255, 255, 0.06)) var(--light, rgba(0, 0, 0, 0.08));
+}
+.sfa-audio-row__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+/* Its own badge, in normal flow. Reusing `.sfa-preview-media__label` here was
+   wrong: that one is `position: absolute` because it overlays an image tile,
+   and with no positioned ancestor in the audio row it escaped upwards and sat
+   on top of the "AUDIO PREVIEWS" heading. */
+.sfa-audio-row__ext {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: 100px;
+  background: var(--dark, rgba(255, 255, 255, 0.08)) var(--light, rgba(0, 0, 0, 0.06));
+  color: var(--dark, #b9b9cc) var(--light, #5a5a70);
+  font-family: var(--sfa-font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.sfa-audio-row__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dark, #f0f0f5) var(--light, #12121a);
+  overflow-wrap: anywhere;
+}
+.sfa-audio-row audio {
+  width: 100%;
+}
+
 .sfa-preview-media {
   position: relative;
   width: 100%;
