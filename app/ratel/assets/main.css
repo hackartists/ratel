@@ -14178,7 +14178,16 @@ html[data-theme="light"] .arena-create-team__close:hover,
   display: flex;
   flex-direction: column;
   gap: 18px;
-  overflow: hidden;
+  /* `overflow: hidden` here silently TRUNCATED the form whenever the modal was
+     capped -- measured on a Galaxy S23 with the keyboard open: content 361px
+     in a 223px box, so the third field (팀 설명) and the buttons were simply
+     erased, and nothing could scroll to them. Clip sideways, scroll down.
+     `min-height: 0` lets this flex child shrink below its content so the
+     scroll actually engages instead of the box growing. */
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Force the form's outer flex container to fill our modal width instead of
@@ -55367,4 +55376,39 @@ html[data-theme="light"] .ff-home .featured-title {
    (verified: zero `.max-w-*` rules exist in the built stylesheet). */
 .popup-description {
   max-width: 400px;
+}
+
+/* === src/common/components/popup — soft-keyboard avoidance =============
+   Android's WebView shrinks only the VISUAL viewport when the keyboard
+   opens; the layout viewport and `dvh` stay at full height. A modal centred
+   with `items-center` against that full height therefore keeps its lower
+   half underneath the keyboard, and an input down there is typed blind (the
+   CREATE TEAM dialog's team-id field). `--kb-inset` is the keyboard height
+   app.rs publishes on <html> from `visualViewport`; subtracting it makes the
+   centring — and the box's height cap — respect the area still on screen. */
+.popup-backdrop {
+  /* Size and place the backdrop from the VISUAL viewport -- the area actually
+     on screen -- rather than computing `100dvh - keyboard`.  That arithmetic
+     was wrong on Android: the layout viewport already excludes some system
+     UI, so `innerHeight - vv.height` under-reported the keyboard by ~52px and
+     the dialog drifted up, leaving a gap above the keyboard and pushing the
+     title towards the status bar. `translateY` re-anchors it because
+     `position: fixed` follows the LAYOUT viewport, which the WebView scrolls
+     to reveal a focused field. */
+  height: var(--vv-height, 100dvh);
+  transform: translateY(var(--vv-offset-top, 0px));
+}
+.popup-box-capped {
+  max-height: calc(var(--vv-height, 100dvh) * 0.9);
+}
+/* When the keyboard forces the cap, the box must SCROLL what does not fit --
+   `overflow-hidden` (set for the rounded corners) silently truncated it, so
+   the third field was unreachable: measured ch == sh == 360 on the inner
+   scroller, i.e. nothing to scroll, while the box clipped 50px of form.
+   Scoped to touch devices so the desktop web popup is untouched. */
+@media (pointer: coarse) {
+  .popup-box-capped {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 }
