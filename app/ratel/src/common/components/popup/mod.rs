@@ -29,7 +29,10 @@ pub fn PopupZone() -> Element {
         ("overflow-visible", "")
     } else {
         (
-            "max-h-[90dvh] overflow-hidden",
+            // Height cap follows the keyboard too, so the box shrinks instead
+            // of extending under it — the inner scroller then brings the
+            // focused field into view.
+            "popup-box-capped overflow-hidden",
             "overflow-y-auto overflow-x-hidden min-h-0",
         )
     };
@@ -40,7 +43,15 @@ pub fn PopupZone() -> Element {
 
     rsx! {
         div {
-            class: "flex fixed top-0 left-0 justify-center items-center w-screen h-screen bg-popup-background backdrop-blur-[10px] z-[101] bg-no-s",
+            // `popup-backdrop` instead of `h-screen`: the Android WebView only
+            // shrinks the VISUAL viewport when the keyboard opens — `dvh` (and
+            // therefore `h-screen`) stays full height. Centering against the
+            // full height put the modal's lower half behind the keyboard, so a
+            // focused input near the bottom (the team-id field) was typed
+            // blind. The class subtracts `--kb-inset` so `items-center`
+            // centres within what the user can actually see. It also can't be
+            // `h-screen`: tailwind forces that to `100dvh !important`.
+            class: "flex fixed top-0 left-0 justify-center items-center w-screen popup-backdrop bg-popup-background backdrop-blur-[10px] z-[101] bg-no-s",
             // Counter iOS WKWebView's keyboard-avoidance shift: focusing a modal
             // input moves the visual viewport up (offsetTop > 0), dragging this
             // fixed backdrop — and the centered modal box inside it — up under
