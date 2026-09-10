@@ -14691,7 +14691,21 @@ body:has(.team-arena) {
   overflow-x: hidden !important;
   overflow-y: auto !important;
   height: auto !important;
-  min-height: 100vh;
+}
+html:has(.team-arena) {
+  min-height: 100dvh;
+}
+/* Not `100dvh` here — `:root` carries the safe-area insets as padding, so the
+   box body has to fill is the viewport MINUS those insets. With `100dvh` on
+   both, body came out inset-tall taller than html's content box: measured on a
+   640px-tall screen with 24px top / 48px bottom insets, html grew to 712 and
+   the document scrolled 72px that had nothing in it. At the end of a scroll
+   that showed up as a dead strip under the last card. Web is unaffected —
+   there the insets are 0 and this is exactly `100dvh`. */
+body:has(.team-arena) {
+  min-height: calc(
+    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+  );
 }
 body:has(.team-arena) [data-slot="sidebar-wrapper"] {
   min-height: 100vh;
