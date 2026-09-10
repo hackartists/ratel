@@ -9,10 +9,6 @@ REGION ?= $(shell aws configure get region)
 WORKSPACE_ROOT ?= $(PWD)
 AWS_ACCOUNT_ID ?= $(shell aws sts get-caller-identity --query "Account" --output text)
 
-STACK ?= ratel-$(ENV)-stack
-
-BUILD_CDK_ENV ?= AWS_ACCESS_KEY_ID=$(ACCESS_KEY_ID) AWS_SECRET_ACCESS_KEY=$(SECRET_ACCESS_KEY) AWS_REGION=$(REGION) DOMAIN=$(DOMAIN) WORKSPACE_ROOT=$(WORKSPACE_ROOT) AWS_ACCOUNT_ID=$(AWS_ACCOUNT_ID) COMMIT=$(COMMIT) ENV=$(ENV) BASE_DOMAIN=$(BASE_DOMAIN) STACK=$(STACK)
-
 .build/evm-keys:
 	mkdir -p .build
 	docker run --rm ghcr.io/foundry-rs/foundry:latest "cast wallet new --json" > .build/evm-keys.json
@@ -31,19 +27,6 @@ serve:
 
 clean:
 	rm -rf .build/$(SERVICE)
-
-.PHONY: deploy
-deploy: build cdk-deploy
-
-cdk/.build/%/bootstrap:
-	mkdir -p cdk/.build/$*
-	cp .build/$*/bootstrap cdk/.build/$*/bootstrap
-
-cdk-deploy-v2:
-	cd cdk && npm i
-	cd cdk && $(BUILD_CDK_ENV) npm run build
-	cd cdk && $(BUILD_CDK_ENV) cdk synth
-	cd cdk && $(BUILD_CDK_ENV) cdk deploy --require-approval never $(AWS_FLAG) --all --concurrency 3
 
 node_modules:
 	pnpm i

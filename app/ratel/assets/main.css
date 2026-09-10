@@ -29015,6 +29015,27 @@ body.comments-panel-resizing {
   .leaderboard-panel { width: 100%; }
   .leaderboard-my-rank { margin: 16px 16px 0; }
   .leaderboard-breakdown { margin: 10px 16px 0; }
+  /* Keep the four tiles on one row, but sized for a phone. They are `flex: 1`,
+     which looks like it should shrink them — except a flex item's automatic
+     minimum size floors each one at its min-content width, and at the desktop
+     metrics ("DISCUSSION" at 9px/0.08em plus 24px of padding, ~84px each) four
+     of them need ~360px against the 328px a 360dp phone has. The row
+     overflowed and the panel's `overflow: hidden` sliced the FOLLOW tile in
+     half. Trimming the padding, tracking and type brings min-content to ~69px
+     so all four fit; `min-width: 0` removes the floor entirely so a longer
+     score can never push the row wide again. Stacking them 2x2 also fixes the
+     clipping but costs a whole extra row of height, which pushed TOP
+     PARTICIPANTS off the first screen. */
+  .leaderboard-breakdown { gap: 6px; }
+  .leaderboard-breakdown__item {
+    min-width: 0;
+    padding: 8px 6px;
+  }
+  .leaderboard-breakdown__value { font-size: 12px; }
+  .leaderboard-breakdown__label {
+    font-size: 8px;
+    letter-spacing: 0.02em;
+  }
   .leaderboard-panel__body { padding: 16px; }
   .leaderboard-panel__header { padding: 20px 16px 16px; }
   .leaderboard-podium { gap: 8px; }
@@ -39776,6 +39797,30 @@ body.comments-panel-resizing {
     position: relative;
     width: 100%;
     justify-content: flex-end;
+  }
+  /* No upper cap on the button width here. `flex: 1` already shares the row
+     between the buttons; the 64px cap only bit above ~384dp, where it left
+     the row's left end empty while the buttons bunched up on the right. That
+     gap is what the dropdown below inherited — it anchors to the row, so it
+     came out 40px wider than the icons at 393dp. Letting the buttons finish
+     the row keeps row and icon group identical at every width; the buttons
+     grow by ~2px at 393dp and ~6px at 412dp, and shrink as before below
+     384dp. */
+  .home-arena .hud-btn {
+    max-width: none;
+  }
+  /* Line the dropdown up with the icon row it hangs off. It used to be
+     `right: 16px` + `width: clamp(..., 100vw - 32px, ...)`, which made the
+     box wider than its containing block and overhung the left edge — it read
+     as glued to the screen edge. Pinning both edges to the row (now exactly
+     the icon group) puts the dropdown's left edge on the 알림 icon and its
+     right edge on the last icon. Only inside this 500px block: wider
+     viewports anchor to `.arena-topbar` instead, where the 420px cap is
+     what keeps the box a sane width. */
+  .home-arena .team-dd {
+    left: 0;
+    right: 0;
+    width: auto;
   }
   /* Mobile overlay panel — shorter padding + scrollable inside so
      the tile grid never overflows the viewport. */
@@ -54904,6 +54949,18 @@ html[data-theme="light"] .ff-home .featured-title {
    breakpoints in its own rule. Arenas outside this layout inherit nothing
    and fall back to 0. Keep in sync with `features/social/layout.rs`. */
 .social-scroll { --social-pad: 20px; }
+
+/* Always reserve the scrollbar's gutter on the outlet that actually scrolls.
+   `body` is `overflow: hidden`, so the document never scrolls — this element
+   does (`overflow-auto` in features/social/layout.rs), which is why putting
+   this on `:root` did nothing.
+
+   Without it the layout twitches whenever a page's content crosses the
+   viewport height: on the team member page, switching from the 소유자 tab
+   (one row, no scroll) to 멤버 (seven rows, scroll) took 16px for the
+   scrollbar and every panel reflowed narrower. The reserved strip just shows
+   the page background, so a short page ends 16px earlier instead. */
+.social-scroll { scrollbar-gutter: stable; }
 @media (max-width: 900px) { .social-scroll { --social-pad: 12px; } }
 @media (max-width: 500px) { .social-scroll { --social-pad: 8px; } }
 
@@ -54973,6 +55030,14 @@ html[data-theme="light"] .ff-home .featured-title {
        it stays put either way. */
     overflow-y: auto;
     overflow-x: hidden;
+    /* Under 768px THIS is the element that scrolls — not `.social-scroll`,
+       which the desktop layout uses. Measured on a 360dp emulator: the team
+       member page lost 8px of content width the moment the list overflowed
+       (소유자 tab, 1 row → panel ended at 343.5px; 멤버 tab, 7 rows → 335.5px),
+       because the scrollbar took the space. Reserving the gutter here keeps
+       both tabs at the narrow width, so switching tabs no longer reflows the
+       page. The same declaration on `.social-scroll` covers desktop. */
+    scrollbar-gutter: stable;
   }
   /* The carousel region takes whatever is left and, if a long post still
      does not fit, scrolls inside itself — a contained scroll rather than
