@@ -12969,9 +12969,15 @@ html[data-theme="light"] .team-arena .ts-card-form,
 [data-theme="light"] .team-arena .ts-card-form {
   background: rgba(0, 0, 0, 0.02);
 }
+/* The row zeroes its children's `margin-bottom` so the two side-by-side
+   fields do not double it up — which left the row itself with no gap under it,
+   and the field after it (Birth Date, below Expiry Month / Expiry Year) sat
+   flush against the inputs above while every other field had 20px. Carry the
+   same 20px on the row. */
 .team-arena .ts-field-row {
   display: flex;
   gap: 10px;
+  margin-bottom: 20px;
 }
 .team-arena .ts-field-row > .ts-field { flex: 1; margin-bottom: 0; }
 .team-arena .ts-plan-change-link {
