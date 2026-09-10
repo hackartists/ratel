@@ -12969,9 +12969,15 @@ html[data-theme="light"] .team-arena .ts-card-form,
 [data-theme="light"] .team-arena .ts-card-form {
   background: rgba(0, 0, 0, 0.02);
 }
+/* The row zeroes its children's `margin-bottom` so the two side-by-side
+   fields do not double it up — which left the row itself with no gap under it,
+   and the field after it (Birth Date, below Expiry Month / Expiry Year) sat
+   flush against the inputs above while every other field had 20px. Carry the
+   same 20px on the row. */
 .team-arena .ts-field-row {
   display: flex;
   gap: 10px;
+  margin-bottom: 20px;
 }
 .team-arena .ts-field-row > .ts-field { flex: 1; margin-bottom: 0; }
 .team-arena .ts-plan-change-link {
@@ -13188,6 +13194,27 @@ html[data-theme="light"] .team-arena .ts-modal__confirm-danger,
   .team-arena .ts-btn-primary { padding: 9px 16px; font-size: 10px; width: 100%; justify-content: center; }
   .team-arena .ts-save-timestamp { font-size: 9px; }
   .team-arena .ts-billing-row__label { font-size: 12px; }
+  /* The value side is a nowrap flex row — on the Current Plan line that is the
+     ENTERPRISE badge plus "VIEW MEMBERSHIP" and "CHANGE PLAN", both Orbitron
+     with 0.1em tracking. Its min-content is wider than the row on a phone, so
+     it pushed out of the card and "CHANGE PLAN" was clipped at the screen
+     edge. Wrapping at both levels keeps the label-left / value-right shape
+     while giving the links somewhere to go; `min-width: 0` lets the group
+     shrink past the flex automatic minimum so the row itself never overflows.
+     Other rows (Credits, Expires, Card) hold single short values and are
+     unaffected.
+
+     Only the group wraps, not the row: `flex-wrap` on the row would break on
+     the group's max-content base size and drop the whole value block below
+     the label, costing a third line for nothing. With `min-width: 0` the
+     group shrinks in place instead, so the label keeps its own line and the
+     links wrap under the badge. */
+  .team-arena .ts-billing-row__right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+    gap: 10px;
+  }
   .team-arena .ts-danger-card__header { gap: 10px; }
   .team-arena .ts-danger-card__title { font-size: 11px; }
   .team-arena .ts-btn-danger { padding: 9px 14px; font-size: 10px; width: 100%; justify-content: center; }
@@ -14664,7 +14691,21 @@ body:has(.team-arena) {
   overflow-x: hidden !important;
   overflow-y: auto !important;
   height: auto !important;
-  min-height: 100vh;
+}
+html:has(.team-arena) {
+  min-height: 100dvh;
+}
+/* Not `100dvh` here — `:root` carries the safe-area insets as padding, so the
+   box body has to fill is the viewport MINUS those insets. With `100dvh` on
+   both, body came out inset-tall taller than html's content box: measured on a
+   640px-tall screen with 24px top / 48px bottom insets, html grew to 712 and
+   the document scrolled 72px that had nothing in it. At the end of a scroll
+   that showed up as a dead strip under the last card. Web is unaffected —
+   there the insets are 0 and this is exactly `100dvh`. */
+body:has(.team-arena) {
+  min-height: calc(
+    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+  );
 }
 body:has(.team-arena) [data-slot="sidebar-wrapper"] {
   min-height: 100vh;
