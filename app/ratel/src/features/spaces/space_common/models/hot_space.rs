@@ -96,6 +96,9 @@ impl HotSpace {
         Self::repository()
             .find(
                 Self::query()
+                    // One ascending scan is the whole ranking: the key encodes
+                    // both window and score inverted, so ASC yields
+                    // newest-window-first, best-score-first.
                     .order_by(HotSpaceColumn::RankKey, postgres::Order::Asc)
                     .page(page)
                     .page_size(page_size),
