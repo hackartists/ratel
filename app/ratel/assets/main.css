@@ -39777,6 +39777,30 @@ body.comments-panel-resizing {
     width: 100%;
     justify-content: flex-end;
   }
+  /* No upper cap on the button width here. `flex: 1` already shares the row
+     between the buttons; the 64px cap only bit above ~384dp, where it left
+     the row's left end empty while the buttons bunched up on the right. That
+     gap is what the dropdown below inherited — it anchors to the row, so it
+     came out 40px wider than the icons at 393dp. Letting the buttons finish
+     the row keeps row and icon group identical at every width; the buttons
+     grow by ~2px at 393dp and ~6px at 412dp, and shrink as before below
+     384dp. */
+  .home-arena .hud-btn {
+    max-width: none;
+  }
+  /* Line the dropdown up with the icon row it hangs off. It used to be
+     `right: 16px` + `width: clamp(..., 100vw - 32px, ...)`, which made the
+     box wider than its containing block and overhung the left edge — it read
+     as glued to the screen edge. Pinning both edges to the row (now exactly
+     the icon group) puts the dropdown's left edge on the 알림 icon and its
+     right edge on the last icon. Only inside this 500px block: wider
+     viewports anchor to `.arena-topbar` instead, where the 420px cap is
+     what keeps the box a sane width. */
+  .home-arena .team-dd {
+    left: 0;
+    right: 0;
+    width: auto;
+  }
   /* Mobile overlay panel — shorter padding + scrollable inside so
      the tile grid never overflows the viewport. */
   .home-arena .hud-overlay {
