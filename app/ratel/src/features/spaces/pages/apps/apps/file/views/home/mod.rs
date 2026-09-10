@@ -378,13 +378,15 @@ pub fn SpaceFileAppPage(space_id: ReadSignal<SpacePartition>) -> Element {
                                         class: "sfa-preview-media",
                                         style: "aspect-ratio:16/7",
                                         // `nodownload`: the player's ⋮ menu offers a
-                                        // download that cannot work in the Android
-                                        // WebView — it drops the navigation, so the
-                                        // item did nothing at all. Better to not
-                                        // offer it than to offer a dead button.
+                                        // download that takes the browser path, which
+                                        // Android System WebView silently drops and
+                                        // iOS WKWebView ignores — the item did nothing
+                                        // at all. Better to not offer it than to offer
+                                        // a dead button.
                                         video {
                                             src: "{url}",
                                             controls: true,
+                                            "controlsList": "nodownload",
                                         }
                                         span { class: "sfa-preview-media__label",
                                             "{ext_label(&effective_ext(file))}"
@@ -418,9 +420,11 @@ pub fn SpaceFileAppPage(space_id: ReadSignal<SpacePartition>) -> Element {
                                                 "{ext_label(&effective_ext(file))}"
                                             }
                                         }
+                                        // Same as the video element above.
                                         audio {
                                             src: "{url}",
                                             controls: true,
+                                            "controlsList": "nodownload",
                                         }
                                     }
                                 }
