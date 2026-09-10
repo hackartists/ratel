@@ -87,21 +87,34 @@ jobs:
       - name: Preflight — hot_eligible 컬럼 존재 확인
         # 코드 배포가 선행돼야 이 컬럼이 생긴다. 없으면 up.sql 이 실패하므로
         # 먼저 확인하고 무엇을 해야 하는지 알려준다.
+        #
+        # 값은 `kubectl logs` 로 읽는다. `kubectl run --rm -i --attach` 로 받으면
+        # 이 파드처럼 즉시 끝나는 경우 attach 가 붙기 전에 컨테이너가 사라져
+        #   warning: couldn't attach to pod/…, falling back to streaming logs
+        # 로 빠지는데, `--quiet` 가 그 폴백 출력까지 삼켜 결과가 빈 문자열이 된다.
+        # 그러면 컬럼이 있어도 없다고 판단해 버린다(실제로 한 번 그랬다).
         run: |
           set -euo pipefail
           pod="ratel-class-preflight-$(date +%s)"
-          found=$(kubectl run "${pod}" \
+          kubectl run "${pod}" \
             -n "${NAMESPACE}" \
-            --rm -i --restart=Never --quiet \
+            --restart=Never --quiet \
             --image=postgres:16-alpine \
             --command -- \
             psql "${DATABASE_URL}" -tAc \
-            "SELECT count(*) FROM information_schema.columns
-              WHERE table_name = 'space_commons' AND column_name = 'hot_eligible'" \
-            | tr -d '[:space:]')
-          echo "hot_eligible 컬럼: ${found}"
+            "SELECT count(*) FROM information_schema.columns WHERE table_name = 'space_commons' AND column_name = 'hot_eligible'" \
+            >/dev/null 2>&1 || true
+          # 파드가 끝날 때까지 기다린 뒤 로그에서 값을 읽는다.
+          for _ in $(seq 1 30); do
+            phase=$(kubectl get pod "${pod}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            case "${phase}" in Succeeded|Failed) break ;; esac
+            sleep 2
+          done
+          found=$(kubectl logs -n "${NAMESPACE}" "${pod}" 2>/dev/null | tr -d '[:space:]')
+          kubectl delete pod "${pod}" -n "${NAMESPACE}" --wait=false >/dev/null 2>&1 || true
+          echo "hot_eligible 컬럼: '${found}'"
           if [ "${found}" != "1" ]; then
-            echo "::error::space_commons.hot_eligible 컬럼이 없습니다. 이 브랜치를 먼저 배포해 app-shell 이 ALTER TABLE 을 적용하게 한 뒤 다시 실행하세요."
+            echo "::error::space_commons.hot_eligible 컬럼을 확인하지 못했습니다(값: '${found}'). 코드가 배포됐는지, 위 psql 파드가 정상 종료했는지 확인하세요."
             exit 1
           fi
 
