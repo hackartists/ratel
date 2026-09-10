@@ -163,10 +163,174 @@ function bindCommentTextObservers() {
   });
 }
 
+// Mobile: drag the bottom sheet up/down instead of only tapping the handle.
+// The tap toggle stays — this adds a gesture that tracks the finger between
+// the two anchors (collapsed peek and the 75vh expanded height) and snaps to
+// whichever one it ended nearest, or to the one the flick was heading toward.
+//
+// `data-expanded` stays Dioxus-owned (see the note above): JS only writes an
+// inline `transform` while the finger is down, then hands the position back
+// to CSS. To flip the state it fires a click on the handle, which is the same
+// path a tap takes, so the Dioxus signal remains the single source of truth.
+var SHEET_DRAG_SLOP_PX = 5;
+// px/ms. Above this a flick wins over position, so a short fast swipe down
+// closes a sheet that is still nearer the top.
+var SHEET_FLICK_VELOCITY = 0.5;
+
+function initCommentsSheetDrag() {
+  var panel = document.getElementById("discussion-comments-sheet");
+  if (!panel || panel.dataset.dragBound) return;
+  var handle = panel.querySelector(".sheet-handle");
+  if (!handle) return;
+  panel.dataset.dragBound = "true";
+
+  var startY = 0;
+  var baseY = 0;
+  var lastY = 0;
+  var lastT = 0;
+  var velocity = 0;
+  var maxY = 0;
+  var dragged = false;
+  var active = false;
+  var swallowNextClick = false;
+  var swallowTimer = null;
+
+  // Distance between the two anchors: the collapsed sheet shows only the
+  // handle (plus the safe-area strip the CSS pads with), so that is exactly
+  // how far it travels.
+  function collapsedOffset() {
+    var padBottom = parseFloat(getComputedStyle(panel).paddingBottom) || 0;
+    return Math.max(0, panel.offsetHeight - handle.offsetHeight - padBottom);
+  }
+
+  function isExpanded() {
+    return panel.getAttribute("data-expanded") === "true";
+  }
+
+  function begin(clientY) {
+    // Desktop keeps the panel as a static column — the handle is CSS-hidden
+    // there, but guard anyway so a stray mouse drag can not move it.
+    if (getComputedStyle(handle).display === "none") return;
+    active = true;
+    dragged = false;
+    maxY = collapsedOffset();
+    baseY = isExpanded() ? 0 : maxY;
+    startY = clientY;
+    lastY = clientY;
+    lastT = Date.now();
+    velocity = 0;
+    panel.classList.add("dragging");
+  }
+
+  function move(clientY) {
+    if (!active) return;
+    var dy = clientY - startY;
+    if (!dragged && Math.abs(dy) < SHEET_DRAG_SLOP_PX) return;
+    dragged = true;
+    var now = Date.now();
+    var dt = now - lastT;
+    if (dt > 0) velocity = (clientY - lastY) / dt;
+    lastY = clientY;
+    lastT = now;
+    var y = baseY + dy;
+    if (y < 0) y = 0;
+    if (y > maxY) y = maxY;
+    panel.style.transform = "translateY(" + y + "px)";
+  }
+
+  function end() {
+    if (!active) return;
+    active = false;
+    panel.classList.remove("dragging");
+    if (!dragged) return;
+
+    var y = baseY + (lastY - startY);
+    if (y < 0) y = 0;
+    if (y > maxY) y = maxY;
+
+    var wantExpanded;
+    if (Math.abs(velocity) > SHEET_FLICK_VELOCITY) {
+      wantExpanded = velocity < 0;
+    } else {
+      wantExpanded = y < maxY / 2;
+    }
+
+    // Settle to the target with the CSS transition back on, then drop the
+    // inline transform once `data-expanded` has caught up so CSS owns the
+    // resting position again.
+    panel.style.transform = "translateY(" + (wantExpanded ? 0 : maxY) + "px)";
+
+    // A drag past the UA's slop usually suppresses the synthetic click, but
+    // not always — swallow it either way and drive the toggle ourselves.
+    swallowNextClick = true;
+    if (swallowTimer) clearTimeout(swallowTimer);
+    swallowTimer = setTimeout(function () {
+      swallowNextClick = false;
+    }, 400);
+
+    setTimeout(function () {
+      if (wantExpanded !== isExpanded()) {
+        swallowNextClick = false;
+        handle.click();
+      }
+    }, 0);
+
+    setTimeout(function () {
+      panel.style.transform = "";
+    }, 420);
+  }
+
+  handle.addEventListener(
+    "click",
+    function (e) {
+      if (!swallowNextClick) return;
+      swallowNextClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    true
+  );
+
+  // Passive: `.sheet-handle` carries `touch-action: none`, so the browser
+  // never starts a native scroll here and there is nothing to cancel.
+  handle.addEventListener(
+    "touchstart",
+    function (e) {
+      begin(e.touches[0].clientY);
+    },
+    { passive: true }
+  );
+  handle.addEventListener(
+    "touchmove",
+    function (e) {
+      move(e.touches[0].clientY);
+    },
+    { passive: true }
+  );
+  handle.addEventListener("touchend", end);
+  handle.addEventListener("touchcancel", end);
+
+  handle.addEventListener("mousedown", function (e) {
+    begin(e.clientY);
+
+    function onMouseMove(ev) {
+      move(ev.clientY);
+    }
+    function onMouseUp() {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      end();
+    }
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  });
+}
+
 function init() {
   initComposerAutogrow();
   initMentionFlip();
   initCommentsPanelResizer();
+  initCommentsSheetDrag();
   bindCommentTextObservers();
 }
 
