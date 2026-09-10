@@ -29015,6 +29015,27 @@ body.comments-panel-resizing {
   .leaderboard-panel { width: 100%; }
   .leaderboard-my-rank { margin: 16px 16px 0; }
   .leaderboard-breakdown { margin: 10px 16px 0; }
+  /* Keep the four tiles on one row, but sized for a phone. They are `flex: 1`,
+     which looks like it should shrink them — except a flex item's automatic
+     minimum size floors each one at its min-content width, and at the desktop
+     metrics ("DISCUSSION" at 9px/0.08em plus 24px of padding, ~84px each) four
+     of them need ~360px against the 328px a 360dp phone has. The row
+     overflowed and the panel's `overflow: hidden` sliced the FOLLOW tile in
+     half. Trimming the padding, tracking and type brings min-content to ~69px
+     so all four fit; `min-width: 0` removes the floor entirely so a longer
+     score can never push the row wide again. Stacking them 2x2 also fixes the
+     clipping but costs a whole extra row of height, which pushed TOP
+     PARTICIPANTS off the first screen. */
+  .leaderboard-breakdown { gap: 6px; }
+  .leaderboard-breakdown__item {
+    min-width: 0;
+    padding: 8px 6px;
+  }
+  .leaderboard-breakdown__value { font-size: 12px; }
+  .leaderboard-breakdown__label {
+    font-size: 8px;
+    letter-spacing: 0.02em;
+  }
   .leaderboard-panel__body { padding: 16px; }
   .leaderboard-panel__header { padding: 20px 16px 16px; }
   .leaderboard-podium { gap: 8px; }
