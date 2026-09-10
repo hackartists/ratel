@@ -1,0 +1,177 @@
+# ============================================================================
+# PROD 백필 (수동 버튼): 수업 발표 평가 11개 스페이스 복구
+# ----------------------------------------------------------------------------
+# GitHub Actions → 이 워크플로우 → "Run workflow" 버튼으로 실행.
+#   direction=up   : scripts/migrations/2026-09-10-class-spaces-actions/up.sql
+#   direction=down : .../down.sql 로 롤백
+# 실수 방지: confirm 입력에 정확히 "MIGRATE" 를 타이핑해야 실행된다.
+#
+# ⚠️ 실행 순서 — 코드 배포가 먼저다.
+#   up.sql 은 `space_commons.hot_eligible` 컬럼을 쓴다. 이 컬럼은 모델의
+#   `postgres(version = 1, sql_default = "TRUE")` 가 앱 기동 시
+#   `ALTER TABLE ... ADD COLUMN` 으로 만든다. 따라서
+#     1) 이 브랜치를 배포해서 app-shell 이 컬럼을 만들게 하고
+#     2) 그 다음 이 버튼을 누른다.
+#   순서를 뒤집으면 컬럼이 없어 up.sql 이 실패한다(트랜잭션이라 부분 적용은
+#   없다). 아래 Preflight 단계가 컬럼 유무를 먼저 확인하고 막아준다.
+#
+# 무엇을 고치나 — DynamoDB→Postgres 마이그레이션에서 이 11개가 잃은 것들:
+#   1. space_actions      : 액션 0개 (poll 내용은 남아 있는데 감싸는 액션이 없음)
+#   2. 응답 링크           : space_poll_user_answers.space_id 가 빈 문자열
+#   3. space_participants : 응답자 행 유실 → 분석 리포트가 "No data yet"
+# 여기에 더해 스페이스를 Ongoing + join_anytime 으로 열고, 수업 스페이스가
+# 인기 목록에 오르지 않도록 hot_eligible=false 로 표시한다.
+# 액션은 status='finish' 로 만들어 응답을 다시 받지 않는다.
+#
+# 실행 위치: self-hosted 러너(=in-cluster kubectl 자격 보유, prod-workflow.yml
+# deploy 잡과 동일). 러너가 ratel-prod 네임스페이스에 일회용 psql 파드를 띄워
+# 클러스터 내부 Postgres 로 SQL 을 흘려보낸다.
+#
+# SQL 은 트랜잭션(BEGIN/COMMIT) + 멱등이라 재실행/롤백 모두 안전.
+# 사전 검증: dev-victor 의 prod fork(pgfork)에서 up→down→up→up 왕복 완료.
+#   액션 0↔12, 참여자행 25↔116, 응답링크 0↔91, hot_eligible=false 0↔11.
+# ============================================================================
+name: "PROD backfill · 수업 스페이스"
+
+on:
+  workflow_dispatch:
+    inputs:
+      direction:
+        description: "up = 적용 / down = 롤백"
+        required: true
+        type: choice
+        default: "up"
+        options:
+          - "up"
+          - "down"
+      confirm:
+        description: '실행하려면 정확히 "MIGRATE" 입력'
+        required: true
+        type: string
+
+jobs:
+  backfill:
+    runs-on: self-hosted
+    timeout-minutes: 15
+    # prod DB 쓰기는 한 번에 하나만. 새 실행은 진행 중인 것 뒤에 대기(취소 아님).
+    concurrency:
+      group: ratel-prod-backfill-class-spaces
+      cancel-in-progress: false
+    env:
+      NAMESPACE: ratel-prod
+      # 클러스터 내부 Postgres. 값의 원천은 deploy/prod/10-app-shell.yaml 의
+      # DATABASE_URL (app-shell 이 실제로 쓰는 것과 동일). 변경 시 함께 갱신.
+      DATABASE_URL: postgres://ratel:ratel@postgres.infra.svc.cluster.local:5432/ratel
+      MIGRATION_DIR: scripts/migrations/2026-09-10-class-spaces-actions
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Guard — confirm 입력 검증
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.inputs.confirm }}" != "MIGRATE" ]; then
+            echo "::error::confirm 입력이 'MIGRATE' 가 아닙니다. 실행을 중단합니다."
+            exit 1
+          fi
+          echo "direction = ${{ github.event.inputs.direction }}"
+
+      - name: Verify cluster access
+        # 러너 파드는 in-cluster kubectl 자격을 갖는다(prod deploy 잡과 동일).
+        run: |
+          set -euo pipefail
+          kubectl get ns "${NAMESPACE}" >/dev/null || {
+            echo "::error::러너에 클러스터 접근 권한이 없음 — k3s 러너 파드가 맞는지 확인"
+            exit 1
+          }
+
+      - name: Preflight — hot_eligible 컬럼 존재 확인
+        # 코드 배포가 선행돼야 이 컬럼이 생긴다. 없으면 up.sql 이 실패하므로
+        # 먼저 확인하고 무엇을 해야 하는지 알려준다.
+        run: |
+          set -euo pipefail
+          pod="ratel-class-preflight-$(date +%s)"
+          found=$(kubectl run "${pod}" \
+            -n "${NAMESPACE}" \
+            --rm -i --restart=Never --quiet \
+            --image=postgres:16-alpine \
+            --command -- \
+            psql "${DATABASE_URL}" -tAc \
+            "SELECT count(*) FROM information_schema.columns
+              WHERE table_name = 'space_commons' AND column_name = 'hot_eligible'" \
+            | tr -d '[:space:]')
+          echo "hot_eligible 컬럼: ${found}"
+          if [ "${found}" != "1" ]; then
+            echo "::error::space_commons.hot_eligible 컬럼이 없습니다. 이 브랜치를 먼저 배포해 app-shell 이 ALTER TABLE 을 적용하게 한 뒤 다시 실행하세요."
+            exit 1
+          fi
+
+      - name: Pick SQL file
+        id: pick
+        run: |
+          set -euo pipefail
+          dir="${{ github.event.inputs.direction }}"
+          case "$dir" in
+            up)   f="${MIGRATION_DIR}/up.sql" ;;
+            down) f="${MIGRATION_DIR}/down.sql" ;;
+            *)    echo "::error::unknown direction '$dir'"; exit 1 ;;
+          esac
+          test -f "$f" || { echo "::error::SQL 파일 없음: $f"; exit 1; }
+          echo "sql_file=$f" >> "$GITHUB_OUTPUT"
+          echo "적용할 파일: $f"
+
+      - name: Run migration (throwaway psql pod → in-cluster Postgres)
+        run: |
+          set -euo pipefail
+          pod="ratel-class-$(date +%s)"
+          echo "── ${pod} 파드로 ${{ steps.pick.outputs.sql_file }} 실행"
+          kubectl run "${pod}" \
+            -n "${NAMESPACE}" \
+            --rm -i --restart=Never \
+            --image=postgres:16-alpine \
+            --command -- \
+            psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f - \
+            < "${{ steps.pick.outputs.sql_file }}"
+
+      - name: Verify — 적용 결과 확인
+        # 읽기 전용. up 이면 액션 12 / 응답링크 91 / hot_eligible=false 11,
+        # down 이면 액션 0 / 응답링크 0 / hot_eligible=false 0 이어야 한다.
+        run: |
+          set -euo pipefail
+          pod="ratel-class-check-$(date +%s)"
+          kubectl run "${pod}" \
+            -n "${NAMESPACE}" \
+            --rm -i --restart=Never \
+            --image=postgres:16-alpine \
+            --command -- \
+            psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -c "
+              WITH t(space_id) AS (VALUES
+                ('cb190bc3-b6e3-5552-b059-ed7361b5e6dc'),
+                ('92bb6ac6-d639-5982-85e6-7f5c1d2e33b8'),
+                ('11316692-974c-52b3-98fe-cf886e5c9e92'),
+                ('5cc0c5e4-29ee-5bb8-9efa-6ac50982e865'),
+                ('4c3ea4c3-0b25-5fb5-8287-d731eec23536'),
+                ('225f7be0-a083-5690-9816-a8c2c955ecb1'),
+                ('f948ac56-8d18-5b7a-932f-ebff8e3ded16'),
+                ('48452db0-79ff-591d-8ec1-0a75dcff24d5'),
+                ('812115b3-f69a-5e0e-8ebb-c8dc82dabbe8'),
+                ('426e85ad-a041-58bb-9926-fb6b43f2aff4'),
+                ('b1040947-b894-5328-8e0d-f4493cde3beb'))
+              SELECT
+                (SELECT count(*) FROM space_actions
+                  WHERE space_id IN (SELECT space_id FROM t))            AS actions,
+                (SELECT count(*) FROM space_poll_user_answers
+                  WHERE space_id IN (SELECT space_id FROM t))            AS linked_answers,
+                (SELECT count(*) FROM space_participants
+                  WHERE space_pk IN (SELECT 'SPACE#' || space_id FROM t)) AS participant_rows,
+                (SELECT count(*) FROM space_commons
+                  WHERE id::text IN (SELECT space_id FROM t)
+                    AND NOT hot_eligible)                                AS hidden_from_hot,
+                (SELECT count(*) FROM space_commons
+                  WHERE id::text IN (SELECT space_id FROM t)
+                    AND status = 'Ongoing')                              AS ongoing"
+
+      - name: Done
+        run: |
+          echo "✅ ${{ github.event.inputs.direction }} 완료"
+          echo "확인: 스페이스의 ANALYZE 리포트를 새로 만들어 집계가 나오는지,"
+          echo "      그리고 홈의 '인기 스페이스' 에 수업 스페이스가 없는지."

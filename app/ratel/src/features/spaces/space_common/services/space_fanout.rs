@@ -8,6 +8,7 @@
 //! Eligibility for the Hot tab:
 //! - Space must be Public+Published.
 //! - Space must have at least `MIN_PARTICIPANTS_FOR_HOT` participants.
+//! - Space must not have opted out via `hot_eligible = false`.
 //!
 //! Anything else has its row deleted so it disappears from
 //! `list_hot_spaces` results. Every viewer sees the same `HSR#ALL` stream;
@@ -72,7 +73,10 @@ pub async fn upsert_hot_space(_cli: &aws_sdk_dynamodb::Client, space_pk: &Partit
         }
     };
 
-    if !space.is_public() || space.participants < MIN_PARTICIPANTS_FOR_HOT {
+    // `hot_eligible` is the space saying "not me" regardless of the numbers.
+    // Per-class presentation reviews clear the participant bar with a whole
+    // class enrolled, but mean nothing to anyone outside that class.
+    if !space.hot_eligible || !space.is_public() || space.participants < MIN_PARTICIPANTS_FOR_HOT {
         if let Err(e) = HotSpace::delete_for_space(&space_id_str).await {
             crate::warn!(
                 space_pk = %space_pk,
