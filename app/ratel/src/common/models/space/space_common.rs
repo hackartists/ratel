@@ -75,10 +75,37 @@ pub struct SpaceCommon {
     #[serde(default)]
     pub participants: i64,
 
+    /// Whether this space may surface in the Hot Spaces feed.
+    ///
+    /// Defaults to true, so nothing changes for spaces that predate this
+    /// column or are created without thinking about it — `upsert_hot_space`
+    /// keeps deciding purely on Public+Published+participants. Set it false
+    /// for spaces that meet those conditions but are not public interest
+    /// content, e.g. the per-class presentation reviews, which cross the
+    /// participant bar with a whole class yet mean nothing to anyone outside
+    /// it.
+    ///
+    /// A flag on the space rather than a rule in the ranker: the alternatives
+    /// were matching on the title (`발표` is an ordinary Korean word — a real
+    /// deliberation about a government announcement would be silently
+    /// dropped) or on the author account (breaks the moment a new teaching
+    /// account appears). Intent belongs on the row that has it.
+    ///
+    /// `version = 1`: added after the v0 baseline, so existing databases get
+    /// `ALTER TABLE ... ADD COLUMN`, and `sql_default` makes those rows true
+    /// rather than the automatic `FALSE` a bool would otherwise take.
+    #[serde(default = "default_true")]
+    #[cfg_attr(feature = "server", postgres(version = 1, sql_default = "TRUE"))]
+    pub hot_eligible: bool,
+
     #[serde(default = "max_quota")]
     pub quota: i64,
     #[serde(default = "max_quota")]
     pub remains: i64,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn max_quota() -> i64 {

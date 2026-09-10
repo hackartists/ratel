@@ -69,7 +69,7 @@ impl Factor {
 /// - `window_idx` is derived from `last_active_at` (or `created_at` if never updated)
 ///   divided by `window_size`. Newer windows always lex-sort above older ones.
 /// - Inside a window, the score combines:
-///     freshness_units = (window_end - last_active_at) / resolution
+///     freshness_units = (last_active_at - window_start) / resolution
 ///     factor_sum      = sum(value * multiplier)
 /// - Sort is **descending by quality**: we encode `MAX_SCORE - score`, so an
 ///   ascending GSI scan returns best-first within each window.
@@ -92,6 +92,21 @@ impl Default for WindowedRankKey {
 }
 
 impl WindowedRankKey {
+    /// Maximum encodable window index: 62^WINDOW_DIGITS - 1.
+    ///
+    /// Encoded inverted, exactly like the score, so a single ascending scan
+    /// yields newest-window-first. Without the inversion the window part
+    /// sorted oldest-first and fought the doc above: `find_ranked` does one
+    /// `ORDER BY rank_key ASC`, so a 143-participant space updated in a newer
+    /// 30-day window ranked BELOW a 26-participant one from months earlier.
+    pub fn max_window() -> u128 {
+        let mut m: u128 = 1;
+        for _ in 0..WINDOW_DIGITS {
+            m *= 62;
+        }
+        m - 1
+    }
+
     /// Maximum encodable score: 62^SCORE_DIGITS - 1.
     pub fn max_score() -> u128 {
         let mut m: u128 = 1;
@@ -110,11 +125,15 @@ impl WindowedRankKey {
         factors: &[Factor],
     ) -> Self {
         let window_idx = last_active_at_secs / window_size_secs;
-        let window_end = window_idx
-            .saturating_add(1)
-            .saturating_mul(window_size_secs);
 
-        let freshness_secs = window_end.saturating_sub(last_active_at_secs);
+        // Measured from the START of the window, so a later `last_active_at`
+        // scores HIGHER. This used to be `window_end - last_active_at`, which
+        // made the field mean its own opposite: a row written on day 1 of a
+        // window carried a ~720-point bonus (≈120 participants) over one
+        // written on day 29, so a 12-participant space left untouched for four
+        // weeks outranked a 100-participant space active that same day.
+        let window_start = window_idx.saturating_mul(window_size_secs);
+        let freshness_secs = last_active_at_secs.saturating_sub(window_start);
         let freshness_units = freshness_secs / resolution.seconds();
 
         let factor_sum: u64 = factors.iter().map(Factor::weight).fold(0u64, u64::saturating_add);
@@ -141,7 +160,9 @@ impl Display for WindowedRankKey {
         let score = (self.score as u128).min(max);
         let inverted = max - score;
 
-        let window = base62_pad(self.window_idx as u128, WINDOW_DIGITS);
+        let win_max = Self::max_window();
+        let window_inverted = win_max - (self.window_idx as u128).min(win_max);
+        let window = base62_pad(window_inverted, WINDOW_DIGITS);
         let score_part = base62_pad(inverted, SCORE_DIGITS);
         write!(f, "W{}{}", window, score_part)
     }
@@ -162,8 +183,9 @@ impl FromStr for WindowedRankKey {
         let window_part = &s[1..1 + WINDOW_DIGITS];
         let score_part = &s[1 + WINDOW_DIGITS..];
 
-        let window_idx = base62_decode(window_part)
+        let window_inverted = base62_decode(window_part)
             .map_err(|e| Error::InvalidPartitionKey(format!("window: {e}")))?;
+        let window_idx = Self::max_window().saturating_sub(window_inverted);
         let inverted = base62_decode(score_part)
             .map_err(|e| Error::InvalidPartitionKey(format!("score: {e}")))?;
 
@@ -255,9 +277,56 @@ mod tests {
             score: 0,
         }
         .to_string();
-        // newer windows lex-sort *after* older windows; consumers query newest-first
-        // by scanning descending. What matters is that the window prefix never overlaps.
-        assert!(new > old, "newer window prefix must exceed older");
+        // The whole key is built for ONE ascending scan: newest window first,
+        // best score first inside it. So the newer window must sort BEFORE the
+        // older one — even when the older row carries a far better score, as
+        // here. This previously asserted the opposite, which is how
+        // `find_ranked`'s single `ORDER BY rank_key ASC` ended up returning
+        // the stalest spaces at the top.
+        assert!(new < old, "newer window must sort before older");
+    }
+
+    #[test]
+    fn window_dominates_score_in_ascending_order() {
+        // A weak space in the current window still outranks a strong one from
+        // a previous window — that is what makes stale rows fall off the top.
+        let stale_strong = WindowedRankKey { window_idx: 10, score: u64::MAX / 2 }.to_string();
+        let fresh_weak = WindowedRankKey { window_idx: 11, score: 1 }.to_string();
+        let mut keys = vec![stale_strong.clone(), fresh_weak.clone()];
+        keys.sort();
+        assert_eq!(keys[0], fresh_weak, "fresh window must come first");
+    }
+
+    #[test]
+    fn later_activity_outranks_earlier_in_same_window() {
+        // The bug this guards: freshness used to count DOWN from the window
+        // end, so a barely-used space refreshed early in the window beat a busy
+        // one refreshed late. Day 1 with 12 participants must NOT outrank day
+        // 29 with 100.
+        let window = 30 * SECONDS_PER_DAY;
+        let stale_small = WindowedRankKey::build(
+            TimeBucket::Hour,
+            window,
+            SECONDS_PER_DAY,
+            &[Factor::new(12, 6), Factor::new(2, 2)],
+        );
+        let fresh_big = WindowedRankKey::build(
+            TimeBucket::Hour,
+            window,
+            29 * SECONDS_PER_DAY,
+            &[Factor::new(100, 6), Factor::new(10, 2)],
+        );
+        assert_eq!(stale_small.window_idx, fresh_big.window_idx, "same window");
+        assert!(
+            fresh_big.score > stale_small.score,
+            "fresh_big={} must beat stale_small={}",
+            fresh_big.score,
+            stale_small.score
+        );
+        assert!(
+            fresh_big.to_string() < stale_small.to_string(),
+            "and must sort first in the ascending scan"
+        );
     }
 
     #[test]
@@ -288,13 +357,16 @@ mod tests {
 
         let revived = WindowedRankKey::build(TimeBucket::Hour, window, 35 * SECONDS_PER_DAY, &[]);
         assert_eq!(revived.window_idx, 1);
-        assert!(revived.to_string() > original.to_string());
+        // "Promoted" means it comes first in the one ascending scan the reader
+        // performs — so the revived key must sort BEFORE the stale one.
+        assert!(revived.to_string() < original.to_string());
     }
 
     #[test]
     fn factor_weighting_combines_with_freshness() {
         let window = 30 * SECONDS_PER_DAY;
-        let now = 0; // freshness = full window in `Hour` units = 720
+        // 29 days into the window -> 29*24 = 696 hours of freshness.
+        let now = 29 * SECONDS_PER_DAY;
         let bare = WindowedRankKey::build(TimeBucket::Hour, window, now, &[]);
         let with_factors = WindowedRankKey::build(
             TimeBucket::Hour,
@@ -302,16 +374,17 @@ mod tests {
             now,
             &[Factor::new(12, 2), Factor::new(5, 1)],
         );
-        assert_eq!(bare.score, 720);
-        assert_eq!(with_factors.score, 720 + 12 * 2 + 5);
+        assert_eq!(bare.score, 696);
+        assert_eq!(with_factors.score, 696 + 12 * 2 + 5);
     }
 
     #[test]
     fn second_resolution_within_30_day_window() {
         let window = 30 * SECONDS_PER_DAY;
-        // last_active right at window start -> full window of seconds remaining
-        let k = WindowedRankKey::build(TimeBucket::Second, window, 0, &[]);
-        assert_eq!(k.score, 30 * 24 * 3600);
+        // last_active one second before the window rolls over -> nearly a full
+        // window of elapsed seconds.
+        let k = WindowedRankKey::build(TimeBucket::Second, window, window - 1, &[]);
+        assert_eq!(k.score, 30 * 24 * 3600 - 1);
         // round-trips even at this scale
         let s = k.to_string();
         let parsed: WindowedRankKey = s.parse().unwrap();
