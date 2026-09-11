@@ -2282,6 +2282,16 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 .ratel-editor .re-modal-mask {
   position: fixed;
   inset: 0;
+  /* Cover the visible part of the screen, not the whole layout viewport. A
+     soft keyboard shrinks only the visual viewport: centred in the full
+     screen, the image modal put its URL field under the keyboard, the WebView
+     scrolled to reveal it, and the title and the drop zone went past the top
+     edge (Android, 640px phone). `--vv-offset-top` / `--vv-height` come from
+     app.rs; with the keyboard closed they are 0 and the full height, so
+     nothing changes then. */
+  top: var(--vv-offset-top, 0px);
+  bottom: auto;
+  height: var(--vv-height, 100%);
   background: rgba(6, 6, 14, 0.65);
   backdrop-filter: blur(6px);
   display: none;
@@ -2289,6 +2299,8 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   justify-content: center;
   z-index: 200;
   padding: 20px;
+  /* Clear of the status bar the app draws under (0 on desktop). */
+  padding-top: calc(20px + env(safe-area-inset-top));
 }
 .ratel-editor .re-modal-mask.open { display: flex; }
 .ratel-editor .re-modal {
@@ -2302,6 +2314,11 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   flex-direction: column;
   gap: 14px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  /* Shorter visible area than the modal (keyboard up): scroll inside it
+     instead of running past the backdrop. */
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .ratel-editor .re-modal__title {
   font-family: 'Orbitron', sans-serif;
@@ -2445,6 +2462,17 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
+}
+/* Typing an image URL (the only field in this modal that raises a keyboard):
+   drop the drop zone, the camera button and the divider so the title, the URL
+   field and Cancel / Insert URL fit above the keyboard. On a 640px phone the
+   full modal had to scroll there, leaving the field or the buttons out of
+   view. `kb-open` is toggled on <html> by app.rs; they return when the
+   keyboard closes. */
+html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-dropzone,
+html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-camera-btn,
+html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-modal__divider {
+  display: none;
 }
 .ratel-editor .re-btn {
   padding: 8px 16px;
