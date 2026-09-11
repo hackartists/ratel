@@ -17290,6 +17290,14 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
      parent's intrinsic height entirely. */
   position: fixed;
   inset: 0;
+  /* Let `inset: 0` size it. The mobile `.arena` rule gives every arena
+     `height: calc(100dvh - safe-area insets - --kb-inset)` plus a matching
+     max-height; on a fixed box a height wins over `bottom: 0`, so this one
+     stopped 72px short of the screen bottom (568 of 640 on a phone with a
+     3-button nav) and the footer, which already pads for the nav bar, floated
+     above a blank band. */
+  height: auto;
+  max-height: none;
   z-index: 5;
   display: flex;
   flex-direction: column;
