@@ -13950,7 +13950,19 @@ body:has(.ts-sub-page) .bg-popup-background button:not([type]) {
         margin: 12px !important;
         padding: 18px !important;
         border-radius: 16px !important;
-        max-height: calc(100vh - 24px);
+        /* Visible height, not `100vh`. This rule outranks the shared
+           `.popup-box-capped` cap (`--vv-height * 0.9`), so it has to follow
+           the keyboard itself: the Android WebView keeps `100vh` at the full
+           640px when the keyboard opens. Measured with the card-number field
+           focused: visible height 341, but this cap stayed 616, so the
+           579px-tall purchase modal was centred at top -119 — its summary
+           card under the status bar and off screen, its lower fields under
+           the keyboard, and nothing to scroll. The status-bar inset is taken
+           off too, so the box cannot start under the clock: keyboard open
+           that is 341 - 24 - 24 = 293, placing the box at top 24. */
+        max-height: calc(
+            var(--vv-height, 100vh) - 24px - env(safe-area-inset-top)
+        );
         overflow-y: auto;
     }
     /* Tighten the membership-summary Card so the price fits on one line */
