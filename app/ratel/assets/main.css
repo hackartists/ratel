@@ -2616,6 +2616,11 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
     display: block;
     position: fixed;
     inset: 0;
+    /* Follow the WebView's visual-viewport pan, as `.composer-arena` does.
+       A fixed box is placed against the layout viewport, so when the WebView
+       has scrolled to reveal the caret the whole sheet would sit that many
+       px too high. 0 whenever nothing is panned. */
+    transform: translateY(var(--vv-offset-top, 0px));
     /* Above the app's bottom bars and drawers, below nothing else the
        editor owns. Matches the z-index the selection bubble uses. */
     z-index: 120;
@@ -2634,7 +2639,12 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
        — the same variable `.composer-arena` sizes itself with. 0 when the
        keyboard is closed. */
     bottom: var(--kb-inset, 0px);
-    max-height: 72vh;
+    /* Capped by the visible height as well as the screen. With the keyboard
+       up, 72vh (461px on a 640px screen) is taller than the 341px left above
+       it, so the grip, the title and the Done button were pushed past the
+       top edge. `--vv-height` is the visible height app.rs publishes together
+       with `--kb-inset`; with the keyboard closed the 72vh cap still wins. */
+    max-height: min(72vh, calc(var(--vv-height, 100vh) - env(safe-area-inset-top) - 12px));
     display: flex;
     flex-direction: column;
     background: var(--re-toolbar-bg);
