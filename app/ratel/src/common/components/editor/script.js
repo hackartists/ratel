@@ -78,7 +78,12 @@
         bridge.value = html;
         bridge.dispatchEvent(new Event("input", { bubbles: true }));
       }
-      syncToolbarState();
+      // Only with a live selection to read. The mobile format sheet blurs the
+      // editor and clears the visible selection after each command; syncing
+      // here, 120ms later, read "nothing selected" and switched every pressed
+      // state off, so tapping Italic applied it but left the button unlit and
+      // looked like it had not worked.
+      if (document.activeElement === editor) syncToolbarState();
     }
 
     editor.addEventListener("input", scheduleUpdate);
