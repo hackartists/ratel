@@ -13950,7 +13950,19 @@ body:has(.ts-sub-page) .bg-popup-background button:not([type]) {
         margin: 12px !important;
         padding: 18px !important;
         border-radius: 16px !important;
-        max-height: calc(100vh - 24px);
+        /* Visible height, not `100vh`. This rule outranks the shared
+           `.popup-box-capped` cap (`--vv-height * 0.9`), so it has to follow
+           the keyboard itself: the Android WebView keeps `100vh` at the full
+           640px when the keyboard opens. Measured with the card-number field
+           focused: visible height 341, but this cap stayed 616, so the
+           579px-tall purchase modal was centred at top -119 — its summary
+           card under the status bar and off screen, its lower fields under
+           the keyboard, and nothing to scroll. The status-bar inset is taken
+           off too, so the box cannot start under the clock: keyboard open
+           that is 341 - 24 - 24 = 293, placing the box at top 24. */
+        max-height: calc(
+            var(--vv-height, 100vh) - 24px - env(safe-area-inset-top)
+        );
         overflow-y: auto;
     }
     /* Tighten the membership-summary Card so the price fits on one line */
@@ -26770,8 +26782,22 @@ body.comments-panel-resizing {
     width: 100% !important;
     min-width: 0 !important;
     /* Expanded sheet rises to ~75% so the discussion (topbar + body peek)
-       stays visible above it instead of being fully covered. */
-    max-height: 75vh;
+       stays visible above it instead of being fully covered.
+
+       Capped by the VISIBLE height as well, minus the status bar. The Android
+       WebView does not shrink the layout viewport for the keyboard — it pans
+       the visual viewport down to reveal the focused composer, and this sheet
+       (`position: fixed`, laid out against the layout viewport) rides along.
+       Measured on a 640px screen with the keyboard open: innerHeight 640,
+       visualViewport.height 341, offsetTop 299. `75vh` stayed 480, so the
+       sheet's on-screen top was 160 - 299 = -139 and its first comments sat
+       under the clock. `--vv-height` is the visible height app.rs publishes;
+       with it the cap is min(480, 341 - 24) = 317 and the sheet ends just
+       below the status bar. Keyboard closed it is min(480, 616) — unchanged. */
+    max-height: min(
+      75vh,
+      calc(var(--vv-height, 100dvh) - env(safe-area-inset-top))
+    );
     border-left: none;
     border-top: 1px solid var(--border);
     border-radius: 20px 20px 0 0;
@@ -26794,6 +26820,28 @@ body.comments-panel-resizing {
   }
   .comments-panel.dragging {
     transition: none;
+  }
+  /* Keep the status-bar strip painted while the keyboard is up. Capping the
+     sheet (above) stops the sheet itself going under the clock, but the
+     WebView pans the whole layout by `visualViewport.offsetTop` (299 of a
+     640px screen, measured) to reveal the composer, so whatever sits 299px
+     down the page — discussion body text — slides into the top 24px and is
+     drawn over the clock. This fixed strip follows the visual viewport
+     (`--vv-offset-top` is published unthrottled by app.rs) and covers exactly
+     the status-bar inset with the arena background. With the keyboard closed
+     it sits over `:root`'s inset padding, which `::before` already fills with
+     the same colour, so nothing changes there. */
+  .discussion-arena::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top);
+    background: var(--bg);
+    transform: translateY(var(--vv-offset-top, 0px));
+    z-index: 101;
+    pointer-events: none;
   }
 
   /* Show sheet handle */
