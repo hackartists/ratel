@@ -52823,6 +52823,11 @@ html[data-theme="light"] .ff-home .featured-title {
     100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
       var(--kb-inset, 0px)
   );
+  /* Follow the WebView's visual-viewport pan, as `.composer-arena` does: a
+     tap low in the body puts the caret where the keyboard opens, the WebView
+     scrolls to reveal it, and the pan is never undone once the column has
+     shrunk above the keyboard. 0 whenever nothing is panned. */
+  top: var(--vv-offset-top, 0px);
   overflow: hidden;
   background: var(--rd-bg-void);
   color: var(--rd-text-primary);
@@ -53502,6 +53507,31 @@ html[data-theme="light"] .ff-home .featured-title {
   .report-detail__title { font-size: 26px !important; }
   .report-detail__doc { padding: 12px 10px; }
   .report-detail__chart-canvas--bar { padding: 14px 6px 44px; gap: 6px; }
+}
+
+/* Soft keyboard open (`html.kb-open`, toggled by app.rs) on the report
+   editor. The column shrinks above the keyboard, but the breadcrumb bar, the
+   "Action · Report" eyebrow, a 26px title and the subtitle kept their size,
+   so the body scroller was left about one line tall: pressing Enter scrolled
+   the new line into that strip and the previous line out of view, which read
+   as Enter not working. While typing, drop what isn't used for typing and
+   tighten the rest; everything returns when the keyboard closes. */
+@media (max-width: 980px) {
+  html.kb-open .report-detail__topbar,
+  html.kb-open .report-detail__banner,
+  html.kb-open .report-detail__cover {
+    display: none;
+  }
+  html.kb-open .report-detail .report-detail__doc {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  html.kb-open .report-detail__doc-inner { gap: 2px; }
+  html.kb-open .report-detail__title {
+    font-size: 20px !important;
+    padding: 2px 0;
+  }
+  html.kb-open .report-detail__subtitle { padding: 0 0 4px; }
 }
 
 /* ── Viewer mode — non-admin members opening a published report.
