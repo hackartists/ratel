@@ -35,9 +35,8 @@ pub fn use_dismiss_on_outside_click(mut open: Signal<bool>, root_selector: impl 
 }
 
 /// The same dismissal, for state that isn't a `bool` — a page whose panels
-/// share one `Signal<ActivePanel>`, say. `on_dismiss` must be `Copy` for the
-/// same reason `use_pull_to_refresh`'s callback is: it is moved into a
-/// long-lived task.
+/// share one `Signal<ActivePanel>`, say. `on_dismiss` must be `Copy` because
+/// it is moved into a long-lived task.
 pub fn use_dismiss_on_outside(
     root_selector: impl Into<String>,
     on_dismiss: impl FnMut() + Copy + 'static,
@@ -46,7 +45,7 @@ pub fn use_dismiss_on_outside(
     // `use_future`, not `use_hook`: `document::eval` must not run during
     // render. Doing so re-enters the reactive runtime and panics with
     // "closure invoked recursively or after being dropped" — a wasm trap in
-    // release builds. Same reason `use_pull_to_refresh` is written this way.
+    // release builds.
     use_future(move || {
         let root_selector = root_selector.clone();
         async move {

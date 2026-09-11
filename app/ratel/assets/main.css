@@ -11985,10 +11985,9 @@ html[data-theme="light"] .team-arena .tm-modal__error,
      containing block, so `.arena-topbar` unpinned and scrolled away the
      moment the reader passed that first viewport. Refusing to shrink makes
      the box match the content and the header stays put for the whole list.
-     Deliberately NOT fixed by giving this arena its own `overflow-y: auto`
-     (the model `.drafts-arena` / `.essence-arena` / `.my-ai` follow): the
-     layout installs pull-to-refresh on `.social-scroll`, and that gesture
-     only fires while `.social-scroll` is the element actually scrolling.
+     Letting `.social-scroll` stay the scroller (rather than giving this
+     arena its own `overflow-y: auto`) keeps a single scroll container for
+     the page.
      NOTE: this rule is duplicated below/above (team_reward + user_reward
      stylesheets were merged into main.css); keep the two in step. */
   flex-shrink: 0;
@@ -16508,10 +16507,9 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
      containing block, so `.arena-topbar` unpinned and scrolled away the
      moment the reader passed that first viewport. Refusing to shrink makes
      the box match the content and the header stays put for the whole list.
-     Deliberately NOT fixed by giving this arena its own `overflow-y: auto`
-     (the model `.drafts-arena` / `.essence-arena` / `.my-ai` follow): the
-     layout installs pull-to-refresh on `.social-scroll`, and that gesture
-     only fires while `.social-scroll` is the element actually scrolling.
+     Letting `.social-scroll` stay the scroller (rather than giving this
+     arena its own `overflow-y: auto`) keeps a single scroll container for
+     the page.
      NOTE: this rule is duplicated below/above (team_reward + user_reward
      stylesheets were merged into main.css); keep the two in step. */
   flex-shrink: 0;
@@ -38978,37 +38976,6 @@ body.comments-panel-resizing {
    embedded in the team arena keeps its own grid layout. */
 .home-arena--standalone .home-arena__scroll > .carousel-wrapper {
   margin-top: auto;
-}
-
-/* === src/views/index/pull_to_refresh (mobile only) === */
-.ptr-indicator {
-  flex-shrink: 0;
-  height: 0;
-  opacity: 0;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-.ptr-spinner {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2.5px solid rgba(252, 179, 0, 0.22);
-  border-top-color: #fcb300;
-  transition: transform 0.2s ease;
-}
-.ptr-indicator.ptr-ready .ptr-spinner {
-  transform: rotate(180deg);
-}
-.ptr-indicator.ptr-refreshing .ptr-spinner {
-  animation: ptr-spin 0.7s linear infinite;
-}
-@keyframes ptr-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* `UserLayout`/`SocialLayout` wrap their outlet in `.social-scroll` with

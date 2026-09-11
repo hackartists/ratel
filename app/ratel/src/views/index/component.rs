@@ -135,17 +135,6 @@ pub fn Index() -> Element {
         }
     })?;
 
-    // Pull-to-refresh (mobile/Tauri only — no-op on web). Re-runs the home
-    // loaders when the user pulls the list down past the threshold.
-    let mut hot = hot_spaces;
-    let mut mine = my_spaces;
-    let mut invited = invited_spaces;
-    use_pull_to_refresh(".home-arena__scroll", move || {
-        hot.restart();
-        mine.restart();
-        invited.restart();
-    });
-
     let hot_cards = hot_spaces().items;
     let mine_cards = my_spaces().items;
     let invited_cards = invited_spaces().items;

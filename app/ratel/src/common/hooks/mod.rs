@@ -3,7 +3,6 @@ mod use_infinite_query;
 mod use_interval;
 mod use_origin;
 mod use_platform;
-mod use_pull_to_refresh;
 mod use_scroll_lock;
 
 pub use use_dismiss_on_outside_click::*;
@@ -12,7 +11,6 @@ pub use use_interval::*;
 
 pub use use_origin::*;
 pub use use_platform::*;
-pub use use_pull_to_refresh::*;
 pub use use_scroll_lock::*;
 
 #[cfg(feature = "fullstack")]
