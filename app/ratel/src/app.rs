@@ -59,20 +59,46 @@ pub fn App() -> Element {
     var lastKb = -1;
     var pendingKb = -1;
     var settleTimer = null;
+    // Rect of the caret line, or null. A collapsed range inside a text node
+    // has one zero-width rect; at an element boundary (an empty paragraph) it
+    // has none, so fall back to the element holding the caret.
+    function caretRect() {
+      var s = window.getSelection();
+      if (!s || !s.rangeCount) return null;
+      var range = s.getRangeAt(0);
+      var rects = range.getClientRects();
+      if (rects.length) return rects[rects.length - 1];
+      var n = range.startContainer;
+      if (n && n.nodeType !== 1) n = n.parentElement;
+      return n ? n.getBoundingClientRect() : null;
+    }
     // Scroll the focused field back into view *inside its own scroller*.
-    // Only ever touches the nearest scrollable ancestor's `scrollTop`, never
-    // the page, and never with `behavior: smooth` -- both of those are what
-    // made the earlier `focusin` + `scrollIntoView` attempt fight the
-    // WebView and shake. A no-op when the field is already visible.
+    // Only ever touches the nearest scroller's `scrollTop` (a rich-text
+    // editable can be that scroller itself), never the page, and never with
+    // `behavior: smooth` -- both of those are what made the earlier `focusin`
+    // + `scrollIntoView` attempt fight the WebView and shake. A no-op when the
+    // field is already visible.
     function revealFocused() {
       var el = document.activeElement;
       if (!el) return;
       var tag = el.tagName;
       if (tag !== "INPUT" && tag !== "TEXTAREA" && !el.isContentEditable) return;
+      // In a rich-text editor the focused element is the whole editable root,
+      // which can be its own scroller (the post composer's body) and is always
+      // "in view" of itself -- aiming at it never scrolled. Measured: caret on
+      // the 6th line, body shrunk to 5 lines by the keyboard, caret left just
+      // below the visible area. So aim at the caret, and let the root itself
+      // count as the scroller.
+      var er = el.getBoundingClientRect();
+      var start = el.parentElement;
+      if (el.isContentEditable) {
+        er = caretRect() || er;
+        start = el;
+      }
       // Prefer a scroller that is actually overflowing, but fall back to the
       // first `overflow-y: auto|scroll` ancestor: right after the modal is
       // capped the overflow may not have been recomputed yet.
-      var sc = el.parentElement, fallback = null;
+      var sc = start, fallback = null;
       while (sc && sc !== document.body) {
         var oy = getComputedStyle(sc).overflowY;
         if (oy === "auto" || oy === "scroll") {
@@ -83,7 +109,6 @@ pub fn App() -> Element {
       }
       if (!sc || sc === document.body) sc = fallback;
       if (!sc) return;
-      var er = el.getBoundingClientRect();
       var cr = sc.getBoundingClientRect();
       var m = 12;
       if (er.bottom > cr.bottom - m) {
@@ -102,6 +127,11 @@ pub fn App() -> Element {
       var grew = kb > lastKb;
       lastKb = kb;
       document.documentElement.style.setProperty("--kb-inset", kb + "px");
+      // A class as well as the variable: CSS can't select on a custom
+      // property's value, and the post composer drops its non-typing chrome
+      // (type tabs, publish bar) while the keyboard is up. Toggled on the same
+      // settled write, so the layout changes once per open/close.
+      document.documentElement.classList.toggle("kb-open", kb > 0);
       // Published together with the keyboard, and only once it has settled:
       // the modal's height derives from this, so writing it on every frame of
       // the keyboard animation is exactly the stepping that read as shaking.
@@ -137,8 +167,9 @@ pub fn App() -> Element {
       // iOS WKWebView shifts the *visual* viewport up (offsetTop > 0) to keep
       // a focused input above the keyboard, dragging `position: fixed`
       // elements with it. Expose the offset so the scroll lock can apply an
-      // equal counter-translate. 0 on Android; not debounced because nothing
-      // resizes off it.
+      // equal counter-translate. The Android WebView pans too when the caret
+      // sits where the keyboard will open (measured 192 on a 640px screen).
+      // Not debounced because nothing resizes off it.
       document.documentElement.style.setProperty(
         "--vv-offset-top", Math.round(vv.offsetTop) + "px");
 

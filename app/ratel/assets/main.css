@@ -2282,6 +2282,16 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 .ratel-editor .re-modal-mask {
   position: fixed;
   inset: 0;
+  /* Cover the visible part of the screen, not the whole layout viewport. A
+     soft keyboard shrinks only the visual viewport: centred in the full
+     screen, the image modal put its URL field under the keyboard, the WebView
+     scrolled to reveal it, and the title and the drop zone went past the top
+     edge (Android, 640px phone). `--vv-offset-top` / `--vv-height` come from
+     app.rs; with the keyboard closed they are 0 and the full height, so
+     nothing changes then. */
+  top: var(--vv-offset-top, 0px);
+  bottom: auto;
+  height: var(--vv-height, 100%);
   background: rgba(6, 6, 14, 0.65);
   backdrop-filter: blur(6px);
   display: none;
@@ -2289,6 +2299,8 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   justify-content: center;
   z-index: 200;
   padding: 20px;
+  /* Clear of the status bar the app draws under (0 on desktop). */
+  padding-top: calc(20px + env(safe-area-inset-top));
 }
 .ratel-editor .re-modal-mask.open { display: flex; }
 .ratel-editor .re-modal {
@@ -2302,6 +2314,11 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   flex-direction: column;
   gap: 14px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  /* Shorter visible area than the modal (keyboard up): scroll inside it
+     instead of running past the backdrop. */
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .ratel-editor .re-modal__title {
   font-family: 'Orbitron', sans-serif;
@@ -2445,6 +2462,17 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
+}
+/* Typing an image URL (the only field in this modal that raises a keyboard):
+   drop the drop zone, the camera button and the divider so the title, the URL
+   field and Cancel / Insert URL fit above the keyboard. On a 640px phone the
+   full modal had to scroll there, leaving the field or the buttons out of
+   view. `kb-open` is toggled on <html> by app.rs; they return when the
+   keyboard closes. */
+html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-dropzone,
+html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-camera-btn,
+html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-modal__divider {
+  display: none;
 }
 .ratel-editor .re-btn {
   padding: 8px 16px;
@@ -2616,6 +2644,11 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
     display: block;
     position: fixed;
     inset: 0;
+    /* Follow the WebView's visual-viewport pan, as `.composer-arena` does.
+       A fixed box is placed against the layout viewport, so when the WebView
+       has scrolled to reveal the caret the whole sheet would sit that many
+       px too high. 0 whenever nothing is panned. */
+    transform: translateY(var(--vv-offset-top, 0px));
     /* Above the app's bottom bars and drawers, below nothing else the
        editor owns. Matches the z-index the selection bubble uses. */
     z-index: 120;
@@ -2634,7 +2667,12 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
        — the same variable `.composer-arena` sizes itself with. 0 when the
        keyboard is closed. */
     bottom: var(--kb-inset, 0px);
-    max-height: 72vh;
+    /* Capped by the visible height as well as the screen. With the keyboard
+       up, 72vh (461px on a 640px screen) is taller than the 341px left above
+       it, so the grip, the title and the Done button were pushed past the
+       top edge. `--vv-height` is the visible height app.rs publishes together
+       with `--kb-inset`; with the keyboard closed the 72vh cap still wins. */
+    max-height: min(72vh, calc(var(--vv-height, 100vh) - env(safe-area-inset-top) - 12px));
     display: flex;
     flex-direction: column;
     background: var(--re-toolbar-bg);
@@ -2647,6 +2685,15 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
     /* Clear the home indicator / gesture bar. */
     padding-bottom: env(safe-area-inset-bottom);
     animation: re-fmt-sheet-in 0.18s ease-out;
+  }
+  /* The keyboard was dismissed for the sheet (touch devices, see the
+     editor's script.js). Sit on the bottom edge at full height right away
+     instead of following `--kb-inset` / `--vv-height`, which are published
+     only once the keyboard has settled and would leave the sheet floating
+     where the keyboard used to be for a moment. */
+  .ratel-editor .re-fmt-sheet--no-kb .re-fmt-sheet__panel {
+    bottom: 0;
+    max-height: 72vh;
   }
   @keyframes re-fmt-sheet-in {
     from {
@@ -8459,6 +8506,19 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
      composer to the area above the keyboard so the bottom toolbar / publish
      bar stay reachable. 0 when the keyboard is closed. */
   height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--kb-inset, 0px));
+  /* Follow the visual viewport down when the WebView pans it. Tapping low in
+     the body puts the caret where the keyboard will be, so the WebView scrolls
+     the visual viewport to reveal it; `--kb-inset` then shrinks the composer
+     and the caret moves up, but the pan is never undone. Measured on a 640px
+     screen: keyboard 299, composer shrunk to 24..341 as intended, yet
+     `visualViewport.offsetTop` stayed 192 — so on screen the composer sat at
+     -168..149, title and body above the top edge, the publish bar floating
+     mid-screen and nothing between it and the keyboard. Offsetting by the
+     pan puts it back at 24..341. `top` (relative offset), not `transform`: a
+     transform — even of 0px — makes this box the containing block for its
+     fixed descendants (the mobile options sheet, `::before`), which would move
+     them with the keyboard closed too. 0 whenever nothing is panned. */
+  top: var(--vv-offset-top, 0px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -9348,7 +9408,11 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
     backdrop-filter: blur(24px);
     border-top: 1px solid var(--border-subtle);
     border-radius: 20px 20px 0 0;
-    padding: 8px 16px 22px;
+    /* Bottom padding clears the system navigation bar: the sheet is pinned to
+       `bottom: 0` and the WebView draws under that bar, so with only 22px the
+       last option (Threads "coming soon") stayed half behind Android's
+       3-button nav even at full scroll. 0 inset on desktop. */
+    padding: 0 16px calc(22px + env(safe-area-inset-bottom));
     gap: 12px;
     max-height: 85vh;
     overflow-y: auto;
@@ -9358,21 +9422,27 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
     transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .side-panel[data-open="true"] { transform: translateY(0); }
+  /* The sheet is its own scroller and this head sticks to its top. Two things
+     let the options scrolled past show through it: the head stuck below the
+     sheet's 8px top padding, leaving a strip above it, and its background
+     faded to transparent over the lower 40%. The sheet's top padding now
+     lives inside the head (14px + 8px, so nothing moves), and the head is
+     opaque. */
   .side-panel__head {
     display: grid;
     grid-template-columns: 30px 1fr 30px;
     align-items: center;
-    padding: 14px 4px 6px;
+    padding: 22px 4px 6px;
     position: sticky;
     top: 0;
-    background: linear-gradient(180deg, var(--dark, rgba(8, 8, 18, 1)) var(--light, rgba(255, 255, 255, 1)) 60%, transparent);
+    background: var(--dark, rgba(8, 8, 18, 1)) var(--light, rgba(255, 255, 255, 1));
     z-index: 1;
   }
   .side-panel__handle {
     display: block;
     position: absolute;
     left: 50%;
-    top: 6px;
+    top: 14px;
     transform: translateX(-50%);
     width: 40px;
     height: 4px;
@@ -9413,7 +9483,10 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
 
   .bottom-bar__btn--desktop { display: none; }
   .bottom-bar__btn--mobile { display: inline-flex; }
-  .bottom-bar__btn--mobile.bottom-bar__btn--primary { padding: 10px 18px; font-size: 11px; }
+  /* Options and Publish sit side by side, so they share one size. They used
+     to differ (Options 8px/10px padding at 9px text below 500px, Publish
+     10px/18px at 11px), which read as two unrelated buttons. */
+  .bottom-bar__btn--mobile { padding: 10px 16px; font-size: 11px; }
 }
 @media (max-width: 500px) {
   .arena-topbar { padding: 12px 14px; }
@@ -9435,10 +9508,65 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
      side panel still surfaces autosave state when needed. */
   .bottom-bar__left { display: none; }
   .bottom-bar__right { gap: 6px; margin-left: auto; }
-  .bottom-bar__btn--mobile:not(.bottom-bar__btn--primary) { padding: 8px 10px; font-size: 9px; }
 
   .side-card { padding: 14px; }
   .vis-row { gap: 5px; }
+}
+
+/* Soft keyboard open (`html.kb-open`, toggled by app.rs). The composer
+   shrinks to the area above the keyboard, but every piece of chrome kept
+   its size, so the writing area got whatever was left. Measured on a
+   640px-tall phone: 317px above the keyboard, the publish bar alone took
+   65 and the body scroller was 20px — less than one line, so the line being
+   typed was never visible. While typing, drop what isn't used for typing:
+   the post-type tabs and the bottom bar go, Publish moves into the top bar
+   (so it stays one tap away), and the vertical spacing tightens. Options
+   is back as soon as the keyboard closes. */
+@media (max-width: 980px) {
+  html.kb-open .composer-arena .type-segmented,
+  html.kb-open .composer-arena > .bottom-bar {
+    display: none;
+  }
+  html.kb-open .composer-arena .topbar-btn--primary {
+    display: inline-flex;
+    flex-shrink: 0;
+    height: 34px;
+    padding: 0 14px;
+  }
+  html.kb-open .composer-arena .arena-topbar {
+    gap: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  /* With Publish added, the top bar holds back + title + autosave pill +
+     Publish. At 360px the longest status ("저장되지 않은 변경사항") left the
+     title too little room and "새 게시물" wrapped onto two lines. The title
+     never wraps; the pill is compacted, and if a longer status or Publish
+     label still doesn't fit, the pill truncates with an ellipsis instead. */
+  html.kb-open .composer-arena .arena-topbar__left { flex-shrink: 0; }
+  html.kb-open .composer-arena .topbar-title__main { white-space: nowrap; }
+  html.kb-open .composer-arena .arena-topbar__right { min-width: 0; gap: 6px; }
+  html.kb-open .composer-arena .autosave {
+    display: block;
+    min-width: 0;
+    margin-right: 0;
+    padding: 5px 8px;
+    font-size: 10px;
+    letter-spacing: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  html.kb-open .composer-arena .autosave::before {
+    display: inline-block;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  html.kb-open .composer-arena .composer-page { padding-top: 8px; }
+  html.kb-open .composer-arena .composer { gap: 8px; }
+}
+@media (max-width: 500px) {
+  html.kb-open .composer-arena .title-input { font-size: 20px; padding: 6px 0; }
 }
 
 
@@ -16461,7 +16589,18 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
   .filter-chips { flex: 1 1 100%; flex-wrap: wrap; overflow-x: visible; }
   .sort { margin-left: auto; }
   .draft-card { grid-template-columns: 18px 1fr; padding: 14px 16px; gap: 11px; }
-  .draft-card__actions { grid-column: 2; justify-self: flex-start; opacity: 1; margin-top: 4px; }
+  /* The usual phone card layout: overflow (⋮) pinned top-right, the primary
+     action (이어쓰기) bottom-right. Both used to sit together bottom-left,
+     under the meta line. `.draft-card` is already `position: relative`, so
+     the ⋮ button is lifted out of the actions row and pinned to the card; at
+     top/right 8px its 16px icon lands on the card's 16px content padding and
+     its vertical centre on the title line. The title row keeps 34px clear on
+     the right so a long title cannot run under it, and the menu opens right
+     below the button instead of from the card's bottom edge. */
+  .draft-card__title-row { padding-right: 34px; }
+  .draft-card__actions { grid-column: 2; justify-self: end; opacity: 1; margin-top: 4px; }
+  .draft-card__more { position: absolute; top: 8px; right: 8px; }
+  .draft-menu { top: 44px; right: 8px; }
   .draft-card__resume { padding: 6px 12px; }
 }
 @media (max-width: 500px) {
@@ -17151,6 +17290,14 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
      parent's intrinsic height entirely. */
   position: fixed;
   inset: 0;
+  /* Let `inset: 0` size it. The mobile `.arena` rule gives every arena
+     `height: calc(100dvh - safe-area insets - --kb-inset)` plus a matching
+     max-height; on a fixed box a height wins over `bottom: 0`, so this one
+     stopped 72px short of the screen bottom (568 of 640 on a phone with a
+     3-button nav) and the footer, which already pads for the nav bar, floated
+     above a blank band. */
+  height: auto;
+  max-height: none;
   z-index: 5;
   display: flex;
   flex-direction: column;
@@ -52684,6 +52831,11 @@ html[data-theme="light"] .ff-home .featured-title {
     100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) -
       var(--kb-inset, 0px)
   );
+  /* Follow the WebView's visual-viewport pan, as `.composer-arena` does: a
+     tap low in the body puts the caret where the keyboard opens, the WebView
+     scrolls to reveal it, and the pan is never undone once the column has
+     shrunk above the keyboard. 0 whenever nothing is panned. */
+  top: var(--vv-offset-top, 0px);
   overflow: hidden;
   background: var(--rd-bg-void);
   color: var(--rd-text-primary);
@@ -53363,6 +53515,31 @@ html[data-theme="light"] .ff-home .featured-title {
   .report-detail__title { font-size: 26px !important; }
   .report-detail__doc { padding: 12px 10px; }
   .report-detail__chart-canvas--bar { padding: 14px 6px 44px; gap: 6px; }
+}
+
+/* Soft keyboard open (`html.kb-open`, toggled by app.rs) on the report
+   editor. The column shrinks above the keyboard, but the breadcrumb bar, the
+   "Action · Report" eyebrow, a 26px title and the subtitle kept their size,
+   so the body scroller was left about one line tall: pressing Enter scrolled
+   the new line into that strip and the previous line out of view, which read
+   as Enter not working. While typing, drop what isn't used for typing and
+   tighten the rest; everything returns when the keyboard closes. */
+@media (max-width: 980px) {
+  html.kb-open .report-detail__topbar,
+  html.kb-open .report-detail__banner,
+  html.kb-open .report-detail__cover {
+    display: none;
+  }
+  html.kb-open .report-detail .report-detail__doc {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  html.kb-open .report-detail__doc-inner { gap: 2px; }
+  html.kb-open .report-detail__title {
+    font-size: 20px !important;
+    padding: 2px 0;
+  }
+  html.kb-open .report-detail__subtitle { padding: 0 0 4px; }
 }
 
 /* ── Viewer mode — non-admin members opening a published report.

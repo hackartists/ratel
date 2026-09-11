@@ -78,7 +78,12 @@
         bridge.value = html;
         bridge.dispatchEvent(new Event("input", { bubbles: true }));
       }
-      syncToolbarState();
+      // Only with a live selection to read. The mobile format sheet blurs the
+      // editor and clears the visible selection after each command; syncing
+      // here, 120ms later, read "nothing selected" and switched every pressed
+      // state off, so tapping Italic applied it but left the button unlit and
+      // looked like it had not worked.
+      if (document.activeElement === editor) syncToolbarState();
     }
 
     editor.addEventListener("input", scheduleUpdate);
@@ -356,7 +361,9 @@
       }
     }
     function openModal(name) {
-      savedRange = saveSelection();
+      // Fall back to the last known editor selection when there is no live
+      // one: the mobile format sheet clears the visible selection while open.
+      savedRange = saveSelection() || savedRange;
       var mask = root.querySelector("[data-modal='" + name + "']");
       if (!mask) return;
       mask.classList.add("open");
@@ -574,11 +581,81 @@
       // `.composer-arena` sizes itself with). An earlier revision of this
       // file duplicated that listener here — one source of truth is better,
       // and the global one is already proven on both platforms.
-      function setFmtOpen(open) {
+      // On a touch device the sheet takes the keyboard's place instead of
+      // stacking on it: with the keyboard up a 640px phone has ~300px left,
+      // which fits two of the sheet's sections. So opening it dismisses the
+      // keyboard, and closing it hands the keyboard back if the user was
+      // typing. `inputmode="none"` keeps the keyboard down while the editor
+      // stays the command target: `applyCmd` re-focuses the editor to restore
+      // the selection, and without it every tap on Bold would raise the
+      // keyboard again.
+      var touchDevice =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(pointer: coarse)").matches;
+      var reopenKeyboard = false;
+
+      // The selection is kept for the sheet's commands, but the OS draws the
+      // selection highlight and handles on a layer above the page, so text
+      // selected before opening the sheet showed through it (iOS: blue range
+      // and handles over "Text style"). While the sheet is open the selection
+      // lives only in `savedRange`; `restoreSelection` puts it back for each
+      // command and when Done hands the keyboard back.
+      function hideSelection() {
+        var sel = window.getSelection();
+        if (sel && sel.rangeCount) sel.removeAllRanges();
+      }
+      function parkSelection() {
+        if (!touchDevice || fmtSheet.dataset.open !== "true") return;
+        if (document.activeElement === editor) {
+          // Snapshot the post-command selection and pressed states first;
+          // both read the live selection.
+          savedRange = saveSelection() || savedRange;
+          syncToolbarState();
+          syncBlockLabel();
+          editor.blur();
+        }
+        hideSelection();
+      }
+
+      // `returnToEditor === false` closes without re-focusing the editor —
+      // for commands that hand off to a modal, which owns focus next.
+      function setFmtOpen(open, returnToEditor) {
         fmtSheet.dataset.open = open ? "true" : "false";
         root.querySelectorAll("[data-fmt-open]").forEach(function (btn) {
           btn.setAttribute("aria-expanded", open ? "true" : "false");
         });
+        if (!touchDevice) return;
+        if (open) {
+          // "Was typing" means the keyboard was actually up, not just that the
+          // editor had focus: Android's back key hides the keyboard but leaves
+          // the editor focused, and Done must not raise a keyboard the user
+          // had just put away. `kb-open` is toggled on <html> by app.rs from
+          // `visualViewport` once the keyboard has settled.
+          reopenKeyboard =
+            document.activeElement === editor &&
+            document.documentElement.classList.contains("kb-open");
+          fmtSheet.classList.add("re-fmt-sheet--no-kb");
+          editor.setAttribute("inputmode", "none");
+          if (document.activeElement === editor) {
+            savedRange = saveSelection();
+            editor.blur();
+          }
+          hideSelection();
+          return;
+        }
+        fmtSheet.classList.remove("re-fmt-sheet--no-kb");
+        // Drop focus before lifting `inputmode="none"`. With the editor still
+        // focused, Android raised the keyboard on Done even when the user had
+        // put it away (back key, open the sheet, Done). Commands run from the
+        // sheet re-focus the editor, so this matters after any Bold tap too.
+        // Whether the keyboard comes back is then decided only by the fresh
+        // focus below.
+        if (document.activeElement === editor) editor.blur();
+        editor.removeAttribute("inputmode");
+        if (returnToEditor !== false && reopenKeyboard) {
+          restoreSelection();
+        }
+        reopenKeyboard = false;
       }
 
       root.querySelectorAll("[data-fmt-open]").forEach(function (btn) {
@@ -619,6 +696,7 @@
           // and the platform note apps alike keep the sheet up so the
           // next command is one tap away.
           syncBlockLabelFrom(item.dataset.block);
+          parkSelection();
         });
       });
 
@@ -645,9 +723,14 @@
       // the modal, since that was registered first.
       var modalCmds = { link: 1, image: 1, youtube: 1, table: 1 };
       fmtSheet.querySelectorAll(".re-tb-btn[data-cmd]").forEach(function (btn) {
-        if (!modalCmds[btn.dataset.cmd]) return;
+        if (!modalCmds[btn.dataset.cmd]) {
+          // Runs after the shared handler has applied the command.
+          btn.addEventListener("click", parkSelection);
+          return;
+        }
         btn.addEventListener("click", function () {
-          setFmtOpen(false);
+          // The modal has already focused its own input; don't take it back.
+          setFmtOpen(false, false);
         });
       });
     }

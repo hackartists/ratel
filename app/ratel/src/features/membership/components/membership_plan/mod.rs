@@ -33,6 +33,23 @@ fn enterprise_contact() {
     let subject = "Enterprise Membership Inquiry";
     let body = "Hello,%0D%0A%0D%0AI would like to learn more about the Enterprise membership plan.%0D%0A%0D%0AThank you.";
     let mailto_url = format!("mailto:{}?subject={}&body={}", email, subject, body);
+    // In the Android / iOS app `window.open("mailto:…")` does nothing — the
+    // WebView never hands the URL to a mail app — so ask the opener plugin to
+    // open it with the device's default mail app (its default scope allows
+    // `mailto:`). Goes through `invoke_tauri`, the bridge the native API and
+    // file commands already use. The web build keeps `window.open`.
+    #[cfg(feature = "tauri-web")]
+    spawn(async move {
+        let res: crate::common::Result<()> = crate::common::utils::web::invoke_tauri(
+            "plugin:opener|open_url",
+            serde_json::json!({ "url": mailto_url }),
+        )
+        .await;
+        if let Err(e) = res {
+            crate::error!("open enterprise contact mailto failed: {e}");
+        }
+    });
+    #[cfg(not(feature = "tauri-web"))]
     let _ = web_sys::window().and_then(|w| w.open_with_url(&mailto_url).ok());
 }
 
