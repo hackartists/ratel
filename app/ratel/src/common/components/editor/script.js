@@ -356,7 +356,9 @@
       }
     }
     function openModal(name) {
-      savedRange = saveSelection();
+      // Fall back to the last known editor selection when there is no live
+      // one: the mobile format sheet clears the visible selection while open.
+      savedRange = saveSelection() || savedRange;
       var mask = root.querySelector("[data-modal='" + name + "']");
       if (!mask) return;
       mask.classList.add("open");
@@ -587,6 +589,29 @@
         window.matchMedia("(pointer: coarse)").matches;
       var reopenKeyboard = false;
 
+      // The selection is kept for the sheet's commands, but the OS draws the
+      // selection highlight and handles on a layer above the page, so text
+      // selected before opening the sheet showed through it (iOS: blue range
+      // and handles over "Text style"). While the sheet is open the selection
+      // lives only in `savedRange`; `restoreSelection` puts it back for each
+      // command and when Done hands the keyboard back.
+      function hideSelection() {
+        var sel = window.getSelection();
+        if (sel && sel.rangeCount) sel.removeAllRanges();
+      }
+      function parkSelection() {
+        if (!touchDevice || fmtSheet.dataset.open !== "true") return;
+        if (document.activeElement === editor) {
+          // Snapshot the post-command selection and pressed states first;
+          // both read the live selection.
+          savedRange = saveSelection() || savedRange;
+          syncToolbarState();
+          syncBlockLabel();
+          editor.blur();
+        }
+        hideSelection();
+      }
+
       // `returnToEditor === false` closes without re-focusing the editor —
       // for commands that hand off to a modal, which owns focus next.
       function setFmtOpen(open, returnToEditor) {
@@ -610,6 +635,7 @@
             savedRange = saveSelection();
             editor.blur();
           }
+          hideSelection();
           return;
         }
         fmtSheet.classList.remove("re-fmt-sheet--no-kb");
@@ -665,6 +691,7 @@
           // and the platform note apps alike keep the sheet up so the
           // next command is one tap away.
           syncBlockLabelFrom(item.dataset.block);
+          parkSelection();
         });
       });
 
@@ -691,7 +718,11 @@
       // the modal, since that was registered first.
       var modalCmds = { link: 1, image: 1, youtube: 1, table: 1 };
       fmtSheet.querySelectorAll(".re-tb-btn[data-cmd]").forEach(function (btn) {
-        if (!modalCmds[btn.dataset.cmd]) return;
+        if (!modalCmds[btn.dataset.cmd]) {
+          // Runs after the shared handler has applied the command.
+          btn.addEventListener("click", parkSelection);
+          return;
+        }
         btn.addEventListener("click", function () {
           // The modal has already focused its own input; don't take it back.
           setFmtOpen(false, false);
