@@ -46,13 +46,6 @@ pub fn UserLayout(username: ReadSignal<String>) -> Element {
     // Provide selected category context shared with child routes
     use_context_provider(|| Signal::new(Option::<String>::None));
 
-    // Pull-to-refresh (mobile/Tauri only) for every social/team list page.
-    // They share this layout's `.social-scroll` outlet wrapper, so the gesture
-    // is installed once here and each child page registers its own refresh via
-    // `use_register_refresh`.
-    let page_refresh = use_provide_page_refresh();
-    use_pull_to_refresh(".social-scroll", move || page_refresh.run());
-
     rsx! {
         div {
             // `h-full`, not `h-screen`. `h-screen` is forced to `100dvh`
