@@ -26770,8 +26770,22 @@ body.comments-panel-resizing {
     width: 100% !important;
     min-width: 0 !important;
     /* Expanded sheet rises to ~75% so the discussion (topbar + body peek)
-       stays visible above it instead of being fully covered. */
-    max-height: 75vh;
+       stays visible above it instead of being fully covered.
+
+       Capped by the VISIBLE height as well, minus the status bar. The Android
+       WebView does not shrink the layout viewport for the keyboard — it pans
+       the visual viewport down to reveal the focused composer, and this sheet
+       (`position: fixed`, laid out against the layout viewport) rides along.
+       Measured on a 640px screen with the keyboard open: innerHeight 640,
+       visualViewport.height 341, offsetTop 299. `75vh` stayed 480, so the
+       sheet's on-screen top was 160 - 299 = -139 and its first comments sat
+       under the clock. `--vv-height` is the visible height app.rs publishes;
+       with it the cap is min(480, 341 - 24) = 317 and the sheet ends just
+       below the status bar. Keyboard closed it is min(480, 616) — unchanged. */
+    max-height: min(
+      75vh,
+      calc(var(--vv-height, 100dvh) - env(safe-area-inset-top))
+    );
     border-left: none;
     border-top: 1px solid var(--border);
     border-radius: 20px 20px 0 0;
@@ -26794,6 +26808,28 @@ body.comments-panel-resizing {
   }
   .comments-panel.dragging {
     transition: none;
+  }
+  /* Keep the status-bar strip painted while the keyboard is up. Capping the
+     sheet (above) stops the sheet itself going under the clock, but the
+     WebView pans the whole layout by `visualViewport.offsetTop` (299 of a
+     640px screen, measured) to reveal the composer, so whatever sits 299px
+     down the page — discussion body text — slides into the top 24px and is
+     drawn over the clock. This fixed strip follows the visual viewport
+     (`--vv-offset-top` is published unthrottled by app.rs) and covers exactly
+     the status-bar inset with the arena background. With the keyboard closed
+     it sits over `:root`'s inset padding, which `::before` already fills with
+     the same colour, so nothing changes there. */
+  .discussion-arena::after {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top);
+    background: var(--bg);
+    transform: translateY(var(--vv-offset-top, 0px));
+    z-index: 101;
+    pointer-events: none;
   }
 
   /* Show sheet handle */
