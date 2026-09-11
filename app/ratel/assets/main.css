@@ -9480,12 +9480,38 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
   }
   html.kb-open .composer-arena .topbar-btn--primary {
     display: inline-flex;
+    flex-shrink: 0;
     height: 34px;
     padding: 0 14px;
   }
   html.kb-open .composer-arena .arena-topbar {
+    gap: 8px;
     padding-top: 8px;
     padding-bottom: 8px;
+  }
+  /* With Publish added, the top bar holds back + title + autosave pill +
+     Publish. At 360px the longest status ("저장되지 않은 변경사항") left the
+     title too little room and "새 게시물" wrapped onto two lines. The title
+     never wraps; the pill is compacted, and if a longer status or Publish
+     label still doesn't fit, the pill truncates with an ellipsis instead. */
+  html.kb-open .composer-arena .arena-topbar__left { flex-shrink: 0; }
+  html.kb-open .composer-arena .topbar-title__main { white-space: nowrap; }
+  html.kb-open .composer-arena .arena-topbar__right { min-width: 0; gap: 6px; }
+  html.kb-open .composer-arena .autosave {
+    display: block;
+    min-width: 0;
+    margin-right: 0;
+    padding: 5px 8px;
+    font-size: 10px;
+    letter-spacing: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  html.kb-open .composer-arena .autosave::before {
+    display: inline-block;
+    margin-right: 4px;
+    vertical-align: middle;
   }
   html.kb-open .composer-arena .composer-page { padding-top: 8px; }
   html.kb-open .composer-arena .composer { gap: 8px; }
