@@ -2658,6 +2658,15 @@ html[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator {
     padding-bottom: env(safe-area-inset-bottom);
     animation: re-fmt-sheet-in 0.18s ease-out;
   }
+  /* The keyboard was dismissed for the sheet (touch devices, see the
+     editor's script.js). Sit on the bottom edge at full height right away
+     instead of following `--kb-inset` / `--vv-height`, which are published
+     only once the keyboard has settled and would leave the sheet floating
+     where the keyboard used to be for a moment. */
+  .ratel-editor .re-fmt-sheet--no-kb .re-fmt-sheet__panel {
+    bottom: 0;
+    max-height: 72vh;
+  }
   @keyframes re-fmt-sheet-in {
     from {
       transform: translateY(14px);

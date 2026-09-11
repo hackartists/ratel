@@ -574,11 +574,57 @@
       // `.composer-arena` sizes itself with). An earlier revision of this
       // file duplicated that listener here — one source of truth is better,
       // and the global one is already proven on both platforms.
-      function setFmtOpen(open) {
+      // On a touch device the sheet takes the keyboard's place instead of
+      // stacking on it: with the keyboard up a 640px phone has ~300px left,
+      // which fits two of the sheet's sections. So opening it dismisses the
+      // keyboard, and closing it hands the keyboard back if the user was
+      // typing. `inputmode="none"` keeps the keyboard down while the editor
+      // stays the command target: `applyCmd` re-focuses the editor to restore
+      // the selection, and without it every tap on Bold would raise the
+      // keyboard again.
+      var touchDevice =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(pointer: coarse)").matches;
+      var reopenKeyboard = false;
+
+      // `returnToEditor === false` closes without re-focusing the editor —
+      // for commands that hand off to a modal, which owns focus next.
+      function setFmtOpen(open, returnToEditor) {
         fmtSheet.dataset.open = open ? "true" : "false";
         root.querySelectorAll("[data-fmt-open]").forEach(function (btn) {
           btn.setAttribute("aria-expanded", open ? "true" : "false");
         });
+        if (!touchDevice) return;
+        if (open) {
+          // "Was typing" means the keyboard was actually up, not just that the
+          // editor had focus: Android's back key hides the keyboard but leaves
+          // the editor focused, and Done must not raise a keyboard the user
+          // had just put away. `kb-open` is toggled on <html> by app.rs from
+          // `visualViewport` once the keyboard has settled.
+          reopenKeyboard =
+            document.activeElement === editor &&
+            document.documentElement.classList.contains("kb-open");
+          fmtSheet.classList.add("re-fmt-sheet--no-kb");
+          editor.setAttribute("inputmode", "none");
+          if (document.activeElement === editor) {
+            savedRange = saveSelection();
+            editor.blur();
+          }
+          return;
+        }
+        fmtSheet.classList.remove("re-fmt-sheet--no-kb");
+        // Drop focus before lifting `inputmode="none"`. With the editor still
+        // focused, Android raised the keyboard on Done even when the user had
+        // put it away (back key, open the sheet, Done). Commands run from the
+        // sheet re-focus the editor, so this matters after any Bold tap too.
+        // Whether the keyboard comes back is then decided only by the fresh
+        // focus below.
+        if (document.activeElement === editor) editor.blur();
+        editor.removeAttribute("inputmode");
+        if (returnToEditor !== false && reopenKeyboard) {
+          restoreSelection();
+        }
+        reopenKeyboard = false;
       }
 
       root.querySelectorAll("[data-fmt-open]").forEach(function (btn) {
@@ -647,7 +693,8 @@
       fmtSheet.querySelectorAll(".re-tb-btn[data-cmd]").forEach(function (btn) {
         if (!modalCmds[btn.dataset.cmd]) return;
         btn.addEventListener("click", function () {
-          setFmtOpen(false);
+          // The modal has already focused its own input; don't take it back.
+          setFmtOpen(false, false);
         });
       });
     }
