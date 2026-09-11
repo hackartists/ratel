@@ -9483,7 +9483,10 @@ html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-modal__divider
 
   .bottom-bar__btn--desktop { display: none; }
   .bottom-bar__btn--mobile { display: inline-flex; }
-  .bottom-bar__btn--mobile.bottom-bar__btn--primary { padding: 10px 18px; font-size: 11px; }
+  /* Options and Publish sit side by side, so they share one size. They used
+     to differ (Options 8px/10px padding at 9px text below 500px, Publish
+     10px/18px at 11px), which read as two unrelated buttons. */
+  .bottom-bar__btn--mobile { padding: 10px 16px; font-size: 11px; }
 }
 @media (max-width: 500px) {
   .arena-topbar { padding: 12px 14px; }
@@ -9505,7 +9508,6 @@ html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-modal__divider
      side panel still surfaces autosave state when needed. */
   .bottom-bar__left { display: none; }
   .bottom-bar__right { gap: 6px; margin-left: auto; }
-  .bottom-bar__btn--mobile:not(.bottom-bar__btn--primary) { padding: 8px 10px; font-size: 9px; }
 
   .side-card { padding: 14px; }
   .vis-row { gap: 5px; }
