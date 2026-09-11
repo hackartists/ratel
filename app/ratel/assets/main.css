@@ -9408,7 +9408,11 @@ html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-modal__divider
     backdrop-filter: blur(24px);
     border-top: 1px solid var(--border-subtle);
     border-radius: 20px 20px 0 0;
-    padding: 8px 16px 22px;
+    /* Bottom padding clears the system navigation bar: the sheet is pinned to
+       `bottom: 0` and the WebView draws under that bar, so with only 22px the
+       last option (Threads "coming soon") stayed half behind Android's
+       3-button nav even at full scroll. 0 inset on desktop. */
+    padding: 0 16px calc(22px + env(safe-area-inset-bottom));
     gap: 12px;
     max-height: 85vh;
     overflow-y: auto;
@@ -9418,21 +9422,27 @@ html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-modal__divider
     transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .side-panel[data-open="true"] { transform: translateY(0); }
+  /* The sheet is its own scroller and this head sticks to its top. Two things
+     let the options scrolled past show through it: the head stuck below the
+     sheet's 8px top padding, leaving a strip above it, and its background
+     faded to transparent over the lower 40%. The sheet's top padding now
+     lives inside the head (14px + 8px, so nothing moves), and the head is
+     opaque. */
   .side-panel__head {
     display: grid;
     grid-template-columns: 30px 1fr 30px;
     align-items: center;
-    padding: 14px 4px 6px;
+    padding: 22px 4px 6px;
     position: sticky;
     top: 0;
-    background: linear-gradient(180deg, var(--dark, rgba(8, 8, 18, 1)) var(--light, rgba(255, 255, 255, 1)) 60%, transparent);
+    background: var(--dark, rgba(8, 8, 18, 1)) var(--light, rgba(255, 255, 255, 1));
     z-index: 1;
   }
   .side-panel__handle {
     display: block;
     position: absolute;
     left: 50%;
-    top: 6px;
+    top: 14px;
     transform: translateX(-50%);
     width: 40px;
     height: 4px;
