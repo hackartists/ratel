@@ -23,6 +23,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@ratel/ts-bridges':
+        specifier: workspace:*
+        version: link:../../packages/ts-bridges
       '@tanstack/react-query':
         specifier: ^5.62.0
         version: 5.90.5(react@18.3.1)
@@ -75,6 +78,15 @@ importers:
 
   packages/ts-bridges:
     devDependencies:
+      '@tanstack/react-query':
+        specifier: ^5.62.0
+        version: 5.90.5(react@18.3.1)
+      '@types/react':
+        specifier: ^18.3.18
+        version: 18.3.31
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
       typescript:
         specifier: ~5.6.3
         version: 5.6.3
