@@ -107,6 +107,17 @@ function serializeMain() {
 
 const slug = (route) => route.replace(/^\//, "").replace(/[^a-z0-9]+/gi, "-") || "index";
 
+/**
+ * Dioxus server-renders the finished page; React client-renders a route once
+ * its data resolves, so `html[data-app-ready]` can be set while the route is
+ * still suspended. Wait until `#main` has content before serializing.
+ */
+async function waitForMainContent(p) {
+  await p.waitForFunction(() => (document.getElementById("main")?.childElementCount ?? 0) > 0, null, {
+    timeout: 30_000,
+  });
+}
+
 test.describe("DOM parity: Dioxus vs React", () => {
   for (const route of ROUTES) {
     test(`#main matches on ${route}`, async ({ page, context }, testInfo) => {
@@ -114,6 +125,8 @@ test.describe("DOM parity: Dioxus vs React", () => {
       try {
         await goto(dioxusPage, `${DIOXUS_BASE_URL}${route}`);
         await goto(page, route);
+        await waitForMainContent(dioxusPage);
+        await waitForMainContent(page);
 
         const dioxus = await dioxusPage.evaluate(serializeMain);
         const react = await page.evaluate(serializeMain);
