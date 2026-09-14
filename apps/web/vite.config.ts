@@ -22,9 +22,9 @@ function tailwindCliEntry(): string {
   return resolve(dirname(pkgPath), bin);
 }
 
-// The Dioxus app keeps running until cutover, so the React app reads the SAME
-// stylesheet, script and image files instead of copies that could drift.
-const LEGACY_ASSETS = resolve(here, "../../app/ratel/assets");
+// Stylesheets, images and the shell-js bundles (`shell-js/`, built into this
+// directory) served at `/assets/*` and copied into the build output.
+const LEGACY_ASSETS = resolve(here, "assets");
 const TAILWIND_INPUT = resolve(here, "src/styles/tailwind.css");
 const TAILWIND_OUT = resolve(here, ".cache/tailwind.css");
 const TAILWIND_CLI = tailwindCliEntry();
@@ -127,10 +127,9 @@ function ratelLegacyShell(): Plugin {
       if (config.command !== "build" || config.build.ssr) return;
       const outDir = resolve(config.root, config.build.outDir);
       if (!existsSync(outDir)) return;
-      // Design mockups and the dx-generated tailwind output are not runtime assets.
       cpSync(LEGACY_ASSETS, join(outDir, "assets"), {
         recursive: true,
-        filter: (src) => !src.includes("/design") && !src.endsWith("/assets/tailwind.css") && !src.endsWith(".DS_Store"),
+        filter: (src) => !src.endsWith(".DS_Store"),
       });
       mkdirSync(join(outDir, "_ratel"), { recursive: true });
       cpSync(TAILWIND_OUT, join(outDir, TAILWIND_URL.slice(1)));

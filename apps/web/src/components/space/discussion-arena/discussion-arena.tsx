@@ -15,7 +15,7 @@
 // file's `useLegacyScript`.
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import discussionScript from "../../../../../../app/ratel/src/features/spaces/pages/index/action_pages/discussion/script.js?url&no-inline";
+import discussionScript from "../../../legacy-scripts/features/spaces/pages/index/action_pages/discussion/script.js?url&no-inline";
 import type { DiscussionCommentResponse, ReportReason, SpacePartition, SpacePostEntityType } from "@ratel/ts-bridges";
 import { CommentImageGrid } from "@/components/ui/comment-image-grid";
 import { ImageUploadPreview, type PendingImage } from "@/components/ui/image-upload-preview";

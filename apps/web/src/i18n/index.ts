@@ -1,8 +1,8 @@
 // i18next setup for the React app, following the biyard/asset console
 // convention: every bundle is a co-located `*.i18n.tsx` module exporting
 // `i18n = { en, ko }` plus a typed `use<Name>I18n()` hook, registered here as
-// a namespace. During the migration the bundles are generated from the Dioxus
-// `translate!` blocks (`./generated`, packages/i18n-extract).
+// a namespace. The bundles in `./generated` were extracted from the retired
+// Dioxus `translate!` blocks and are now edited directly.
 //
 // Language rules mirror packages/dioxus-translate so existing users keep their
 // setting and server error messages stay in the same language

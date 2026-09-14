@@ -3,7 +3,6 @@ members = [
   "app/ratel",
   "app/ratel-tauri/src-tauri",
   "packages/*",
-  "design-system-preview",
 ]
 resolver = "2"
 # packages/ts-bridges is the React app's TypeScript API package, not a crate.

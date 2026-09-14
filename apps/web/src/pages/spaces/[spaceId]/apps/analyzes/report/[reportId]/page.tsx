@@ -2,7 +2,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
 import { useLegacyScript } from "@/lib/legacy-scripts";
-import reportScript from "../../../../../../../../../../app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/report/script.js?url&no-inline";
+import reportScript from "../../../../../../../legacy-scripts/features/spaces/pages/apps/apps/analyzes/views/report/script.js?url&no-inline";
 import { DiscussionPanel } from "./components/discussion-panel";
 import { FollowPanel } from "./components/follow-panel";
 import { PollPanel } from "./components/poll-panel";

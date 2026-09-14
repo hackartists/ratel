@@ -1,8 +1,7 @@
-// The app's route table as plain data, mirroring the Dioxus `Route` enum in
-// app/ratel/src/route.rs: same URLs, same layout nesting, one leaf per enum
-// variant (`name`). `App.tsx` turns it into React Router records; the
-// `parity:routes` script reads this file directly with Node and diffs it
-// against route.rs, so keep it free of JSX and `@/` imports.
+// The app's route table as plain data, ported from the retired Dioxus `Route`
+// enum (app/ratel/src/route.rs): same URLs, same layout nesting, one leaf per
+// former enum variant (`name`). `App.tsx` turns it into React Router records;
+// keep it free of JSX and `@/` imports so plain Node scripts can read it.
 //
 // Matching: React Router ranks static segments above dynamic ones, so
 // `/posts`, `/admin`, `/arcade`, `/spaces/:spaceId` and

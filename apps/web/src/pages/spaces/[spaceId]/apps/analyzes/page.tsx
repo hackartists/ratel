@@ -6,7 +6,7 @@ import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import { useToast } from "@/lib/toast";
-import homeScript from "../../../../../../../../app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/home/script.js?url&no-inline";
+import homeScript from "../../../../../legacy-scripts/features/spaces/pages/apps/apps/analyzes/views/home/script.js?url&no-inline";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/home/mod.rs
 // (`SpaceAnalyzesAppPage`). Creators get the carousel; everyone else a

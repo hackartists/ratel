@@ -22,7 +22,6 @@ pub mod character;
 
 pub mod did;
 pub mod essence;
-pub mod me;
 
 pub mod notifications;
 

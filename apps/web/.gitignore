@@ -1,3 +1,7 @@
 .cache/
 dist/
 .vite-react-ssg-temp/
+assets/ratel-app-shell.js
+assets/wallet-connect.js
+shell-js/node_modules
+shell-js/dist

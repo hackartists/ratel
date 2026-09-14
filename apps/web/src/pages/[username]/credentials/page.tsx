@@ -16,7 +16,7 @@ import { clearKycHistory, exportVcDownload, takePgReturnId } from "./interop";
 
 // Loaded unmodified — copy-to-clipboard on the DID chip and the
 // `window.ratel.credentials.export_vc` download helper (§3.4.2).
-import credentialsScript from "../../../../../../app/ratel/src/features/social/pages/credentials/views/script.js?url&no-inline";
+import credentialsScript from "../../../legacy-scripts/features/social/pages/credentials/views/script.js?url&no-inline";
 
 // app/ratel/src/features/social/pages/credentials/views/mod.rs (`Home`): the
 // `/:username/credentials` route (same page for a user's own wall — the

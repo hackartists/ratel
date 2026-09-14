@@ -7,7 +7,7 @@ import {
 } from "@/i18n/generated/features/spaces/pages/report/views/report-list.i18n";
 import { dataBool } from "@/lib/dom";
 import { useLegacyScript } from "@/lib/legacy-scripts";
-import listScript from "../../../../../../../app/ratel/src/features/spaces/pages/report/views/script.js?url&no-inline";
+import listScript from "../../../../legacy-scripts/features/spaces/pages/report/views/script.js?url&no-inline";
 import { ReportListProvider, useReportList, useReportListContext } from "./hooks/use-report-list";
 
 // app/ratel/src/features/spaces/pages/report/views/{mod.rs,list_page.rs}

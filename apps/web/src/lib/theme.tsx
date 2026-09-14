@@ -1,5 +1,5 @@
 // app/ratel/src/common/components/theme_switcher (ThemeService) and the JS it
-// drives (app/ratel/js/src/ratel-app-shell/common/theme.js): same storage key,
+// drives (apps/web/shell-js/src/ratel-app-shell/common/theme.js): same storage key,
 // same `system` resolution, same `data-theme` attribute. index.html already
 // applies the saved theme before first paint; this keeps it in sync.
 import * as React from "react";

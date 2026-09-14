@@ -8,7 +8,7 @@ import { useEffect } from "react";
 // page imports the SAME file straight from `app/ratel/src/...` with
 // `?url&no-inline`, so there is no copy that can drift:
 //
-//   import essenceScript from "../../../../../app/ratel/src/features/essence/pages/sources/script.js?url&no-inline";
+//   import essenceScript from "../legacy-scripts/features/essence/pages/sources/script.js?url&no-inline";
 //   useLegacyScript(essenceScript);
 //
 //   - `?url` makes Vite hand back a URL instead of bundling the file: in dev it

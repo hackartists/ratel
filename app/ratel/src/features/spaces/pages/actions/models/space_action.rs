@@ -160,10 +160,10 @@ impl SpaceAction {
     /// Build the absolute participant-facing deep link for this action. Used
     /// by inbox + email notifications.
     pub fn get_cta_url(&self) -> String {
+        // Same path the web app's space index route uses (`/spaces/:spaceId`).
         let space_id = SpacePartition(self.space_id.clone());
-        let route = Route::SpaceIndexPage { space_id };
         let endpoint = crate::common::CommonConfig::default().env.web_endpoint();
-        format!("{}{}", endpoint, route)
+        format!("{}/spaces/{}", endpoint, space_id)
     }
 }
 

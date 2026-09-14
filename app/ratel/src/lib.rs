@@ -1,26 +1,15 @@
 #![allow(unused_imports, dead_code, ambiguous_glob_reexports)]
-mod app;
 pub mod common;
-pub mod components;
 pub mod config;
 mod constants;
-pub mod contexts;
-pub mod interop;
-pub mod root_layout;
-mod route;
-pub mod views;
-
-pub use app::App;
-pub use route::Route;
 
 pub use crate::common::*;
-pub use components::*;
-pub use contexts::*;
 pub mod features;
 pub use features::*;
 
 #[cfg(feature = "tauri-web")]
 pub mod tauri;
+
 
 // `axum` is pulled in transitively through `dioxus-fullstack` and exposed at
 // `dioxus::fullstack::axum`. Re-export it here so all in-crate paths can use
@@ -36,9 +25,7 @@ pub use dioxus::fullstack::axum;
 #[cfg(feature = "server")]
 pub use rmcp::schemars;
 
-use dioxus_primitives::dioxus_attributes::attributes;
-use dioxus_primitives::merge_attributes;
-use features::auth::{use_auth_context, AuthContext, AuthorizedNavigator, OptionalUser, User};
+use features::auth::{OptionalUser, User};
 
 // Server-function integration tests (`make test`: `--features server,bypass`).
 // Gated on `server` so a `cargo test` of a client build — `make gen-ts` runs

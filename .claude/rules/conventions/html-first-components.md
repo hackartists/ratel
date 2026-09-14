@@ -4,7 +4,7 @@ Build Dioxus components by designing in HTML/CSS/JS first, then converting to RS
 
 ## File Structure
 
-Pages and their sub-components each own their Rust + JS, but **all CSS lives in the central `app/ratel/assets/main.css`**. The page `mod.rs` is the entry point; sub-components live in named subdirectories:
+Pages and their sub-components each own their Rust + JS, but **all CSS lives in the central `apps/web/assets/main.css`**. The page `mod.rs` is the entry point; sub-components live in named subdirectories:
 
 ```
 <page_dir>/
@@ -24,12 +24,12 @@ Pages and their sub-components each own their Rust + JS, but **all CSS lives in 
 ```
 
 ### Key rules
-- **No `style.css` files inside `src/`.** All component CSS goes in `app/ratel/assets/main.css` under a section marker (`/* === src/features/<module>/<page>/<component> === */`).
+- **No `style.css` files inside `src/`.** All component CSS goes in `apps/web/assets/main.css` under a section marker (`/* === src/features/<module>/<page>/<component> === */`).
 - **No `document::Stylesheet { href: asset!("./style.css") }` inside components.** `main.css` is loaded once globally from `app.rs`; per-component links cause FOUC on SPA navigation.
 - The page `mod.rs` declares sub-component modules and re-exports them for use in `component.rs`
 - i18n is shared at the page level — sub-components import from the parent via `use crate::features::<module>::pages::<page>::*`
 - Extract a sub-component when it is self-contained (own panel, modal, card) and > ~50 lines of RSX
-- See `conventions/styling.md` § "All custom CSS lives in `app/ratel/assets/main.css`" for the full rationale.
+- See `conventions/styling.md` § "All custom CSS lives in `apps/web/assets/main.css`" for the full rationale.
 
 ### Page `mod.rs` pattern
 
@@ -65,7 +65,7 @@ pub fn MySubComponent(open: bool, on_close: EventHandler<()>) -> Element {
 
     rsx! {
         // No document::Stylesheet here — component CSS lives in
-        // app/ratel/assets/main.css and is loaded globally from app.rs.
+        // apps/web/assets/main.css and is loaded globally from app.rs.
         // ... RSX
     }
 }
@@ -88,7 +88,7 @@ HTML mockups in `docs/design/`:
 1. Write HTML mockup (docs/design/<name>.html)
 2. Approve design with user — iterate in browser
 3. Keep page.html as a reference; extract its <style> block into a new
-   section of app/ratel/assets/main.css under a section marker; keep its
+   section of apps/web/assets/main.css under a section marker; keep its
    <script> block as a sibling script.js if needed
 4. Run: dx translate -f page.html
 5. Paste RSX output into component.rs
@@ -129,7 +129,7 @@ rsx! {
 
 Use the space toggle pattern (`var(--dark, ...) var(--light, ...)`) for all colors that differ between themes. This leverages the `--dark` / `--light` custom properties set on `html[data-theme]` in `dx-components-theme.css`.
 
-Define component-scoped CSS variables at the root element of each component (inside `app/ratel/assets/main.css`):
+Define component-scoped CSS variables at the root element of each component (inside `apps/web/assets/main.css`):
 
 ```css
 /* === src/features/<module>/<component> === */
@@ -148,12 +148,12 @@ Define component-scoped CSS variables at the root element of each component (ins
 ```
 
 ### Rules
-- **All component CSS lives in `app/ratel/assets/main.css`** — never per-component `style.css` files
+- **All component CSS lives in `apps/web/assets/main.css`** — never per-component `style.css` files
 - **Never hardcode colors** — always use `var(--dark, ...) var(--light, ...)` for anything that should change between themes
 - Define variables on the component's root element, then reference them in child selectors
 - Use unique class names — every rule shares one global namespace; prefix with the component name
 - Accent colors that stay the same in both themes (e.g. `#fcb300` gold) can be used directly
-- Reference: `app/ratel/assets/dx-components-theme.css` for the global pattern
+- Reference: `apps/web/assets/dx-components-theme.css` for the global pattern
 
 ## CSS State Management
 

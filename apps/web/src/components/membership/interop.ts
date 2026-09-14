@@ -1,7 +1,7 @@
 // app/ratel/src/features/membership/interop (+ web/*.js drivers) and the
 // `enterprise_contact` helper of the team subscription page. The PortOne call
 // goes to `window.ratel.membership.requestIdentityVerification`, defined by
-// the unmodified app/ratel/js/src/ratel-app-shell/membership/index.js that the
+// the unmodified apps/web/shell-js/src/ratel-app-shell/membership/index.js that the
 // app shell loads globally.
 
 interface RatelMembershipJs {

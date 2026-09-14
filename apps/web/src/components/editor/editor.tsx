@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { dataBool } from "@/lib/dom";
 import { useLegacyScript } from "@/lib/legacy-scripts";
-import editorScript from "../../../../../app/ratel/src/common/components/editor/script.js?url&no-inline";
+import editorScript from "../../legacy-scripts/common/components/editor/script.js?url&no-inline";
 import { EditorFormatSheet, EditorMobileBar } from "./format-sheet";
 import { EditorBubble, EditorModals, EditorStatusbar, EditorTableActions } from "./overlays";
 import { EditorToolbar } from "./toolbar";

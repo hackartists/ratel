@@ -4,7 +4,7 @@
 //
 // The Rust drivers (`interop/web/*.js`) call
 // `window.ratel.spaces.apps.analyzes.*`, registered by the global
-// `ratel-app-shell.js` (app/ratel/js/src/ratel-app-shell/spaces/apps/analyzes.js).
+// `ratel-app-shell.js` (apps/web/shell-js/src/ratel-app-shell/spaces/apps/analyzes.js).
 // These functions call the same helpers with the same JSON payloads, and map a
 // missing helper or a thrown error to `SpaceAppError::*` like the drivers'
 // `dioxus.send(null)`.

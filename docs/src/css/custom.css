@@ -4,7 +4,7 @@
  * matches the Ratel app — dark base, gold primary, Raleway/Inter fonts.
  */
 
-/* === Brand palette (mirrors app/ratel/assets/tailwind-colors.css) ======== */
+/* === Brand palette (mirrors apps/web/assets/tailwind-colors.css) ======== */
 :root {
   --ratel-gold: #fcb300;
   --ratel-gold-soft: rgba(252, 179, 0, 0.08);

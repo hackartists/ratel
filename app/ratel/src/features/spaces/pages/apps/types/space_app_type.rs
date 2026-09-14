@@ -33,18 +33,6 @@ impl SpaceAppType {
         matches!(self, SpaceAppType::General | SpaceAppType::File)
     }
 
-    pub fn settings_path(&self, space_id: SpacePartition) -> Route {
-        match self {
-            SpaceAppType::General => Route::SpaceGeneralAppPage { space_id },
-            SpaceAppType::File => Route::SpaceFileAppPage { space_id },
-            SpaceAppType::Analyzes => Route::SpaceAnalyzesAppPage { space_id },
-            SpaceAppType::Panels => Route::SpacePanelsAppPage { space_id },
-            #[cfg(feature = "beta")]
-            SpaceAppType::IncentivePool => Route::SpaceIncentivePoolAppPage { space_id },
-            SpaceAppType::Report => Route::SpaceReportPage { space_id },
-        }
-    }
-
     pub fn class(&self) -> &'static str {
         match self {
             SpaceAppType::General => "bg-green-500",
@@ -54,54 +42,6 @@ impl SpaceAppType {
             SpaceAppType::File => "bg-violet-500",
             SpaceAppType::Panels => "bg-sky-500",
             SpaceAppType::Report => "bg-purple-500",
-        }
-    }
-
-    pub fn icon(&self) -> Element {
-        match self {
-            SpaceAppType::General => rsx! {
-                icons::settings::Settings2 {
-                    width: "24",
-                    height: "24",
-                    class: "text-white [&>path]:fill-current [&>circle]:stroke-current [&>circle]:fill-none",
-                }
-            },
-            SpaceAppType::Analyzes => rsx! {
-                icons::layouts::Apps {
-                    width: "24",
-                    height: "24",
-                    class: "text-white [&>path]:stroke-black",
-                }
-            },
-            #[cfg(feature = "beta")]
-            SpaceAppType::IncentivePool => rsx! {
-                icons::ratel::Chest {
-                    width: "24",
-                    height: "24",
-                    class: "text-white [&>path]:fill-none [&>path]:stroke-current",
-                }
-            },
-            SpaceAppType::File => rsx! {
-                icons::file::File {
-                    width: "24",
-                    height: "24",
-                    class: "text-white [&>path]:stroke-current [&>path]:fill-none",
-                }
-            },
-            SpaceAppType::Panels => rsx! {
-                icons::user::UserGroup {
-                    width: "24",
-                    height: "24",
-                    class: "text-white [&>path]:stroke-current [&>path]:fill-transparent",
-                }
-            },
-            SpaceAppType::Report => rsx! {
-                icons::file::File {
-                    width: "24",
-                    height: "24",
-                    class: "text-white [&>path]:stroke-current [&>path]:fill-none",
-                }
-            },
         }
     }
 

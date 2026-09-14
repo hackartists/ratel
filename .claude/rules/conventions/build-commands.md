@@ -1,52 +1,50 @@
----
-globs: ["Makefile", "docker-compose*.yml", "app/ratel/Cargo.toml"]
----
-
 # Build & Verification Commands
 
-## Checking compliation errors (app/ratel/)
+The web UI is the React app in `apps/web`; `app/ratel` is the API-only Rust
+server (Dioxus fullstack server-function macros, no UI). There is no `dx` step.
+
+## API server (app/ratel/)
 
 ```bash
-```
-
-## Dioxus App (app/ratel/)
-
-### Lint check
-```bash
-# MUST run after nay code change in app/ratel
-# This verifies compliation error for server
+# MUST run after any code change in app/ratel — server build (warnings are errors)
 cd app/ratel && DYNAMO_TABLE_PREFIX=ratel-dev RUSTFLAGS='-D warnings' cargo check --features server
 
-# MUST run after nay code change in app/ratel
-# This verifies compliation error for web
-cd app/ratel && DYNAMO_TABLE_PREFIX=ratel-dev RUSTFLAGS='-D warnings' cargo check --features web
+# MUST run after any code change in app/ratel — client stubs used to generate the TS API client
+cd app/ratel && DYNAMO_TABLE_PREFIX=ratel-dev RUSTFLAGS='-D warnings' cargo check --no-default-features --features tauri-web
 
-# MUST run after nay code change in app/ratel
-# This verifies compliation error for web
-cd app/ratel && DYNAMO_TABLE_PREFIX=ratel-dev RUSTFLAGS='-D warnings' cargo check --features mobile
+# After changing a server function signature or wire type: regenerate the TS client (committed)
+cd app/ratel && make gen-ts          # then commit packages/ts-bridges
 
-# MUST run after any code change in app/ratel/
-cd app/ratel && DYNAMO_TABLE_PREFIX=ratel-dev RUSTFLAGS='-D warnings' dx check --web
+# Local API server on :8080 (local-dev + bypass features)
+cd app/ratel && make run
 
-# MUST run after any code change in app/ratel/
-cd app/ratel && DYNAMO_TABLE_PREFIX=ratel-dev RUSTFLAGS='-D warnings' dx check --android
-
-# MUST run after any code change in app/ratel/
-cd app/ratel && DYNAMO_TABLE_PREFIX=ratel-dev RUSTFLAGS='-D warnings' dx check --ios
-
-# Dev server (port 8000)
-cd app/ratel && DYNAMO_TABLE_PREFIX=ratel-dev dx serve --port 8000 --web
+# Release image binary (API only) -> target/server-image/server
+cd app/ratel && make build           # or: make build-testing (bypass + local-dev)
 ```
-
 
 **`DYNAMO_TABLE_PREFIX` is required at compile time** for DynamoEntity. Use `ratel-dev` for dev, `ratel-local` for Docker local.
 
 **`RUSTFLAGS='-D warnings'` is required** for all build checks. Warnings are treated as errors — code must compile clean with zero warnings.
 
+## React web app (apps/web/)
+
+```bash
+# Shared JS bundles (ratel-app-shell.js, wallet-connect.js) -> apps/web/assets
+npm ci --prefix apps/web/shell-js && npm run build --prefix apps/web/shell-js
+
+pnpm -C apps/web typecheck
+pnpm -C apps/web build               # -> apps/web/dist
+pnpm -C apps/web dev                 # :5173, proxies API paths to VITE_API_TARGET (default dev)
+pnpm -C apps/web test:server         # static server + link-preview meta tests
+
+# Serve a build the way k3s does, proxying the API to a local server
+PROXY_API=1 API_ORIGIN=http://localhost:8080 PORT=4173 node apps/web/server/serve.mjs
+```
+
 ## Playwright E2E Tests
 
 ```bash
-cd playwright && npx playwright test <file>
+cd playwright && PLAYWRIGHT_BASE_URL=http://localhost:4173 npx playwright test <file>
 ```
 
 ## Local Dev (Docker)
@@ -58,4 +56,3 @@ make stop         # stop all
 
 docker start ratel-localstack-init-1 # Reset database
 ```
-

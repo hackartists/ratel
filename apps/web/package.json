@@ -8,8 +8,8 @@
     "build": "tsc --noEmit && vite-react-ssg build",
     "preview": "vite preview --port 4173",
     "typecheck": "tsc --noEmit",
-    "parity:tailwind": "node scripts/tailwind-parity.mjs",
-    "parity:routes": "node scripts/route-parity.mjs",
+    "serve": "node server/serve.mjs",
+    "test:server": "node --test server/*.test.mjs",
     "scaffold:routes": "node scripts/scaffold-routes.mjs"
   },
   "dependencies": {

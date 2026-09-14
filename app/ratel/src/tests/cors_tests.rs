@@ -41,7 +41,7 @@ async fn build_cors_app() -> axum::Router {
     };
 
     let mcp_router = crate::common::mcp::mcp_router();
-    let dioxus_router = dioxus::server::router(crate::App).merge(mcp_router);
+    let dioxus_router = crate::common::api_router().merge(mcp_router);
     let app = dioxus_router
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
         .layer(cors_layer)

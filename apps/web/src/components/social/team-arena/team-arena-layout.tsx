@@ -8,7 +8,7 @@ import { SelectedCategoryProvider } from "@/components/social/wall-context";
 import { TeamArenaProvider, TeamArenaTab, useTeamArena } from "@/components/social/team-arena-context";
 import { useUserContext } from "@/lib/auth";
 import { useLegacyScript } from "@/lib/legacy-scripts";
-import teamArenaScript from "../../../../../../app/ratel/src/features/social/pages/team_arena/script.js?url&no-inline";
+import teamArenaScript from "../../../legacy-scripts/features/social/pages/team_arena/script.js?url&no-inline";
 import { ArenaSettingsPanel } from "./arena-settings-panel";
 import { ArenaTopbar } from "./arena-topbar";
 

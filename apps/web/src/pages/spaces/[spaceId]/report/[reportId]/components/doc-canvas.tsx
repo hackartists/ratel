@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Editor as RichEditor, type EditorSlashSignal } from "@/components/editor";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import { useReportDetailI18n } from "@/i18n/generated/features/spaces/pages/report/views/detail/report-detail.i18n";
-import detailActionsScript from "../../../../../../../../../app/ratel/src/features/spaces/pages/report/views/detail/detail_actions.js?url&no-inline";
+import detailActionsScript from "../../../../../../legacy-scripts/features/spaces/pages/report/views/detail/detail_actions.js?url&no-inline";
 import { focusBodyEditor } from "./chart-figure-html";
 import { useReportDetailContext } from "../hooks/use-report-detail";
 

@@ -1,7 +1,7 @@
 import { SeoMeta } from "@/components/ui/seo-meta";
 import { useEssenceSourcesI18n } from "@/i18n/generated/features/essence/pages/sources/essence-sources.i18n";
 import { useLegacyScript } from "@/lib/legacy-scripts";
-import essenceScript from "../../../../../app/ratel/src/features/essence/pages/sources/script.js?url&no-inline";
+import essenceScript from "../../legacy-scripts/features/essence/pages/sources/script.js?url&no-inline";
 import { EssenceBreakdown } from "./components/essence-breakdown";
 import { EssenceBulkBar } from "./components/essence-bulk-bar";
 import { EssenceControls } from "./components/essence-controls";

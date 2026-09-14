@@ -135,7 +135,7 @@ Key responsive patterns for unified DOM:
 
 - The project uses TailwindCSS v4 with `@source` scanning of `.rs` and `.css` files
 - Breakpoint prefixes `max-tablet:` and `max-mobile:` should already be configured in the tailwind config
-- If they're not defined, check `app/ratel/tailwind.css` for custom breakpoint definitions
+- If they're not defined, check `apps/web/src/styles/tokens.css` for custom breakpoint definitions
 - Dark mode uses `data-theme` attribute, ensure mobile styles respect both themes
 
 ## Common Mobile Patterns

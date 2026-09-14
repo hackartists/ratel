@@ -13,7 +13,6 @@ serde_json = { workspace = true }
 serde_repr = "0.1.20"
 serde_with = { workspace = true }
 tower-sessions = { version = "0.15.0", optional = true }
-icons = { workspace = true }
 percent-encoding = { workspace = true }
 aws-config = { version = "1", optional = true }
 aws-sdk-s3 = { version = "1", optional = true }
@@ -87,23 +86,17 @@ thiserror = { workspace = true }
 # Dependencies from common
 by-macros = { workspace = true }
 dioxus-translate = { workspace = true }
-lucide-dioxus = { workspace = true }
 ssi = { version = "0.12.0", features = ["bbs"], optional = true }
 aws-credential-types = { version = "1.2.6", optional = true }
 strum = { version = "0.27.2", features = ["derive"] }
 js-sys = "0.3"
 # Installed in tauri-web main.rs so release-wasm panics print location + message
 # to console instead of bubbling up as opaque "RuntimeError: unreachable".
-console_error_panic_hook = { version = "0.1", optional = true }
 tracing-wasm = "0.2.1"
 dioxus-cli-config = "0.7.3"
 tracing-subscriber = { workspace = true }
 getrandom = { version = "0.4", features = ["wasm_js"], optional = true }
 lambda_http = { version = "1.0.2", optional = true }
-dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false, features = [
-  "router",
-] }
-manganis = { workspace = true }
 time = { version = "0.3.47", features = ["formatting"] }
 ic-agent = { version = "0.46", optional = true }
 candid = { version = "0.10", optional = true }
@@ -111,7 +104,6 @@ ratel-canister = { path = "../../packages/ratel-canister", default-features = fa
   "dto",
 ], optional = true }
 attr-voting = { path = "../../packages/attr-voting", optional = true }
-mimetype-detector = "0.3.6"
 lambda_runtime = { version = "1.1.1", optional = true }
 rmcp = { version = "0.7.0", git = "https://github.com/modelcontextprotocol/rust-sdk", features = [
     "server",
@@ -125,7 +117,7 @@ ts-rs = { version = "10.1", optional = true, features = ["serde-compat", "no-ser
 generational-box = "0.7.9"
 
 [features]
-default = ["web","server"]
+default = ["server"]
 bypass = []
 # Note: `fullstack` is NOT included here so `--platform web` builds for the
 # Tauri Android shell (which auto-adds `web` and supplies its own server-fn
@@ -135,17 +127,15 @@ bypass = []
 # emits DOM ops referencing un-mounted nodes and JS throws
 # `Cannot read properties of undefined (reading 'listening')`. The regular
 # web build adds `fullstack` explicitly via `dx build ... --features web,fullstack`.
-web = ["dioxus/web", "getrandom", "gloo-timers", "time/wasm-bindgen", "attr-voting", "hex", "sha2", "uuid/js", "dep:console_error_panic_hook"]
+web = ["dioxus/web", "getrandom", "gloo-timers", "time/wasm-bindgen", "attr-voting", "hex", "sha2", "uuid/js"]
 fullstack = ["dioxus/fullstack"]
-desktop = ["dioxus/desktop"]
-mobile = ["dioxus/mobile", "tokio", "dep:console_error_panic_hook", "dep:reqwest", "dioxus/web", "getrandom", "gloo-timers", "time/wasm-bindgen", "attr-voting", "hex", "sha2", "uuid/js"]
 # Type-only feature: compiles app/ratel/src/tauri/types/ and nothing else.
 # Pulled by app/ratel-tauri so the native shell shares DTO definitions with the
 # web bundle. MUST NOT bring in dioxus, reqwest, or any web/server-only deps.
 # Web build for the Tauri Android shell. Additive on `web` so the dioxus-web
 # code path is identical; only adds compilation of app/ratel/src/tauri/interop/
 # (the JS-eval drivers that call window.__TAURI__.invoke).
-tauri-web = ["tauri-common", "dep:console_error_panic_hook", "dep:reqwest", "dioxus/web", "getrandom", "gloo-timers", "time/wasm-bindgen", "attr-voting", "hex", "sha2", "uuid/js"]
+tauri-web = ["tauri-common", "dep:reqwest", "dioxus/web", "getrandom", "gloo-timers", "time/wasm-bindgen", "attr-voting", "hex", "sha2", "uuid/js"]
 server = [
   "fullstack",
   "aws-config",
@@ -195,7 +185,6 @@ lambda = ["lambda_http", "lambda_runtime", "server"]
 # Redpanda event pipeline (k3s migration): CDC producer + worker binaries.
 # Never enabled by web/mobile/lambda/default server builds.
 redpanda = ["server", "dep:rdkafka"]
-layout_test = ["web"]
 local-dev = ["beta","dep:pulldown-cmark"]
 beta = []
 # TypeScript bindings for apps/web: ts-rs derives on the wire types plus the

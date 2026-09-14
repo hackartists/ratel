@@ -18,7 +18,7 @@ import { dataBool } from "@/lib/dom";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import { useToast } from "@/lib/toast";
 import { useDismissOnOutsideSelector } from "@/lib/use-dismiss-on-outside-selector";
-import actionDashboardScript from "../../../../../../../../app/ratel/src/features/spaces/pages/index/action_dashboard/script.js?url&no-inline";
+import actionDashboardScript from "../../../../../legacy-scripts/features/spaces/pages/index/action_dashboard/script.js?url&no-inline";
 import { AddActionCard } from "./add-action-card";
 import { buildActionLookup, resolveDependencyLock } from "./dependency-lock";
 import { DiscussionActionCard } from "./discussion-card";
