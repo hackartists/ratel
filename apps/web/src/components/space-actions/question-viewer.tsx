@@ -1,0 +1,517 @@
+import { useEffect, useState, type ReactNode } from "react";
+import type { Answer, Question } from "@ratel/ts-bridges";
+import { Check } from "@/components/icons/validations";
+import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
+import { Input, InputVariant } from "@/components/ui/input";
+import { TextArea } from "@/components/ui/textarea";
+import { useQuestionViewerI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/components/question-viewer.i18n";
+
+// app/ratel/src/features/spaces/pages/actions/actions/poll/components/question_viewer —
+// shared by the poll and quiz response flows. Renders one question per call;
+// the "other" free-text option is used by poll single/multi-choice only.
+
+/** `should_auto_next` — single-select question types auto-advance once answered. */
+export function shouldAutoNext(question: Question, answer: Answer): boolean {
+  if (question.answer_type === "single_choice" && answer.answer_type === "single_choice" && answer.answer !== null) {
+    return true;
+  }
+  if (question.answer_type === "dropdown" && answer.answer_type === "dropdown" && answer.answer !== null) {
+    return true;
+  }
+  if (question.answer_type === "linear_scale" && answer.answer_type === "linear_scale" && answer.answer !== null) {
+    return true;
+  }
+  return false;
+}
+
+/** `has_answer_for_question`. */
+export function hasAnswerForQuestion(question: Question, answer: Answer | undefined): boolean {
+  if (!answer) return false;
+  switch (question.answer_type) {
+    case "single_choice":
+      if (answer.answer_type !== "single_choice") return false;
+      if (answer.answer !== null) return true;
+      return answer.other !== null && answer.other.trim() !== "";
+    case "multiple_choice":
+      if (answer.answer_type !== "multiple_choice") return false;
+      if (answer.other !== null && answer.other.trim() !== "") return true;
+      return (answer.answer ?? []).length > 0;
+    case "short_answer":
+      return answer.answer_type === "short_answer" && answer.answer !== null && answer.answer.trim() !== "";
+    case "subjective":
+      return answer.answer_type === "subjective" && answer.answer !== null && answer.answer.trim() !== "";
+    case "checkbox":
+      return answer.answer_type === "checkbox" && (answer.answer ?? []).length > 0;
+    case "dropdown":
+      return answer.answer_type === "dropdown" && answer.answer !== null;
+    case "linear_scale":
+      return answer.answer_type === "linear_scale" && answer.answer !== null;
+  }
+}
+
+export interface QuestionViewerProps {
+  index: number;
+  total: number;
+  question: Question;
+  answer?: Answer;
+  disabled: boolean;
+  onChange: (answer: Answer) => void;
+  enableOtherOption?: boolean;
+  onPrev?: () => void;
+  onNext?: () => void;
+  nextDisabled?: boolean;
+}
+
+export function QuestionViewer({
+  index,
+  total,
+  question,
+  answer,
+  disabled,
+  onChange,
+  enableOtherOption = false,
+  onPrev,
+  onNext,
+  nextDisabled = false,
+}: QuestionViewerProps) {
+  const tr = useQuestionViewerI18n();
+
+  let body: ReactNode;
+  switch (question.answer_type) {
+    case "single_choice":
+      body = (
+        <ChoiceViewer
+          index={index}
+          question={question}
+          answer={answer}
+          disabled={disabled}
+          enableOtherOption={enableOtherOption}
+          multi={false}
+          onChange={onChange}
+        />
+      );
+      break;
+    case "multiple_choice":
+      body = (
+        <ChoiceViewer
+          index={index}
+          question={question}
+          answer={answer}
+          disabled={disabled}
+          enableOtherOption={enableOtherOption}
+          multi={true}
+          onChange={onChange}
+        />
+      );
+      break;
+    case "short_answer":
+      body = <SubjectiveViewer question={question} answer={answer} disabled={disabled} onChange={onChange} isShort />;
+      break;
+    case "subjective":
+      body = (
+        <SubjectiveViewer question={question} answer={answer} disabled={disabled} onChange={onChange} isShort={false} />
+      );
+      break;
+    case "checkbox":
+      body = <CheckboxViewer index={index} question={question} answer={answer} disabled={disabled} onChange={onChange} />;
+      break;
+    case "dropdown":
+      body = <DropdownViewer question={question} answer={answer} disabled={disabled} onChange={onChange} />;
+      break;
+    case "linear_scale":
+      body = <LinearScaleViewer question={question} answer={answer} disabled={disabled} onChange={onChange} />;
+      break;
+  }
+
+  return (
+    <div className="flex flex-col gap-4 w-full">
+      {body}
+
+      {(onPrev !== undefined || onNext !== undefined) && (
+        <div className="flex gap-3 justify-end items-center pt-2 w-full">
+          {index > 0 && onPrev !== undefined && (
+            <Button buttonStyle={ButtonStyle.Outline} shape={ButtonShape.Square} className="min-w-[120px]" onClick={onPrev}>
+              {tr.btnBack}
+            </Button>
+          )}
+          {index + 1 < total && (
+            <Button
+              buttonStyle={ButtonStyle.Outline}
+              shape={ButtonShape.Square}
+              className="min-w-[120px]"
+              disabled={nextDisabled}
+              onClick={() => onNext?.()}
+            >
+              {tr.btnNext}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuestionTitle({
+  title,
+  description,
+  isRequired,
+}: {
+  title: string;
+  description?: string | null;
+  isRequired?: boolean | null;
+}) {
+  return (
+    <div className="flex flex-col gap-1 mb-3" data-question-title-wrap="true">
+      <div className="flex gap-1 items-center">
+        <span className="text-lg font-semibold text-poll-question-title" data-question-title="true">
+          {title}
+        </span>
+        {isRequired === true && <span className="text-red-500">*</span>}
+      </div>
+      {description !== undefined && description !== null && description !== "" && (
+        <p className="text-sm text-text-primary-muted" data-question-desc="true">
+          {description}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const OPTION_BASE_CLASS =
+  "group relative flex min-h-[88px] w-full items-center overflow-hidden rounded-xl text-left transition-all bg-option-card-bg hover:bg-option-card-hover-bg aria-selected:bg-gradient-to-r aria-selected:from-primary/80 aria-selected:to-primary aria-selected:shadow-[0_8px_20px_rgba(0,0,0,0.2)] aria-selected:ring-2 aria-selected:ring-primary/90";
+
+interface ChoiceQuestion {
+  title: string;
+  description: string | null;
+  options: string[];
+  is_required: boolean | null;
+  allow_other?: boolean | null;
+}
+
+function ChoiceViewer({
+  index,
+  question,
+  answer,
+  disabled,
+  enableOtherOption,
+  multi,
+  onChange,
+}: {
+  index: number;
+  question: ChoiceQuestion;
+  answer?: Answer;
+  disabled: boolean;
+  enableOtherOption: boolean;
+  multi: boolean;
+  onChange: (answer: Answer) => void;
+}) {
+  const tr = useQuestionViewerI18n();
+
+  const selectedSingle =
+    !multi && answer?.answer_type === "single_choice" ? answer.answer : null;
+  const selectedMulti =
+    multi && answer?.answer_type === "multiple_choice" ? answer.answer ?? [] : [];
+  const otherValue =
+    (!multi && answer?.answer_type === "single_choice" ? answer.other : null) ??
+    (multi && answer?.answer_type === "multiple_choice" ? answer.other : null) ??
+    "";
+  const otherSelected = multi
+    ? answer?.answer_type === "multiple_choice" && answer.other !== null
+    : answer?.answer_type === "single_choice" && answer.other !== null;
+
+  const emit = (opts: { answer: number | number[] | null; other: string | null }) => {
+    if (multi) {
+      onChange({ answer_type: "multiple_choice", answer: opts.answer as number[] | null, other: opts.other });
+    } else {
+      onChange({ answer_type: "single_choice", answer: opts.answer as number | null, other: opts.other });
+    }
+  };
+
+  return (
+    <>
+      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      <div className="grid grid-cols-1 gap-3 w-full md:grid-cols-2">
+        {question.options.map((option, optIdx) => {
+          const isSelected = multi ? selectedMulti.includes(optIdx) : selectedSingle === optIdx;
+          return (
+            <button
+              key={`opt-${index}-${optIdx}`}
+              type="button"
+              aria-selected={isSelected ? "true" : "false"}
+              className={`${OPTION_BASE_CLASS} ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+              disabled={disabled}
+              onClick={() => {
+                if (multi) {
+                  const next = selectedMulti.includes(optIdx)
+                    ? selectedMulti.filter((v) => v !== optIdx)
+                    : [...selectedMulti, optIdx];
+                  emit({ answer: next, other: otherValue.trim() === "" ? null : otherValue });
+                } else {
+                  emit({ answer: isSelected ? null : optIdx, other: null });
+                }
+              }}
+            >
+              <div className="absolute inset-y-0 left-0 w-[72px] bg-option-card-accent group-aria-selected:bg-primary" />
+              <div className="flex relative z-10 justify-between items-center px-5 py-4 w-full">
+                <div className="w-10 shrink-0" />
+                <span className="text-[20px] font-semibold tracking-[0.2px] text-text-primary group-aria-selected:text-text-third">
+                  {option}
+                </span>
+                <div className="flex justify-center items-center w-10 shrink-0">
+                  {isSelected && (
+                    <div className="flex justify-center items-center bg-white rounded-full size-6">
+                      <Check className="size-4 [&>path]:stroke-primary" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {enableOtherOption && question.allow_other === true && (
+        <div
+          aria-selected={otherSelected ? "true" : "false"}
+          className={`${OPTION_BASE_CLASS} ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+          onClick={() => {
+            if (disabled) return;
+            if (multi) {
+              emit({ answer: selectedMulti, other: otherSelected ? null : otherValue });
+            } else {
+              emit({ answer: null, other: otherValue });
+            }
+          }}
+        >
+          <div className="absolute inset-y-0 left-0 w-[72px] bg-option-card-accent group-aria-selected:bg-primary" />
+          <div className="flex relative z-10 items-center px-5 py-4 w-full">
+            <div className="w-[64px] shrink-0" />
+            <div className="flex-1 pr-4">
+              <Input
+                variant={InputVariant.Plain}
+                className="h-11 w-full appearance-none border-0 bg-transparent px-0 text-left text-[18px] text-text-primary shadow-none outline-none ring-0 placeholder:text-text-primary-muted focus:border-transparent focus:outline-none focus:ring-0 focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-0"
+                placeholder={otherSelected ? tr.otherPlaceholder : ""}
+                value={otherValue}
+                disabled={disabled}
+                onFocus={() => emit({ answer: multi ? selectedMulti : null, other: otherValue })}
+                onChange={(e) => emit({ answer: multi ? selectedMulti : null, other: e.target.value })}
+              />
+            </div>
+            <div className="flex justify-center items-center w-10 shrink-0">
+              {otherSelected && (
+                <div className="flex justify-center items-center bg-white rounded-full size-6">
+                  <Check className="size-4 [&>path]:stroke-primary" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function SubjectiveViewer({
+  question,
+  answer,
+  disabled,
+  onChange,
+  isShort,
+}: {
+  question: { title: string; description: string; is_required: boolean | null };
+  answer?: Answer;
+  disabled: boolean;
+  onChange: (answer: Answer) => void;
+  isShort: boolean;
+}) {
+  const tr = useQuestionViewerI18n();
+  const currentValue =
+    (answer?.answer_type === "short_answer" ? answer.answer : null) ??
+    (answer?.answer_type === "subjective" ? answer.answer : null) ??
+    "";
+
+  const [draft, setDraft] = useState(currentValue);
+  const [synced, setSynced] = useState(currentValue);
+  useEffect(() => {
+    if (synced !== currentValue) {
+      setSynced(currentValue);
+      setDraft(currentValue);
+    }
+  }, [currentValue, synced]);
+
+  const emit = (value: string) => {
+    onChange(isShort ? { answer_type: "short_answer", answer: value } : { answer_type: "subjective", answer: value });
+  };
+
+  return (
+    <div className="flex flex-col gap-[10px] w-full">
+      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      {isShort ? (
+        <Input
+          variant={InputVariant.Plain}
+          className="px-4 py-3 text-base rounded-lg border focus:border-yellow-500 focus:outline-none bg-input-box-bg border-input-box-border text-text-primary placeholder:text-neutral-600"
+          placeholder={tr.subjectiveInputPlaceholder}
+          disabled={disabled}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            emit(e.target.value);
+          }}
+        />
+      ) : (
+        <TextArea
+          className="px-4 py-3 text-base rounded-lg border focus:border-yellow-500 focus:outline-none bg-input-box-bg border-input-box-border min-h-[185px] text-text-primary placeholder:text-neutral-600"
+          placeholder={tr.subjectiveInputPlaceholder}
+          disabled={disabled}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            emit(e.target.value);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CheckboxViewer({
+  index,
+  question,
+  answer,
+  disabled,
+  onChange,
+}: {
+  index: number;
+  question: { title: string; description: string | null; options: string[]; is_multi: boolean; is_required: boolean | null };
+  answer?: Answer;
+  disabled: boolean;
+  onChange: (answer: Answer) => void;
+}) {
+  const selected = answer?.answer_type === "checkbox" ? answer.answer ?? [] : [];
+
+  return (
+    <>
+      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      <div className="flex flex-col gap-2">
+        {question.options.map((option, optIdx) => {
+          const isSelected = selected.includes(optIdx);
+          return (
+            <button
+              key={`checkbox-${index}-${optIdx}`}
+              type="button"
+              aria-selected={isSelected ? "true" : "false"}
+              className="flex gap-3 items-center p-3 w-full rounded-lg border transition-colors cursor-pointer group border-input-box-border hover:border-border-subtle aria-selected:border-primary aria-selected:bg-primary/10"
+              disabled={disabled}
+              onClick={() => {
+                let next: number[];
+                if (question.is_multi) {
+                  next = isSelected ? selected.filter((v) => v !== optIdx) : [...selected, optIdx];
+                } else {
+                  next = isSelected ? [] : [optIdx];
+                }
+                onChange({ answer_type: "checkbox", answer: next });
+              }}
+            >
+              <div className="flex justify-center items-center w-4 h-4 rounded border-2 border-foreground-muted group-aria-selected:border-primary group-aria-selected:bg-primary">
+                {isSelected && <Check className="size-3 [&>path]:stroke-white" />}
+              </div>
+              <span className="text-sm text-foreground-muted group-aria-selected:text-text-primary">{option}</span>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function DropdownViewer({
+  question,
+  answer,
+  disabled,
+  onChange,
+}: {
+  question: { title: string; description: string | null; options: string[]; is_required: boolean | null };
+  answer?: Answer;
+  disabled: boolean;
+  onChange: (answer: Answer) => void;
+}) {
+  const selected = answer?.answer_type === "dropdown" ? answer.answer : null;
+
+  return (
+    <>
+      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      <select
+        className="p-3 w-full text-white rounded-lg border border-neutral-700 bg-neutral-900 focus:border-blue-500 outline-none"
+        disabled={disabled}
+        value={selected === null ? "" : String(selected)}
+        onChange={(e) => {
+          const val = e.target.value;
+          onChange({ answer_type: "dropdown", answer: val === "" ? null : Number.parseInt(val, 10) });
+        }}
+      >
+        <option value="">Select...</option>
+        {question.options.map((option, optIdx) => (
+          <option key={`opt-${optIdx}`} value={optIdx}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </>
+  );
+}
+
+function LinearScaleViewer({
+  question,
+  answer,
+  disabled,
+  onChange,
+}: {
+  question: {
+    title: string;
+    description: string | null;
+    is_required: boolean | null;
+    min_value: number;
+    max_value: number;
+    min_label: string;
+    max_label: string;
+  };
+  answer?: Answer;
+  disabled: boolean;
+  onChange: (answer: Answer) => void;
+}) {
+  const selected = answer?.answer_type === "linear_scale" ? answer.answer : null;
+  const values: number[] = [];
+  for (let v = question.min_value; v <= question.max_value; v += 1) values.push(v);
+
+  return (
+    <>
+      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      <div className="flex flex-col gap-5 w-full select-none">
+        <div className="flex justify-between items-center w-full text-sm font-medium text-text-primary-muted">
+          <span className="max-w-[40%] truncate">{question.min_label}</span>
+          <span className="max-w-[40%] text-right truncate">{question.max_label}</span>
+        </div>
+        <div className="w-full">
+          <div className="flex flex-wrap gap-2 justify-center px-1 pb-1">
+            {values.map((val) => {
+              const isSelected = selected === val;
+              return (
+                <button
+                  key={`scale-${val}`}
+                  type="button"
+                  className={`flex size-10 shrink-0 items-center justify-center rounded-lg text-[15px] font-normal transition-colors ${
+                    isSelected ? "bg-primary text-white" : "bg-neutral-700 text-white"
+                  } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                  disabled={disabled}
+                  onClick={() => onChange({ answer_type: "linear_scale", answer: val })}
+                >
+                  {val}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
