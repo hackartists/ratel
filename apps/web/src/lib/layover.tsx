@@ -73,7 +73,10 @@ export function Layover() {
 
   const isOpen = config !== null;
   const title = config?.title ?? "";
-  const panelClasses = `absolute top-0 right-0 h-full bg-layover-bg border-l border-card-border rounded-l-[24px] overflow-hidden transition-transform duration-300 ease-in-out max-tablet:max-w-full max-tablet:rounded-none ${isOpen ? "translate-x-0" : "translate-x-full"} ${config?.size ?? ""} shadow-[0_8px_20px_0_rgba(20,26,62,0.25)]`;
+  // Rust `container_class.unwrap_or_default()`: `LayoverSize` defaults to
+  // `Full` ("w-full"), so the panel is full-width whenever no explicit size
+  // was set — not just while open (`config` is `null` while closed too).
+  const panelClasses = `absolute top-0 right-0 h-full bg-layover-bg border-l border-card-border rounded-l-[24px] overflow-hidden transition-transform duration-300 ease-in-out max-tablet:max-w-full max-tablet:rounded-none ${isOpen ? "translate-x-0" : "translate-x-full"} ${config?.size ?? LayoverSize.Full} shadow-[0_8px_20px_0_rgba(20,26,62,0.25)]`;
 
   return (
     <div className={isOpen ? "fixed inset-0 z-100" : "fixed inset-0 z-100 pointer-events-none"}>
