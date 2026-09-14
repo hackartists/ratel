@@ -247,6 +247,13 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 - 병합 중 정리: 업로드는 `lib/upload.ts` 하나(네이티브 `s3_put_object` → fetch 폴백), `FileUploader`는 `components/ui/file-uploader.tsx` 하나, 알림은 `components/notifications` 하나, 무한 스크롤 훅은 `useSuspenseInfiniteList` 하나로 합쳤습니다. `ActionDescriptionEditor`는 데스크톱에서 리치 에디터, AI 모더레이터 토글은 `PremiumSwitch`.
 - 암호화 투표: `packages/attr-voting-wasm`(기존 `attr_voting` 크레이트의 wasm-bindgen 래퍼, `make gen-attr-voting-wasm`, 결정적 빌드)로 브라우저에서 CP-ABE 암호화. 로컬 서버는 `ATTR_VOTING_AUTHORITY_JSON` 없이 빌드되어 실서버 왕복은 불가하고, Rust 경로와 암·복호화 결과가 바이트 단위로 같음을 확인했습니다.
 
+**기존 E2E를 React 대상으로 실행** (`vite preview` + 로컬 `bypass` 서버, React 빌드는 `VITE_BYPASS=true` — Rust `make build-testing`의 `bypass` 기능에 대응):
+- Desktop(`tests/web`, 21개 스펙 199개 테스트): 전부 통과. 3개는 스펙 자체의 `test.skip`. 첫 실행의 실패 6건은 앱 수정으로 해결했습니다 — `DiscussionArenaContent`가 로딩 중 조기 return 뒤에 훅을 호출해 React #310으로 토론 페이지가 깨짐, `/:username/credentials`의 본인인증이 `VITE_BYPASS`를 무시함, 하위팀 문서 수정 후 관리 페이지 목록 캐시가 갱신되지 않음, 스펙의 `waitForAppReady` import 누락. 참여 버튼 2건은 `VITE_BYPASS` 없이 빌드해 실제 PortOne을 호출한 것이 원인이었습니다.
+- SysAdmin(`tests/web-admin`): 10 통과, 3건은 스펙의 `describe.skip`.
+- Mobile(`tests/mobile`): 4 통과, 17건 스킵. `mobile-bottom-nav`는 `describe.skip`이고, 나머지 두 스펙은 `route.rs`에 더 이상 없는 `/spaces/:id/dashboard`를 찾지 못해 건너뜁니다(두 앱 공통).
+- 같은 과정에서 맞춘 것: 스페이스 액션 컴포넌트 4개의 Tailwind 클래스 문자열 순서를 Rust와 일치(앱 전체 스캔 결과 순서만 다른 문자열 0개), 쿼리 재시도 제거(Rust `use_loader`는 재시도하지 않음), DOM 동일성 스펙은 `#main`에 내용이 생긴 뒤 비교(React는 데이터가 오면 클라이언트 렌더).
+- 주의: Playwright 실행을 겹치면 새 실행이 `test-results/`를 비워 앞선 실행의 trace 쓰기가 `ENOENT`로 실패합니다. 한 번에 하나씩 실행합니다.
+
 **진행 중(후속)**: 투표 복호화·검증 wasm export와 액션 투표 페이지 연결(`lib/poll-crypto.ts` 제거), `DynamoEnum`/`SerializeDisplay` enum의 TS 리터럴을 실제 JSON 값에 맞추는 ts-rs 주석(예: `ReportStatus`는 `"DRAFT"`/`"PUBLISHED"`), 팀 페이지를 SocialLayout 컨텍스트로 옮기고(활성 탭 표시) `space-context:` 등 임시 로컬 로드 78곳 정리.
 
 **P6 아케이드·관리자 — 완료**: 아케이드 레이아웃·홈·리더보드·Fact-or-Fold 매칭/게임룸(Rust와 같은 폴링 주기), 관리자 레이아웃 2개·페이지 7개. 실시간 갱신은 Rust와 같이 폴링만 씁니다(SSE 구독 없음).
