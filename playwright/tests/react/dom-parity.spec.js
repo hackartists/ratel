@@ -19,6 +19,8 @@ import { goto } from "../utils";
 // dev-only harnesses (apps/web/src/pages/not-found/page.tsx) are compiled out of
 // the production build: against `vite preview` the page must still equal Dioxus.
 const ROUTES = [
+  // Signed out: the prerendered home arena (hydrated, not client-rendered).
+  "/",
   "/privacy",
   "/terms",
   "/child-safety",
@@ -46,8 +48,10 @@ const DIOXUS_BASE_URL = (process.env.DIOXUS_BASE_URL || "http://localhost:8080")
 
 /** Runs in the page: `#main` as a plain tree. */
 function serializeMain() {
-  // Dioxus bookkeeping attributes, not rendered output.
-  const IGNORED_ATTRS = new Set(["data-dioxus-id", "data-node-hydration"]);
+  // Framework bookkeeping attributes, not rendered output: Dioxus hydration
+  // ids, and the marker vite-react-ssg leaves on the container of a
+  // prerendered route (`/`).
+  const IGNORED_ATTRS = new Set(["data-dioxus-id", "data-node-hydration", "data-server-rendered"]);
   const SKIPPED_TAGS = new Set(["SCRIPT", "STYLE", "TEMPLATE"]);
   const URL_ATTRS = new Set(["href", "src"]);
 
@@ -134,9 +138,36 @@ test.describe("DOM parity: Dioxus vs React", () => {
       click: "home-btn-drafts",
       waitFor: "email-input",
     },
+    // Home arena (signed out). The overlay, settings panel and popup are
+    // always-rendered or popup-zone DOM, so these compare their open state.
+    {
+      name: "hamburger menu overlay",
+      route: "/",
+      click: "home-btn-menu",
+      waitFor: "home-menu-compose",
+    },
+    {
+      name: "settings panel",
+      route: "/",
+      click: "home-btn-settings",
+      waitFor: "lang-ko",
+    },
+    {
+      name: "login modal opened from Sign In",
+      route: "/",
+      click: "home-btn-signin",
+      waitFor: "email-input",
+    },
+    {
+      name: "login modal opened from a menu tile",
+      route: "/",
+      click: "home-btn-menu",
+      then: "home-menu-drafts",
+      waitFor: "email-input",
+    },
   ];
 
-  for (const { name, route, click, waitFor } of INTERACTIONS) {
+  for (const { name, route, click, then, waitFor } of INTERACTIONS) {
     test(`#main matches on ${route} with the ${name}`, async ({ page, context }, testInfo) => {
       const dioxusPage = await context.newPage();
       try {
@@ -146,6 +177,10 @@ test.describe("DOM parity: Dioxus vs React", () => {
         ]) {
           await goto(p, url);
           await p.getByTestId(click).click();
+          if (then) {
+            await expect(p.getByTestId(then)).toBeVisible();
+            await p.getByTestId(then).click();
+          }
           await expect(p.getByTestId(waitFor)).toBeVisible();
         }
 

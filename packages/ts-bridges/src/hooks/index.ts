@@ -239,6 +239,7 @@ export * from "./useListTimeline";
 export * from "./useListTimelineFeed";
 export * from "./useListUserDrafts";
 export * from "./useListUserPosts";
+export * from "./useListUserPostsInfinite";
 export * from "./useListUserReports";
 export * from "./useLogin";
 export * from "./useLogout";
