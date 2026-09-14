@@ -184,6 +184,21 @@ dx-build:
 	cd $(RATEL_DIR) && CARGO_TARGET_DIR=$(DX_CARGO_TARGET_DIR) MOBILE_API_URL=$(MOBILE_API_URL) make build-tauri
 	rsync -a --delete "$(DX_BUILD_DIR)/" "$(DIST_DIR)/"
 
+# React frontend (apps/web) for the same WebView. `VITE_TAURI=1` selects the
+# Tauri viewport and routes API calls through the native `api_request`
+# command against VITE_MOBILE_API_URL (the same ENV-selected MOBILE_API_URL
+# the dx build bakes in). Firebase / WalletConnect / PortOne keys are read
+# from the VITE_* env at build time (apps/web/src/vite-env.d.ts).
+.PHONY: web-build
+web-build:
+	cd $(WORKSPACE_ROOT) && VITE_TAURI=1 VITE_BASE=/ VITE_MOBILE_API_URL=$(MOBILE_API_URL) corepack pnpm -C apps/web build
+	rsync -a --delete "$(WORKSPACE_ROOT)/apps/web/dist/" "$(DIST_DIR)/"
+
+# Which frontend the mobile builds bundle: `dx` (Dioxus, default until the
+# React migration cuts over) or `web` (apps/web). e.g. `make build-android FRONTEND=web`.
+FRONTEND ?= dx
+FRONTEND_BUILD := $(if $(filter web,$(FRONTEND)),web-build,dx-build)
+
 run: run-android
 
 # ── iOS ──────────────────────────────────────────────────────────────
@@ -261,7 +276,7 @@ run-ios: install-tauri-cli $(IOS_CARGO_CONFIG) gsi-copy $(TAURI_OVERRIDE_FILE)
 #   ratel_envs; export ENV=prod MOBILE_API_URL=https://ratel.foundation
 #   export GOOGLE_OAUTH_CLIENT_ID=...
 #   make build-ios
-build-ios: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj dx-build
+build-ios: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj $(FRONTEND_BUILD)
 	cd src-tauri && $(IOS_ENV) cargo tauri ios build
 	@echo
 	@echo "iOS output (.ipa):"
@@ -275,7 +290,7 @@ build-ios: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj dx-build
 # RatelFiles) is therefore invisible to the build: it compiles clean and
 # reports BUILD SUCCEEDED without the file, and the feature fails only at
 # runtime. Regenerating first keeps the project in step with the directory.
-build-ios-sim: install-tauri-cli $(IOS_CARGO_CONFIG) gsi-copy gen-xcodeproj dx-build
+build-ios-sim: install-tauri-cli $(IOS_CARGO_CONFIG) gsi-copy gen-xcodeproj $(FRONTEND_BUILD)
 	# The CLI moves the freshly built .app into gen/apple/build/arm64-sim with a
 	# plain rename, which fails with "Directory not empty (os error 66)" when a
 	# previous build left one there — i.e. every run after the first. Clear it.
@@ -326,7 +341,7 @@ ASC_KEY_ID ?=
 ASC_ISSUER_ID ?=
 TF_BUILD_NUMBER ?= $(shell date +%s)
 
-testflight: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj dx-build
+testflight: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj $(FRONTEND_BUILD)
 	@test -n "$(APPLE_DEVELOPMENT_TEAM)" || { echo "ERROR: set APPLE_DEVELOPMENT_TEAM (10-char Apple Team ID)"; exit 1; }
 	@test -n "$(ASC_KEY_ID)"             || { echo "ERROR: set ASC_KEY_ID (App Store Connect API Key ID)"; exit 1; }
 	@test -n "$(ASC_ISSUER_ID)"          || { echo "ERROR: set ASC_ISSUER_ID (App Store Connect API Issuer ID)"; exit 1; }
@@ -373,7 +388,7 @@ run-android: install-tauri-cli ndk-shims gs-copy $(TAURI_OVERRIDE_FILE)
 	@echo "Run 'cd ../ratel && PORT=8000 make run-tauri' in another terminal first."
 	cd src-tauri && $(ANDROID_ENV) cargo tauri android dev --config $(TAURI_OVERRIDE_FILE)
 
-build-android: install-tauri-cli ndk-shims gs-copy dx-build
+build-android: install-tauri-cli ndk-shims gs-copy $(FRONTEND_BUILD)
 	cd src-tauri && $(ANDROID_ENV) cargo tauri android build --target $(TAURI_TARGET) --apk
 	@$(MAKE) sign-apk
 	@echo
@@ -397,7 +412,7 @@ build-android: install-tauri-cli ndk-shims gs-copy dx-build
 #
 # Bump the version in tauri.conf.json before each upload — Play requires a
 # strictly increasing versionCode.
-release-aab: install-tauri-cli ndk-shims gs-copy dx-build
+release-aab: install-tauri-cli ndk-shims gs-copy $(FRONTEND_BUILD)
 	cd src-tauri && $(ANDROID_ENV) cargo tauri android build --target $(TAURI_TARGET) --aab
 	@echo
 	@echo "AAB output (upload this .aab to Play Console):"

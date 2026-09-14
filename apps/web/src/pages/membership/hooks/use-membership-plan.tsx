@@ -5,6 +5,7 @@ import { useLoginModal } from "@/components/auth";
 import { useEnumI18n } from "@/i18n/generated/enums.i18n";
 import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/language";
+import { openUrl } from "@/lib/native";
 import { usePopup } from "@/lib/popup";
 import { portoneEnv } from "@/lib/portone";
 import { useToast } from "@/lib/toast";
@@ -68,10 +69,6 @@ function tierFromApi(tier: ApiMembershipTier): MembershipTier {
   return MembershipTier.Free;
 }
 
-interface TauriWindow {
-  __TAURI_INTERNALS__?: { invoke?: (cmd: string, args?: unknown) => Promise<unknown> };
-}
-
 /**
  * `enterprise_contact`. In the Android/iOS app `window.open("mailto:…")` does
  * nothing, so the Tauri build (`tauri-web` in Rust, `VITE_TAURI=1` here) asks
@@ -84,14 +81,7 @@ function enterpriseContact(): void {
     "Hello,%0D%0A%0D%0AI would like to learn more about the Enterprise membership plan.%0D%0A%0D%0AThank you.";
   const mailtoUrl = `mailto:${email}?subject=${subject}&body=${body}`;
   if (import.meta.env.VITE_TAURI === "1") {
-    const invoke = (window as unknown as TauriWindow).__TAURI_INTERNALS__?.invoke;
-    if (typeof invoke !== "function") {
-      console.error("open enterprise contact mailto failed: Tauri bridge unavailable");
-      return;
-    }
-    invoke("plugin:opener|open_url", { url: mailtoUrl }).catch((e: unknown) =>
-      console.error("open enterprise contact mailto failed:", e),
-    );
+    openUrl(mailtoUrl).catch((e: unknown) => console.error("open enterprise contact mailto failed:", e));
     return;
   }
   window.open(mailtoUrl);

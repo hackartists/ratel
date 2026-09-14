@@ -7,7 +7,8 @@
 // `window.ratel.invoke(method, args)`; these functions do the same, and — like
 // the drivers' `try { … } catch { dioxus.send(null) }` — turn a JS failure
 // into `null`.
-import { ApiError, isTauri } from "@ratel/ts-bridges/runtime";
+import { ApiError } from "@ratel/ts-bridges/runtime";
+import { googleSignInNative, isTauri } from "@/lib/native";
 
 interface WalletConnectGlobal {
   initialize(projectId: string, appName: string, appDescription: string, appUrl: string): void;
@@ -20,15 +21,10 @@ interface RatelGlobal {
   invoke?: (method: string, args?: unknown) => unknown;
 }
 
-interface TauriInvoker {
-  invoke<R>(cmd: string, args?: Record<string, unknown>): Promise<R>;
-}
-
 const globals = () =>
   window as unknown as {
     walletConnect?: WalletConnectGlobal;
     ratel?: RatelGlobal;
-    __TAURI_INTERNALS__?: TauriInvoker;
   };
 
 /** Rust `WalletConnectResult`. */
@@ -149,9 +145,7 @@ export async function initFirebase(): Promise<void> {
 export async function googleSignIn(): Promise<UserInfo> {
   if (isTauri()) {
     try {
-      const token = await globals().__TAURI_INTERNALS__!.invoke<{ access_token: string; id_token?: string | null }>(
-        "google_sign_in",
-      );
+      const token = await googleSignInNative();
       return { access_token: token.access_token, id_token: token.id_token ?? "", email: null };
     } catch (e) {
       console.error("google_sign_in threw", e);
