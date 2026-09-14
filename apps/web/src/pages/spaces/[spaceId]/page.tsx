@@ -1,7 +1,6 @@
 import * as React from "react";
 import { Suspense } from "react";
-import { InboxProvider } from "@/components/notifications/inbox";
-import { NotificationPanel } from "@/components/notifications/notification-panel";
+import { NotificationPanel, SpaceNotificationsProvider } from "@/components/notifications";
 import { ActionOverlayProvider, useActionOverlay } from "@/components/space/action-overlay";
 import { DiscussionArenaPage } from "@/components/space/discussion-arena/discussion-arena";
 import { SettingsPanel } from "@/components/space/settings-panel/settings-panel";
@@ -31,9 +30,9 @@ export function Component() {
   const { spaceId } = useSpaceContext();
   return (
     <ActionOverlayProvider>
-      <InboxProvider spaceId={spaceId}>
+      <SpaceNotificationsProvider spaceId={spaceId}>
         <SpaceIndexPage />
-      </InboxProvider>
+      </SpaceNotificationsProvider>
     </ActionOverlayProvider>
   );
 }
