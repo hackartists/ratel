@@ -118,6 +118,20 @@ export function infiniteListOptions<T, K extends QueryKey = QueryKey>(
   };
 }
 
+/** The `InfiniteQuery` surface pages read from `useSuspenseInfiniteList`. */
+export interface SuspenseInfiniteList<T> {
+  /** All loaded items, de-duplicated, in page order (`InfiniteQuery::items`). */
+  items: T[];
+  /** `InfiniteQuery::has_more` (false after a failed page). */
+  hasMore: boolean;
+  /** `InfiniteQuery::is_loading`: a next page is in flight. */
+  loading: boolean;
+  /** `InfiniteQuery::next`. */
+  next(): void;
+  /** `InfiniteQuery::refresh`: back to the first page, keeping loaded items on screen. */
+  refresh(): Promise<void>;
+}
+
 /**
  * `useInfiniteList` that suspends until the first page resolves, like the Rust
  * hook (its base page is a `use_loader`). A failed first page reaches the error
@@ -125,6 +139,7 @@ export function infiniteListOptions<T, K extends QueryKey = QueryKey>(
  *
  *   - `refresh()` — Rust `InfiniteQuery::refresh`: back to the first page,
  *     keeping the loaded items on screen until it answers.
+ *   - `loading` / `next()` — Rust `is_loading()` / `next()`.
  */
 export function useSuspenseInfiniteList<T, K extends QueryKey = QueryKey>(
   queryKey: K,
@@ -152,6 +167,12 @@ export function useSuspenseInfiniteList<T, K extends QueryKey = QueryKey>(
     items,
     /** Whether `fetchNextPage()` can load more (false after a failed page). */
     hasMore: query.hasNextPage && !query.isFetchNextPageError,
+    /** A next page is in flight. */
+    loading: query.isFetchingNextPage,
+    /** Load the next page unless one is already in flight. */
+    next: () => {
+      if (!query.isFetchingNextPage) void query.fetchNextPage();
+    },
     refresh,
   };
 }

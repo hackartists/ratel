@@ -1,31 +1,33 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef } from "react";
 
 // app/ratel/src/common/hooks/use_infinite_query.rs `InfiniteQuery::more_element()`:
 // nothing when there is no next page; "Loading more..." while a page loads;
 // otherwise a 1px sentinel that loads the next page once it scrolls into view
-// (IntersectionObserver, threshold 0.1, disconnected after the first hit).
-//
-// Rust ids the sentinel `infinite-scroll-sentinel-{key}` with a random
-// per-query key; a per-instance counter plays that role here.
-
-let nextKey = 0;
+// (IntersectionObserver, threshold 0.1, disconnects after the first hit).
 
 export interface InfiniteMoreProps {
   hasMore: boolean;
-  isLoading: boolean;
+  loading: boolean;
   onMore: () => void;
 }
 
-export function InfiniteMore({ hasMore, isLoading, onMore }: InfiniteMoreProps) {
-  const [key] = useState(() => nextKey++);
+export function InfiniteMore({ hasMore, loading, onMore }: InfiniteMoreProps) {
+  if (!hasMore) return null;
+  // Rust hardcodes this outside translate! (use_infinite_query.rs:111).
+  if (loading) return <div className="">Loading more...</div>;
+  return <Sentinel onMore={onMore} />;
+}
+
+function Sentinel({ onMore }: { onMore: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const latest = useRef(onMore);
   latest.current = onMore;
-  const showSentinel = hasMore && !isLoading;
+  // Rust: `infinite-scroll-sentinel-{key}` with a per-query key.
+  const id = `infinite-scroll-sentinel-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
 
   useEffect(() => {
     const el = ref.current;
-    if (!showSentinel || !el || typeof IntersectionObserver === "undefined") return;
+    if (!el || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
@@ -37,9 +39,7 @@ export function InfiniteMore({ hasMore, isLoading, onMore }: InfiniteMoreProps) 
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [showSentinel]);
+  }, []);
 
-  if (!hasMore) return null;
-  if (isLoading) return <div className="">Loading more...</div>;
-  return <div ref={ref} id={`infinite-scroll-sentinel-${key}`} className="h-px" />;
+  return <div ref={ref} id={id} className="h-px" />;
 }

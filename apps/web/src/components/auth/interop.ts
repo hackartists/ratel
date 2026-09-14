@@ -203,6 +203,15 @@ export function loginDeviceId(): string | null {
   return isTauri() ? getOrCreateDeviceId() : null;
 }
 
+/** Rust `restore_session::clear_refresh_token()`. */
+export function clearRefreshToken(): void {
+  try {
+    window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+  } catch {
+    // storage blocked
+  }
+}
+
 /** Rust `remember_refresh_token()`. */
 export function rememberRefreshToken(token: string | null | undefined): void {
   if (!token) return;
