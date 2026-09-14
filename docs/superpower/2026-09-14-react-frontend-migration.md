@@ -233,13 +233,20 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 - CI: `web-build`(타입체크·파리티·빌드), `dx-check`에 gen-ts·i18n drift 검사.
 - 백엔드 영향: `ts-bridge` 기능 한정 derive·impl, 통합 테스트 모듈 `server` 게이팅만. `server`/`web`/`tauri-web` `cargo check -D warnings` 통과. (`--features mobile`은 이 작업 이전부터 `login_modal`의 `interop::sign_in` import로 실패하며, CI는 이 조합을 검사하지 않습니다.)
 
-**P1 공용 — 진행 중**
-- 완료: UI 프리미티브(Button·Card·Row·Col·Input·Badge·Switch·Separator·Checkbox·Tooltip·LoadingIndicator·SeoMeta·ThemeSwitcher·SpaceCard·FileExtensionIcon·Collapsible·Pagination·CommentImageGrid·ImageUploadPreview·BottomSheet·ContextMenu·ScrollArea·Select·Tabs·Sheet·Dialog), Popup·Toast·Layover·scroll lock, 테마, ErrorBoundary/ErrorPage, AuthContext(`lib/auth.tsx`).
-- 진행 중(병렬): LoginModal·회원가입, 리치 에디터 래퍼. 보류: PremiumSwitch(멤버십 조회), 알림 부트스트랩.
+**P1 공용 — 완료**
+- UI 프리미티브(Button·Card·Row·Col·Input·Badge·Switch·Separator·Checkbox·Tooltip·LoadingIndicator·SeoMeta·ThemeSwitcher·SpaceCard·FileExtensionIcon·Collapsible·Pagination·CommentImageGrid·ImageUploadPreview·BottomSheet·ContextMenu·ScrollArea·Select·Tabs·Sheet·Dialog), Popup·Toast·Layover·scroll lock, 테마, ErrorBoundary/ErrorPage, AuthContext(`lib/auth.tsx`).
+- LoginModal·회원가입(아레나 탑바·멤버십 요금제에서 호출), 리치 에디터(`components/editor`, IME·마크다운 단축키 36개 스펙), 알림 부트스트랩·벨·패널·푸시 딥링크(`components/notifications`), PremiumSwitch.
+- 네이티브 명령은 `lib/native.ts` 한 곳에서만 호출합니다(`s3_put_object`, `save_file`, `print_page`, `google_sign_in`, `open_external_url`, `plugin:opener|open_url`). `open_external_url`의 인자는 `{ req: { url } }`입니다(Rust `tauri-common`은 `{ url }`만 보내 명령 시그니처와 맞지 않음).
 
-**P2 소형·공개 — 진행 중**
-- 완료(DOM 일치 확인): `/privacy`, `/terms`, `/child-safety`, 404, `/me/character`(비로그인), `/essence`.
-- 진행 중(병렬): `/membership`, `/credentials`, `/my-ai`, `/my-follower`, `/launchpad/return`, `/onboarding/connections`. 대기: `/`(LoginModal 이후).
+**P2 소형·공개 — `/` 외 완료**
+- DOM 일치 확인(비로그인, 1440·375px 로그인 상태 포함): `/privacy`, `/terms`, `/child-safety`, 404, `/me/character`, `/essence`, `/membership`, `/credentials`, `/my-ai`, `/my-follower`, `/launchpad/return`, `/onboarding/connections`.
+- 진행 중: `/`(홈 아레나, 유일한 사전 렌더 경로).
+
+**P3~P5 — 진행 중(병렬)**: 게시물 3개, 소셜 레이아웃·사용자/팀 페이지, 팀 DAO·멤버·설정, 하위팀 작성기 5개·거버넌스 6개, 스페이스 레이아웃·인덱스·액션·앱·분석·보고서.
+
+**P6 아케이드·관리자 — 완료**: 아케이드 레이아웃·홈·리더보드·Fact-or-Fold 매칭/게임룸(Rust와 같은 폴링 주기), 관리자 레이아웃 2개·페이지 7개. 실시간 갱신은 Rust와 같이 폴링만 씁니다(SSE 구독 없음).
+
+**P7 준비**: `app/ratel-tauri/Makefile`에 `web-build` 타깃과 `FRONTEND=web` 선택 추가(기본값 `dx` 유지). 전환 시 기본값만 바꾸면 `build-android`·`release-aab`·`build-ios`·`build-ios-sim`·`testflight`가 `apps/web` 번들을 씁니다.
 
 ---
 
