@@ -257,6 +257,7 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
   1. React 쪽에 Tauri 시작 시 세션 복원이 없었습니다. Rust `AuthContext::init` + `try_restore_session`처럼 `/api/auth/me` 전에 refresh token을 교환하도록 `lib/auth.tsx`에 추가했습니다.
   2. 로컬 서버의 세션 쿠키가 `Secure`라서 `http://10.0.2.2`로는 네이티브 쿠키 저장소가 쿠키를 보내지 않습니다(`cookie_store`는 `localhost`·루프백만 보안 출처로 취급). 로컬 검증은 `adb reverse tcp:8080 tcp:8080` + `MOBILE_API_URL=http://localhost:8080`으로 합니다. HTTPS 환경(dev·prod)에는 해당 없습니다.
 - **iOS 실측(시뮬레이터 iPhone 16 Plus, `make build-ios-sim FRONTEND=web MOBILE_API_URL=http://localhost:8080`)**: 같은 흐름(부팅 → 로그인 → `/user1/drafts` → `/my-ai` → 새로고침 뒤 세션 유지) 통과. WKWebView는 CDP가 아니라 WebKit 인스펙터 프로토콜이므로 `ios_webkit_debug_proxy -s unix:<webinspectord_sim.socket>`로 붙고, 명령은 `Target.sendMessageToTarget`으로 페이지 타깃에 보냅니다. 시뮬레이터는 호스트 `localhost`에 바로 닿아 `adb reverse` 같은 설정이 필요 없습니다.
+- **기기 내 라우트 스윕(Android·iOS 모두)**: 로그인 상태로 이관한 라우트 39개를 WebView 안에서 전부 방문했습니다. 공개 페이지, 캐릭터·My AI·멤버십·자격증명·Essence, 아케이드, 사용자 월(드래프트·보상·게시물·멤버십·스페이스·설정·연결), 게시물 상세·편집, 팀(홈·DAO·멤버·설정·멤버 설정·구독·하위팀 관리·규약), 스페이스(인덱스·액션·앱 4종·분석·보고서)가 포함되며, 오류 페이지·404·준비 안 됨이 두 플랫폼 모두 0건입니다. 팀·게시물·스페이스 id는 네이티브 `api_request`로 로컬 서버에서 조회했습니다. iOS 시뮬레이터는 한국어 로케일이라 시스템 언어 반영도 확인됐습니다. WebKit의 `Runtime.evaluate`는 `awaitPromise`가 없어, 비동기 호출 결과는 `window`에 저장한 뒤 폴링합니다.
 - Android 15 에뮬레이터는 `libratel_tauri_lib.so`가 16KB 페이지 정렬이 아니라는 호환성 경고를 띄웁니다. 기존 Rust 네이티브 라이브러리 빌드 설정 문제로, 이번 전환과는 무관합니다.
 - 로컬 Tauri 스모크: `playwright/tests/tauri/cdp-client.js`로 WebView CDP에 붙는 방식은 기존 CI 스모크와 같습니다(기존 `create-space.spec.js`는 dev 백엔드 대상).
 
