@@ -158,7 +158,7 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 - dev·PR 프리뷰는 이미 ingress-nginx 뒤에 있으므로 `deploy/{dev,pr-preview}` ingress에서 나눕니다.
 - 같은 오리진이라 세션 쿠키·CORS 변경이 없습니다.
 - 대상: `deploy/{dev,prod,pr-preview}`의 ingress, `dev-workflow.yml`/`prod-workflow.yml`/`pr-workflow.yml`.
-- 서버 바이너리는 전환 전까지 지금처럼 Dioxus UI를 포함해 빌드합니다. 전환 후 UI 없는 서버 빌드 타깃을 추가합니다 (Makefile·CI 변경, 백엔드 로직 변경 아님).
+- 서버 바이너리는 UI 없이(API 전용) 빌드합니다. `make build`/`build-testing`이 `cargo build --release`로 `target/server-image/server`를 만들고, 페이지는 `apps/web/server/serve.mjs` 파드가 서빙합니다(§9.1 P7).
 
 ### 5.2 SEO (결정 D1)
 지금 스페이스(`SpaceLayout`)와 게시물 상세(`PostDetail`)의 title·description·og:image는 서버에서 데이터를 불러와 HTML에 넣습니다. SPA로 바꾸면 링크 미리보기에서 사라집니다. 정적 페이지의 메타는 `vite-react-ssg` 사전 렌더링(`/`, `/privacy`, `/terms`, `/child-safety`)으로 해결합니다. 동적 페이지는 아래 중 하나를 고릅니다.
@@ -276,6 +276,35 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 - **기기 내 라우트 스윕(Android·iOS 모두)**: 로그인 상태로 이관한 라우트 39개를 WebView 안에서 전부 방문했습니다. 공개 페이지, 캐릭터·My AI·멤버십·자격증명·Essence, 아케이드, 사용자 월(드래프트·보상·게시물·멤버십·스페이스·설정·연결), 게시물 상세·편집, 팀(홈·DAO·멤버·설정·멤버 설정·구독·하위팀 관리·규약), 스페이스(인덱스·액션·앱 4종·분석·보고서)가 포함되며, 오류 페이지·404·준비 안 됨이 두 플랫폼 모두 0건입니다. 팀·게시물·스페이스 id는 네이티브 `api_request`로 로컬 서버에서 조회했습니다. iOS 시뮬레이터는 한국어 로케일이라 시스템 언어 반영도 확인됐습니다. WebKit의 `Runtime.evaluate`는 `awaitPromise`가 없어, 비동기 호출 결과는 `window`에 저장한 뒤 폴링합니다.
 - Android 15 에뮬레이터는 `libratel_tauri_lib.so`가 16KB 페이지 정렬이 아니라는 호환성 경고를 띄웁니다. 기존 Rust 네이티브 라이브러리 빌드 설정 문제로, 이번 전환과는 무관합니다.
 - 로컬 Tauri 스모크: `playwright/tests/tauri/cdp-client.js`로 WebView CDP에 붙는 방식은 기존 CI 스모크와 같습니다(기존 `create-space.spec.js`는 dev 백엔드 대상).
+
+**P7 전환 — 코드 (로컬 커밋, push 전)**
+- **Dioxus UI 삭제**: `app/ratel/src`의 Rust 파일 1984개 중 UI 934개 삭제 → 1050개(104,617줄) 남음. 앱 루트(`app.rs`·`route.rs`·`views`·`components`), `common/components`·`hooks`·`providers`, 각 기능의 `components`·`views`·`hooks`·`interop`·`web`·`i18n.rs`·`layout.rs`·페이지 컴포넌트, `ssr_cache` 미들웨어, `Dioxus.toml`·`index.html`, `design-system-preview` 크레이트, `packages/i18n-extract`를 지웠습니다. 복구용 브랜치: `backup/pre-dioxus-ui-removal`.
+- **백엔드 동일성 확인**: 서버 함수 매크로 302개·axum 라우트 10개가 삭제 전과 같고, `make gen-ts` 재생성 차이 0(TS 클라이언트 동일). `server,bypass,local-dev`(lib·bin·tests)와 `tauri-web,ts-bridge` `cargo check` 오류·경고 0.
+- UI 코드에 섞여 있던 서버용 코드는 옮기거나 문자열로 바꿨습니다: `FileUploadError` → `common/types/file_upload_error.rs`, 알림 CTA URL(`SpaceAction::get_cta_url`)은 `Route` 대신 같은 경로 문자열(`/spaces/{id}`). UI 전용 `Route`/`rsx` 메서드(`PostResponse::url`, `SpaceActionSummary::get_url`, `SpaceActionType::create`, `SpaceAppType::settings_path`·`icon`)와 wasm 전용 `create_dao`는 삭제했습니다.
+- **서버 진입점**: `common::api_router()` = `Router::<FullstackState>::new().register_server_functions().with_state(FullstackState::headless())`. 페이지 렌더러·정적 파일 폴백 없이 API·MCP·멤버십·아케이드·크로스포스팅·런치패드 라우터만 합칩니다. 통합 테스트도 같은 라우터를 씁니다.
+- **프론트 에셋 이동**: `app/ratel/assets`(main.css·테마·아이콘·애니메이션 등) → `apps/web/assets`, `app/ratel/js` → `apps/web/shell-js`(빌드 결과가 `apps/web/assets`로), `app/ratel/tailwind.css` → `apps/web/src/styles/tokens.css`, React가 쓰던 페이지 스크립트 15개 → `apps/web/src/legacy-scripts/`. `app/ratel/assets/design`(목업, local-dev `/designs`)은 서버에 남깁니다.
+- **Tailwind**: Rust 소스 스캔이 없어지면서 빠지는 클래스 409개를 `src/styles/safelist.css`(`@source inline`)로 고정해, 생성 CSS의 클래스 집합이 삭제 전과 같습니다(추가된 것은 미사용 `--shadow-*` 변수 3개).
+- i18n 번들(`src/i18n/generated`)은 이제 직접 편집하는 원본입니다(헤더 문구 변경). `parity:tailwind`·`parity:routes`·`component-dom-parity` 스크립트 삭제.
+- **링크 미리보기(D1)**: `apps/web/server/serve.mjs`(의존성 없는 Node 서버)가 `/spaces/:id/**`는 `GET /api/spaces/:id`, `/posts/:id`는 `GET /api/posts/:id`를 익명으로 조회해 Dioxus `SeoMeta`와 같은 title·description·og/twitter 태그를 `index.html`에 넣습니다(1.5초 타임아웃, 60초 캐시, 실패 시 원본). 태그에 `data-rh`를 붙여 react-helmet-async가 중복 없이 교체합니다. `/healthz`, `PROXY_API=1`(로컬 검증용 API 프록시, SSE 스트리밍) 포함, 테스트 22개 통과.
+
+**P7 전환 — 검증 (로컬, 커밋 `c4eb4638d`·`4674e5f1f`)**
+- 구성: API 전용 app-shell(`cargo build --release --features server,bypass,local-dev`, 8080) + `apps/web/server/serve.mjs`(4173, `PROXY_API=1`로 ingress와 같은 경로 분리) + React 빌드(`VITE_BYPASS=true`). Playwright는 4173을 대상으로 실행.
+- React 77 통과·37 건너뜀(개발 서버 전용)·실패 0 (Dioxus 대비 DOM 동일성 스펙 삭제분 제외), Desktop 196 통과·3 스펙 스킵, SysAdmin 10 통과·3 스펙 스킵, Mobile 4 통과·17 스킵 — 전환 전 기준선과 같음.
+- 서버 통합 테스트: 라우터를 쓰는 `cors_`·`mcp_` 14개 통과. `cargo check -D warnings`(server·tauri-web) 오류·경고 0(미사용 UI 의존성 9개·기능 3개 제거 후).
+- 주의: 통합 테스트(`TestContext::setup`)는 로컬 Postgres 픽스처를 지웁니다. 이후 Playwright를 돌리려면 `scripts/postgres-seed.sql`을 다시 적재해야 합니다(첫 실행의 로그인 실패 원인 — 삭제 전 바이너리로도 같은 401을 재현해 코드 문제가 아님을 확인).
+- **Android 에뮬레이터**(디버그 APK, 새 Makefile의 `web-build` 번들, `MOBILE_API_URL=http://localhost:8080` + `adb reverse`): 앱 데이터 초기화 후 부팅 → 이메일 코드 로그인(네이티브 `api_request`) → `/user1/drafts`·`/my-ai`·`/membership`·`/me/character` 전체 이동(세션 복원 경유) → 새로고침 뒤 세션 유지, 9단계 통과. `build-android-debug`에 `web-build` 의존성이 없어 이전 번들이 들어갈 수 있던 문제를 고쳤습니다.
+- **iOS 시뮬레이터**(iPhone 16 Plus, `make build-ios-sim`, `dx` 없이 BUILD SUCCEEDED): 스모크(로그인 → 드래프트 → My AI → 새로고침 뒤 세션 유지) 통과, 로그인 상태 라우트 39개 스윕에서 오류·404·준비 안 됨 0건.
+- 남은 확인: `kubectl --dry-run`·`actionlint`(로컬에 없음), 실제 PR 프리뷰·dev 배포, prod 도메인은 아직 CloudFront 앞단이라 DNS 전환 시 링크 미리보기·경로 분리 확인.
+
+**P7 전환 — 배포 (로컬 커밋, push 전)**
+- **ingress 경로 분리 (dev·prod·PR 프리뷰)**: `/api`·`/v3`·`/mcp`·`/hooks`·`/launchpad/health`·`/launchpad/points`·`/admin/proxy` → `app-shell:8080`, 나머지 `/` → `web:3000`. PR 프리뷰는 local-dev 기능의 `/designs`·`/roadmap`도 app-shell로 보냅니다. 모두 `pathType: Prefix`(세그먼트 단위, 가장 구체적인 경로 우선).
+- **`web` 워크로드**: `deploy/{dev,prod}/15-web.yaml`, `deploy/pr-preview/35-web.yaml` — `ratel-web` 이미지(`apps/web/Dockerfile`: node:22-alpine, `dist`+`server`만 복사, non-root), `API_ORIGIN=http://app-shell:8080`, readiness·liveness `/healthz`, 레플리카는 app-shell과 같게.
+- **app-shell readiness**: `/`가 없어져 `tcpSocket:8080`으로 변경. `/launchpad/health`는 서명된 POST만 받아 프로브로 쓸 수 없습니다(`launchpad_partner/server.rs`).
+- **CI**: `dev-workflow`·`prod-workflow`는 app-shell을 `make build`(cargo, dx·wasm·dioxus-cli 없음)로 빌드해 `target/server-image`를 이미지로 올리고, 이어서 `shell-js` → `pnpm -C apps/web build`(VITE_* ← 기존 Firebase·WalletConnect·PortOne 시크릿) → `ratel-web` 이미지를 올립니다. 배포 대기 단계는 ingress로 `/`(web)와 `/launchpad/health`(app-shell, 5xx가 아니면 통과)를 둘 다 확인합니다.
+- `pr-workflow`: `dx-check` → `rust-check`(`cargo check --features server`, `--no-default-features --features tauri-web`, gen-ts drift), i18n drift·Tailwind/라우트 파리티 단계 삭제, `build-web-image` 잡 추가(`VITE_BYPASS=true`), e2e는 두 이미지를 기다립니다.
+- **모바일**: `app/ratel-tauri/Makefile`의 `dx-build`와 `FRONTEND` 선택 삭제 — `build-android`·`release-aab`·`build-ios`·`build-ios-sim`·`testflight`는 항상 `web-build`(shell-js 빌드 + VITE_* 전달)를 씁니다. `mobile-release.yml`은 dioxus-cli 설치 제거, Node 22 + pnpm 설치, `WALLETCONNECT_PROJECT_ID` 추가.
+- 로컬: `docker-compose.yaml`의 testing 프로필에 `web-testing`(4173, `PROXY_API=1`), `scripts/building-lambda-bootstrap.sh`는 `cargo build --features server,lambda`.
+- 검증: 변경한 YAML 전부 파싱, `make -n build-android`/`testflight`에 dx 없음, `apps/web/Dockerfile` 로컬 빌드 후 `/healthz`·`/` 200. `kubectl --dry-run=client`와 `actionlint`는 로컬에 서버 설정·도구가 없어 실행하지 못했습니다(PR 프리뷰에서 확인 필요).
 
 ---
 
