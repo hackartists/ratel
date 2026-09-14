@@ -8,6 +8,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "MembershipGetMembershipMembershipResponse"))]
 pub struct MembershipResponse {
     pub tier: String,
     pub total_credits: i64,

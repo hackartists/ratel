@@ -2,6 +2,7 @@ use crate::common::models::auth::AdminUser;
 use crate::features::admin::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct BackfillUserPointsResponse {
     /// Total UserRewardHistory rows scanned (per-event log).
     pub history_rows_scanned: usize,

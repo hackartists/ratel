@@ -11,6 +11,7 @@ use rmcp::schemars;
 /// so the UI can render a parent-context tag without re-querying.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, Translate)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema, postgres::PostgresEnum))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum EssenceSourceKind {
     #[default]
     #[translate(en = "Post", ko = "포스트")]

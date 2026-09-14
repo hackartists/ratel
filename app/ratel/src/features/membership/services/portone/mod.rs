@@ -264,6 +264,7 @@ pub struct IdentifyResponse {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct VerifiedCustomer {
     pub birth_date: String,
     pub gender: String,

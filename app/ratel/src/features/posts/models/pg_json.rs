@@ -28,6 +28,7 @@ macro_rules! json_newtype {
         #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
         #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
         #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
+        #[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
         #[serde(transparent)]
         pub struct $name(pub $inner);
 

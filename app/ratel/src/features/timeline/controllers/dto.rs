@@ -8,6 +8,7 @@ use rmcp::schemars;
 /// A single category row in the Netflix-style timeline.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TimelineCategoryRow {
     pub category: String,
     pub items: Vec<PostResponse>,
@@ -18,6 +19,7 @@ pub struct TimelineCategoryRow {
 /// Response containing multiple category rows for the Netflix-style layout.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TimelineFeedResponse {
     pub categories: Vec<TimelineCategoryRow>,
 }

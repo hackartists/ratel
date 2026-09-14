@@ -40,5 +40,8 @@ use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::merge_attributes;
 use features::auth::{use_auth_context, AuthContext, AuthorizedNavigator, OptionalUser, User};
 
-#[cfg(test)]
+// Server-function integration tests (`make test`: `--features server,bypass`).
+// Gated on `server` so a `cargo test` of a client build — `make gen-ts` runs
+// `--features tauri-web,ts-bridge` — doesn't compile them against client stubs.
+#[cfg(all(test, feature = "server"))]
 pub mod tests;

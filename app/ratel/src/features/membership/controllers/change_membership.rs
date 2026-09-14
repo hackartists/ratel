@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ChangeMembershipRequest {
     pub membership: MembershipTier,
     pub currency: Currency,
@@ -29,6 +30,7 @@ pub struct ChangeMembershipRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ChangeMembershipResponse {
     pub renewal_date: i64,
     pub receipt: Option<PaymentReceipt>,

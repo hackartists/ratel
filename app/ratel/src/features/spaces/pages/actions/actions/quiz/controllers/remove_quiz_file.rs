@@ -4,6 +4,7 @@ use crate::features::spaces::pages::apps::apps::file::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RemoveQuizFileRequest {
     pub file_url: String,
 }

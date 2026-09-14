@@ -4,6 +4,7 @@ use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum HotSpaceHeat {
     Blazing,
     Trending,

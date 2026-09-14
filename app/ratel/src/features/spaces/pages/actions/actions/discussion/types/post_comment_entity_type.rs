@@ -7,6 +7,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "string"))]
 pub struct SpacePostCommentTargetEntityType(pub String);
 
 impl std::fmt::Display for SpacePostCommentTargetEntityType {

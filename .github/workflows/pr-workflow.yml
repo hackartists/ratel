@@ -325,6 +325,22 @@ jobs:
         run: |
           dx check --web --features tauri-web --no-default-features
 
+      # React migration (docs/superpower/2026-09-14-react-frontend-migration.md):
+      # the committed TypeScript API client (packages/ts-bridges) and i18n
+      # bundles (apps/web/src/i18n/generated) must match what the Rust
+      # sources generate. Regenerate both and fail on any diff.
+      - name: gen-ts drift check
+        env:
+          DYNAMO_TABLE_PREFIX: ratel-dev
+        run: |
+          make gen-ts
+          git diff --exit-code -- ../../packages/ts-bridges
+          test -z "$(git status --porcelain -- ../../packages/ts-bridges)"
+
+      - name: i18n drift check
+        working-directory: .
+        run: cargo run -q -p i18n-extract -- --src app/ratel/src --out apps/web/src/i18n/generated --check
+
       # DISABLED 2026-08-10 — `cargo check` on the ratel-tauri shell crate
       # targets the Linux DESKTOP build, which links the GTK/webkit stack
       # (glib-sys needs `glib-2.0.pc` from libglib2.0-dev / webkit2gtk-dev).

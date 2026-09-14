@@ -6,6 +6,7 @@ use rmcp::schemars;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Translate)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum TeamRole {
     #[translate(en = "Owner", ko = "소유자")]
     Owner,

@@ -6,6 +6,7 @@ use crate::features::cross_posting::types::SocialPlatform;
 /// every credential-bearing field (FR-1 #6) — `credential_ciphertext`
 /// MUST never appear on a response DTO.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ConnectionResponse {
     pub platform: SocialPlatform,
     pub status: ConnectionStatus,
@@ -37,12 +38,14 @@ impl From<crate::features::cross_posting::models::SocialConnection> for Connecti
 
 /// Author-only post-detail syndication panel data (FR-7 #41–#45).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SyndicationPanelResponse {
     pub post_id: FeedPartition,
     pub jobs: Vec<SyndicationJobView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SyndicationJobView {
     pub platform: SocialPlatform,
     pub state: JobState,
@@ -62,6 +65,7 @@ pub struct SyndicationJobView {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct EngagementCountsView {
     pub likes: i32,
     pub comments: i32,
@@ -108,6 +112,7 @@ impl SyndicationJobView {
 /// Front-end navigates `window.location.href = authorize_url` so the
 /// browser leaves the SPA context and lands on LinkedIn's consent page.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LinkedInOauthInitResponse {
     pub authorize_url: String,
 }

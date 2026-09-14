@@ -27,6 +27,7 @@ use rmcp::schemars;
 /// `i` in `count` corresponds to `option_labels[i]`.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct OptionTally {
     pub label: String,
     pub count: u32,
@@ -38,6 +39,7 @@ pub struct OptionTally {
 /// always be computed against this denominator on the client.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PollQuestionAggregate {
     pub poll_id: String,
     pub poll_title: String,
@@ -55,6 +57,7 @@ pub struct PollQuestionAggregate {
 /// set so the panel can paint correct/incorrect bars.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct QuizQuestionAggregate {
     pub quiz_id: String,
     pub quiz_title: String,
@@ -77,6 +80,7 @@ pub struct QuizQuestionAggregate {
 /// this target".
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct FollowTargetAggregate {
     pub user_pk: String,
     pub display_name: String,
@@ -91,6 +95,7 @@ pub struct FollowTargetAggregate {
 /// in the label (`토픽_1`) for direct rendering parity with the mock.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "AnalyzesResultTopicRow"))]
 pub struct TopicRow {
     pub topic: String,
     /// Top-N keywords for this topic, joined into a single comma-sep
@@ -104,6 +109,7 @@ pub struct TopicRow {
 /// (already normalised) so the bar widths are direct percentages.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TermScore {
     pub term: String,
     pub score: f64,
@@ -113,6 +119,7 @@ pub struct TermScore {
 /// Co-occurrence graph node. `weight` is term frequency in the corpus.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct NetworkNode {
     pub term: String,
     pub weight: u32,
@@ -121,6 +128,7 @@ pub struct NetworkNode {
 /// Co-occurrence graph edge between two nodes.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct NetworkEdge {
     pub source: String,
     pub target: String,
@@ -134,6 +142,7 @@ pub struct NetworkEdge {
     derive(rmcp::schemars::JsonSchema, postgres::PostgresJson)
 )]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct DiscussionAnalysisParams {
     /// Number of LDA topics. Bound 1..=20 on the form.
     pub num_topics: usize,

@@ -117,6 +117,7 @@ impl Post {
 /// newtypes, so their JSON is unchanged from the old `Vec<_>`/`ContentBody`.
 #[derive(Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "Post"))]
 pub struct PostWire {
     /// `Partition::Feed(id)` — renders as `FEED#{id}`.
     pub pk: Partition,
@@ -626,5 +627,47 @@ mod shipped_client_compat_tests {
             err.to_string().contains("missing field `pk`"),
             "expected missing-`pk`, got: {err}"
         );
+    }
+}
+
+// TypeScript binding (`make gen-ts` only). `Post` serializes through
+// `PostWire`, which is exported under this name; delegate every method so
+// references, declarations and the output file all come from the wire struct.
+#[cfg(feature = "ts-bridge")]
+impl ts_rs::TS for Post {
+    type WithoutGenerics = Self;
+
+    fn ident() -> String {
+        <PostWire as ts_rs::TS>::ident()
+    }
+    fn decl() -> String {
+        <PostWire as ts_rs::TS>::decl()
+    }
+    fn decl_concrete() -> String {
+        <PostWire as ts_rs::TS>::decl_concrete()
+    }
+    fn name() -> String {
+        <PostWire as ts_rs::TS>::name()
+    }
+    fn inline() -> String {
+        <PostWire as ts_rs::TS>::inline()
+    }
+    fn inline_flattened() -> String {
+        <PostWire as ts_rs::TS>::inline_flattened()
+    }
+    fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <PostWire as ts_rs::TS>::visit_dependencies(v)
+    }
+    fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <PostWire as ts_rs::TS>::visit_generics(v)
+    }
+    fn output_path() -> Option<&'static std::path::Path> {
+        <PostWire as ts_rs::TS>::output_path()
     }
 }

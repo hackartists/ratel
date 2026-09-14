@@ -2,6 +2,7 @@ use super::SpaceActionType;
 use crate::features::spaces::pages::actions::*;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SpaceActionSummary {
     pub action_id: String,
     pub action_type: SpaceActionType,

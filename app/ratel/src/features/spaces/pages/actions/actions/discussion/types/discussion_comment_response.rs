@@ -1,6 +1,7 @@
 use crate::features::spaces::pages::actions::actions::discussion::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct DiscussionCommentResponse {
     pub pk: Partition,
     pub sk: EntityType,

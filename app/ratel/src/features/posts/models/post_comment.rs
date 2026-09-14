@@ -232,6 +232,7 @@ impl PostComment {
 /// serializes to.
 #[derive(Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "PostComment"))]
 pub struct PostCommentWire {
     /// The parent post's partition — renders as `FEED#{post_id}`.
     pub pk: Partition,
@@ -346,5 +347,47 @@ mod shipped_client_compat_tests {
             err.to_string().contains("missing field `pk`"),
             "expected missing-`pk`, got: {err}"
         );
+    }
+}
+
+// TypeScript binding (`make gen-ts` only). `PostComment` serializes through
+// `PostCommentWire`, which is exported under this name; delegate every method so
+// references, declarations and the output file all come from the wire struct.
+#[cfg(feature = "ts-bridge")]
+impl ts_rs::TS for PostComment {
+    type WithoutGenerics = Self;
+
+    fn ident() -> String {
+        <PostCommentWire as ts_rs::TS>::ident()
+    }
+    fn decl() -> String {
+        <PostCommentWire as ts_rs::TS>::decl()
+    }
+    fn decl_concrete() -> String {
+        <PostCommentWire as ts_rs::TS>::decl_concrete()
+    }
+    fn name() -> String {
+        <PostCommentWire as ts_rs::TS>::name()
+    }
+    fn inline() -> String {
+        <PostCommentWire as ts_rs::TS>::inline()
+    }
+    fn inline_flattened() -> String {
+        <PostCommentWire as ts_rs::TS>::inline_flattened()
+    }
+    fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <PostCommentWire as ts_rs::TS>::visit_dependencies(v)
+    }
+    fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <PostCommentWire as ts_rs::TS>::visit_generics(v)
+    }
+    fn output_path() -> Option<&'static std::path::Path> {
+        <PostCommentWire as ts_rs::TS>::output_path()
     }
 }

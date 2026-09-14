@@ -4,6 +4,7 @@ use crate::common::types::ListResponse;
 use crate::features::admin::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ModerationFlagResponse {
     pub user_pk: String,
     pub display_name: String,

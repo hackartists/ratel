@@ -13,6 +13,7 @@ use crate::features::spaces::models::verified_attributes::UserAttributesExt;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Translate)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum PanelRequirementAttribute {
     #[translate(en = "Age", ko = "나이")]
     Age,
@@ -23,6 +24,7 @@ pub enum PanelRequirementAttribute {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PanelRequirementStatus {
     pub attribute: PanelRequirementAttribute,
     pub satisfied: bool,

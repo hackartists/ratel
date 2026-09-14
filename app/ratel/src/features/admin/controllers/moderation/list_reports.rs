@@ -4,6 +4,7 @@ use crate::features::admin::*;
 use crate::features::spaces::pages::actions::actions::discussion::SpacePostCommentReport;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CommentReportResponse {
     pub reporter_pk: String,
     pub post_id: String,

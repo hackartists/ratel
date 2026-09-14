@@ -5,6 +5,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RankingEntryResponse {
     pub rank: u32,
     pub user_pk: String,

@@ -4,6 +4,7 @@ use crate::features::spaces::pages::report::*;
 use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct GetReportResponse {
     pub id: String,
     pub status: ReportStatus,

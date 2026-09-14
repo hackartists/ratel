@@ -2,6 +2,7 @@ use crate::common::*;
 use chrono::Datelike;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, DynamoEnum, Eq, PartialEq, Translate)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum RewardPeriod {
     #[default]
     #[translate(en = "Once", ko = "1회")]

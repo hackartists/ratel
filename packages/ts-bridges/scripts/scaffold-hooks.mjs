@@ -76,6 +76,12 @@ const stems = readdirSync(handlersDir)
 
 let written = 0;
 let kept = 0;
+const baseCounts = new Map();
+for (const stem of stems) {
+  const b = stem.replace(/Handler$/, "");
+  baseCounts.set(b, (baseCounts.get(b) ?? 0) + 1);
+}
+const baseCollisions = new Set([...baseCounts].filter(([, n]) => n > 1).map(([b]) => b));
 for (const stem of stems) {
   if (only && !only.has(stem)) continue;
   const src = readFileSync(join(handlersDir, `${stem}.ts`), "utf8");
@@ -92,7 +98,10 @@ for (const stem of stems) {
   });
 
   const isQuery = /\bapiGet\b/.test(src);
-  const base = fnName.replace(/Handler$/, "");
+  // `addComment` and `addCommentHandler` both exist (different Rust modules);
+  // stripping `Handler` would give both the same hook, so colliding names keep
+  // the full function name.
+  const base = baseCollisions.has(fnName.replace(/Handler$/, "")) ? fnName : fnName.replace(/Handler$/, "");
   const hookName = "use" + cap(base);
   const file = join(hooksDir, `${hookName}.ts`);
   if (existsSync(file) && !force) {

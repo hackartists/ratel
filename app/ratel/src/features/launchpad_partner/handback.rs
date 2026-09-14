@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 /// byte-identical to what Launchpad signed.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LaunchpadReturnRequest {
     pub project_id: String,
     pub conversion_id: String,
@@ -37,6 +38,7 @@ pub struct LaunchpadReturnRequest {
 /// Verified, typed view the landing page renders.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LaunchpadReturnView {
     /// Signature + freshness both passed. The page must treat a `false` here
     /// as an untrusted/expired hand-back and show an error instead of a link.

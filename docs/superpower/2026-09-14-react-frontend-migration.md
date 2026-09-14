@@ -127,15 +127,18 @@ ratel/
 
 ### 4.2 TS 생성 (asset의 `ts-server-fn`은 쓰지 않음)
 asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·에러 형식을 바꾸므로 백엔드 재작성이 됩니다. 대신:
-1. `packages/by-macros/src/server_fn.rs`가 이미 모바일용 HTTP 스텁을 만들 때 파싱하는 라우트 문자열·인자 목록을 재사용해, `TS_SERVER_FN_PACKAGE_DIR`가 설정됐을 때만 `packages/ts-bridges/src/handlers/<camelFn>.ts`를 씁니다. 경로·쿼리 조립, `{argName: value}` 본문, `Result<T>` → `T`.
-2. 타입은 ts-rs 10(`serde-compat`)로 생성합니다. 주의할 점:
-   - **`i64`/`u64` → `bigint`**로 매핑되므로 타임스탬프·카운트 필드에 `#[ts(type = "number")]`가 필요합니다. 필드가 수백 개라 스크립트로 일괄 적용합니다.
-   - SubPartition 약 235개와 `Partition`/`EntityType`은 SubPartition derive 매크로 안에서 `impl TS`(= `string`)를 생성합니다.
-   - `DynamoEnum` 23개는 문자열 유니온 또는 `#[ts(type = "string")]`.
-   - `serde_json::Value`(133)는 `unknown`, untagged/flatten enum은 결과 타입을 수동 검토합니다.
-   - 핸들러가 엔티티를 그대로 반환하는 곳(`Post`, `SpacePost` 등)은 모델에도 derive가 필요합니다.
-3. `make gen-ts`: 생성 디렉터리 초기화 → `cargo clean -p app-shell` → `TS_SERVER_FN_PACKAGE_DIR=… cargo check --features server,ts-bridge` → ts-rs export 테스트 → 배럴 생성. CI `gen-ts-check` 잡이 재생성 후 diff 0을 강제합니다 (asset과 동일).
-4. react-query 훅은 asset처럼 **수작업**으로 `hooks/`에 둡니다 (`getSpaceHandler` → `useGetSpace`). `use_infinite_query` 대체 훅은 bookmark 기반 `useInfiniteQuery` 래퍼로 하나 만듭니다.
+1. `packages/by-macros/src/server_fn/ts_bridge.rs`: 라우트 매크로가 모바일 HTTP 스텁을 만들 때 파싱하는 라우트 문자열·인자 목록으로 핸들러마다 `cfg(all(test, feature = "ts-bridge"))` 테스트(`ts_bridge_manifest_<fn>`)를 하나씩 만듭니다. 이 테스트는 `TS_SERVER_FN_PACKAGE_DIR`가 있을 때 `.gen/handlers/<METHOD>_<path>.json` 매니페스트를 씁니다(메서드, 경로, 경로·쿼리·본문 인자, `Result<T>`의 `T`). 타입 문자열과 import 경로는 매크로가 추측하지 않고 **ts-rs가 실제 Rust 타입에서** 뽑으므로 모듈만 다른 동명 타입·rename·제네릭(`ListResponse<TeamItem>`)이 정확합니다. 다른 빌드에서는 cfg로 빠져 결과물이 같습니다.
+   - 라우트 매크로는 `fullstack`이 아닐 때만 클라이언트 스텁으로 펼쳐지므로 생성은 `tauri-web` 빌드로 합니다(핸들러 324개).
+   - `scripts/gen-handlers.mjs`가 매니페스트를 `src/handlers/<camelFn>.ts`(asset 형식), `handlers/index.ts`·`types/index.ts`·`src/index.ts` 배럴로 렌더합니다. 경로·쿼리 조립, `{argName: value}` 본문, `Result<T>` → `T`. 모듈만 다른 동명 핸들러(6개)는 메서드+경로 접미사를 붙입니다.
+2. 타입은 ts-rs 10.1(`serde-compat`, `uuid-impl`, `serde-json-impl`)로 생성합니다. derive는 `#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]`만 추가합니다(백엔드 동작 무변경).
+   - **`i64`/`u64` → `bigint`**는 필드마다 속성을 달지 않고 asset처럼 생성 스크립트가 `number`로 정규화합니다(서버는 JSON number로 보냄).
+   - ts-rs의 컨테이너 `type`/`as`는 선언만 바꾸고 **참조 이름과 import는 원래 타입 것을 씁니다.** 그래서 문자열·숫자로 직렬화되는 타입(SubPartition 구조체 220개는 매크로가, `SerializeDisplay`/`serde_repr` enum 27개는 속성으로)은 `ts(export, export_to = "types/", type = "string" | "number")`로 **별칭 파일**(`export type SpacePartition = string`)을 내보냅니다.
+   - `serde(into = "XWire")`로 직렬화하는 모델 13개(`User`, `Post`, `SpaceAction` …)는 Wire 구조체를 모델 이름으로 export(`rename`)하고, 모델에는 모든 메서드를 Wire에 위임하는 수동 `impl TS`(`ts-bridge` 기능 한정)를 둡니다. `as`는 `serde(flatten)`과 함께 쓸 수 없고, 같은 파일을 두 곳이 쓰게 되기 때문입니다. 제네릭 `ListResponse<T>`(serde where 절이 ts-rs `Dummy`와 충돌)와 `CompositePartition<T, S>`(문자열)도 수동 impl입니다.
+   - 이름이 겹치는 Rust 타입은 경로가 긴 쪽에 모듈 접두사 `rename`을 줍니다(예: `SocialSettingTeamResponse`, `PostsSpaceStatus`).
+   - 서버 통합 테스트 모듈(`src/tests`, `features/character/tests`)은 `cfg(all(test, feature = "server"))`로 제한합니다. 클라이언트 빌드의 `cargo test`(gen-ts)가 이를 컴파일하면 해석 에러 수천 개로 빌드가 수십 분 걸립니다.
+   - `serde_json::Value`는 `unknown`, untagged/flatten enum은 결과 타입을 수동 검토합니다.
+3. `make gen-ts` (`app/ratel/Makefile`): `.gen`·`src/types` 초기화 → `TS_SERVER_FN_PACKAGE_DIR=… TS_RS_EXPORT_DIR=…/src cargo test --no-default-features --features tauri-web,ts-bridge --lib -- ts_bridge_manifest_ export_bindings_` → `gen-handlers.mjs`. 결과물은 커밋하고, CI `dx-check` 잡의 `gen-ts drift check` 단계가 재생성 후 diff 0을 강제합니다 (asset과 동일).
+4. react-query 훅은 asset 컨벤션을 따릅니다: `src/hooks/use<Fn>.ts`를 asset의 `scaffold-ts-hooks.mjs`와 같은 규칙(GET → `useQuery`, 쿼리 키 `["<fn>", ...args]` / 그 외 → `useMutation`)으로 **한 번 스캐폴드한 뒤 수작업으로 관리**합니다(`make gen-ts`가 덮어쓰지 않음). 컴포넌트는 `@ratel/ts-bridges/hooks`만 쓰고 handler·`fetch`를 직접 부르지 않습니다. `use_infinite_query` 대체 훅은 bookmark 기반 `useInfiniteQuery` 래퍼로 하나 만듭니다.
 5. 생성 대상이 아닌 경로(SSE `/api/arcade/events`, MCP, `/hooks/portone`, LinkedIn 콜백, `/launchpad/*`)는 필요한 경우만 수작업 클라이언트를 만듭니다.
 
 ### 4.3 런타임 클라이언트 (`packages/ts-bridges/src/runtime/client.ts`)
@@ -149,7 +152,8 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 ## 5. 웹 배포와 SEO
 
 ### 5.1 서빙
-- 앞단에서 경로를 나눕니다: `/api`, `/v3`, `/mcp`, `/hooks`, `/launchpad` → 기존 app-shell. 나머지 → React 정적 빌드(`index.html` 폴백).
+- 앞단에서 경로를 나눕니다: `/api`, `/v3`, `/mcp`, `/hooks`, `/launchpad/health`, `/launchpad/points` → 기존 app-shell. 나머지 → React 정적 빌드(`index.html` 폴백). `/launchpad/return`은 페이지(`LaunchpadReturnPage`)이므로 React로 보냅니다.
+- 사전 렌더링하는 경로는 `apps/web/src/prerendered-routes.ts`(현재 `/`)이고 `vite.config.ts`의 `ssgOptions.includedRoutes`와 공유합니다. `main.tsx`는 이 경로만 하이드레이트하고 **나머지 URL은 클라이언트에서 새로 렌더**합니다. 폴백으로 받는 HTML이 `/` 페이지 마크업이라, 다른 페이지를 그 위에 하이드레이트하면 React #418/#423이 납니다(스페이스 레이아웃에서 실제 발생). 폴백 HTML에 랜딩 콘텐츠가 들어가기 시작하면 JS 로드 전 잠깐 보이므로, 그 시점에 빌드가 `#main`이 빈 셸 HTML(`index.html` 템플릿)을 따로 내보내고 앞단 폴백을 그 파일로 바꿉니다.
 - **prod는 React 전환을 k3s 이전보다 먼저 합니다 (D3).** 따라서 prod의 경로 분리는 현재 `ratel.foundation` 앞단인 **CloudFront behavior**(경로 패턴별 오리진)로 합니다. CloudFront 설정은 레포에 없으므로(`cdk/`에 소스 없음) 레포 밖 인프라 작업으로 진행하고, 이후 k3s 이전 때 같은 규칙을 `deploy/prod/30-ingress.yaml`로 옮깁니다.
 - dev·PR 프리뷰는 이미 ingress-nginx 뒤에 있으므로 `deploy/{dev,pr-preview}` ingress에서 나눕니다.
 - 같은 오리진이라 세션 쿠키·CORS 변경이 없습니다.
@@ -181,10 +185,14 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 
 ## 7. i18n
 
-1. **추출 도구**: `translate!` 매크로의 파서(`packages/dioxus-translate-macro`)를 재사용하는 syn 기반 도구로 `app/ratel/src`를 훑어, 페이지·컴포넌트 옆 `i18n.tsx` 모듈(asset 형식: `const en = {…}`, `const ko: Record<keyof typeof en, string>`, `useXxxI18n()`)을 생성합니다. `derive(Translate)` enum·에러는 `enum.<Type>.<Variant>` 키로 만듭니다.
+1. **추출 도구** (`packages/i18n-extract`, 구현됨): `translate!` 매크로와 같은 syn 파싱으로 `app/ratel/src`를 훑어 asset console 형식의 모듈을 생성합니다 — `const en = {…}`, `const ko: Record<keyof typeof en, string>`, `export const i18n = { en, ko }`, 타입 있는 `use<Name>I18n()` 훅(react-i18next 네임스페이스).
+   - `translate!` 블록 148개 → `apps/web/src/i18n/generated/<Rust 디렉터리>/<name>.i18n.tsx`. 네임스페이스는 블록 이름(`PostDetailTranslate` → `postDetail`)이고, 겹치면 디렉터리로 한정합니다(4개).
+   - `derive(Translate)` enum 54개 → `enums.i18n.tsx`의 `enum` 네임스페이스, `<Type>.<Variant>` 키, `useEnumI18n()`. `#[translate(from)]` 34개는 `delegates`에 감쌀 타입을 적습니다.
+   - Rust에서 `str::replace("{n}", …)`로 채우던 `{n}`은 i18next `{{n}}`로 바꾸고, 훅은 해당 키를 `(values) => string`으로 노출합니다(`t(key, { replace: values })`).
+   - 생성물은 커밋하고 `--check`로 CI(`dx-check` 잡의 `i18n drift check`)가 재생성 diff 0을 강제합니다. 페이지를 옮기면 해당 모듈을 페이지 옆으로 옮겨 수작업 관리로 전환하고, Dioxus 제거 시 추출 도구도 제거합니다.
 2. RSX에서 문자열을 이어 붙이던 곳은 보간 함수로 바꿔야 해서 사람이 검토합니다.
-3. 언어 저장 키 `localStorage["language"]`와 쿠키 `language`를 그대로 씁니다 (기존 사용자 설정 유지, 서버 에러 메시지 언어와 일치).
-4. 기본 언어·폴백은 현재 동작과 같게 둡니다.
+3. 언어 저장 키 `localStorage["language"]`와 쿠키 `language`를 그대로 씁니다 (기존 사용자 설정 유지, 서버 에러 메시지 언어와 일치). `src/i18n/index.ts`의 `initI18n`/`setLanguage`/`applyPersistedLanguage`가 asset과 같은 구조로 이를 처리합니다.
+4. 기본 언어·폴백은 현재 동작과 같게 둡니다: 저장값 → 브라우저 언어 → 영어. 사전 렌더 HTML은 영어이고 하이드레이션 후 전환합니다.
 
 ---
 
@@ -192,9 +200,9 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 
 1. **같은 데이터**: LocalStack/Postgres 시드 데이터로 Dioxus 빌드와 React 빌드를 각각 띄웁니다.
 2. **스크린샷 diff**: Playwright로 라우트 목록 × 375/900/1280px × light/dark를 찍어 `toHaveScreenshot`/pixelmatch로 비교합니다. 애니메이션 끔, 폰트 로드 대기, lottie 마스킹.
-3. **DOM diff**: 라우트마다 정규화한 DOM(태그, class, `data-*`/`aria-*`, style, 주석 제거)과 `data-testid` 요소의 computed style을 JSON으로 덤프해 비교합니다. 픽셀보다 먼저 구조 차이를 잡습니다.
-4. **Tailwind diff**: 두 빌드의 CSS 선택자 목록 diff = 0.
-5. **E2E**: `playwright/tests/utils.js`의 Dioxus 대기(`data-dioxus-id`, wasm 응답 대기, 고정 1500ms)를 React 준비 신호(`document.documentElement.dataset.appReady`)로 교체하고, 기존 28개 spec을 React 빌드에 그대로 돌립니다.
+3. **DOM diff** (구현됨): `playwright/tests/react/dom-parity.spec.js` — 파일 상단의 라우트 목록마다 Dioxus(`DIOXUS_BASE_URL`, 기본 `:8080`)와 React(`PLAYWRIGHT_BASE_URL`)를 열어 `#main`을 정규화(태그, id, class, role, `data-*`/`aria-*`(Dioxus 내부 속성 제외), style, 병합한 텍스트, 해시 제거한 에셋 경로)해 `toEqual`로 비교하고, 두 앱 스크린샷을 남깁니다. 페이지를 옮기면 라우트를 목록에 추가합니다. 현재 `/privacy`, `/terms`, `/child-safety`, 404 일치.
+4. **Tailwind diff** (구현됨): `pnpm -C apps/web parity:tailwind` — 두 빌드의 CSS 선택자 목록 diff = 0. 경로 테이블은 `parity:routes`가 `route.rs`와 비교합니다(73/73, 레이아웃 체인·매칭 우선순위 포함).
+5. **E2E** (하네스 구현됨): `playwright/tests/utils.js`의 `goto`·`waitForHydrated`·`waitForAppReady`가 `<meta name="ratel-app" content="react">`로 앱을 구분해 React는 `html[data-app-ready="true"]`, Dioxus는 기존 대기를 씁니다. Dioxus 앱 Desktop E2E는 교체 후에도 196 통과/3 skip(기존 skip)/0 실패. React 빌드에는 `tests/react/*.spec.js`(`--project=React`, `REACT_APP=1`)를 돌리고, 페이지가 옮겨지면 기존 spec을 React 빌드에 그대로 돌립니다.
 6. **입력 검증**: 에디터 한국어 IME 입력, 슬래시 메뉴, 모바일 키보드 레이아웃은 Android 에뮬레이터·iOS 시뮬레이터에서 직접 확인합니다.
 
 ---

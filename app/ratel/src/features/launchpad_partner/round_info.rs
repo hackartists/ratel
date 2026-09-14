@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LaunchpadRoundInfo {
     pub has_round: bool,
     pub name: String,

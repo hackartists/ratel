@@ -63,6 +63,7 @@ impl AnalyzeQuotaConfig {
 /// Same reason as `UserWire`. Both keys were constants on this singleton row.
 #[derive(Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "AnalyzeQuotaConfig"))]
 pub struct AnalyzeQuotaConfigWire {
     /// Always `Partition::AnalyzeQuotaConfig` (a singleton row).
     pub pk: Partition,
@@ -118,5 +119,47 @@ mod shipped_client_compat_tests {
         json.as_object_mut().unwrap().remove("pk");
         let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
         assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
+    }
+}
+
+// TypeScript binding (`make gen-ts` only). `AnalyzeQuotaConfig` serializes through
+// `AnalyzeQuotaConfigWire`, which is exported under this name; delegate every method so
+// references, declarations and the output file all come from the wire struct.
+#[cfg(feature = "ts-bridge")]
+impl ts_rs::TS for AnalyzeQuotaConfig {
+    type WithoutGenerics = Self;
+
+    fn ident() -> String {
+        <AnalyzeQuotaConfigWire as ts_rs::TS>::ident()
+    }
+    fn decl() -> String {
+        <AnalyzeQuotaConfigWire as ts_rs::TS>::decl()
+    }
+    fn decl_concrete() -> String {
+        <AnalyzeQuotaConfigWire as ts_rs::TS>::decl_concrete()
+    }
+    fn name() -> String {
+        <AnalyzeQuotaConfigWire as ts_rs::TS>::name()
+    }
+    fn inline() -> String {
+        <AnalyzeQuotaConfigWire as ts_rs::TS>::inline()
+    }
+    fn inline_flattened() -> String {
+        <AnalyzeQuotaConfigWire as ts_rs::TS>::inline_flattened()
+    }
+    fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <AnalyzeQuotaConfigWire as ts_rs::TS>::visit_dependencies(v)
+    }
+    fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <AnalyzeQuotaConfigWire as ts_rs::TS>::visit_generics(v)
+    }
+    fn output_path() -> Option<&'static std::path::Path> {
+        <AnalyzeQuotaConfigWire as ts_rs::TS>::output_path()
     }
 }

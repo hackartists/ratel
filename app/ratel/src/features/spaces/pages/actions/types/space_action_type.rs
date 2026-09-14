@@ -5,6 +5,7 @@ use rmcp::schemars;
 #[derive(Debug, Clone, Default, Translate, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum SpaceActionType {
     #[default]
     // #[translate(ko = "숙의 및 퀴즈", en = "Quiz")]

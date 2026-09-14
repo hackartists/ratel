@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LaunchpadEntryUrlResponse {
     /// `{base}/connect?project_id={pid}&lp_user={token}`
     pub url: String,

@@ -1,21 +1,20 @@
 //! TypeScript client manifests for the React app
 //! (docs/superpower/2026-09-14-react-frontend-migration.md §4.2).
 //!
-//! Only when `TS_SERVER_FN_PACKAGE_DIR` is set while the route macros expand,
-//! each handler writes `<dir>/.gen/handlers/<METHOD>_<path>.json` describing
-//! its client surface: method, path template, path/query/body arguments with
-//! TypeScript types, and the `Result<T>` payload type. The macro's token
-//! output is unchanged either way. `packages/ts-bridges/scripts/gen-handlers.mjs`
-//! turns the manifests into `src/handlers/*.ts`.
-
-use std::collections::BTreeSet;
-use std::path::PathBuf;
+//! Each route macro also emits a test, compiled only under
+//! `cfg(all(test, feature = "ts-bridge"))`, so every other build is
+//! unaffected. When `TS_SERVER_FN_PACKAGE_DIR` is set, the test writes
+//! `<dir>/.gen/handlers/<METHOD>_<path>.json` with the handler's client
+//! surface: method, path template, path/query/body arguments and the
+//! `Result<T>` payload. Types come from ts-rs at runtime (`TS::name()` and the
+//! export path of every named type), so same-named Rust types in different
+//! modules, renames and generics (`ListResponse<TeamItem>`) resolve exactly.
+//! `packages/ts-bridges/scripts/gen-handlers.mjs` renders the manifests into
+//! `src/handlers/*.ts`.
 
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{ToTokens, quote};
+use quote::{format_ident, quote};
 use syn::{GenericArgument, Ident, PathArguments, ReturnType, Type};
-
-pub const ENV_DIR: &str = "TS_SERVER_FN_PACKAGE_DIR";
 
 pub struct Handler<'a> {
     pub method: &'a str,
@@ -28,83 +27,106 @@ pub struct Handler<'a> {
     pub output: &'a ReturnType,
 }
 
-/// Writes the manifest when the env var is set. Returns a `compile_error!`
-/// when it can't, so a generation run never silently misses a handler.
 pub fn emit(handler: Handler<'_>) -> TokenStream2 {
-    let Ok(dir) = std::env::var(ENV_DIR) else {
-        return TokenStream2::new();
-    };
-    let mut mapper = Mapper::default();
-    let arg_type = |mapper: &mut Mapper, name: &str| {
-        handler
-            .args
-            .iter()
-            .find(|(ident, _)| *ident == name)
-            .map(|(_, ty)| (mapper.map(ty), super::is_option_type(ty)))
-    };
+    let arg = |name: &str| handler.args.iter().find(|(ident, _)| *ident == name).map(|(_, ty)| *ty);
 
-    let path_args: Vec<_> = handler
+    let path_entries: Vec<TokenStream2> = handler
         .path_args
         .iter()
         .filter_map(|name| {
-            let (ts, _) = arg_type(&mut mapper, name)?;
-            Some(serde_json::json!({ "name": name, "ts": ts }))
+            let ty = client_type(arg(name)?);
+            Some(quote! { ::serde_json::json!({ "name": #name, "ts": __ty::<#ty>(&mut __refs) }) })
         })
         .collect();
-    let query_args: Vec<_> = handler
+
+    let query_entries: Vec<TokenStream2> = handler
         .query_args
         .iter()
         .filter_map(|name| {
-            let (ts, optional) = arg_type(&mut mapper, name)?;
-            Some(serde_json::json!({ "name": name, "ts": ts, "optional": optional }))
+            let original = arg(name)?;
+            let optional = super::is_option_type(original);
+            let ty = client_type(original);
+            Some(quote! {
+                ::serde_json::json!({ "name": #name, "ts": __ty::<#ty>(&mut __refs), "optional": #optional })
+            })
         })
         .collect();
-    let body = handler.body_arg.as_deref().and_then(|name| {
-        let (ts, _) = arg_type(&mut mapper, name)?;
-        Some(serde_json::json!({ "name": name, "ts": ts }))
-    });
-    let returns = match handler.output {
-        ReturnType::Default => "null".to_string(),
-        ReturnType::Type(_, ty) => mapper.map(ty),
+
+    let body = match handler.body_arg.as_deref().and_then(|name| Some((name, arg(name)?))) {
+        Some((name, ty)) => {
+            let ty = client_type(ty);
+            quote! { ::serde_json::json!({ "name": #name, "ts": __ty::<#ty>(&mut __refs) }) }
+        }
+        None => quote! { ::serde_json::Value::Null },
     };
 
-    let manifest = serde_json::json!({
-        "name": handler.name,
-        "method": handler.method,
-        "path": normalize_path(handler.path),
-        "pathArgs": path_args,
-        "queryArgs": query_args,
-        "body": body,
-        "returns": returns,
-        "refs": mapper.refs,
-        "unmapped": mapper.unmapped,
-    });
+    let returns = match handler.output {
+        ReturnType::Default => quote! { ::std::string::String::from("null") },
+        ReturnType::Type(_, ty) => {
+            let ty = result_payload(ty);
+            quote! { __ty::<#ty>(&mut __refs) }
+        }
+    };
 
-    let slug: String = normalize_path(handler.path)
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect();
-    let file = PathBuf::from(dir)
-        .join(".gen/handlers")
-        .join(format!("{}{}.json", handler.method, slug));
-    let content = serde_json::to_string_pretty(&manifest).expect("manifest serializes") + "\n";
+    let method = handler.method;
+    let path = normalize_path(handler.path);
+    let fn_name = &handler.name;
+    let slug: String = path.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let file_name = format!("{method}{slug}.json");
+    let test_name = format_ident!("ts_bridge_manifest_{}", handler.name);
 
-    let result = file
-        .parent()
-        .map(std::fs::create_dir_all)
-        .transpose()
-        .and_then(|_| {
-            if std::fs::read_to_string(&file).is_ok_and(|current| current == content) {
-                Ok(())
-            } else {
-                std::fs::write(&file, content)
+    quote! {
+        #[cfg(all(test, feature = "ts-bridge"))]
+        #[test]
+        fn #test_name() {
+            let ::std::result::Result::Ok(__dir) = ::std::env::var("TS_SERVER_FN_PACKAGE_DIR") else {
+                return;
+            };
+
+            /// Named (exported) types the TS client must import: name → export path.
+            struct __Refs(::std::collections::BTreeMap<::std::string::String, ::std::string::String>);
+            impl ::ts_rs::TypeVisitor for __Refs {
+                fn visit<T: ::ts_rs::TS + 'static + ?Sized>(&mut self) {
+                    if let ::std::option::Option::Some(dep) = ::ts_rs::Dependency::from_ty::<T>() {
+                        self.0.insert(dep.ts_name, dep.output_path.to_string_lossy().into_owned());
+                    }
+                }
             }
-        });
-    match result {
-        Ok(()) => TokenStream2::new(),
-        Err(e) => {
-            let msg = format!("{ENV_DIR}: cannot write {}: {e}", file.display());
-            quote! { compile_error!(#msg); }
+            fn __ty<T: ::ts_rs::TS + 'static + ?Sized>(refs: &mut __Refs) -> ::std::string::String {
+                ::ts_rs::TypeVisitor::visit::<T>(refs);
+                <T as ::ts_rs::TS>::visit_generics(refs);
+                <T as ::ts_rs::TS>::name()
+            }
+
+            let mut __refs = __Refs(::std::collections::BTreeMap::new());
+            let path_args: ::std::vec::Vec<::serde_json::Value> = ::std::vec![#(#path_entries),*];
+            let query_args: ::std::vec::Vec<::serde_json::Value> = ::std::vec![#(#query_entries),*];
+            let body = #body;
+            let returns = #returns;
+            let refs: ::std::vec::Vec<::serde_json::Value> = __refs
+                .0
+                .into_iter()
+                .map(|(name, path)| ::serde_json::json!({ "name": name, "path": path }))
+                .collect();
+
+            let manifest = ::serde_json::json!({
+                "name": #fn_name,
+                "method": #method,
+                "path": #path,
+                "pathArgs": path_args,
+                "queryArgs": query_args,
+                "body": body,
+                "returns": returns,
+                "refs": refs,
+            });
+
+            let dir = ::std::path::Path::new(&__dir).join(".gen/handlers");
+            ::std::fs::create_dir_all(&dir).expect("create manifest dir");
+            ::std::fs::write(
+                dir.join(#file_name),
+                ::serde_json::to_string_pretty(&manifest).expect("serialize manifest") + "\n",
+            )
+            .expect("write manifest");
         }
     }
 }
@@ -122,86 +144,26 @@ fn normalize_path(path: &str) -> String {
         .join("/")
 }
 
-#[derive(Default)]
-struct Mapper {
-    /// Named types the TS side must import from `../types`.
-    refs: BTreeSet<String>,
-    /// Types with no TS mapping, emitted as `unknown` and reported.
-    unmapped: BTreeSet<String>,
+/// The type the client sends: `Form<T>` → `T`, references stripped.
+fn client_type(ty: &Type) -> Type {
+    match ty {
+        Type::Reference(r) => client_type(&r.elem),
+        _ => super::unwrap_form_type(ty).unwrap_or_else(|| ty.clone()),
+    }
 }
 
-impl Mapper {
-    fn map(&mut self, ty: &Type) -> String {
-        match ty {
-            Type::Reference(r) => self.map(&r.elem),
-            Type::Paren(p) => self.map(&p.elem),
-            Type::Group(g) => self.map(&g.elem),
-            // `()` serializes as JSON `null`.
-            Type::Tuple(t) if t.elems.is_empty() => "null".to_string(),
-            Type::Tuple(t) => {
-                let items: Vec<_> = t.elems.iter().map(|e| self.map(e)).collect();
-                format!("[{}]", items.join(", "))
-            }
-            Type::Slice(s) => array_of(self.map(&s.elem)),
-            Type::Array(a) => array_of(self.map(&a.elem)),
-            Type::Path(tp) if tp.qself.is_none() => self.map_path(&tp.path),
-            other => {
-                self.unmapped.insert(other.to_token_stream().to_string());
-                "unknown".to_string()
-            }
-        }
-    }
-
-    fn map_path(&mut self, path: &syn::Path) -> String {
-        let Some(seg) = path.segments.last() else {
-            return "unknown".to_string();
-        };
-        let name = seg.ident.to_string();
-        let args: Vec<&Type> = match &seg.arguments {
-            PathArguments::AngleBracketed(a) => a
-                .args
-                .iter()
-                .filter_map(|g| match g {
-                    GenericArgument::Type(t) => Some(t),
-                    _ => None,
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        let arg = |mapper: &mut Mapper, i: usize| match args.get(i) {
-            Some(t) => mapper.map(t),
-            None => "unknown".to_string(),
-        };
-
-        match name.as_str() {
-            "String" | "str" | "char" | "Uuid" => "string".to_string(),
-            "bool" => "boolean".to_string(),
-            "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64" | "u128"
-            | "usize" | "f32" | "f64" => "number".to_string(),
-            "Option" => format!("{} | null", arg(self, 0)),
-            "Vec" | "VecDeque" | "HashSet" | "BTreeSet" | "IndexSet" => array_of(arg(self, 0)),
-            "HashMap" | "BTreeMap" | "IndexMap" => format!("Record<string, {}>", arg(self, 1)),
-            "Box" | "Arc" | "Rc" | "Form" | "Json" => arg(self, 0),
-            // `Result<T>` / `Result<T, E>`: the client resolves to `T`.
-            "Result" => arg(self, 0),
-            "Value" => "unknown".to_string(),
-            // SubPartition ids serialize as their prefix-less string.
-            n if n == "Partition" || n == "EntityType" || n.ends_with("Partition") || n.ends_with("EntityType") => {
-                "string".to_string()
-            }
-            _ => {
-                self.refs.insert(name.clone());
-                if args.is_empty() {
-                    name
-                } else {
-                    let mapped: Vec<_> = (0..args.len()).map(|i| arg(self, i)).collect();
-                    format!("{name}<{}>", mapped.join(", "))
+/// `Result<T>` / `Result<T, E>` → `T`; any other return type as-is.
+fn result_payload(ty: &Type) -> Type {
+    if let Type::Path(tp) = ty {
+        if let Some(seg) = tp.path.segments.last() {
+            if seg.ident == "Result" {
+                if let PathArguments::AngleBracketed(args) = &seg.arguments {
+                    if let Some(GenericArgument::Type(inner)) = args.args.first() {
+                        return inner.clone();
+                    }
                 }
             }
         }
     }
-}
-
-fn array_of(inner: String) -> String {
-    if inner.contains(' ') { format!("({inner})[]") } else { format!("{inner}[]") }
+    ty.clone()
 }

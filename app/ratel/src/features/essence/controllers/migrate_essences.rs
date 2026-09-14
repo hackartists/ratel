@@ -17,6 +17,7 @@ use std::collections::HashMap;
 /// so the operator can spot obvious undercounts.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct MigrateEssencesResponse {
     pub posts_scanned: u32,
     pub spaces_scanned: u32,

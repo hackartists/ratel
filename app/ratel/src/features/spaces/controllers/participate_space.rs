@@ -19,6 +19,7 @@ use crate::spaces::SpaceInvitationMember;
 use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ParticipateSpaceResponse {
     pub username: String,
     pub display_name: String,
@@ -26,6 +27,7 @@ pub struct ParticipateSpaceResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ParticipateSpaceRequest {
     /// Whether the user explicitly consented to having their required
     /// attributes verified for this space (the "I understand and

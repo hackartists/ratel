@@ -1,6 +1,7 @@
 use crate::features::spaces::pages::actions::actions::discussion::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LikeCommentRequest {
     pub like: bool,
 }

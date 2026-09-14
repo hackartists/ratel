@@ -17,6 +17,7 @@ use rmcp::schemars;
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PostFiles(pub Vec<File>);
 
 impl std::ops::Deref for PostFiles {
@@ -393,6 +394,7 @@ impl SpacePost {
 /// and `files` is a `#[serde(transparent)]` newtype over the old `Vec<File>`.
 #[derive(Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SpacePost"))]
 pub struct SpacePostWire {
     /// `Partition::Space(space_id)` — renders as `SPACE#{space_id}`.
     pub pk: Partition,
@@ -472,5 +474,47 @@ mod shipped_client_compat_tests {
         json.as_object_mut().unwrap().remove("pk");
         let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
         assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
+    }
+}
+
+// TypeScript binding (`make gen-ts` only). `SpacePost` serializes through
+// `SpacePostWire`, which is exported under this name; delegate every method so
+// references, declarations and the output file all come from the wire struct.
+#[cfg(feature = "ts-bridge")]
+impl ts_rs::TS for SpacePost {
+    type WithoutGenerics = Self;
+
+    fn ident() -> String {
+        <SpacePostWire as ts_rs::TS>::ident()
+    }
+    fn decl() -> String {
+        <SpacePostWire as ts_rs::TS>::decl()
+    }
+    fn decl_concrete() -> String {
+        <SpacePostWire as ts_rs::TS>::decl_concrete()
+    }
+    fn name() -> String {
+        <SpacePostWire as ts_rs::TS>::name()
+    }
+    fn inline() -> String {
+        <SpacePostWire as ts_rs::TS>::inline()
+    }
+    fn inline_flattened() -> String {
+        <SpacePostWire as ts_rs::TS>::inline_flattened()
+    }
+    fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <SpacePostWire as ts_rs::TS>::visit_dependencies(v)
+    }
+    fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <SpacePostWire as ts_rs::TS>::visit_generics(v)
+    }
+    fn output_path() -> Option<&'static std::path::Path> {
+        <SpacePostWire as ts_rs::TS>::output_path()
     }
 }

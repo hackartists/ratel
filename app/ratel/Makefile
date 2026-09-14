@@ -244,6 +244,23 @@ test:
 	npx @tailwindcss/cli -i tailwind.css -o ./assets/tailwind.css
 	$(BUILD_ENV) CARGO_TARGET_DIR=./test-build-target cargo test --features server,bypass --tests $(TEST) -- --test-threads=1 --nocapture
 
+# TypeScript API client for apps/web (docs/superpower/2026-09-14-react-frontend-migration.md §4.2).
+# The route macros only expand to client stubs outside `fullstack`, so the
+# tauri-web build carries every handler. Its `ts-bridge` tests write one
+# manifest per handler (`ts_bridge_manifest_*`) and ts-rs exports the wire
+# types (`export_bindings_*`); gen-handlers.mjs renders the clients and
+# barrels. Output is committed; CI regenerates it and requires no diff.
+TS_BRIDGES_DIR ?= $(abspath $(CURDIR)/../../packages/ts-bridges)
+
+gen-ts:
+	rm -rf "$(TS_BRIDGES_DIR)/.gen" "$(TS_BRIDGES_DIR)/src/types"
+	# ts-rs writes non-exported dependencies to their default path under
+	# TS_RS_EXPORT_DIR; drop any such stragglers so they can't mask a missing export.
+	find "$(TS_BRIDGES_DIR)/src" -maxdepth 1 -name '*.ts' ! -name index.ts -delete
+	DYNAMO_TABLE_PREFIX=$(DYNAMO_TABLE_PREFIX) TS_SERVER_FN_PACKAGE_DIR="$(TS_BRIDGES_DIR)" TS_RS_EXPORT_DIR="$(TS_BRIDGES_DIR)/src" \
+		cargo test --no-default-features --features tauri-web,ts-bridge --lib -- ts_bridge_manifest_ export_bindings_
+	node "$(TS_BRIDGES_DIR)/scripts/gen-handlers.mjs"
+
 js/node_modules:
 	npm i
 

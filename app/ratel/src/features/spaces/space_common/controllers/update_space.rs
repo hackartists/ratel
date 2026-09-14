@@ -16,6 +16,7 @@ use crate::features::spaces::space_common::*;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(untagged)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum UpdateSpaceRequest {
     Publish {
         publish: bool,
@@ -57,6 +58,7 @@ pub enum UpdateSpaceRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateSpaceResponse {
     pub pk: Partition,
     pub sk: EntityType,

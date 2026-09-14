@@ -5,6 +5,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UserResponse {
     pub pk: String,
     pub username: String,
@@ -28,6 +29,7 @@ impl From<crate::features::auth::User> for UserResponse {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TeamResponse {
     pub pk: String,
     pub created_at: i64,

@@ -120,6 +120,8 @@ rmcp = { version = "0.7.0", git = "https://github.com/modelcontextprotocol/rust-
     "macros",
 ], optional = true }
 strip-tags = "0.1.0"
+# TypeScript bindings for the React app (`make gen-ts`); `ts-bridge` feature only.
+ts-rs = { version = "10.1", optional = true, features = ["serde-compat", "no-serde-warnings", "uuid-impl", "serde-json-impl"] }
 generational-box = "0.7.9"
 
 [features]
@@ -196,6 +198,9 @@ redpanda = ["server", "dep:rdkafka"]
 layout_test = ["web"]
 local-dev = ["beta","dep:pulldown-cmark"]
 beta = []
+# TypeScript bindings for apps/web: ts-rs derives on the wire types plus the
+# ts_bridge manifest tests the route macros emit. Used only by `make gen-ts`.
+ts-bridge = ["dep:ts-rs"]
 futures = ["dep:futures"]
 lindera = ["dep:lindera"]
 rand_chacha = ["dep:rand_chacha"]

@@ -10,6 +10,7 @@ use rmcp::schemars;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(untagged)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum LoginRequest {
     Phone {
         phone: String,
@@ -58,6 +59,7 @@ pub enum LoginRequest {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LoginResponse {
     #[serde(flatten)]
     pub user: User,
@@ -353,12 +355,14 @@ pub async fn wallet_login_handler(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct WalletCheckRequest {
     pub evm_address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct WalletCheckResponse {
     pub exists: bool,
 }
@@ -376,6 +380,7 @@ pub async fn wallet_check_handler(req: WalletCheckRequest) -> Result<WalletCheck
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct WalletNonceResponse {
     pub nonce: String,
     pub message: String,

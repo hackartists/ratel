@@ -109,6 +109,7 @@ impl SpaceApp {
 /// still holds the `"SPACE#…"` string, so `pk` is parsed back from it.
 #[derive(Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SpaceApp"))]
 pub struct SpaceAppWire {
     /// The space's partition, parsed back from `space_pk` (`SPACE#…`).
     pub pk: Partition,
@@ -164,5 +165,47 @@ mod shipped_client_compat_tests {
         json.as_object_mut().unwrap().remove("pk");
         let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
         assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
+    }
+}
+
+// TypeScript binding (`make gen-ts` only). `SpaceApp` serializes through
+// `SpaceAppWire`, which is exported under this name; delegate every method so
+// references, declarations and the output file all come from the wire struct.
+#[cfg(feature = "ts-bridge")]
+impl ts_rs::TS for SpaceApp {
+    type WithoutGenerics = Self;
+
+    fn ident() -> String {
+        <SpaceAppWire as ts_rs::TS>::ident()
+    }
+    fn decl() -> String {
+        <SpaceAppWire as ts_rs::TS>::decl()
+    }
+    fn decl_concrete() -> String {
+        <SpaceAppWire as ts_rs::TS>::decl_concrete()
+    }
+    fn name() -> String {
+        <SpaceAppWire as ts_rs::TS>::name()
+    }
+    fn inline() -> String {
+        <SpaceAppWire as ts_rs::TS>::inline()
+    }
+    fn inline_flattened() -> String {
+        <SpaceAppWire as ts_rs::TS>::inline_flattened()
+    }
+    fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <SpaceAppWire as ts_rs::TS>::visit_dependencies(v)
+    }
+    fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <SpaceAppWire as ts_rs::TS>::visit_generics(v)
+    }
+    fn output_path() -> Option<&'static std::path::Path> {
+        <SpaceAppWire as ts_rs::TS>::output_path()
     }
 }

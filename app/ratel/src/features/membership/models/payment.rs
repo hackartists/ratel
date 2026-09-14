@@ -19,6 +19,7 @@ use crate::features::membership::services::portone::PortOne;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CardInfo {
     pub card_number: String,
     pub expiry_year: String,
@@ -34,6 +35,7 @@ pub struct CardInfo {
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[cfg_attr(feature = "server", postgres(text))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "string"))]
 pub enum Currency {
     #[default]
     Usd,
@@ -82,6 +84,7 @@ pub enum PurchaseStatus {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default, DynamoEnum)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum TransactionType {
     #[default]
     None,
@@ -90,6 +93,7 @@ pub enum TransactionType {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PaymentReceipt {
     pub id: String,
     pub paid_at: i64,

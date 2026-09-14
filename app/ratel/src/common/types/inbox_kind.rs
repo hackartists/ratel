@@ -9,6 +9,7 @@ use rmcp::schemars;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum InboxKind {
     ReplyOnComment,
     MentionInComment,
@@ -65,6 +66,7 @@ impl InboxKind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum InboxPayload {
     ReplyOnComment {
         space_id: Option<SpacePartition>,

@@ -2,6 +2,7 @@ use crate::features::spaces::pages::apps::apps::panels::*;
 use crate::features::spaces::pages::apps::types::SpaceAppError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreatePanelQuotaRequest {
     #[serde(default)]
     pub attributes: Vec<PanelAttributeWithQuota>,
@@ -10,6 +11,7 @@ pub struct CreatePanelQuotaRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreatePanelQuotaGroupRequest {
     pub attributes_vec: Vec<PanelAttribute>,
     pub quota: i64,

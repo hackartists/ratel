@@ -16,6 +16,7 @@ use rmcp::schemars;
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr, Default, DynamoEnum, SubPartition, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "string"))]
 pub enum Partition {
     #[default]
     None,

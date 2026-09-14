@@ -5,6 +5,7 @@ use crate::common::models::reward::UserReward;
 use super::SpaceReward;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SpaceRewardResponse {
     pub pk: Partition,
     pub sk: RewardKey,

@@ -14,6 +14,7 @@ use crate::common::*;
     PartialEq,
     Eq,
 )]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum SpaceUserRole {
     #[default]
     #[translate(en = "Viewer", ko = "뷰어")]

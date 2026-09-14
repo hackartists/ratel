@@ -14,6 +14,7 @@ use std::str::FromStr;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default, strum::Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum SocialPlatform {
     #[default]
     Bluesky,

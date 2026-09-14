@@ -17,6 +17,7 @@ use crate::features::spaces::space_common::models::HotSpaceHeat;
 use crate::features::spaces::space_common::models::HotSpace;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct HotSpaceResponse {
     pub space_id: SpacePartition,
     pub post_id: FeedPartition,

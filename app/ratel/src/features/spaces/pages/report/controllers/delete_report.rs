@@ -6,6 +6,7 @@ use postgres::PostgresEntity;
 /// `<Resp>::default()` when a non-2xx response body fails to parse
 /// into the typed shape.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct DeleteReportResponse {
     pub id: String,
 }

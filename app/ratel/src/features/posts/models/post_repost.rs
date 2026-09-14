@@ -95,6 +95,7 @@ impl PostRepost {
 /// `(owner feed, PostRepost)`; `owner_pk` still holds that partition string.
 #[derive(Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "PostRepost"))]
 pub struct PostRepostWire {
     /// The reposting owner's feed partition, parsed from `owner_pk`.
     pub pk: Partition,
@@ -157,5 +158,47 @@ mod shipped_client_compat_tests {
         json.as_object_mut().unwrap().remove("pk");
         let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
         assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
+    }
+}
+
+// TypeScript binding (`make gen-ts` only). `PostRepost` serializes through
+// `PostRepostWire`, which is exported under this name; delegate every method so
+// references, declarations and the output file all come from the wire struct.
+#[cfg(feature = "ts-bridge")]
+impl ts_rs::TS for PostRepost {
+    type WithoutGenerics = Self;
+
+    fn ident() -> String {
+        <PostRepostWire as ts_rs::TS>::ident()
+    }
+    fn decl() -> String {
+        <PostRepostWire as ts_rs::TS>::decl()
+    }
+    fn decl_concrete() -> String {
+        <PostRepostWire as ts_rs::TS>::decl_concrete()
+    }
+    fn name() -> String {
+        <PostRepostWire as ts_rs::TS>::name()
+    }
+    fn inline() -> String {
+        <PostRepostWire as ts_rs::TS>::inline()
+    }
+    fn inline_flattened() -> String {
+        <PostRepostWire as ts_rs::TS>::inline_flattened()
+    }
+    fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <PostRepostWire as ts_rs::TS>::visit_dependencies(v)
+    }
+    fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <PostRepostWire as ts_rs::TS>::visit_generics(v)
+    }
+    fn output_path() -> Option<&'static std::path::Path> {
+        <PostRepostWire as ts_rs::TS>::output_path()
     }
 }

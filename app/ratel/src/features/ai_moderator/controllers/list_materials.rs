@@ -3,6 +3,7 @@ use crate::features::ai_moderator::*;
 use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct MaterialResponse {
     pub material_id: String,
     pub file_name: String,
@@ -11,6 +12,7 @@ pub struct MaterialResponse {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct MaterialListResponse {
     pub items: Vec<MaterialResponse>,
 }

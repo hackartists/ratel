@@ -7,6 +7,7 @@ use postgres::PostgresEntity;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateUserProfileRequest {
     pub nickname: Option<String>,
     pub profile_url: Option<String>,

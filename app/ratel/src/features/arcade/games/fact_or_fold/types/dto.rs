@@ -15,6 +15,7 @@ use rmcp::schemars;
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum Verdict {
     #[default]
     #[serde(rename = "REAL")]
@@ -41,6 +42,7 @@ pub enum Verdict {
     strum::Display,
     strum::EnumString,
 )]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum SubjectStatus {
     #[default]
     Draft,
@@ -53,6 +55,7 @@ pub enum SubjectStatus {
 /// A single reveal source surfaced to all players after settlement.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RevealSource {
     /// Display label, e.g. "한은 보도자료".
     pub label: String,
@@ -64,6 +67,7 @@ pub struct RevealSource {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateSubjectRequest {
     pub headline_text: String,
     pub body_excerpt: String,
@@ -99,6 +103,7 @@ pub struct CreateSubjectRequest {
 ///   - `scheduled_at: None`     → publish now (Live immediately)
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PublishSubjectRequest {
     pub scheduled_at: Option<i64>,
     /// Optional override for the subject's active-window end. `None`
@@ -109,6 +114,7 @@ pub struct PublishSubjectRequest {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateSubjectRequest {
     pub headline_text: Option<String>,
     pub body_excerpt: Option<String>,
@@ -125,6 +131,7 @@ pub struct UpdateSubjectRequest {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubjectResponse {
     pub id: FactFoldSubjectEntityType,
     pub status: SubjectStatus,
@@ -150,6 +157,7 @@ pub struct SubjectResponse {
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum RoundStatus {
     /// Lobby is filling up. Joins still accepted.
     #[default]
@@ -172,6 +180,7 @@ pub enum RoundStatus {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RoundResponse {
     pub id: FactFoldRoundEntityType,
     pub subject_id: FactFoldSubjectEntityType,
@@ -198,6 +207,7 @@ pub struct RoundResponse {
 /// `pending_user_in_round`.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LobbyResponse {
     /// `Some` when a Waiting round exists with a usable subject.
     pub current_round: Option<RoundResponse>,
@@ -232,6 +242,7 @@ pub struct LobbyResponse {
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum BetSide {
     #[default]
     #[serde(rename = "REAL")]
@@ -251,6 +262,7 @@ impl From<Verdict> for BetSide {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PlaceBetRequest {
     pub side: BetSide,
     /// RatelPoints staked. Server validates against
@@ -260,6 +272,7 @@ pub struct PlaceBetRequest {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct BetResponse {
     pub user_pk: UserPartition,
     pub side: BetSide,
@@ -280,6 +293,7 @@ pub struct BetResponse {
 /// flipped this round is rejected.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct FlipBetRequest {
     /// Side the player is flipping to. Must differ from the
     /// player's *current* side (the original bet side, or the
@@ -295,6 +309,7 @@ pub struct FlipBetRequest {
 /// already been applied so `flipped_to + flip_cite_user_pk` are set.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct FlipBetResponse {
     pub user_pk: UserPartition,
     pub original_side: BetSide,
@@ -309,6 +324,7 @@ pub const FLIP_SLOT_LAST_MS: i64 = 10_000;
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubmitRationaleRequest {
     /// Up to 200 chars. Texts shorter than `RATIONALE_ESSENCE_MIN_CHARS`
     /// still post but are flagged `essence_eligible = false` (not promoted).
@@ -317,6 +333,7 @@ pub struct SubmitRationaleRequest {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RationaleResponse {
     pub user_pk: UserPartition,
     pub text: String,
@@ -330,6 +347,7 @@ pub struct RationaleResponse {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ParticipantResponse {
     pub user_pk: UserPartition,
     pub joined_at: i64,
@@ -346,6 +364,7 @@ pub struct ParticipantResponse {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct InsiderStatementResponse {
     /// `Some(text)` only when the caller is the insider for this
     /// round; `None` for everyone else.
@@ -356,6 +375,7 @@ pub struct InsiderStatementResponse {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PostChatRequest {
     /// 80-char cap enforced server-side (roadmap §FR-25).
     pub text: String,
@@ -363,6 +383,7 @@ pub struct PostChatRequest {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PostChatResponse {
     pub msg_id: String,
     pub author_pk: UserPartition,
@@ -384,6 +405,7 @@ pub const CHAT_PAGE_LIMIT: usize = 200;
 /// client-side parser.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ChatMessagePayload {
     pub msg_id: String,
     pub author_pk: UserPartition,
@@ -394,6 +416,7 @@ pub struct ChatMessagePayload {
 /// Polling response for `GET .../rounds/{id}/chat`.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ListChatResponse {
     pub items: Vec<ChatMessagePayload>,
     /// Id of the last message in `items`, or `None` for an empty
@@ -406,6 +429,7 @@ pub struct ListChatResponse {
 /// already gone returns `deleted: 0`.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct DeleteRoundChatResponse {
     pub deleted: i64,
 }
@@ -423,6 +447,7 @@ pub struct DeleteRoundChatResponse {
 /// (`/insider-statement`) so the response can be tailored per user.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RoundSubjectResponse {
     pub id: FactFoldSubjectEntityType,
     pub headline_text: String,
@@ -441,6 +466,7 @@ pub struct RoundSubjectResponse {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ListBetsResponse {
     /// While the round is at `Bet` or `Rationale`, this list only
     /// contains the caller's own bet (so the UI can confirm what
@@ -456,6 +482,7 @@ pub struct ListBetsResponse {
 /// the actual text.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ListRationalesResponse {
     pub items: Vec<RationaleResponse>,
 }
@@ -464,6 +491,7 @@ pub struct ListRationalesResponse {
 /// render avatars + names without a separate user lookup.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RoundParticipantSummary {
     pub user_pk: UserPartition,
     pub username: String,
@@ -479,6 +507,7 @@ pub struct RoundParticipantSummary {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ListParticipantsResponse {
     pub items: Vec<RoundParticipantSummary>,
 }
@@ -495,6 +524,7 @@ pub const RATIONALE_TEXT_MAX_CHARS: usize = 200;
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UserStatsResponse {
     pub user_pk: UserPartition,
     pub total_rounds: i64,
@@ -506,6 +536,7 @@ pub struct UserStatsResponse {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LeaderboardEntryResponse {
     pub user_pk: UserPartition,
     /// Resolved from the player's User row at read time so the table
@@ -530,6 +561,7 @@ pub struct LeaderboardEntryResponse {
 /// over `Scheduled` subjects whose `scheduled_at` is in the future.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct QueueAlarmResponse {
     /// Days from "now" to the latest scheduled subject. `0.0` when the
     /// queue is empty.
@@ -550,6 +582,7 @@ pub struct QueueAlarmResponse {
 /// Admin-tunable parameters mirrored from roadmap §"Tunable parameters".
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct FactOrFoldSettingsResponse {
     pub round_capacity: i32,
     pub stage_news_reveal_sec: i32,
@@ -594,6 +627,7 @@ impl Default for FactOrFoldSettingsResponse {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateFactOrFoldSettingsRequest {
     pub round_capacity: Option<i32>,
     pub stage_news_reveal_sec: Option<i32>,

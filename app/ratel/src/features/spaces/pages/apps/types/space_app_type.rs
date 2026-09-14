@@ -8,6 +8,7 @@ use rmcp::schemars;
     feature = "server",
     derive(rmcp::schemars::JsonSchema, postgres::PostgresEnum)
 )]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum SpaceAppType {
     #[default]
     #[translate(en = "General", ko = "스페이스 설정")]

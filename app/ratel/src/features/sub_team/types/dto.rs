@@ -11,6 +11,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamSettingsResponse {
     pub is_parent_eligible: bool,
     pub min_sub_team_members: i32,
@@ -20,6 +21,7 @@ pub struct SubTeamSettingsResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateSubTeamSettingsRequest {
     #[serde(default)]
     pub is_parent_eligible: Option<bool>,
@@ -38,6 +40,7 @@ pub struct UpdateSubTeamSettingsRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum TeamProfileLink {
     /// `Team.display_name`
     TeamName,
@@ -51,6 +54,7 @@ pub enum TeamProfileLink {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamFormFieldResponse {
     pub id: String,
     pub label: String,
@@ -70,6 +74,7 @@ pub struct SubTeamFormFieldResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateSubTeamFormFieldRequest {
     pub label: String,
     pub field_type: SubTeamFormFieldType,
@@ -85,6 +90,7 @@ pub struct CreateSubTeamFormFieldRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateSubTeamFormFieldRequest {
     #[serde(default)]
     pub label: Option<String>,
@@ -108,6 +114,7 @@ pub struct UpdateSubTeamFormFieldRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ReorderFormFieldsRequest {
     pub field_ids: Vec<String>,
 }
@@ -116,6 +123,7 @@ pub struct ReorderFormFieldsRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamDocumentResponse {
     pub id: String,
     pub title: String,
@@ -150,6 +158,7 @@ pub struct SubTeamDocumentResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateSubTeamDocumentRequest {
     pub title: String,
     pub body: String,
@@ -169,6 +178,7 @@ pub struct CreateSubTeamDocumentRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateSubTeamDocumentRequest {
     #[serde(default)]
     pub title: Option<String>,
@@ -186,6 +196,7 @@ pub struct UpdateSubTeamDocumentRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ReorderDocumentsRequest {
     pub doc_ids: Vec<String>,
 }
@@ -194,6 +205,7 @@ pub struct ReorderDocumentsRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamDocumentVersionResponse {
     /// Parent doc id (same value across every snapshot for one doc).
     pub doc_id: String,
@@ -212,6 +224,7 @@ pub struct SubTeamDocumentVersionResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ApplyContextDocument {
     pub id: String,
     pub title: String,
@@ -232,6 +245,7 @@ pub struct ApplyContextDocument {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ApplyContextResponse {
     pub is_parent_eligible: bool,
     pub min_sub_team_members: i32,
@@ -324,6 +338,7 @@ impl From<crate::features::sub_team::models::SubTeamDocument> for ApplyContextDo
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamFormFieldSnapshotDto {
     pub field_id: String,
     pub label: String,
@@ -339,6 +354,7 @@ pub struct SubTeamFormFieldSnapshotDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamApplicationResponse {
     pub id: String,
     pub parent_team_id: String,
@@ -377,6 +393,7 @@ pub struct SubTeamApplicationResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamDocAgreementResponse {
     pub doc_id: String,
     pub doc_title_snapshot: String,
@@ -387,6 +404,7 @@ pub struct SubTeamDocAgreementResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamApplicationDetailResponse {
     #[serde(flatten)]
     pub application: SubTeamApplicationResponse,
@@ -395,6 +413,7 @@ pub struct SubTeamApplicationDetailResponse {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum ParentRelationshipStatus {
     #[default]
     Standalone,
@@ -404,6 +423,7 @@ pub enum ParentRelationshipStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ParentRelationshipResponse {
     pub status: ParentRelationshipStatus,
     pub parent_team_id: Option<String>,
@@ -427,6 +447,7 @@ pub struct ParentRelationshipResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct DocAgreementInput {
     pub doc_id: String,
     pub body_hash: String,
@@ -434,6 +455,7 @@ pub struct DocAgreementInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubmitApplicationRequest {
     pub parent_team_id: String,
     pub form_values: std::collections::HashMap<String, serde_json::Value>,
@@ -442,6 +464,7 @@ pub struct SubmitApplicationRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateApplicationRequest {
     #[serde(default)]
     pub form_values: Option<std::collections::HashMap<String, serde_json::Value>>,
@@ -451,6 +474,7 @@ pub struct UpdateApplicationRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ApplicationDecisionReasonRequest {
     /// Optional welcome message for approve / reject / cancel.
     /// Defaults to empty string when the caller sends `{}`.
@@ -462,6 +486,7 @@ pub struct ApplicationDecisionReasonRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SaveApplicationDraftRequest {
     pub parent_team_id: String,
     pub form_values: std::collections::HashMap<String, serde_json::Value>,
@@ -470,6 +495,7 @@ pub struct SaveApplicationDraftRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ApplicationDraftResponse {
     pub parent_team_id: String,
     pub form_values: std::collections::HashMap<String, serde_json::Value>,
@@ -479,6 +505,7 @@ pub struct ApplicationDraftResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ApplicationReturnCommentRequest {
     pub comment: String,
 }
@@ -487,12 +514,14 @@ pub struct ApplicationReturnCommentRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct DeregisterRequest {
     pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LeaveParentRequest {
     #[serde(default)]
     pub reason: Option<String>,
@@ -500,6 +529,7 @@ pub struct LeaveParentRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TerminationAck {
     pub ok: bool,
 }
@@ -508,6 +538,7 @@ pub struct TerminationAck {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamAnnouncementResponse {
     pub id: String,
     pub title: String,
@@ -556,6 +587,7 @@ pub struct SubTeamAnnouncementResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateSubTeamAnnouncementRequest {
     pub title: String,
     #[serde(default)]
@@ -580,6 +612,7 @@ pub struct CreateSubTeamAnnouncementRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateSubTeamAnnouncementRequest {
     #[serde(default)]
     pub title: Option<String>,
@@ -690,6 +723,7 @@ impl From<crate::features::sub_team::models::SubTeamDocAgreement> for SubTeamDoc
 /// monthly; daily is deferred to Phase 2 (per design doc Scope section).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum ActivityWindow {
     Weekly,
     #[default]
@@ -711,6 +745,7 @@ impl ActivityWindow {
 /// not have to make a second request.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PrivacyNotice {
     pub en: String,
     pub ko: String,
@@ -730,6 +765,7 @@ impl PrivacyNotice {
 /// Item returned by GET /sub-teams — one row per recognized sub-team.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamSummaryResponse {
     pub sub_team_id: String,
     pub display_name: String,
@@ -746,6 +782,7 @@ pub struct SubTeamSummaryResponse {
 /// has been hit.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamListResponse {
     pub items: Vec<SubTeamSummaryResponse>,
     pub bookmark: Option<String>,
@@ -757,6 +794,7 @@ pub struct SubTeamListResponse {
 /// Numeric-only counts for the activity dashboard.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ActivityCountsResponse {
     pub window: ActivityWindow,
     pub range_start_ms: i64,
@@ -771,6 +809,7 @@ pub struct ActivityCountsResponse {
 /// Sub-team detail response for the overview page.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SubTeamDetailResponse {
     pub sub_team_id: String,
     pub display_name: String,
@@ -790,6 +829,7 @@ pub struct SubTeamDetailResponse {
 /// spaces authored by the user within the window.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct MemberActivityResponse {
     pub user_id: String,
     pub handle: String,

@@ -146,6 +146,7 @@ impl SpaceIncentiveToken {
 /// was built, so the same normalization is applied here.
 #[derive(Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SpaceIncentiveToken"))]
 pub struct SpaceIncentiveTokenWire {
     /// `Partition::SpaceIncentive(incentive_address)` — lowercased, as written.
     pub pk: Partition,
@@ -205,5 +206,47 @@ mod shipped_client_compat_tests {
         json.as_object_mut().unwrap().remove("pk");
         let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
         assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
+    }
+}
+
+// TypeScript binding (`make gen-ts` only). `SpaceIncentiveToken` serializes through
+// `SpaceIncentiveTokenWire`, which is exported under this name; delegate every method so
+// references, declarations and the output file all come from the wire struct.
+#[cfg(feature = "ts-bridge")]
+impl ts_rs::TS for SpaceIncentiveToken {
+    type WithoutGenerics = Self;
+
+    fn ident() -> String {
+        <SpaceIncentiveTokenWire as ts_rs::TS>::ident()
+    }
+    fn decl() -> String {
+        <SpaceIncentiveTokenWire as ts_rs::TS>::decl()
+    }
+    fn decl_concrete() -> String {
+        <SpaceIncentiveTokenWire as ts_rs::TS>::decl_concrete()
+    }
+    fn name() -> String {
+        <SpaceIncentiveTokenWire as ts_rs::TS>::name()
+    }
+    fn inline() -> String {
+        <SpaceIncentiveTokenWire as ts_rs::TS>::inline()
+    }
+    fn inline_flattened() -> String {
+        <SpaceIncentiveTokenWire as ts_rs::TS>::inline_flattened()
+    }
+    fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <SpaceIncentiveTokenWire as ts_rs::TS>::visit_dependencies(v)
+    }
+    fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <SpaceIncentiveTokenWire as ts_rs::TS>::visit_generics(v)
+    }
+    fn output_path() -> Option<&'static std::path::Path> {
+        <SpaceIncentiveTokenWire as ts_rs::TS>::output_path()
     }
 }
