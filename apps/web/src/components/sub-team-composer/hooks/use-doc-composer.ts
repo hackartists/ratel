@@ -1,4 +1,4 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { findTeamHandler, listSubTeamDocsHandler } from "@ratel/ts-bridges";
 import type { CreateSubTeamDocumentRequest, SubTeamDocumentResponse, UpdateSubTeamDocumentRequest } from "@ratel/ts-bridges";
 import { useCreateSubTeamDoc, useUpdateSubTeamDoc } from "@ratel/ts-bridges/hooks";
@@ -43,6 +43,15 @@ export function useDocComposer(username: string, docId: string | undefined): Use
 
   const createMutation = useCreateSubTeamDoc();
   const updateMutation = useUpdateSubTeamDoc();
+  const queryClient = useQueryClient();
+
+  // Rust reloads the docs list when the management page mounts again; drop the
+  // cached list (and this composer's snapshot) so the next visit refetches.
+  const invalidateDocs = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["subTeamManage", "listSubTeamDocs", teamId] }),
+      queryClient.invalidateQueries({ queryKey: ["subTeamDocCompose", teamId] }),
+    ]);
 
   return {
     teamId,
@@ -51,10 +60,12 @@ export function useDocComposer(username: string, docId: string | undefined): Use
     doc,
     saveNew: async (body) => {
       const created = await createMutation.mutateAsync({ teamPk: teamId, body });
+      await invalidateDocs();
       return created.id;
     },
     saveExisting: async (id, body) => {
       await updateMutation.mutateAsync({ teamPk: teamId, docId: id, body });
+      await invalidateDocs();
     },
   };
 }

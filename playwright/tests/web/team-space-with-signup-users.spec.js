@@ -16,6 +16,7 @@ import {
   fillPollQuestion,
   togglePrerequisite,
   commitAutosave,
+  waitForAppReady,
 } from "../utils";
 
 // This test covers the full space lifecycle with three users:
