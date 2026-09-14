@@ -26,8 +26,8 @@
 //     `make -C app/ratel gen-attr-voting-wasm`). `encryptAnswersForCanister`
 //     below calls into that wasm module — see `encryptVoteJsonWithPkJson`.
 
-import type { Answer, VoteEncryptionMaterialResponse } from "@ratel/ts-bridges";
-import init, { encrypt_vote_json_with_pk_json } from "./attr-voting-wasm/attr_voting_wasm";
+import type { Answer, VoteEncryptionMaterialResponse, VoteVerificationMaterialResponse } from "@ratel/ts-bridges";
+import init, { decrypt_vote_json_with_key_json, encrypt_vote_json_with_pk_json } from "./attr-voting-wasm/attr_voting_wasm";
 import wasmUrl from "./attr-voting-wasm/attr_voting_wasm_bg.wasm?url";
 
 /** Rust `attr_voting::vote::ClientEncryptedVote`. */
@@ -135,8 +135,21 @@ export async function buildStoredVoterKeyFromEncryptionMaterial(
   return { version: 1, poll_id: material.poll_id, voter_tag: material.voter_tag, key_bundle_json: keyBundleJson };
 }
 
-/** Rust `voter_key_storage_key`. */
-function voterKeyStorageKey(pollId: string): string {
+/**
+ * Rust `build_stored_voter_key` (client_vote_verification.rs) — mirrors
+ * `buildStoredVoterKeyFromEncryptionMaterial` above but for the
+ * verification-material shape (`VoteVerificationMaterialResponse`), used by
+ * `EncryptedVoteVerificationPanel` to derive the same wrapped key record
+ * from the *verify* endpoint instead of the *encrypt* endpoint.
+ */
+export async function buildStoredVoterKey(material: VoteVerificationMaterialResponse, userSecret: string): Promise<StoredVoterKey> {
+  if (userSecret === "") throw new Error("Secret is required");
+  const keyBundleJson = await wrapSecretKey(userSecret, material.voter_secret_key_json);
+  return { version: 1, poll_id: material.poll_id, voter_tag: material.voter_tag, key_bundle_json: keyBundleJson };
+}
+
+/** Rust `voter_key_storage_key` (client_vote_verification.rs). */
+export function voterKeyStorageKey(pollId: string): string {
   return `${STORAGE_KEY_PREFIX}${pollId}`;
 }
 
@@ -227,4 +240,65 @@ export async function encryptAnswersForCanister(material: VoteEncryptionMaterial
   const ciphertextJson = await encryptVoteJsonWithPkJson(material.authority_public_key_json, material.voter_tag, payload);
 
   return { voter_tag: material.voter_tag, ciphertext_json: ciphertextJson };
+}
+
+/** Rust `ClientVoteVerification` (client_vote_verification.rs). */
+export interface ClientVoteVerification {
+  voter_tag: string;
+  ciphertext_hash: string;
+  decrypted_choice: string;
+  decrypted_metadata: unknown | null;
+}
+
+/**
+ * Rust `attr_voting::decrypt_vote_json_with_key_json`, called through the
+ * `packages/attr-voting-wasm` wasm-bindgen shim. Decrypts `encryptedVoteJson`
+ * (CP-ABE, rabe's BSW scheme) with `secretKeyJson` (the voter's unwrapped ABE
+ * secret key) and returns the decrypted `VotePayload`.
+ */
+export async function decryptVoteJsonWithKeyJson(secretKeyJson: string, encryptedVoteJson: string): Promise<VotePayload> {
+  await ensureWasmInit();
+  const payloadJson = decrypt_vote_json_with_key_json(secretKeyJson, encryptedVoteJson);
+  return JSON.parse(payloadJson) as VotePayload;
+}
+
+/** Rust `sha2::Sha256::digest` + `hex::encode`, as used by `verify_client_vote_material`. */
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Rust `verify_client_vote_material` (client_vote_verification.rs). Checks
+ * that `storedKey` matches the requested vote, recomputes the SHA-256 hash
+ * of the on-chain ciphertext and compares it against the server-reported
+ * `ciphertext_hash`, unwraps the voter's ABE secret key with `userSecret`,
+ * and decrypts the ballot locally — the same three checks as the Rust
+ * implementation, in the same order, so failures surface at the same step.
+ */
+export async function verifyClientVoteMaterial(
+  material: VoteVerificationMaterialResponse,
+  storedKey: StoredVoterKey,
+  userSecret: string,
+): Promise<ClientVoteVerification> {
+  if (material.poll_id !== storedKey.poll_id || material.voter_tag !== storedKey.voter_tag) {
+    throw new Error("Stored key does not match this vote");
+  }
+
+  const computedHash = await sha256Hex(material.encrypted_vote_json);
+  if (computedHash !== material.ciphertext_hash) {
+    throw new Error("Ciphertext hash mismatch");
+  }
+
+  const voterSecretKeyJson = await unwrapSecretKey(userSecret, storedKey.key_bundle_json);
+  const payload = await decryptVoteJsonWithKeyJson(voterSecretKeyJson, material.encrypted_vote_json);
+
+  return {
+    voter_tag: material.voter_tag,
+    ciphertext_hash: material.ciphertext_hash,
+    decrypted_choice: payload.choice,
+    decrypted_metadata: payload.metadata,
+  };
 }

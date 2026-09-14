@@ -15,7 +15,7 @@ import {
   loadSessionVoteSecret,
   saveSessionVoteSecret,
   saveStoredVoterKey,
-} from "@/lib/poll-crypto";
+} from "@/lib/poll-encryption";
 import { usePopup } from "@/lib/popup";
 import { timeAgo } from "@/lib/time";
 import { useToast } from "@/lib/toast";
@@ -88,10 +88,10 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const needsSecret = encryptionEnabled && canSubmit;
 
-  const finalizeSecretSetup = (secret: string) => {
+  const finalizeSecretSetup = async (secret: string) => {
     if (encryptionMaterial === null) return;
     try {
-      const stored = buildStoredVoterKeyFromEncryptionMaterial(encryptionMaterial, secret);
+      const stored = await buildStoredVoterKeyFromEncryptionMaterial(encryptionMaterial, secret);
       saveStoredVoterKey(stored);
       saveSessionVoteSecret(secret);
       setClientSecret(secret);
@@ -108,7 +108,7 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
         cancelLabel={trRead.encryptedSecretModalCancel}
         onContinue={(secret) => {
           if (secret === "") return;
-          finalizeSecretSetup(secret);
+          void finalizeSecretSetup(secret);
           popup.close();
         }}
         onCancel={() => popup.close()}
@@ -137,7 +137,7 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
         const sessionSecret = loadSessionVoteSecret();
         if (sessionSecret !== null && sessionSecret !== "") {
           try {
-            const stored = buildStoredVoterKeyFromEncryptionMaterial(material, sessionSecret);
+            const stored = await buildStoredVoterKeyFromEncryptionMaterial(material, sessionSecret);
             saveStoredVoterKey(stored);
             saveSessionVoteSecret(sessionSecret);
             if (!cancelled) setClientSecret(sessionSecret);
@@ -170,7 +170,7 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
           return;
         }
         try {
-          const enc = encryptAnswersForCanister(encryptionMaterial, payload, Date.now());
+          const enc = await encryptAnswersForCanister(encryptionMaterial, payload, Date.now());
           clientCiphertextJson = enc.ciphertext_json;
           clientVoterTag = enc.voter_tag;
         } catch (e) {

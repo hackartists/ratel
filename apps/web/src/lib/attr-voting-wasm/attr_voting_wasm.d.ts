@@ -2,6 +2,23 @@
 /* eslint-disable */
 
 /**
+ * Decrypt a CP-ABE encrypted vote using the voter's ABE secret key.
+ *
+ * Mirrors `attr_voting::decrypt_vote_json_with_key_json` (re-exported at
+ * the crate root from `vote.rs`), which
+ * `app/ratel/src/features/spaces/pages/actions/actions/poll/services/client_vote_verification.rs`
+ * (`verify_client_vote_material`) calls from the Dioxus web build.
+ * `secret_key_json` must deserialize into `attr_voting`'s `CpAbeSecretKey`
+ * (as produced by `VotingAuthority::serialize_key`, and unwrapped from a
+ * `StoredVoterKey` bundle via `key_vault::unwrap_secret_key`).
+ * `encrypted_vote_json` accepts both the wrapped `EncryptedVote` shape and
+ * the raw `CpAbeCiphertext` shape (see `EncryptedVote::from_json`). Returns
+ * the decrypted `VotePayload` serialized as JSON
+ * (`{ "choice": string, "metadata": <json value> | null }`).
+ */
+export function decrypt_vote_json_with_key_json(secret_key_json: string, encrypted_vote_json: string): string;
+
+/**
  * Encrypt a vote payload for the canister using CP-ABE (rabe's BSW scheme).
  *
  * `payload_json` must deserialize into `attr_voting::types::VotePayload`
@@ -15,6 +32,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly decrypt_vote_json_with_key_json: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly encrypt_vote_json_with_pk_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

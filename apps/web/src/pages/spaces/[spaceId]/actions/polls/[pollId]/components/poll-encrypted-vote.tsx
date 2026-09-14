@@ -8,7 +8,7 @@ import {
   saveSessionVoteSecret,
   saveStoredVoterKey,
   verifyClientVoteMaterial,
-} from "@/lib/poll-crypto";
+} from "@/lib/poll-encryption";
 import { useToast } from "@/lib/toast";
 
 // poll_read_page.rs (`EncryptedVoteVerificationPanel`, `PollReadSubmitConfirm`).
@@ -46,9 +46,9 @@ export function EncryptedVoteVerificationPanel({ spaceId, pollId }: { spaceId: s
     void (async () => {
       try {
         const material = await getVoteVerificationMaterial(spaceId, pollId);
-        const stored = buildStoredVoterKey(material, secret);
+        const stored = await buildStoredVoterKey(material, secret);
         saveStoredVoterKey(stored);
-        const verified = verifyClientVoteMaterial(material, stored, secret);
+        const verified = await verifyClientVoteMaterial(material, stored, secret);
         saveSessionVoteSecret(secret);
         setVerifying(false);
         setSecretFromSession(true);

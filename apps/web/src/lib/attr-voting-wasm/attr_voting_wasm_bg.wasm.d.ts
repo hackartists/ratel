@@ -1,6 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const decrypt_vote_json_with_key_json: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const encrypt_vote_json_with_pk_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const __wbindgen_exn_store: (a: number) => void;
 export const __externref_table_alloc: () => number;

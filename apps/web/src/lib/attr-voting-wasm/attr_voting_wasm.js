@@ -1,6 +1,47 @@
 /* @ts-self-types="./attr_voting_wasm.d.ts" */
 
 /**
+ * Decrypt a CP-ABE encrypted vote using the voter's ABE secret key.
+ *
+ * Mirrors `attr_voting::decrypt_vote_json_with_key_json` (re-exported at
+ * the crate root from `vote.rs`), which
+ * `app/ratel/src/features/spaces/pages/actions/actions/poll/services/client_vote_verification.rs`
+ * (`verify_client_vote_material`) calls from the Dioxus web build.
+ * `secret_key_json` must deserialize into `attr_voting`'s `CpAbeSecretKey`
+ * (as produced by `VotingAuthority::serialize_key`, and unwrapped from a
+ * `StoredVoterKey` bundle via `key_vault::unwrap_secret_key`).
+ * `encrypted_vote_json` accepts both the wrapped `EncryptedVote` shape and
+ * the raw `CpAbeCiphertext` shape (see `EncryptedVote::from_json`). Returns
+ * the decrypted `VotePayload` serialized as JSON
+ * (`{ "choice": string, "metadata": <json value> | null }`).
+ * @param {string} secret_key_json
+ * @param {string} encrypted_vote_json
+ * @returns {string}
+ */
+export function decrypt_vote_json_with_key_json(secret_key_json, encrypted_vote_json) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(secret_key_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(encrypted_vote_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.decrypt_vote_json_with_key_json(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
  * Encrypt a vote payload for the canister using CP-ABE (rabe's BSW scheme).
  *
  * `payload_json` must deserialize into `attr_voting::types::VotePayload`
