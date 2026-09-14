@@ -7,6 +7,7 @@
 // `window.ratel.invoke(method, args)`; these functions do the same, and — like
 // the drivers' `try { … } catch { dioxus.send(null) }` — turn a JS failure
 // into `null`.
+import { refreshSessionHandler } from "@ratel/ts-bridges";
 import { ApiError } from "@ratel/ts-bridges/runtime";
 import { googleSignInNative, isTauri } from "@/lib/native";
 
@@ -209,5 +210,35 @@ export function rememberRefreshToken(token: string | null | undefined): void {
     window.localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, token);
   } catch {
     // Storage unavailable: nothing to restore next launch, like Rust.
+  }
+}
+
+/**
+ * Rust `restore_session::try_restore_session()`: exchange the cached refresh
+ * token for a fresh server session. Best effort, never throws. Success rotates
+ * the saved token; a rejected token is cleared so later launches stop retrying.
+ * No cached token or no device id: nothing to do (the user was signed out).
+ */
+export async function tryRestoreSession(): Promise<void> {
+  let refreshToken: string | null;
+  try {
+    refreshToken = window.localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+  } catch {
+    return;
+  }
+  if (!refreshToken) return;
+  const deviceId = getOrCreateDeviceId();
+  if (!deviceId) return;
+
+  try {
+    const resp = await refreshSessionHandler({ refresh_token: refreshToken, device_id: deviceId });
+    window.localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, resp.refresh_token);
+  } catch (e) {
+    console.error(`refresh failed, clearing cached token: ${serverErrorText(e)}`);
+    try {
+      window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+    } catch {
+      // Storage unavailable.
+    }
   }
 }

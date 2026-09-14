@@ -5,8 +5,9 @@
 // failure reads as signed out, like the Rust loader. Components consume
 // `useAuth()` / `useUserContext()` and never call the handler directly.
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useGetMe } from "@ratel/ts-bridges/hooks";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getMeHandler, isTauri } from "@ratel/ts-bridges";
+import { tryRestoreSession } from "@/components/auth/interop";
 import type { User } from "@ratel/ts-bridges";
 import type { UserMembershipResponse } from "@ratel/ts-bridges";
 import { getMembershipHandlerGetV3MeMemberships } from "@ratel/ts-bridges";
@@ -40,7 +41,19 @@ const ME_KEY = ["getMe"] as const;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
-  const me = useGetMe({ retry: false, staleTime: Infinity });
+  const me = useQuery({
+    queryKey: ME_KEY,
+    queryFn: async () => {
+      // Rust `AuthContext::init`: on the native shell the `api_request` cookie
+      // jar is process-lifetime only, so exchange the cached refresh token for
+      // a fresh session BEFORE the first authenticated call. No-op when
+      // nothing is cached.
+      if (isTauri()) await tryRestoreSession();
+      return getMeHandler();
+    },
+    retry: false,
+    staleTime: Infinity,
+  });
   const [override, setOverride] = React.useState<UserContext | null>(null);
 
   const fromServer: UserContext = me.data
