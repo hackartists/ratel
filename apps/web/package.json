@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite-react-ssg build",
     "preview": "vite preview --port 4173",
     "typecheck": "tsc --noEmit",
-    "parity:tailwind": "node scripts/tailwind-parity.mjs"
+    "parity:tailwind": "node scripts/tailwind-parity.mjs",
+    "parity:routes": "node scripts/route-parity.mjs",
+    "scaffold:routes": "node scripts/scaffold-routes.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",

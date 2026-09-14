@@ -49,6 +49,8 @@ name: PR Testing
 #                          check once a run of green history backs it.
 #   8. tauri-android-*   — Android APK build + emulator smoke test (docker
 #                          compose backend from job 4).
+#   9. web-build         — SELF-HOSTED: React frontend (apps/web) typecheck,
+#                          Tailwind/route parity with the Dioxus app, build.
 #
 # Caching on the self-hosted jobs is restore-only (actions/cache/restore,
 # never save) with ratel-cargo-* / ratel-target-* keys — same policy as
@@ -142,6 +144,49 @@ jobs:
         env:
           ENV: dev
         run: npm run build
+
+  # React frontend (apps/web) during the Dioxus → React migration
+  # (docs/superpower/2026-09-14-react-frontend-migration.md). Builds without
+  # Rust: the Tailwind input and legacy assets are read straight from
+  # app/ratel. The parity scripts fail the job when the React build drifts
+  # from the Dioxus app (missing Tailwind selectors, or a route/layout chain
+  # that differs from app/ratel/src/route.rs).
+  web-build:
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -C apps/web typecheck
+
+      - name: Tailwind parity with the Dioxus build
+        run: pnpm -C apps/web parity:tailwind
+
+      - name: Route parity with app/ratel/src/route.rs
+        run: pnpm -C apps/web parity:routes
+
+      # `assets/ratel-app-shell.js`, `wallet-connect.js`, … are gitignored
+      # outputs of app/ratel/js that app/ratel/build.rs normally produces
+      # during a cargo build; the React build copies them from there.
+      - name: Build shared JS assets
+        working-directory: app/ratel/js
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build
+        run: pnpm -C apps/web build
 
   dx-check:
     runs-on: self-hosted

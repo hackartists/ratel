@@ -22,11 +22,12 @@ Import from `tests/utils.js`: `goto`, `click`, `fill`, `getLocator`, `getEditor`
 
 ## Navigation vs In-Page Interactions
 
-- `goto()` helper handles navigation + hydration wait (`window.dioxus.send`)
+- `goto()` helper handles navigation + hydration wait for both apps: the Dioxus app (`[data-dioxus-id]` + stabilization delay) and the React app in `apps/web` (`html[data-app-ready="true"]`, detected via `<meta name="ratel-app" content="react">`)
 - After `click()` helper — do NOT add manual `waitForLoadState("load")` (already internal)
 - After non-navigation actions (autosave, tab switch, blur) — do NOT use `waitForLoadState("load")`. Wait for deterministic UI signals instead
 - **Never use `waitForLoadState("networkidle")`** — causes CI failures
-- After `waitForURL()` — add `waitForFunction` check for `window.dioxus.send`
+- After `waitForURL()` — call `waitForAppReady(page)`; never query `[data-dioxus-id]` directly in specs (the same specs run against the React app during the migration)
+- React app shell smoke tests: `tests/react/*.spec.js`, project `React`, opt-in with `REACT_APP=1` and `PLAYWRIGHT_BASE_URL` pointing at a running `apps/web` build
 
 ## Async Server Responses
 

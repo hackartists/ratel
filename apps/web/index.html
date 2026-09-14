@@ -5,6 +5,9 @@
     <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
     <!--ratel:viewport-->
     <meta charset="UTF-8" />
+    <!-- Lets the shared Playwright helpers (playwright/tests/utils.js) tell
+         this app from the Dioxus app, which has no such tag. -->
+    <meta name="ratel-app" content="react" />
     <!-- Ported verbatim from app/ratel/index.html. Sets `data-theme` before
          first paint so theme-scoped CSS (120+ `[data-theme="light"]` rules)
          resolves on the very first render. Same storage key + `system`

@@ -33,7 +33,10 @@ const TAILWIND_URL = "/_ratel/tailwind.css";
 // Page paths go to the React app; everything the Rust server owns is proxied.
 // Defaults to dev, never prod.
 const API_TARGET = process.env.VITE_API_TARGET ?? "https://dev.ratel.foundation";
-const API_PREFIXES = ["/api", "/v3", "/mcp", "/hooks", "/launchpad"];
+// `/launchpad/return` is a page (LaunchpadReturnPage), so only the partner
+// endpoints under `/launchpad` go to the server
+// (app/ratel/src/features/launchpad_partner/server.rs).
+const API_PREFIXES = ["/api", "/v3", "/mcp", "/hooks", "/launchpad/health", "/launchpad/points"];
 
 const BASE = process.env.VITE_BASE ?? "/";
 const IS_TAURI = process.env.VITE_TAURI === "1";

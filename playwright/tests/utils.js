@@ -125,43 +125,84 @@ export async function waitPopup(page, { visible = true }) {
   }
 }
 
-export async function goto(page, url) {
-  // Wait for the WASM response with a timeout fallback. When the browser
-  // serves WASM from memory/disk cache on same-context navigations, the
-  // response event may never fire, so we race against a 5-second timeout
-  // and fall through to the hydration check below.
-  await Promise.all([
-    Promise.race([
-      page.waitForResponse(
-        (response) =>
-          response.url().includes("app-shell") &&
-          response.url().endsWith(".wasm") &&
-          response.status() === 200,
-      ),
-      page.waitForResponse(
-        (response) =>
-          response.url().includes("ratel-app-shell") &&
-          response.url().endsWith(".js") &&
-          response.status() === 200,
-      ),
+/**
+ * True when the page is the React app (`apps/web`), which marks its shell
+ * with `<meta name="ratel-app" content="react">`. The Dioxus app has no such
+ * tag. Both apps run the same specs during the migration, so helpers branch
+ * on this instead of assuming Dioxus.
+ */
+export async function isReactApp(page) {
+  return page.evaluate(
+    () => document.querySelector('meta[name="ratel-app"]')?.content === "react",
+  );
+}
 
-      page.waitForResponse(
-        (response) =>
-          response.url().includes("/app-shell") &&
-          response.url().endsWith(".js") &&
-          response.status() === 200,
-      ),
-      new Promise((resolve) => setTimeout(resolve, 5000)),
-    ]),
-    page.goto(url),
+/**
+ * Wait until the app on the current document can take input.
+ *
+ * React: `RootLayout` sets `html[data-app-ready="true"]` in an effect after
+ * its first client commit, when event handlers are attached — a real signal,
+ * so no fixed delay follows it.
+ *
+ * Dioxus: `[data-dioxus-id]` is already in the SSR markup, so it only shows
+ * that some node exists; callers that need handlers bound (`goto`) add the
+ * stabilization wait on top.
+ */
+export async function waitForAppReady(page, timeout) {
+  await page.waitForFunction(
+    () =>
+      document.documentElement.dataset.appReady === "true" ||
+      document.querySelector("[data-dioxus-id]") !== null,
+    undefined,
+    timeout ? { timeout } : undefined,
+  );
+}
+
+export async function goto(page, url) {
+  // Dioxus: wait for the WASM response with a timeout fallback. When the
+  // browser serves WASM from memory/disk cache on same-context navigations,
+  // the response event may never fire, so we race against a 5-second timeout
+  // and fall through to the hydration check below. Started before
+  // navigation so the response isn't missed; the React branch never awaits
+  // it, so its rejection on page close is swallowed.
+  const wasmLoaded = Promise.race([
+    page.waitForResponse(
+      (response) =>
+        response.url().includes("app-shell") &&
+        response.url().endsWith(".wasm") &&
+        response.status() === 200,
+    ),
+    page.waitForResponse(
+      (response) =>
+        response.url().includes("ratel-app-shell") &&
+        response.url().endsWith(".js") &&
+        response.status() === 200,
+    ),
+
+    page.waitForResponse(
+      (response) =>
+        response.url().includes("/app-shell") &&
+        response.url().endsWith(".js") &&
+        response.status() === 200,
+    ),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
   ]);
+  wasmLoaded.catch(() => {});
+
+  await page.goto(url);
   await page.waitForLoadState("domcontentloaded");
+
+  if (await isReactApp(page)) {
+    await waitForAppReady(page);
+    await dismissDevToast(page);
+    return;
+  }
+
+  await wasmLoaded;
   await page.waitForTimeout(200);
   // Wait for Dioxus WASM to hydrate — SSR markup already contains
   // [data-dioxus-id], so also verify the interpreter is initialised.
-  await page.waitForFunction(
-    () => document.querySelector("[data-dioxus-id]") !== null,
-  );
+  await waitForAppReady(page);
   // Stabilization wait: [data-dioxus-id] is in SSR markup, so the check above
   // doesn't guarantee WASM has bound onclick handlers. Without this wait,
   // automated clicks fire on hydrated DOM but no Rust handler is listening.
@@ -172,17 +213,24 @@ export async function goto(page, url) {
 }
 
 /**
- * Wait until a specific element (by testId) has been hydrated by Dioxus —
- * i.e. it carries a `data-dioxus-id` attribute so its event listeners are
- * attached. Use this before clicking SSR-rendered interactive elements;
- * clicks on non-hydrated nodes are silently dropped, manifesting later as
- * "dropdown did not open / state did not toggle" failures.
+ * Wait until a specific element (by testId) is hydrated and can take clicks.
+ * Dioxus: it carries a `data-dioxus-id` attribute, so its event listeners
+ * are attached. React: it exists and the app has committed on the client
+ * (`html[data-app-ready="true"]`); React attaches handlers at commit, so the
+ * node is live as soon as it is in the DOM. Use this before clicking
+ * SSR-rendered interactive elements; clicks on non-hydrated nodes are
+ * silently dropped, manifesting later as "dropdown did not open / state did
+ * not toggle" failures.
  */
 export async function waitForHydrated(page, testId, timeout = 15000) {
   await page.waitForFunction(
     (id) => {
       const el = document.querySelector(`[data-testid="${id}"]`);
-      return !!el && el.hasAttribute("data-dioxus-id");
+      if (!el) return false;
+      if (document.querySelector('meta[name="ratel-app"]')?.content === "react") {
+        return document.documentElement.dataset.appReady === "true";
+      }
+      return el.hasAttribute("data-dioxus-id");
     },
     testId,
     { timeout },
@@ -323,9 +371,7 @@ export async function createTeamFromHome(
   await page.waitForURL(new RegExp(`/${username}/?$`), {
     waitUntil: "load",
   });
-  await page.waitForFunction(
-    () => document.querySelector("[data-dioxus-id]") !== null,
-  );
+  await waitForAppReady(page);
 }
 
 /**
@@ -358,9 +404,7 @@ export async function openTeamFromHome(page, teamUsername) {
   await page.waitForURL(new RegExp(`/${teamUsername}/?$`), {
     waitUntil: "load",
   });
-  await page.waitForFunction(
-    () => document.querySelector("[data-dioxus-id]") !== null,
-  );
+  await waitForAppReady(page);
 }
 
 /**
