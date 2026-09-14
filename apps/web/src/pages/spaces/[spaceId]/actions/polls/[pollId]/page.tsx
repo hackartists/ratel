@@ -4,7 +4,7 @@ import {
   SettingsSwitchButton,
   useActionEditModeState,
 } from "@/components/space-actions/settings-switch-button";
-import { useActionSpace, useActionSpaceRole } from "@/components/space-actions/space-data";
+import { isSpaceAdmin, useSpaceContext } from "@/components/space/space-context";
 import { isActionLocked } from "@/components/space-actions/access";
 import { PollCreatorPage } from "./components/poll-creator-page";
 import { PollResponseView } from "./components/poll-response-view";
@@ -18,8 +18,8 @@ import { PollProvider, usePollProvider } from "./hooks/use-poll";
 export function Component() {
   const { spaceId = "", pollId = "" } = useParams();
   const controller = usePollProvider(spaceId, pollId);
-  const { currentRole, isAdmin } = useActionSpaceRole(spaceId); // space-context: use_space_role() / space_ctx.role()
-  const space = useActionSpace(spaceId); // space-context: use_space()
+  const { space, role, currentRole } = useSpaceContext();
+  const isAdmin = isSpaceAdmin(role);
   const locked = isActionLocked(space.status, controller.poll.space_action.status);
 
   const editMode = useActionEditModeState(isAdmin);
@@ -45,7 +45,7 @@ export function Component() {
     <PollProvider value={controller}>
       <ActionEditModeContext.Provider value={editMode}>
         <div className={showCreatorView ? "flex flex-col flex-1 w-full min-h-0" : "flex flex-col flex-1 w-full h-full min-h-0"}>
-          {!showCreatorView && <SettingsSwitchButton spaceId={spaceId} />}
+          {!showCreatorView && <SettingsSwitchButton />}
           {content}
         </div>
       </ActionEditModeContext.Provider>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ActionEditFooter, ActionEditSaveBusProvider } from "@/components/space-actions/action-edit-footer";
 import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
-import { useActionSpace } from "@/components/space-actions/space-data";
+import { useSpace } from "@/components/space/space-context";
 import { useQuizCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/quiz/views/main/creator/quiz-creator.i18n";
 import { useQuizProvider, QuizProvider } from "../hooks/use-quiz";
 import { QuizConfigCard } from "./quiz-config-card";
@@ -15,7 +15,7 @@ export function QuizCreatorPage({ spaceId, quizId }: { spaceId: string; quizId: 
   const controller = useQuizProvider(spaceId, quizId, true);
   const tr = useQuizCreatorI18n();
   const navigate = useNavigate();
-  const space = useActionSpace(spaceId); // space-context: use_space()
+  const space = useSpace();
   const [title] = useState(controller.quiz.title);
   const [currentPage, setCurrentPage] = useState(0);
 

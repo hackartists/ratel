@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import type { HTMLAttributes, ReactNode } from "react";
+import { useSpaceLayoutUi } from "@/components/space/space-context";
 
 // app/ratel/src/features/spaces/pages/actions/components/full_action_layover —
 // full-width action viewer with a fixed bottom action bar.
@@ -23,9 +25,17 @@ export function FullActionLayover({
   children,
   ...props
 }: FullActionLayoverProps) {
-  // space-context: the Rust component hides the space sidebar while mounted
+  // Rust hides the space sidebar while mounted
   // (`use_space_layout_ui().sidebar_visible.set(false)`, restored on drop).
-  // Switch to the space layout UI context once it lands.
+  // `SpaceNav`/`SpaceTop` aren't mounted anywhere in the React route tree yet
+  // (see layouts/space-layout.tsx), so this has no visible effect today, but
+  // it keeps the shared `sidebarVisible` flag correct for when they land.
+  const { setSidebarVisible } = useSpaceLayoutUi();
+  useEffect(() => {
+    setSidebarVisible(false);
+    return () => setSidebarVisible(true);
+  }, [setSidebarVisible]);
+
   const contentClass = contentClassName === "" ? BASE_CONTENT_CLASS : `${BASE_CONTENT_CLASS} ${contentClassName}`;
   const bottomClass = bottomClassName === "" ? BASE_BOTTOM_CLASS : `${BASE_BOTTOM_CLASS} ${bottomClassName}`;
 

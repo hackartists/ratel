@@ -2,7 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { listAnalyzeReports } from "@ratel/ts-bridges";
 import type { AnalyzeReport, AnalyzeReportStatus } from "@ratel/ts-bridges";
-import { useSpaceData } from "@/components/space-data/use-space-data";
+import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import { useToast } from "@/lib/toast";
@@ -16,7 +16,7 @@ const DEFAULT_SPACE_LOGO = "https://metadata.ratel.foundation/logos/logo-symbol.
 
 export function Component() {
   const { spaceId = "" } = useParams();
-  const { role } = useSpaceData(spaceId); // space-context: `use_space_context().role()`
+  const { role } = useSpaceAppsContext();
 
   if (role !== "Creator") {
     return <ViewerEmpty />;
@@ -46,7 +46,7 @@ function statusAttr(status: AnalyzeReportStatus): string {
 
 function AnalyzesListArena({ spaceId }: { spaceId: string }) {
   const tr = useSpaceAnalyzesAppI18n();
-  const { space } = useSpaceData(spaceId); // space-context: `use_space()`
+  const { space } = useSpaceAppsContext();
   const navigate = useNavigate();
   const toast = useToast();
   useLegacyScript(homeScript);

@@ -91,7 +91,6 @@ function attributePill(a: PanelAttribute, tr: PanelsI18n): { className: string; 
 
 export function ConditionalTableSection() {
   const tr = usePanelsI18n();
-  // space-context: `use_space()`.
   const { space } = useSpaceAppsContext();
   const { panels, updateRowQuota, deleteRow } = useSpacePanels();
 

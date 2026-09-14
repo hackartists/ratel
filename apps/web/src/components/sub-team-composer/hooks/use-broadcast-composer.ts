@@ -59,8 +59,11 @@ export function useBroadcastComposer(
 ): UseBroadcastComposer {
   const navigate = useNavigate();
 
-  // team-context: loads the team independently here; other pages will pull
-  // this from a shared team context once one lands.
+  // Every route that uses this composer is declared OUTSIDE SocialLayout in
+  // both apps (route.rs: announcements-compose/edit and the direct one-team
+  // composer are full-screen pages before `#[layout(SocialLayout)]`;
+  // route-tree.ts mirrors it) — no shared wall/team context is mounted
+  // here, so Rust also loads the team locally via `find_team_handler`.
   const team = useSuspenseQuery({
     queryKey: ["findTeam", username],
     queryFn: () => findTeamHandler(username),

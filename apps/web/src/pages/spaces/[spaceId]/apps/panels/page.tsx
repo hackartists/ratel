@@ -16,7 +16,6 @@ import { SpacePanelsProvider, useSpacePanels, useSpacePanelsController } from ".
 const DEFAULT_SPACE_LOGO = "https://metadata.ratel.foundation/logos/logo-symbol.png";
 
 export function Component() {
-  // space-context: `ctx.role()`.
   const { role } = useSpaceAppsContext();
   return role === "Creator" ? <CreatorArena /> : <ViewerPage />;
 }
@@ -35,7 +34,6 @@ function CreatorArena() {
 function CreatorArenaPage() {
   const tr = usePanelsI18n();
   const navigate = useNavigate();
-  // space-context: `use_space()`.
   const { space } = useSpaceAppsContext();
   const { panels, isSaving } = useSpacePanels();
 

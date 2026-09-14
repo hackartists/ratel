@@ -6,7 +6,7 @@ import { canExecuteSpaceAction } from "@/components/space-actions/access";
 import { FileCard } from "@/components/space-actions/file-card";
 import { FullActionLayover } from "@/components/space-actions/full-action-layover";
 import { hasAnswerForQuestion, QuestionViewer, shouldAutoNext } from "@/components/space-actions/question-viewer";
-import { useActionSpace, useActionSpaceRole, useRefreshSpaceScores } from "@/components/space-actions/space-data";
+import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
 import { useQuizReadI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/quiz/views/main/quiz-read.i18n";
 import { timeAgo } from "@/lib/time";
@@ -41,9 +41,13 @@ export function QuizResponseView({ spaceId, quizId, canRespond }: { spaceId: str
   const toast = useToast();
   const navigate = useNavigate();
   const { quiz, refreshQuiz } = useQuizProvider(spaceId, quizId, false);
-  const space = useActionSpace(spaceId); // space-context: use_space()
-  const { currentRole: role } = useActionSpaceRole(spaceId); // space-context: use_space_role()
-  const refreshScores = useRefreshSpaceScores(spaceId); // space-context: space_ctx.ranking/my_score.restart()
+  const space = useSpace();
+  const role = useSpaceRole();
+  const { restartRanking, restartMyScore } = useSpaceContext();
+  const refreshScores = () => {
+    void restartRanking();
+    void restartMyScore();
+  };
 
   const [step, setStep] = useState<"overview" | "quiz">("overview");
   const [questionIndex, setQuestionIndex] = useState(0);

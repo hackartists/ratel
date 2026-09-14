@@ -9,7 +9,6 @@ import { useSpaceGeneralSettings } from "../hooks/use-space-general-settings";
 // `SpaceVisibility` is serialized by `DynamoEnum` Display: "PUBLIC" / "PRIVATE".
 export function SpaceVisibilitySetting() {
   const tr = useGeneralI18n();
-  // space-context: `use_space()`.
   const { space } = useSpaceAppsContext();
   const { updateVisibility } = useSpaceGeneralSettings();
 

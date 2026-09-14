@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FileUploader } from "@/components/ui/file-uploader";
-import { useTeamArena } from "@/components/social/use-wall-context";
+import { TeamArenaTab, useTeamArena, useTeamArenaTab } from "@/components/social/team-arena-context";
 import { useTeamContext } from "@/components/social/use-team-context";
 import { useTeamSettingsI18n } from "@/i18n/generated/features/social/pages/setting/team/views/team-settings.i18n";
 import { useToast } from "@/lib/toast";
@@ -19,9 +19,9 @@ export function TeamSettingsHome({ username }: { username: string }) {
   const toast = useToast();
   const teamCtx = useTeamContext();
 
-  // wall-context: `use_team_arena()` — `arena.active_tab.set(TeamArenaTab::Settings)` is layout-owned;
-  // `refresh_trigger` bump becomes `arena.refresh()`.
-  const arena = useTeamArena(username);
+  // Sync the arena topbar's active tab.
+  useTeamArenaTab(TeamArenaTab.Settings);
+  const arena = useTeamArena();
 
   const { team, updateTeam } = useTeamSettings(username);
 

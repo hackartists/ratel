@@ -3,7 +3,7 @@ import { InviteMemberModal, type InviteResult } from "@/components/team-member/i
 import { MoreElement, useSentinelKey } from "@/components/team-member/more-element";
 import { Button, ButtonShape, ButtonSize, ButtonStyle } from "@/components/ui/button";
 import { ScrollArea, ScrollDirection } from "@/components/ui/scroll-area";
-import { useRouteUsername } from "@/components/social/use-wall-context";
+import { useWallContext } from "@/components/social/wall-context";
 import { useTeamSettingsI18n } from "@/i18n/generated/features/social/pages/setting/team/views/team-settings.i18n";
 import { PopupProvider, PopupZone, usePopup } from "@/lib/popup";
 import { MemberRow } from "./components/member-row";
@@ -12,9 +12,12 @@ import { useManagementPage } from "./hooks/use-management-page";
 // app/ratel/src/features/social/pages/setting/team/views/management_page.rs
 // (`ManagementPage`, route `TeamSettingMember`, `/:username/settings/members`).
 // Like Rust it installs its own popup service and renders a `PopupZone` right
-// after the page, so the invite modal opens in this page-scoped zone.
+// after the page, so the invite modal opens in this page-scoped zone. Rust's
+// `ManagementPage` never syncs the arena topbar's active tab (no
+// `arena.active_tab.set(...)` call anywhere in that module), so this page
+// doesn't either — matches the existing behavior gap in both apps.
 export function Component() {
-  const username = useRouteUsername();
+  const { username } = useWallContext();
   return (
     <PopupProvider>
       <ManagementPage key={username} username={username} />

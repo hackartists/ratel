@@ -5,7 +5,7 @@ import { useUpdateDiscussion } from "@ratel/ts-bridges/hooks";
 import { ActionDescriptionEditor } from "@/components/space-actions/action-description-editor";
 import { AutosaveStatusBadge, type SaveStatus } from "@/components/space-actions/autosave-status-badge";
 import { FileUploader } from "@/components/ui/file-uploader";
-import { useActionSpace } from "@/components/space-actions/space-data";
+import { useSpace } from "@/components/space/space-context";
 import { FileExtension, FileExtensionIcon } from "@/components/ui/file-extension-icon";
 import { useDiscussionEditorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/discussion/views/editor/discussion-editor.i18n";
 import { extractFilenameFromUrl, fileExtensionFromNameOrUrl } from "@/lib/file-ext";
@@ -28,7 +28,7 @@ export function DiscussionContentCard() {
   const toast = useToast();
   const { spaceId, discussionId, discussion, refresh, importRequest } = useDiscussion();
   const update = useUpdateDiscussion();
-  const space = useActionSpace(spaceId); // space-context: use_space()
+  const space = useSpace();
 
   const initialPost = discussion.post;
   const [htmlContents, setHtmlContents] = useState(initialPost.html_contents);

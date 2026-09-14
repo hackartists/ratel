@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ActionEditFooter, ActionEditSaveBusProvider } from "@/components/space-actions/action-edit-footer";
 import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
-import { useActionSpace } from "@/components/space-actions/space-data";
+import { useSpace } from "@/components/space/space-context";
 import { useDiscussionEditorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/discussion/views/editor/discussion-editor.i18n";
 import { DiscussionConfigCard } from "./components/discussion-config-card";
 import { DiscussionContentCard } from "./components/discussion-content-card";
@@ -17,7 +17,7 @@ export function Component() {
   const navigate = useNavigate();
   const controller = useDiscussionProvider(spaceId, discussionId);
   const tr = useDiscussionEditorI18n();
-  const space = useActionSpace(spaceId); // space-context: use_space()
+  const space = useSpace();
   const [title] = useState(controller.discussion.post.title);
   const [currentPage, setCurrentPage] = useState(0);
 

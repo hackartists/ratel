@@ -23,9 +23,11 @@ export interface UseDocComposer {
 }
 
 export function useDocComposer(username: string, docId: string | undefined): UseDocComposer {
-  // team-context: loads the team independently here; other pages will pull
-  // this from a shared team context once one lands (see the parallel
-  // sub-team-governance / manage-page ports).
+  // Every route that uses this composer is declared OUTSIDE SocialLayout in
+  // both apps (route.rs: doc-edit/announcements-compose/bylaws-compose are
+  // full-screen pages before `#[layout(SocialLayout)]`; route-tree.ts
+  // mirrors it) — no shared wall/team context is mounted here, so Rust also
+  // loads the team locally via `find_team_handler`.
   const team = useSuspenseQuery({
     queryKey: ["findTeam", username],
     queryFn: () => findTeamHandler(username),

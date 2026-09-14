@@ -9,7 +9,6 @@ import { datetimeLocalToEpochMs, epochMsToDatetimeLocal } from "./format";
 // click anywhere on the field opens the picker.
 export function StartTimeSetting() {
   const tr = useGeneralI18n();
-  // space-context: `use_space()`.
   const { space } = useSpaceAppsContext();
   const { updateStartTime } = useSpaceGeneralSettings();
 

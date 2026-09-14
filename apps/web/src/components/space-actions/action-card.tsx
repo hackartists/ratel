@@ -13,7 +13,7 @@ import { useToast } from "@/lib/toast";
 import { isActionLocked } from "./access";
 import { summaryUrl } from "./action-urls";
 import { DeleteActionPopup } from "./delete-action";
-import { useActionSpace, useActionSpaceRole } from "./space-data";
+import { useSpace, useSpaceRole } from "@/components/space/space-context";
 
 // app/ratel/src/features/spaces/pages/actions/components/action_card.
 
@@ -63,8 +63,8 @@ export function ActionCard({ action, spaceId, deletable = false, onDeleted }: Ac
   const navigate = useNavigate();
   const toast = useToast();
   const popup = usePopup();
-  const space = useActionSpace(spaceId); // space-context: use_space()
-  const { currentRole: role } = useActionSpaceRole(spaceId); // space-context: use_space_role()
+  const space = useSpace();
+  const role = useSpaceRole();
   const remove = useDeleteSpaceAction();
 
   const status = resolveActionStatus(action);

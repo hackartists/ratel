@@ -8,7 +8,6 @@ import { useSpacePanels } from "../hooks/use-space-panels";
 // Enter / blur when changed) and the allocated / unassigned meter.
 export function TotalQuota() {
   const tr = usePanelsI18n();
-  // space-context: `use_space()`.
   const { space } = useSpaceAppsContext();
   const { panels, updateTotalQuota } = useSpacePanels();
 

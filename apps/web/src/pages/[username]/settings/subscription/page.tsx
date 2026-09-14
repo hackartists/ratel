@@ -9,7 +9,7 @@ import {
 import { MembershipPurchaseModal, type CustomerInfo } from "@/components/membership/membership-purchase-modal";
 import { MembershipReceiptModal } from "@/components/membership/membership-receipt-modal";
 import { apiTierToUi, type UiMembershipTier } from "@/components/membership/membership-tier";
-import { useRouteUsername, useTeamArena } from "@/components/social/use-wall-context";
+import { TeamArenaTab, useTeamArena, useTeamArenaTab } from "@/components/social/team-arena-context";
 import { useEnumI18n } from "@/i18n/generated/enums.i18n";
 import { useTeamSubscriptionI18n } from "@/i18n/generated/features/social/pages/setting/team/views/subscription_page/team-subscription.i18n";
 import { useAuth } from "@/lib/auth";
@@ -37,9 +37,11 @@ function tierFromKey(key: string): UiMembershipTier | null {
 }
 
 export function Component() {
-  const username = useRouteUsername();
-  // wall-context: `use_team_arena()` — `can_edit` gate; `active_tab = TeamArenaTab::Subscription` is layout-owned.
-  const arena = useTeamArena(username);
+  // Sync the arena topbar's active tab (Rust sets this before the `can_edit`
+  // gate, so both the editor and the viewer placeholder show "Subscription").
+  useTeamArenaTab(TeamArenaTab.Subscription);
+  const arena = useTeamArena();
+  const username = arena.username;
   if (!arena.canEdit) return <ViewerPage username={username} />;
   return <SubscriptionPage username={username} />;
 }

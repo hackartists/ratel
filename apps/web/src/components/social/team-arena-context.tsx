@@ -26,6 +26,11 @@ export function isAdminOrOwner(role: TeamRole | null | undefined): boolean {
   return role === "owner" || role === "admin";
 }
 
+/** Rust `TeamRole::is_owner`. */
+export function isOwner(role: TeamRole | null | undefined): boolean {
+  return role === "owner";
+}
+
 export interface TeamArenaContextValue {
   activeTab: TeamArenaTab;
   setActiveTab(tab: TeamArenaTab): void;

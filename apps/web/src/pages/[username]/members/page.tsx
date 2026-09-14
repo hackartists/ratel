@@ -1,6 +1,6 @@
 import { MoreElement, useSentinelKey } from "@/components/team-member/more-element";
 import { isAdminOrOwner, useTeamMemberPermissionResult } from "@/components/team-member/use-team-members";
-import { useRouteUsername, useTeamArena } from "@/components/social/use-wall-context";
+import { TeamArenaTab, useTeamArena, useTeamArenaTab } from "@/components/social/team-arena-context";
 import { useTeamMemberI18n } from "@/i18n/generated/features/social/pages/member/views/team-member.i18n";
 import { useToast } from "@/lib/toast";
 import { InviteMemberModal } from "./components/invite-member-modal";
@@ -14,10 +14,10 @@ import { useTeamMemberPage } from "./hooks/use-team-member-page";
 // page: section label, header with Add Member, search + role tabs, member
 // cards with a role/remove menu, and the inline invite modal.
 export function Component() {
-  const username = useRouteUsername();
-  // wall-context: `use_team_arena()` (panics unless the wall is a team)
-  useTeamArena(username);
-  // wall-context: active_tab = TeamArenaTab::Members
+  // `useTeamArena()` panics (throws) unless the wall is a team, matching
+  // Rust's `use_team_arena()` — and syncs the arena topbar's active tab.
+  const { username } = useTeamArena();
+  useTeamArenaTab(TeamArenaTab.Members);
   const permission = useTeamMemberPermissionResult(username);
   if (!permission.ok) return <ViewerPage username={username} />;
   return (

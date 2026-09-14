@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useSpaceData } from "@/components/space-data/use-space-data";
+import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import reportScript from "../../../../../../../../../../app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/report/script.js?url&no-inline";
@@ -22,7 +22,7 @@ const DEFAULT_SPACE_LOGO = "https://metadata.ratel.foundation/logos/logo-symbol.
 export function Component() {
   const { spaceId = "", reportId = "" } = useParams();
   const tr = useSpaceAnalyzesAppI18n();
-  const { space } = useSpaceData(spaceId); // space-context: `use_space()`
+  const { space } = useSpaceAppsContext();
   const navigate = useNavigate();
   const ctrl = useAnalyzeReportDetail(spaceId, reportId);
   useLegacyScript(reportScript);

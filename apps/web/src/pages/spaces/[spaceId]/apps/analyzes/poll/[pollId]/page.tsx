@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { PollResultResponse, PollResultSummary, Question } from "@ratel/ts-bridges";
-import { useSpaceData } from "@/components/space-data/use-space-data";
+import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import {
   useSpaceAnalyzesAppI18n,
   type SpaceAnalyzesAppI18n,
@@ -35,7 +35,7 @@ interface AnalyzeChoiceStat {
 
 export function Component() {
   const { spaceId = "", pollId = "" } = useParams();
-  const { role } = useSpaceData(spaceId); // space-context: `use_space_context().role()`
+  const { role } = useSpaceAppsContext();
 
   if (role !== "Creator") {
     return (
@@ -49,7 +49,7 @@ export function Component() {
 
 function PollAnalyzeArena({ spaceId, pollId }: { spaceId: string; pollId: string }) {
   const tr = useSpaceAnalyzesAppI18n();
-  const { space } = useSpaceData(spaceId); // space-context: `use_space()`
+  const { space } = useSpaceAppsContext();
   const navigate = useNavigate();
   const ctrl = useSpaceAnalyzePoll(spaceId, pollId);
   const { poll, result } = ctrl;

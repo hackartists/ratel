@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ActionEditFooter, ActionEditSaveBusProvider } from "@/components/space-actions/action-edit-footer";
 import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
-import { useActionSpace } from "@/components/space-actions/space-data";
+import { useSpace } from "@/components/space/space-context";
 import { usePollCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/views/main/creator/poll-creator.i18n";
 import { usePoll } from "../hooks/use-poll";
 import { PollConfigCard } from "./poll-config-card";
@@ -13,8 +13,8 @@ import { PollContentCard } from "./poll-content-card";
 export function PollCreatorPage() {
   const tr = usePollCreatorI18n();
   const navigate = useNavigate();
-  const { spaceId, poll } = usePoll();
-  const space = useActionSpace(spaceId); // space-context: use_space()
+  const { poll } = usePoll();
+  const space = useSpace();
   const [title] = useState(poll.title);
   const [currentPage, setCurrentPage] = useState(0);
 

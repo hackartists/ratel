@@ -2,7 +2,7 @@ import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { getReport, listReportAnalyzes, updateReport } from "@ratel/ts-bridges";
 import type { ActionSource, Analyze, AnalyzeItem, ChartType, GetReportResponse } from "@ratel/ts-bridges";
-import { canEdit, useSpaceData } from "@/components/space-data/use-space-data";
+import { isSpaceAdmin, useSpaceContext } from "@/components/space/space-context";
 import type { EditorSlashSignal } from "@/components/editor";
 import { useReportDetailI18n, type ReportDetailI18n } from "@/i18n/generated/features/spaces/pages/report/views/detail/report-detail.i18n";
 import {
@@ -296,12 +296,12 @@ export function useReportDetail(spaceId: string, reportId: string): UseReportDet
   const report = reportQuery.data;
   const analyzes = analyzesQuery.data.items;
 
-  // space-context: stand-in for `use_space_context().role` until the shared
-  // space layout context lands. Editability is purely role-based — admins
-  // stay in edit mode even after publishing (subsequent edits stream into
-  // the published copy via the autosave effect below).
-  const { role } = useSpaceData(spaceId);
-  const canEditReport = canEdit(role);
+  // Editability is purely role-based (the persisted `role`, not the
+  // Ongoing-adjusted `currentRole`) — admins stay in edit mode even after
+  // publishing (subsequent edits stream into the published copy via the
+  // autosave effect below).
+  const { role } = useSpaceContext();
+  const canEditReport = isSpaceAdmin(role);
 
   // Edit-buffer state seeded ONCE from the loader snapshot — the exception
   // to "no signal duplication": the editor needs writable local state

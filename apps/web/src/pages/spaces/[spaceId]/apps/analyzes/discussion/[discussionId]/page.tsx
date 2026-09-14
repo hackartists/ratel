@@ -1,5 +1,4 @@
-import { useParams } from "react-router-dom";
-import { useSpaceData } from "@/components/space-data/use-space-data";
+import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { Card } from "@/components/ui/card";
 import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
 
@@ -7,9 +6,8 @@ import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/
 // (`SpaceAnalyzeDiscussionPage`). Creator-only placeholder surface; renders
 // nothing for everyone else.
 export function Component() {
-  const { spaceId = "" } = useParams();
   const tr = useSpaceAnalyzesAppI18n();
-  const { role } = useSpaceData(spaceId); // space-context: `use_space_context().role()`
+  const { role } = useSpaceAppsContext();
 
   if (role !== "Creator") return null;
 

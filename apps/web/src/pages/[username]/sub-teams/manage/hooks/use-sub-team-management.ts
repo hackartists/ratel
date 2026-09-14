@@ -20,7 +20,7 @@ import type {
   TeamResponse,
   UpdateSubTeamSettingsRequest,
 } from "@ratel/ts-bridges";
-import { useTeamArena } from "@/components/social/use-wall-context";
+import { useTeamArena } from "@/components/social/team-arena-context";
 import { useInfinitePages, type InfinitePages } from "./use-infinite-pages";
 
 // The controllers the page shell installs in
@@ -79,11 +79,13 @@ export function useSubTeamManagementProvider(username: string): UseSubTeamManage
   const teamId = toTeamPartition(team.pk);
 
   // ── use_sub_team_settings: seeded from TeamArenaContext ────────────
-  const arena = useTeamArena(username); // wall-context: use_team_arena() seeds the settings signal
+  // This page is rendered under SocialLayout → TeamArenaLayout (route.rs:256),
+  // so the arena's wall fetch already carries these fields — no second GET.
+  const arena = useTeamArena();
   const [settings, setSettings] = useState<SubTeamSettingsResponse>(() => ({
-    is_parent_eligible: arena.isParentEligible, // wall-context: arena.is_parent_eligible()
-    min_sub_team_members: arena.minSubTeamMembers, // wall-context: arena.min_sub_team_members()
-    min_sub_team_age_days: arena.minSubTeamAgeDays, // wall-context: arena.min_sub_team_age_days()
+    is_parent_eligible: arena.isParentEligible,
+    min_sub_team_members: arena.minSubTeamMembers,
+    min_sub_team_age_days: arena.minSubTeamAgeDays,
   }));
   const handleUpdateSettings = useCallback(
     (req: UpdateSubTeamSettingsRequest) =>

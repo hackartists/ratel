@@ -34,7 +34,6 @@ export function Component() {
 function SpaceGeneralAppPage() {
   const tr = useGeneralI18n();
   const navigate = useNavigate();
-  // space-context: `use_space()`.
   const { space } = useSpaceAppsContext();
   const { deleteSpaceAction } = useSpaceGeneralSettings();
   const [deleteOpen, setDeleteOpen] = useState(false);

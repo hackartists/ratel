@@ -5,7 +5,7 @@ import { getEncryptionMaterial, respondPoll } from "@ratel/ts-bridges";
 import { canExecuteSpaceAction } from "@/components/space-actions/access";
 import { FullActionLayover } from "@/components/space-actions/full-action-layover";
 import { hasAnswerForQuestion, QuestionViewer, shouldAutoNext } from "@/components/space-actions/question-viewer";
-import { useActionSpace, useActionSpaceRole, useRefreshSpaceScores } from "@/components/space-actions/space-data";
+import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
 import { usePollParticipantI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/views/main/participant/poll-participant.i18n";
 import { usePollReadI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/views/main/poll-read.i18n";
@@ -38,9 +38,13 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
   const popup = usePopup();
   const navigate = useNavigate();
   const { spaceId, pollId, poll, refresh } = usePoll();
-  const space = useActionSpace(spaceId); // space-context: use_space()
-  const { currentRole: role } = useActionSpaceRole(spaceId); // space-context: use_space_role()
-  const refreshScores = useRefreshSpaceScores(spaceId); // space-context: space_ctx.ranking/my_score.restart()
+  const space = useSpace();
+  const role = useSpaceRole();
+  const { restartRanking, restartMyScore } = useSpaceContext();
+  const refreshScores = () => {
+    void restartRanking();
+    void restartMyScore();
+  };
 
   const [step, setStep] = useState<"overview" | "poll">("overview");
   const [questionIndex, setQuestionIndex] = useState(0);

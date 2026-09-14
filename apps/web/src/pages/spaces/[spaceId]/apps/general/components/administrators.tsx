@@ -11,7 +11,6 @@ import { InviteEmailChip } from "./invite-participant";
 // current admins, each non-owner removable.
 export function Administrators() {
   const tr = useGeneralI18n();
-  // space-context: `space_ctx.role().is_admin()` (Creator only).
   const { role } = useSpaceAppsContext();
   const { admins, addAdmins, removeAdmin } = useSpaceGeneralSettings();
 

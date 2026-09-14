@@ -48,7 +48,6 @@ function ArenaSwitchSection({ sectionTestId, switchTestId, label, sub, enabled, 
 
 export function AnonymousSetting() {
   const tr = useGeneralI18n();
-  // space-context: `use_space()`.
   const { space } = useSpaceAppsContext();
   const { updateAnonymous } = useSpaceGeneralSettings();
   return (
@@ -66,7 +65,6 @@ export function AnonymousSetting() {
 
 export function JoinAnytimeSetting() {
   const tr = useGeneralI18n();
-  // space-context: `use_space()`.
   const { space } = useSpaceAppsContext();
   const { updateJoinAnytime } = useSpaceGeneralSettings();
   return (

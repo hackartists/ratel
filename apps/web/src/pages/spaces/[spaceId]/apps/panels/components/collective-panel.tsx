@@ -11,7 +11,6 @@ import { useSpacePanels } from "../hooks/use-space-panels";
 // Gender into the conditional table. A press outside the menu closes it.
 export function CollectivePanelSection() {
   const tr = usePanelsI18n();
-  // space-context: `use_space()`.
   const { space } = useSpaceAppsContext();
   const { panels, moveToConditional } = useSpacePanels();
 

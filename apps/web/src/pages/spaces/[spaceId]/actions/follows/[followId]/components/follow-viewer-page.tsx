@@ -5,7 +5,7 @@ import {
 } from "@ratel/ts-bridges/hooks";
 import { FullActionLayover } from "@/components/space-actions/full-action-layover";
 import { InfiniteMore } from "@/components/space-actions/infinite-more";
-import { useRefreshSpaceScores } from "@/components/space-actions/space-data";
+import { useSpaceContext } from "@/components/space/space-context";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
 import { SpaceCard } from "@/components/ui/space-card";
 import { useFollowFullCardI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/follow/components/follow_viewer_card/follow-full-card.i18n";
@@ -25,7 +25,11 @@ export function FollowViewerPage({ spaceId, followId }: { spaceId: string; follo
   const listTr = useFollowUserListI18n();
   const navigate = useNavigate();
   const toast = useToast();
-  const refreshScores = useRefreshSpaceScores(spaceId); // space-context: space_ctx.ranking / my_score restart
+  const { restartRanking, restartMyScore } = useSpaceContext();
+  const refreshScores = () => {
+    void restartRanking();
+    void restartMyScore();
+  };
   const list = useFollowUsers(spaceId);
   const follow = useFollowUserPostApiSpacesFollowsUser();
   const unfollow = useUnfollowUserDeleteApiSpacesFollowsUser();

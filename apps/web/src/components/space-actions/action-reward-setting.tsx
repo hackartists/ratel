@@ -9,7 +9,7 @@ import { useArenaRewardI18n } from "@/i18n/generated/features/spaces/pages/actio
 import { useAuth, useUserMembership } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
 import { isActionLocked } from "./access";
-import { useActionSpace } from "./space-data";
+import { useSpace } from "@/components/space/space-context";
 
 // app/ratel/src/features/spaces/pages/actions/components/action_reward_setting —
 // Reward + Boost card: resolves the paying membership (team for team spaces,
@@ -46,7 +46,7 @@ export function ActionRewardSetting({ spaceId, actionId, savedCredits, actionSta
   const [currentCredits, setCurrentCredits] = useState(savedCredits);
   const [enableReward, setEnableReward] = useState(savedCredits > 0);
 
-  const space = useActionSpace(spaceId); // space-context: use_space()
+  const space = useSpace();
   const rewardLocked = isActionLocked(space.status, actionStatus);
   const isTeamSpace = space.author_type === USER_TYPE_TEAM;
 

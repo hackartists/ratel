@@ -28,7 +28,6 @@ import {
 export function Component() {
   const tr = useSpaceFileI18n();
   const navigate = useNavigate();
-  // space-context: `use_space()`.
   const { spaceId, space } = useSpaceAppsContext();
 
   const files = useGetSpaceFiles(spaceId, { throwOnError: true });

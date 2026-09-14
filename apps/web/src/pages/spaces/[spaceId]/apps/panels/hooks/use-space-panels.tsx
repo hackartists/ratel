@@ -50,7 +50,6 @@ export function useSpacePanels(): UseSpacePanels {
 export function useSpacePanelsController(spaceId: string): UseSpacePanels | null {
   const toast = useToast();
   const queryClient = useQueryClient();
-  // space-context: `use_space()` (`space().quota`, `space.restart()`).
   const { space } = useSpaceAppsContext();
 
   const panelsQuery = useListPanels(spaceId, { throwOnError: true });

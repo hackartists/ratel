@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { useActionSpaceRole } from "@/components/space-actions/space-data";
+import { useSpaceRole } from "@/components/space/space-context";
 import { CreatorActionPage } from "./components/creator-action-page";
 import { ParticipantActionPage } from "./components/participant-action-page";
 import { ViewerActionPage } from "./components/viewer-action-page";
@@ -9,7 +9,7 @@ import { ViewerActionPage } from "./components/viewer-action-page";
 // current space role.
 export function Component() {
   const { spaceId = "" } = useParams();
-  const { currentRole } = useActionSpaceRole(spaceId); // space-context: use_space_role()
+  const currentRole = useSpaceRole(); // shared SpaceContextProvider (space-layout)
 
   switch (currentRole) {
     case "Creator":

@@ -7,7 +7,7 @@ import {
   SettingsSwitchButton,
   useActionEditModeState,
 } from "@/components/space-actions/settings-switch-button";
-import { useActionSpace, useActionSpaceRole } from "@/components/space-actions/space-data";
+import { isSpaceAdmin, useSpaceContext } from "@/components/space/space-context";
 import { FollowCreatorPage } from "./components/follow-creator-page";
 import { FollowViewerPage } from "./components/follow-viewer-page";
 
@@ -17,8 +17,8 @@ import { FollowViewerPage } from "./components/follow-viewer-page";
 // the viewer.
 export function Component() {
   const { spaceId = "", followId = "" } = useParams();
-  const { currentRole: role, isAdmin } = useActionSpaceRole(spaceId); // space-context: use_space_role() / space_ctx.role()
-  const space = useActionSpace(spaceId); // space-context: use_space()
+  const { space, role: persistedRole, currentRole: role } = useSpaceContext();
+  const isAdmin = isSpaceAdmin(persistedRole);
   const action = useSuspenseQuery({
     queryKey: ["getFollow", spaceId, followId],
     queryFn: () => getFollow(spaceId, followId),
@@ -44,7 +44,7 @@ export function Component() {
             : "flex flex-col flex-1 mx-auto w-full min-h-0 max-w-desktop"
         }
       >
-        {!showCreatorView && <SettingsSwitchButton spaceId={spaceId} />}
+        {!showCreatorView && <SettingsSwitchButton />}
         {content}
       </div>
     </ActionEditModeContext.Provider>

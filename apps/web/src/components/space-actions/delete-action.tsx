@@ -5,7 +5,7 @@ import { useDeleteActionButtonI18n } from "@/i18n/generated/features/spaces/page
 import { useDeleteActionPopupI18n } from "@/i18n/generated/features/spaces/pages/actions/components/delete_action_popup/delete-action-popup.i18n";
 import { usePopup } from "@/lib/popup";
 import { useToast } from "@/lib/toast";
-import { useRefreshSpaceActions } from "./space-data";
+import { useSpaceContext } from "@/components/space/space-context";
 
 // app/ratel/src/features/spaces/pages/actions/components/{delete_action_popup,delete_action_button}.
 
@@ -54,7 +54,7 @@ export function ActionDeleteButton({ spaceId, actionId }: ActionDeleteButtonProp
   const toast = useToast();
   const popup = usePopup();
   const navigate = useNavigate();
-  const refreshActions = useRefreshSpaceActions(spaceId); // space-context: space_ctx.actions.restart()
+  const refreshActions = useSpaceContext().restartActions; // space_ctx.actions.restart()
   const remove = useDeleteSpaceAction();
 
   const onConfirm = () => {

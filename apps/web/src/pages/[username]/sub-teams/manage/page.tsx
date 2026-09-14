@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import { Check } from "@/components/icons/lucide";
-import { useRouteUsername } from "@/components/social/use-wall-context";
+import { useWallContext } from "@/components/social/wall-context";
 import { SeoMeta } from "@/components/ui/seo-meta";
 import { useSubTeamI18n, type SubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
 import { dataBool } from "@/lib/dom";
@@ -20,7 +20,11 @@ import {
 // app/ratel/src/features/sub_team/pages/management/component.rs
 // (`TeamSubTeamManagementPage`, `/:username/sub-teams/manage`, inside
 // SocialLayout). Autosave chip, activation hero, KPI row, tab nav and the
-// active tab's panel.
+// active tab's panel. Note: Rust's `TeamSubTeamManagementPage` never calls
+// `arena.active_tab.set(...)` (no `use_team_arena()` at the page level, and
+// none of its tab components set it either), so the arena topbar's active
+// tab is left at whatever it was before navigating here — matched as-is,
+// not treated as the one tracked active-tab gap.
 
 type ManagementTab = "Requirements" | "Documents" | "Roster" | "Queue" | "Broadcast";
 
@@ -44,7 +48,7 @@ const KPI_LABEL_STYLE = {
 } as const;
 
 export function Component() {
-  const username = useRouteUsername();
+  const { username } = useWallContext();
   const tr = useSubTeamI18n();
   const ctrl = useSubTeamManagementProvider(username);
   const { team, settings, handleUpdateSettings, teams, queue, announcements } = ctrl;

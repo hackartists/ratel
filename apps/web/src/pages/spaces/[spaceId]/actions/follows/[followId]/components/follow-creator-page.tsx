@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { getFollow } from "@ratel/ts-bridges";
 import { ActionEditFooter, ActionEditSaveBusProvider } from "@/components/space-actions/action-edit-footer";
 import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
-import { useActionSpace } from "@/components/space-actions/space-data";
+import { useSpace } from "@/components/space/space-context";
 import { useFollowCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/follow/views/main/creator/follow-creator.i18n";
 import { FollowConfigCard } from "./follow-config-card";
 import { FollowTargetsCard } from "./follow-targets-card";
@@ -18,7 +18,7 @@ export function FollowCreatorPage({ spaceId, followId }: { spaceId: string; foll
     queryKey: ["getFollow", spaceId, followId],
     queryFn: () => getFollow(spaceId, followId),
   }).data;
-  const space = useActionSpace(spaceId); // space-context: use_space()
+  const space = useSpace();
   const [title] = useState(action.title);
   // The config card snapshots the action once, like the Rust `ReadSignal` seeded at mount.
   const [actionSetting] = useState(action);

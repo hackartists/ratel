@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { useActionSpaceRole } from "@/components/space-actions/space-data";
+import { useSpaceRole } from "@/components/space/space-context";
 import { MeetEditorView } from "./components/meet-editor-view";
 import { MeetViewerView } from "./components/meet-viewer-view";
 import { MeetProvider, useMeetProvider } from "./hooks/use-meet";
@@ -9,7 +9,7 @@ import { MeetProvider, useMeetProvider } from "./hooks/use-meet";
 export function Component() {
   const { spaceId = "", meetId = "" } = useParams();
   const controller = useMeetProvider(spaceId, meetId);
-  const { currentRole } = useActionSpaceRole(spaceId); // space-context: use_space_role()
+  const currentRole = useSpaceRole();
   const isAdmin = currentRole === "Creator";
 
   return <MeetProvider value={controller}>{isAdmin ? <MeetEditorView /> : <MeetViewerView />}</MeetProvider>;

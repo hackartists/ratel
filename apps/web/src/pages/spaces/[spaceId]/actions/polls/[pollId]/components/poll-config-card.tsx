@@ -5,7 +5,7 @@ import { ActionRewardSetting } from "@/components/space-actions/action-reward-se
 import { ActionStatusControl } from "@/components/space-actions/action-status-control";
 import { ActionDeleteButton } from "@/components/space-actions/delete-action";
 import { PrerequisiteTile } from "@/components/space-actions/prerequisite-tile";
-import { useActionSpace } from "@/components/space-actions/space-data";
+import { useSpace } from "@/components/space/space-context";
 import { Switch } from "@/components/ui/switch";
 import { usePollCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/views/main/creator/poll-creator.i18n";
 import { isActionLocked } from "@/components/space-actions/access";
@@ -16,7 +16,7 @@ export function PollConfigCard() {
   const tr = usePollCreatorI18n();
   const { spaceId, pollId, poll, refresh } = usePoll();
   const update = useUpdatePoll();
-  const space = useActionSpace(spaceId); // space-context: use_space()
+  const space = useSpace();
   const locked = isActionLocked(space.status, poll.space_action.status);
 
   const [responseEditable, setResponseEditable] = useState(poll.response_editable);

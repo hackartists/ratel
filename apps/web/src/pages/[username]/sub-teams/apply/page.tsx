@@ -18,8 +18,9 @@ export function Component() {
   const t = useSubTeamI18n();
   const { username = "" } = useParams<{ username: string }>();
 
-  // team-context: no shared team context in React yet — each page that
-  // needs the route's team data loads it locally via `useFindTeam`.
+  // This route is declared OUTSIDE SocialLayout in both apps (route.rs:209,
+  // route-tree.ts) — no shared wall/team context is mounted here, so Rust
+  // also loads the team locally via `find_team_handler`.
   const teamQuery = useFindTeam(username);
   if (teamQuery.data === undefined) return null;
 

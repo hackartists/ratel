@@ -3,7 +3,7 @@ import { LineArrowLeft } from "@/components/icons/arrows";
 import { Settings2 } from "@/components/icons/settings";
 import { Button, ButtonShape, ButtonSize, ButtonStyle } from "@/components/ui/button";
 import { useSettingsSwitchButtonI18n } from "@/i18n/generated/features/spaces/pages/actions/components/settings_switch_button/settings-switch-button.i18n";
-import { useActionSpace, useActionSpaceRole } from "./space-data";
+import { useSpace, useSpaceRole } from "@/components/space/space-context";
 
 // app/ratel/src/features/spaces/pages/actions/components/settings_switch_button.
 //
@@ -30,10 +30,10 @@ export function useActionEditMode(): ActionEditMode {
 }
 
 /** Floating button that toggles a creator between the participant and the configuration view. */
-export function SettingsSwitchButton({ spaceId }: { spaceId: string }) {
+export function SettingsSwitchButton() {
   const tr = useSettingsSwitchButtonI18n();
-  const { currentRole } = useActionSpaceRole(spaceId); // space-context: use_space_role()
-  const space = useActionSpace(spaceId); // space-context: use_space()
+  const currentRole = useSpaceRole();
+  const space = useSpace();
   const { editMode, setEditMode } = useActionEditMode();
 
   if (currentRole !== "Creator") return null;

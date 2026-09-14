@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useSpaceData } from "@/components/space-data/use-space-data";
+import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
 import { CfSunjiCard } from "./components/cf-sunji-card";
 import { CrossFilterCard } from "./components/cross-filter-card";
@@ -16,7 +16,7 @@ const DEFAULT_SPACE_LOGO = "https://metadata.ratel.foundation/logos/logo-symbol.
 export function Component() {
   const { spaceId = "" } = useParams();
   const tr = useSpaceAnalyzesAppI18n();
-  const { space } = useSpaceData(spaceId); // space-context: `use_space()`
+  const { space } = useSpaceAppsContext();
   const navigate = useNavigate();
   const ctrl = useAnalyzeCreate(spaceId);
   const spaceLogo = space.logo === "" ? DEFAULT_SPACE_LOGO : space.logo;

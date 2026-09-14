@@ -8,7 +8,6 @@ import { wordInitials } from "./format";
 // label (the FileUploader's own <label> styled as the accent button) and Remove.
 export function SpaceLogoSetting() {
   const tr = useGeneralI18n();
-  // space-context: `use_space()`.
   const { space } = useSpaceAppsContext();
   const { updateLogo } = useSpaceGeneralSettings();
 

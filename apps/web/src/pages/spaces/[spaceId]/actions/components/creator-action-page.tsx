@@ -1,8 +1,8 @@
 import { ActionCard } from "@/components/space-actions/action-card";
 import { ActionSettingsModal } from "@/components/space-actions/action-settings-modal";
 import { CreateActionModal } from "@/components/space-actions/create-action-modal";
-import { useRefreshSpaceActions } from "@/components/space-actions/space-data";
 import { useSpaceActionList } from "@/components/space-actions/use-space-action-list";
+import { useSpaceContext } from "@/components/space/space-context";
 import { Thunder } from "@/components/icons/game";
 import { Settings2 } from "@/components/icons/settings";
 import { AddCircle } from "@/components/icons/validations";
@@ -17,7 +17,7 @@ export function CreatorActionPage({ spaceId }: { spaceId: string }) {
   const tr = useCreatorActionPageI18n();
   const layover = useLayover();
   const actions = useSpaceActionList(spaceId);
-  const refreshActions = useRefreshSpaceActions(spaceId);
+  const refreshActions = useSpaceContext().restartActions;
 
   return (
     <div id="creator-action-page" className="flex flex-col gap-5 items-start w-full text-web-font-primary">

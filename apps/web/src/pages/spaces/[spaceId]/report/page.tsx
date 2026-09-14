@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import type { ReportListItem, ReportStatus } from "@ratel/ts-bridges";
-import { canEdit, useSpaceData } from "@/components/space-data/use-space-data";
+import { isSpaceAdmin, useSpaceContext } from "@/components/space/space-context";
 import {
   useReportListI18n,
   type ReportListI18n,
@@ -29,8 +29,8 @@ function ReportListPage() {
   const tr = useReportListI18n();
   const navigate = useNavigate();
   const ctx = useReportListContext();
-  const { role } = useSpaceData(ctx.spaceId); // space-context: `use_space_context().role`
-  const editable = canEdit(role);
+  const { role } = useSpaceContext();
+  const editable = isSpaceAdmin(role);
   useLegacyScript(listScript);
 
   return (
