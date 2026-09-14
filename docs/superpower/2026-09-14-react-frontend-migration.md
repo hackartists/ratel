@@ -1,0 +1,256 @@
+# React 프론트엔드 전환 계획 (Dioxus → React + TypeScript)
+
+**작성일**: 2026-09-14
+**상태**: 확정 (2026-09-14). 11장 결정 반영. P0 착수.
+**부록**: [라우트·페이지 인벤토리](2026-09-14-react-frontend-migration-routes.md) (73개 라우트, 레이아웃 체인, 페이지별 규모)
+**참고 레포**: `~/Projects/asset` (같은 Dioxus → React 전환을 먼저 진행한 레포. 구조·도구 기준)
+
+---
+
+## 0. 목표와 원칙
+
+1. **프론트엔드만 옮깁니다.** `app/ratel`의 RSX UI를 `apps/web`의 React 18 + TypeScript로 옮깁니다.
+2. **백엔드 동작은 바꾸지 않습니다.** 허용하는 변경은 세 가지뿐입니다.
+   - DTO·엔티티·enum에 `cfg_attr(feature = "ts-bridge", derive(TS))` 어노테이션 추가
+   - `packages/by-macros`가 라우트 매크로를 처리할 때 TS 클라이언트 파일을 함께 쓰도록 확장 (env 게이트, 런타임 코드 변화 없음)
+   - 빌드·배포 설정 (Makefile, Dockerfile, ingress, CI)
+3. **화면은 지금과 똑같아야 합니다.** `app/ratel/assets/main.css`, Tailwind 클래스 문자열, DOM 구조, `data-*`/`aria-*` 값, `data-testid`를 그대로 유지합니다. 새로 디자인하지 않습니다.
+4. **디렉터리 구조와 도구는 asset을 따릅니다.** pnpm 워크스페이스, `apps/web/src/{pages,components,lib,i18n,styles}`, `App.tsx` 라우트 테이블, ts-bridges 훅, 페이지 옆 i18n 모듈. **단, asset의 스타일 규칙(shadcn 시맨틱 토큰, BEM 금지, `ui-scales` 린트)은 적용하지 않습니다.** 원칙 3과 충돌하기 때문입니다.
+5. **웹과 모바일(Android/iOS Tauri)을 같은 React 빌드로 동시에 전환합니다.**
+
+---
+
+## 1. 현재 상태 (2026-09-14 측정)
+
+| 항목 | 규모 |
+|---|---|
+| 라우트 | 73개 (페이지 72 + catch-all), 레이아웃 8개 |
+| UI를 그리는 `.rs` 파일 / `#[component]` | 455개 / 921개 |
+| `rsx!` 안의 UI 코드 | 약 5.4만 줄 (spaces 2.3만, social 7.6천, sub_team 5.4천, common 5.3천 …) |
+| 서버 함수 | 331개 (GET 156 · POST 118 · DELETE 35 · PATCH 17 · PUT 5) |
+| 데이터 로딩 | `use_loader` 157~179곳, `use_infinite_query` 30~66곳 (집계 방식에 따라 차이) |
+| i18n | `translate!` 148블록, 키 약 2,964개, `derive(Translate)` 53개 타입 |
+| JS 연동 | `.js` 41개, `document::eval` 약 75곳, `dioxus.send/recv` 드라이버 약 25개, `wasm_bindgen` extern 약 18곳 |
+| CSS | `main.css` 약 5.6만 줄(`@layer` 없음), Tailwind 클래스 문자열 7,745개 |
+| 인라인 style / SVG snake_case 속성 | 217곳 / 약 1,535곳 |
+| SEO 메타 (`SeoMeta`) | 28개 파일 |
+| E2E | Playwright 28개 spec (web 21, admin 3, mobile 3, tauri 1) |
+
+규모가 큰 페이지 (rs 줄 / rsx 줄): SpaceIndexPage 7,262/5,522 · PollActionPage 5,207/2,734 · SocialSetting 4,659/2,272 · SpaceActionsPage 4,049/1,620 · SpaceReportPage 3,838/629.
+
+참고로 asset은 같은 전환을 PRD까지 작성했지만 2026-06 기준 31개 라우트 중 1개만 옮겼습니다. 이 계획은 그 경험을 반영해 **기반(P0)과 검증 도구를 먼저 끝내고, 페이지는 병렬로 옮기는** 순서로 짭니다.
+
+---
+
+## 2. 목표 구조
+
+```
+ratel/
+├── package.json              # pnpm 스크립트: dev/build/lint/format/typecheck → apps/web
+├── pnpm-workspace.yaml       # apps/*, packages/*
+├── .prettierrc.json  .prettierignore  eslint.config.mjs
+├── apps/
+│   └── web/                  # @ratel/web — 웹 빌드와 Tauri dist가 같은 산출물
+│       ├── index.html        # #main 마운트, 테마 선적용 스크립트, CSS <link> 순서 고정
+│       ├── vite.config.ts    # /api·/v3·/mcp 프록시, VITE_BASE, 모바일 API 베이스 URL
+│       └── src/
+│           ├── main.tsx  App.tsx     # RootLayout 프로바이더 + RouteRecord[] 테이블
+│           ├── styles/               # main.css, dx-components-theme.css, tailwind 입력 (원본 그대로 이관)
+│           ├── i18n/index.ts         # 네임스페이스 레지스트리 (추출 도구 산출물)
+│           ├── lib/                  # query-client, auth, theme, popup, toast, layover, routes, page-meta,
+│           │                         # platform(tauri 감지), viewport(kb-inset 스크립트), legacy-scripts
+│           ├── components/           # ui/(Button·Card·Row…), editor/, auth/, nav/, <group>/
+│           └── pages/                # URL 구조 그대로: posts/[postId]/page.tsx, spaces/[spaceId]/…
+└── packages/
+    ├── ts-bridges/           # @ratel/ts-bridges — runtime/client.ts(수작업), handlers/·types/(생성), hooks/(수작업)
+    └── legacy-js/            # 기존 js/src/ratel-app-shell, wallet-connect, 페이지 script.js (수정 없이 이관)
+```
+
+- 페이지 모듈은 `Component`를 export하고, 랜딩을 뺀 모든 라우트는 lazy 로딩합니다.
+- 링크 경로는 `lib/routes.ts`의 타입 있는 빌더로만 만듭니다.
+- 컴포넌트는 `fetch`나 생성된 `*Handler`를 직접 부르지 않고 `@ratel/ts-bridges/hooks`만 씁니다.
+- 한 페이지에서만 쓰는 컴포넌트는 `pages/<route>/components/`, 두 페이지 이상이면 `components/<group>/`에 둡니다.
+
+---
+
+## 3. 화면 동일성 규칙 (모든 단계에서 지킴)
+
+위반하면 CSS가 깨지는 규칙입니다. 코드 리뷰 체크리스트로도 씁니다.
+
+### 3.1 스타일시트
+1. 로드 순서를 지금과 똑같이 둡니다: Google Fonts → `main.css` → `dx-components-theme.css` → 전역 스크립트 → `tailwind.css`. `main.css`에 `@layer`가 없고, `tailwind.css`의 전역 규칙(`html`, 스크롤바, `:root` 변수)은 마지막에 로드돼서 이기는 구조입니다. **Vite CSS 번들링에 맡기지 말고 `index.html`의 `<link>`로 순서를 고정합니다.**
+2. Tailwind 버전을 하나로 고정합니다. 현재 생성 파일은 v4.1.5, 루트 `package.json`은 ^4.2.x입니다.
+3. Tailwind는 지금 `.rs`를 평문으로 스캔하므로 enum `serialize = "..."` 문자열이나 주석 속 클래스도 생성됩니다. 전환 기간에는 `.rs`와 `.tsx`를 **둘 다 스캔**하고, 두 빌드의 선택자 목록을 diff해서 0이 될 때까지 `@source inline(...)`으로 보충합니다. TS에서 클래스 문자열을 `bg-${x}`처럼 조립하지 않습니다.
+4. `light:` 커스텀 variant, `max-mobile:`/`tablet:`/`desktop:` 브레이크포인트, `aria-*`/`data-*` variant 설정을 그대로 가져갑니다.
+5. 테마: `index.html`에서 첫 페인트 전에 `ratel-common-theme` 값으로 `data-theme`을 설정하는 스크립트를 유지합니다.
+
+### 3.2 DOM
+1. React는 `<div id="main">`에 마운트합니다 (`main.css`의 `#main{height:100%}`).
+2. **래퍼 요소를 추가하지 않습니다.** `main.css`에 `:has()` 107개, 형제 결합자 233개, `nth-child` 계열 133개 규칙이 있습니다. 조건부 렌더링은 Fragment로 합니다.
+3. `data-*`/`aria-*` 불리언은 문자열 `"true"`/`"false"`로 렌더링합니다 (`="true"]` 선택자 424개, `="false"]` 18개). `undefined`로 속성이 사라지지 않게 헬퍼(`dataBool()`)를 씁니다.
+4. RSX의 복수 `class:` 속성(31곳)은 공백으로 이어 붙인 한 문자열로 만듭니다. 클래스 정렬·병합 도구(tailwind-merge 등)를 거치지 않습니다.
+5. 인라인 `style` 217곳은 CSS 변수·`calc()`를 보존해 객체로 옮기고, `!important`가 필요한 곳은 문자열 `style` 속성으로 둡니다.
+6. SVG 속성은 camelCase로 바꾸되 값은 그대로 둡니다. `lucide-react`가 추가하는 `class="lucide …"`와 `aria-hidden`은 CSS 영향이 없지만 DOM diff에서 무시 목록에 넣습니다. 커스텀 아이콘(`packages/icons`)은 `stroke="black"` + `[&>path]:stroke-*` 방식을 그대로 재현합니다.
+7. `data-testid`는 이름·위치를 그대로 유지합니다. E2E가 이것으로 동일성을 판정합니다.
+
+### 3.3 공용 컴포넌트
+`Button`(142곳), `Input`(36), `Card`(29), `Row`/`Col`(34), `Badge`, `Separator`, `Tooltip`, `Checkbox`, `Switch`, `Popup`, `Toast`, `Layover`, `LoadingIndicator`를 **Dioxus 버전과 같은 요소·클래스 문자열**로 재현합니다. 클래스 문자열은 Rust enum의 `strum(serialize)` 값을 그대로 옮기고, 중복 클래스도 그대로 둡니다. `SuspenseBoundary` 폴백은 빈 렌더링입니다.
+
+### 3.4 JavaScript
+1. **리치 에디터**(`common/components/editor`, `script.js` 1,968줄)는 스크립트를 수정하지 않고 재사용합니다.
+   - `.re-bridge`/`.re-slash-bridge`의 값은 React `onChange`가 받지 못하므로 ref로 네이티브 `input` 이벤트 리스너를 붙입니다.
+   - `.re-content`는 `useRef`로 고정한 초기 HTML을 `dangerouslySetInnerHTML`로 한 번만 넣고 다시 렌더링하지 않습니다. 내용 교체는 `key`로 합니다.
+   - 스크립트가 바꾸는 `data-open`/`data-empty`/`data-composing`/`data-bound`는 React가 관리하지 않게 정적 값으로만 렌더링합니다.
+2. **페이지 스크립트 약 20개**(team_arena, post_edit, action_dashboard, drafts, report, analyzes, fact_or_fold …)는 수정 없이 한 번만 전역 로드합니다. 스크립트가 건드리는 클래스·속성은 React state로 관리하지 않습니다.
+3. **전역 스크립트**: 키보드/visualViewport 스크립트(`--kb-inset`, `--vv-height`, `--vv-offset-top`, `html.kb-open`, 카카오톡 인앱 리다이렉트), `ratel-app-shell.js`(module), `wallet-connect.js`, PortOne SDK를 그대로 유지합니다.
+4. `dioxus.send/recv` 드라이버 약 25개와 `document::eval` 약 75곳은 `lib/`의 일반 async 함수로 옮기고, `wasm_bindgen` extern은 `window.ratel.*` 직접 호출로 바꿉니다.
+5. Dioxus 라우터가 쿼리스트링을 버려서 생긴 우회책(`window.__ratelInitialSearch`, 댓글 딥링크를 경로로 표현)은 동작 호환을 위해 **경로를 그대로 유지**합니다.
+
+### 3.5 라우팅
+1. 정적 경로(`/posts`, `/admin`, `/arcade`, `/spaces`, `/essence` …)를 `/:username` 와일드카드보다 먼저 매칭합니다.
+2. `/sub-teams/manage`는 `/sub-teams/:sub_team_id`보다, `/sub-teams/:id/compose`는 상세보다 먼저 둡니다.
+3. `/:username` 아래 10개 라우트는 지금처럼 social/team 레이아웃을 건너뜁니다.
+4. 접근 제어는 지금처럼 컴포넌트 안에서 합니다 (라우터 게이트는 AdminLayout 하나).
+
+---
+
+## 4. API 계층
+
+### 4.1 서버 함수 wire format (변경 없음, 클라이언트가 맞춤)
+- 메서드는 매크로 이름, 경로 파라미터(`:x`, `{x}`)는 Display 문자열(SubPartition은 접두사 없는 ID).
+- 쿼리는 `?a&b`의 인자 이름을 키로 씁니다. `Option`이 없으면 생략합니다.
+- **본문은 인자 이름을 키로 한 객체입니다**: `{"req": {...}}`. 본문이 없으면 `{}`. DELETE도 본문을 가질 수 있습니다.
+- 추출자(`user: User`, `team: Team`, `role: TeamRole` 등)는 클라이언트가 보내지 않습니다.
+- 성공은 200 + `T`의 JSON. 핸들러 에러는 `{"message","code","data"}`이고 `data`는 `{"Auth":"UserNotFound"}` 같은 externally tagged 형식입니다. **추출자 거부(세션 없음 등)는 text/plain**이므로 클라이언트가 두 형식을 모두 처리합니다.
+- 세션 쿠키 `{env}_sid` (`Secure`, `SameSite=None`, 30일). CSRF 없음. 브라우저는 `credentials: "include"`.
+- 파일 업로드는 `GET /api/assets`로 presigned URL을 받아 S3에 직접 PUT합니다.
+
+### 4.2 TS 생성 (asset의 `ts-server-fn`은 쓰지 않음)
+asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·에러 형식을 바꾸므로 백엔드 재작성이 됩니다. 대신:
+1. `packages/by-macros/src/server_fn.rs`가 이미 모바일용 HTTP 스텁을 만들 때 파싱하는 라우트 문자열·인자 목록을 재사용해, `TS_SERVER_FN_PACKAGE_DIR`가 설정됐을 때만 `packages/ts-bridges/src/handlers/<camelFn>.ts`를 씁니다. 경로·쿼리 조립, `{argName: value}` 본문, `Result<T>` → `T`.
+2. 타입은 ts-rs 10(`serde-compat`)로 생성합니다. 주의할 점:
+   - **`i64`/`u64` → `bigint`**로 매핑되므로 타임스탬프·카운트 필드에 `#[ts(type = "number")]`가 필요합니다. 필드가 수백 개라 스크립트로 일괄 적용합니다.
+   - SubPartition 약 235개와 `Partition`/`EntityType`은 SubPartition derive 매크로 안에서 `impl TS`(= `string`)를 생성합니다.
+   - `DynamoEnum` 23개는 문자열 유니온 또는 `#[ts(type = "string")]`.
+   - `serde_json::Value`(133)는 `unknown`, untagged/flatten enum은 결과 타입을 수동 검토합니다.
+   - 핸들러가 엔티티를 그대로 반환하는 곳(`Post`, `SpacePost` 등)은 모델에도 derive가 필요합니다.
+3. `make gen-ts`: 생성 디렉터리 초기화 → `cargo clean -p app-shell` → `TS_SERVER_FN_PACKAGE_DIR=… cargo check --features server,ts-bridge` → ts-rs export 테스트 → 배럴 생성. CI `gen-ts-check` 잡이 재생성 후 diff 0을 강제합니다 (asset과 동일).
+4. react-query 훅은 asset처럼 **수작업**으로 `hooks/`에 둡니다 (`getSpaceHandler` → `useGetSpace`). `use_infinite_query` 대체 훅은 bookmark 기반 `useInfiniteQuery` 래퍼로 하나 만듭니다.
+5. 생성 대상이 아닌 경로(SSE `/api/arcade/events`, MCP, `/hooks/portone`, LinkedIn 콜백, `/launchpad/*`)는 필요한 경우만 수작업 클라이언트를 만듭니다.
+
+### 4.3 런타임 클라이언트 (`packages/ts-bridges/src/runtime/client.ts`)
+- **웹**: 같은 오리진 `fetch` + `credentials: "include"`.
+- **Tauri**: `window.__TAURI_INTERNALS__`가 있으면 네이티브 `api_request` 명령으로 보냅니다. iOS WKWebView가 크로스사이트 세션 쿠키를 지우므로 필수입니다 (기존 `tauri_web/server_fn.rs`와 같은 동작). 베이스 URL은 빌드 시 `VITE_MOBILE_API_URL`로 고정합니다.
+- 에러는 `ApiError(status, body)`로 던지고 JSON(`data` 파싱)과 text/plain을 모두 처리합니다. 로그인 흐름의 `Auth::UserNotFound` → 회원가입 분기처럼 variant 매칭이 필요한 곳을 지원합니다.
+- **로컬 개발**: CORS가 `localhost`를 허용하지 않으므로 Vite 프록시(`/api`, `/v3`, `/mcp`)로만 개발합니다. 백엔드 CORS는 건드리지 않습니다.
+
+---
+
+## 5. 웹 배포와 SEO
+
+### 5.1 서빙
+- 앞단에서 경로를 나눕니다: `/api`, `/v3`, `/mcp`, `/hooks`, `/launchpad` → 기존 app-shell. 나머지 → React 정적 빌드(`index.html` 폴백).
+- **prod는 React 전환을 k3s 이전보다 먼저 합니다 (D3).** 따라서 prod의 경로 분리는 현재 `ratel.foundation` 앞단인 **CloudFront behavior**(경로 패턴별 오리진)로 합니다. CloudFront 설정은 레포에 없으므로(`cdk/`에 소스 없음) 레포 밖 인프라 작업으로 진행하고, 이후 k3s 이전 때 같은 규칙을 `deploy/prod/30-ingress.yaml`로 옮깁니다.
+- dev·PR 프리뷰는 이미 ingress-nginx 뒤에 있으므로 `deploy/{dev,pr-preview}` ingress에서 나눕니다.
+- 같은 오리진이라 세션 쿠키·CORS 변경이 없습니다.
+- 대상: `deploy/{dev,prod,pr-preview}`의 ingress, `dev-workflow.yml`/`prod-workflow.yml`/`pr-workflow.yml`.
+- 서버 바이너리는 전환 전까지 지금처럼 Dioxus UI를 포함해 빌드합니다. 전환 후 UI 없는 서버 빌드 타깃을 추가합니다 (Makefile·CI 변경, 백엔드 로직 변경 아님).
+
+### 5.2 SEO (결정 D1)
+지금 스페이스(`SpaceLayout`)와 게시물 상세(`PostDetail`)의 title·description·og:image는 서버에서 데이터를 불러와 HTML에 넣습니다. SPA로 바꾸면 링크 미리보기에서 사라집니다. 정적 페이지의 메타는 `vite-react-ssg` 사전 렌더링(`/`, `/privacy`, `/terms`, `/child-safety`)으로 해결합니다. 동적 페이지는 아래 중 하나를 고릅니다.
+
+| 방안 | 내용 | 장점 | 단점 |
+|---|---|---|---|
+| **A. 메타 주입 셸 (추천)** | `/spaces/:id*`, `/posts/:id`만 작은 Node/엣지 워커가 기존 GET API를 불러 `index.html`에 메타를 넣어 반환 | 정확, 백엔드 무수정, 대상 라우트 3계열 | 배포할 런타임이 하나 늘어남 |
+| B. 크롤러만 엣지 함수 | User-Agent가 크롤러일 때만 A를 수행 | 파드 추가 없음 | UA 판별이 불안정, CloudFront 종속 (prod가 k3s로 이동 중) |
+| C. 사전 렌더 서비스 | 헤드리스 브라우저로 URL별 렌더 캐시 | 모든 페이지 대응 | 무겁고 캐시가 오래됨 |
+| D. 해당 라우트만 Dioxus SSR 유지 | 스페이스·게시물 페이지는 교체 전까지 기존 서버가 렌더 | 인프라 추가 없음 | 두 프론트엔드 병행, "동시 전환"과 충돌 |
+
+---
+
+## 6. 모바일 (Android / iOS)
+
+1. `app/ratel-tauri/Makefile`의 `dx-build`를 `web-build`로 교체합니다: `VITE_BASE=/ VITE_MOBILE_API_URL=… pnpm -C apps/web build` → `dist/`에 복사. `build-android`, `release-aab`, `build-ios`, `build-ios-sim`, `testflight`가 이것에 의존합니다.
+2. 네이티브 명령의 JS 래퍼를 `lib/platform/`에 둡니다: `api_request`, `google_sign_in`, `s3_put_object`, `save_file`, `print_page`, `open_external_url`, `plugin:opener|open_url`. 같은 번들이 웹에서도 돌도록 기능 감지로 분기합니다.
+3. `tauri-web` 전용 경로(세션 복원 `restore_session`, 파일 업로더, 붙여넣기 이미지, `use_origin`, 구독/멤버십 mailto, DAO 탐색기 링크, 푸시)를 React 쪽에 옮깁니다.
+4. FCM: Kotlin(`RatelMessagingService.kt`, `MainActivity.kt`)이 WebView에 넣는 토큰·탭 페이로드 계약을 그대로 유지하고, `deep_link_path` 매핑을 TS로 옮깁니다.
+5. `tauri.conf.json` CSP에서 WASM용 `'wasm-unsafe-eval'`을 제거할 수 있는지 확인합니다 (다른 라이브러리가 `unsafe-eval`을 쓰는지 점검 후).
+6. `mobile-release.yml`에서 dioxus-cli 설치를 pnpm 설치로 바꿉니다.
+
+---
+
+## 7. i18n
+
+1. **추출 도구**: `translate!` 매크로의 파서(`packages/dioxus-translate-macro`)를 재사용하는 syn 기반 도구로 `app/ratel/src`를 훑어, 페이지·컴포넌트 옆 `i18n.tsx` 모듈(asset 형식: `const en = {…}`, `const ko: Record<keyof typeof en, string>`, `useXxxI18n()`)을 생성합니다. `derive(Translate)` enum·에러는 `enum.<Type>.<Variant>` 키로 만듭니다.
+2. RSX에서 문자열을 이어 붙이던 곳은 보간 함수로 바꿔야 해서 사람이 검토합니다.
+3. 언어 저장 키 `localStorage["language"]`와 쿠키 `language`를 그대로 씁니다 (기존 사용자 설정 유지, 서버 에러 메시지 언어와 일치).
+4. 기본 언어·폴백은 현재 동작과 같게 둡니다.
+
+---
+
+## 8. 동일성 검증 도구 (P0에서 먼저 만듦)
+
+1. **같은 데이터**: LocalStack/Postgres 시드 데이터로 Dioxus 빌드와 React 빌드를 각각 띄웁니다.
+2. **스크린샷 diff**: Playwright로 라우트 목록 × 375/900/1280px × light/dark를 찍어 `toHaveScreenshot`/pixelmatch로 비교합니다. 애니메이션 끔, 폰트 로드 대기, lottie 마스킹.
+3. **DOM diff**: 라우트마다 정규화한 DOM(태그, class, `data-*`/`aria-*`, style, 주석 제거)과 `data-testid` 요소의 computed style을 JSON으로 덤프해 비교합니다. 픽셀보다 먼저 구조 차이를 잡습니다.
+4. **Tailwind diff**: 두 빌드의 CSS 선택자 목록 diff = 0.
+5. **E2E**: `playwright/tests/utils.js`의 Dioxus 대기(`data-dioxus-id`, wasm 응답 대기, 고정 1500ms)를 React 준비 신호(`document.documentElement.dataset.appReady`)로 교체하고, 기존 28개 spec을 React 빌드에 그대로 돌립니다.
+6. **입력 검증**: 에디터 한국어 IME 입력, 슬래시 메뉴, 모바일 키보드 레이아웃은 Android 에뮬레이터·iOS 시뮬레이터에서 직접 확인합니다.
+
+---
+
+## 9. 단계별 계획
+
+각 단계는 **완료 기준을 통과해야 다음 단계로** 갑니다. P2 이후 페이지 작업은 라우트 테이블이 페이지 파일 추가만으로 끝나도록(P0) 해서 병렬로 진행합니다.
+
+| 단계 | 범위 | 규모 (rsx 줄) | 완료 기준 |
+|---|---|---|---|
+| **P0 기반** | pnpm 워크스페이스, `apps/web` 골격, CSS 파이프라인(3.1), `index.html`·전역 스크립트, 라우터 테이블(73개 경로 스텁), `ts-bridges` 생성(4.2) + 런타임 클라이언트(4.3), i18n 추출 도구(7), 검증 도구(8), CI(`web-lint`, `web-build`, `gen-ts-check`) | – | Tailwind diff 0, `gen-ts` diff 0, 샘플 GET/POST가 웹·Tauri에서 왕복, 빈 페이지 스크린샷이 레이아웃 배경까지 일치 |
+| **P1 공용** | 3.3 공용 컴포넌트, popup/toast/theme/layover 서비스, RootLayout(인증·팀·알림·푸시), 로그인·회원가입 모달, 에디터 래퍼(3.4-1), 무한 스크롤 훅 | common 5.3천 + auth 650 | 컴포넌트별 DOM diff 0, 에디터 IME 테스트 통과 |
+| **P2 소형·공개** | `/`, `/privacy`, `/terms`, `/child-safety`, 404, `/membership`, `/essence`, `/my-ai`, `/me/character`, `/my-follower`, `/launchpad/return`, `/onboarding/connections`, `/credentials` | 약 5천 | 라우트별 스크린샷·DOM diff 0, 해당 E2E 통과 |
+| **P3 게시물** | `/posts/:id`, `/posts/:id/edit`, cross_posting 설정 | 약 4.2천 | 같음 + 게시물 작성·임시저장 E2E |
+| **P4 소셜·팀** | `/:username` 아래 사용자·팀 페이지 13개, 팀 아레나, 설정(SocialSetting), 하위팀 13개 | 약 1.3만 | 같음 + 팀·하위팀 E2E |
+| **P5 스페이스** | 스페이스 인덱스·액션(투표·퀴즈·토론·팔로우·미팅)·앱(분석·패널·파일·보상 …)·보고서 23개 | 약 2.3만 | 같음 + 스페이스 E2E 전부 |
+| **P6 아케이드·관리자** | 아케이드 10개(Fact-or-Fold 포함, SSE), `/admin` | 약 3.1천 | 같음 + 아케이드 E2E |
+| **P7 전환** | 경로 분리(dev·프리뷰는 ingress, prod는 CloudFront behavior), 메타 주입 셸(D1) 배포, 모바일 `web-build` 전환 후 스토어 빌드, UI 없는 서버 빌드 타깃, Dioxus UI 코드 제거 | – | PR 프리뷰에서 전체 E2E 통과, dev 환경 1주 운영, Android·iOS 실기기 확인 |
+
+---
+
+## 10. 전환 방식 (결정 D2)
+
+- **일괄 전환 (추천, "웹·모바일 동시" 결정과 맞음)**: P1~P6을 브랜치에서 모두 끝내고 PR 프리뷰·dev에서 검증한 뒤 P7에서 한 번에 바꿉니다. 두 프론트엔드가 섞이는 기간이 없지만 전환 시점의 위험이 큽니다.
+- **라우트별 전환**: 완료된 라우트만 ingress로 React에 보냅니다. 위험은 작지만 두 앱 사이 이동 시 전체 새로고침, 테마·언어·팝업 상태 불일치, 모바일은 부분 전환이 불가능해서 웹과 시점이 갈립니다.
+
+---
+
+## 11. 결정이 필요한 항목
+
+| # | 항목 | 추천 |
+|---|---|---|
+| D1 | 동적 페이지 SEO 방식 (5.2) | **결정: A. 메타 주입 셸** |
+| D2 | 전환 방식 (10) | **결정: 일괄 전환** |
+| D3 | prod 전환 순서: CloudFront → k3s 이전과 React 전환 중 무엇을 먼저 | **결정: React 전환 먼저.** prod는 CloudFront behavior로 경로 분리, k3s 이전 때 ingress로 이동 (5.1) |
+| D4 | 백엔드 어노테이션 범위: 엔티티(모델)에 직접 `derive(TS)` vs 응답 DTO 분리 | 추천안 적용: 어노테이션만 추가 (DTO 분리는 백엔드 변경이므로 제외) |
+| D5 | iOS 네이티브 세션 트랜스포트 미완료 작업 처리 시점 | 추천안 적용: P0에서 런타임 클라이언트와 함께 마무리 |
+
+---
+
+## 12. 이관하면서 정리할 기존 문제
+
+- 쓰이지 않는 라우트 파일: `features/{spaces,social,admin,my_follower}/route.rs`, `spaces/pages/{overview,report}/route.rs`, `apps/incentive_pool/route.rs`, 미사용 `apps/rewards/route.rs`, 라우트 없는 `spaces/pages/{dashboard,overview}` → 옮기지 않습니다.
+- `/posts`는 "app shell" 문자열만 렌더링하는 스텁입니다 → 동작을 확인하고 유지 여부를 정합니다.
+- `asset!("/assets/ratel-team-dao.js")`가 가리키는 파일이 없습니다.
+- SocialLayout 사이드바가 금지된 `use_resource`를 씁니다 → React에서는 훅으로 정리됩니다.
+- `LoadingIndicator`가 unpkg `@latest` lottie를 불러옵니다 → 버전을 고정합니다.
+- PortOne SDK가 전역 외에 3곳에서 다시 주입됩니다 → 한 번만 로드합니다.
+
+---
+
+## 13. 전체 완료 기준
+
+1. 73개 라우트가 모두 React에서 동작하고, 라우트별 스크린샷(3개 폭 × 2개 테마)·DOM diff가 기준을 통과합니다.
+2. Playwright 28개 spec이 React 빌드에서 통과합니다.
+3. `make gen-ts` diff 0, `pnpm lint`, `pnpm -C apps/web typecheck`, `pnpm -C apps/web build`가 CI에서 통과합니다.
+4. 백엔드 변경은 0장 2항의 허용 범위뿐이고, `cargo check --features server`와 서버 테스트가 그대로 통과합니다.
+5. Android·iOS 실기기에서 로그인(세션 유지), 게시물 작성, 스페이스 참여, 푸시 탭 딥링크가 동작합니다.
+6. prod 앞단(CloudFront, 이후 k3s ingress)이 페이지 경로를 React로 보내고, 스페이스·게시물 링크 미리보기 메타가 메타 주입 셸로 유지됩니다.
