@@ -242,11 +242,22 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 - DOM 일치 확인(비로그인, 1440·375px 로그인 상태 포함): `/privacy`, `/terms`, `/child-safety`, 404, `/me/character`, `/essence`, `/membership`, `/credentials`, `/my-ai`, `/my-follower`, `/launchpad/return`, `/onboarding/connections`.
 - 진행 중: `/`(홈 아레나, 유일한 사전 렌더 경로).
 
-**P3~P5 — 진행 중(병렬)**: 게시물 3개, 소셜 레이아웃·사용자/팀 페이지, 팀 DAO·멤버·설정, 하위팀 작성기 5개·거버넌스 6개, 스페이스 레이아웃·인덱스·액션·앱·분석·보고서.
+**P2 `/` · P3~P5 — 병합 완료**: 홈 아레나(사전 렌더·하이드레이션 오류 없음), 게시물 3개, 소셜 레이아웃·사용자/팀 페이지, 팀 DAO·멤버·설정, 하위팀 작성기 5개·거버넌스 6개, 스페이스 레이아웃·인덱스·토론·액션(투표·퀴즈·토론 편집·팔로우·미팅)·앱(일반·파일·패널·인센티브)·분석·보고서. 73개 라우트에 스캐폴드 플레이스홀더 페이지는 남아 있지 않습니다.
+- 검증(HEAD `12ffb7a86`): `typecheck`·`build`·`parity:tailwind` 1713/1713·`parity:routes` 73/73, React Playwright 139개 실행 → 102 통과·37 건너뜀(개발 서버 전용 에디터 36개·알림 1개)·실패 0. DOM 동일성 스펙 22개(홈 상호작용 4개 포함) 전부 일치.
+- 병합 중 정리: 업로드는 `lib/upload.ts` 하나(네이티브 `s3_put_object` → fetch 폴백), `FileUploader`는 `components/ui/file-uploader.tsx` 하나, 알림은 `components/notifications` 하나, 무한 스크롤 훅은 `useSuspenseInfiniteList` 하나로 합쳤습니다. `ActionDescriptionEditor`는 데스크톱에서 리치 에디터, AI 모더레이터 토글은 `PremiumSwitch`.
+- 암호화 투표: `packages/attr-voting-wasm`(기존 `attr_voting` 크레이트의 wasm-bindgen 래퍼, `make gen-attr-voting-wasm`, 결정적 빌드)로 브라우저에서 CP-ABE 암호화. 로컬 서버는 `ATTR_VOTING_AUTHORITY_JSON` 없이 빌드되어 실서버 왕복은 불가하고, Rust 경로와 암·복호화 결과가 바이트 단위로 같음을 확인했습니다.
+
+**진행 중(후속)**: 투표 복호화·검증 wasm export와 액션 투표 페이지 연결(`lib/poll-crypto.ts` 제거), `DynamoEnum`/`SerializeDisplay` enum의 TS 리터럴을 실제 JSON 값에 맞추는 ts-rs 주석(예: `ReportStatus`는 `"DRAFT"`/`"PUBLISHED"`), 팀 페이지를 SocialLayout 컨텍스트로 옮기고(활성 탭 표시) `space-context:` 등 임시 로컬 로드 78곳 정리.
 
 **P6 아케이드·관리자 — 완료**: 아케이드 레이아웃·홈·리더보드·Fact-or-Fold 매칭/게임룸(Rust와 같은 폴링 주기), 관리자 레이아웃 2개·페이지 7개. 실시간 갱신은 Rust와 같이 폴링만 씁니다(SSE 구독 없음).
 
 **P7 준비**: `app/ratel-tauri/Makefile`에 `web-build` 타깃과 `FRONTEND=web` 선택 추가(기본값 `dx` 유지). 전환 시 기본값만 바꾸면 `build-android`·`release-aab`·`build-ios`·`build-ios-sim`·`testflight`가 `apps/web` 번들을 씁니다.
+- **Android 실측(에뮬레이터, 디버그 APK, 로컬 서버)**: React 번들로 부팅 → 네이티브 `api_request` 로그인 → 로그인 후 `/user1/drafts`·`/my-ai` 로드 → WebView 새로고침 뒤 세션 유지까지 통과.
+- 실측에서 찾은 문제 두 가지:
+  1. React 쪽에 Tauri 시작 시 세션 복원이 없었습니다. Rust `AuthContext::init` + `try_restore_session`처럼 `/api/auth/me` 전에 refresh token을 교환하도록 `lib/auth.tsx`에 추가했습니다.
+  2. 로컬 서버의 세션 쿠키가 `Secure`라서 `http://10.0.2.2`로는 네이티브 쿠키 저장소가 쿠키를 보내지 않습니다(`cookie_store`는 `localhost`·루프백만 보안 출처로 취급). 로컬 검증은 `adb reverse tcp:8080 tcp:8080` + `MOBILE_API_URL=http://localhost:8080`으로 합니다. HTTPS 환경(dev·prod)에는 해당 없습니다.
+- Android 15 에뮬레이터는 `libratel_tauri_lib.so`가 16KB 페이지 정렬이 아니라는 호환성 경고를 띄웁니다. 기존 Rust 네이티브 라이브러리 빌드 설정 문제로, 이번 전환과는 무관합니다.
+- 로컬 Tauri 스모크: `playwright/tests/tauri/cdp-client.js`로 WebView CDP에 붙는 방식은 기존 CI 스모크와 같습니다(기존 `create-space.spec.js`는 dev 백엔드 대상).
 
 ---
 
