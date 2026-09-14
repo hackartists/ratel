@@ -467,7 +467,7 @@ run-apk: build-android
 gs-copy:
 	@cp -f google-services.json src-tauri/gen/android/app/google-services.json
 
-build-android-debug: install-tauri-cli ndk-shims gs-copy
+build-android-debug: install-tauri-cli ndk-shims gs-copy web-build
 	cd src-tauri && $(ANDROID_ENV) cargo tauri android build --target $(TAURI_TARGET) --apk --debug
 	@echo
 	@echo "APK output:"
