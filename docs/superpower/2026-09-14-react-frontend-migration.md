@@ -222,6 +222,25 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 | **P6 아케이드·관리자** | 아케이드 10개(Fact-or-Fold 포함, SSE), `/admin` | 약 3.1천 | 같음 + 아케이드 E2E |
 | **P7 전환** | 경로 분리(dev·프리뷰는 ingress, prod는 CloudFront behavior), 메타 주입 셸(D1) 배포, 모바일 `web-build` 전환 후 스토어 빌드, UI 없는 서버 빌드 타깃, Dioxus UI 코드 제거 | – | PR 프리뷰에서 전체 E2E 통과, dev 환경 1주 운영, Android·iOS 실기기 확인 |
 
+### 9.1 진행 현황 (2026-09-14 기준)
+
+**P0 기반 — 완료**
+- `apps/web`: Vite + vite-react-ssg, Dioxus와 같은 head 순서·전역 스크립트, Tailwind 4.1.5 파이프라인(`parity:tailwind` 1713/1713, 누락 0).
+- 라우트 73개 테이블(`src/lib/route-tree.ts`, `parity:routes`가 `route.rs`와 경로·레이아웃 체인·매칭 우선순위 비교). 사전 렌더 경로(`/`)만 하이드레이트하고 나머지는 클라이언트 렌더.
+- `packages/ts-bridges`: `make gen-ts`로 handler 324개·타입 698개 생성, asset 컨벤션의 hook 324개 스캐폴드 + `useInfiniteList`. 런타임은 웹 fetch / Tauri `api_request`.
+- i18n: `packages/i18n-extract`가 `translate!` 148블록·`Translate` enum 54개를 asset 형식 `*.i18n.tsx`로 생성, react-i18next 런타임(저장 키 `language`).
+- 검증: React 스모크(74 라우트), Dioxus 대비 DOM 동일성 스펙, 컴포넌트 DOM 스크립트(`scripts/component-dom-parity.mjs`), Playwright 헬퍼 React/Dioxus 겸용(Dioxus Desktop E2E 196 통과/0 실패 유지).
+- CI: `web-build`(타입체크·파리티·빌드), `dx-check`에 gen-ts·i18n drift 검사.
+- 백엔드 영향: `ts-bridge` 기능 한정 derive·impl, 통합 테스트 모듈 `server` 게이팅만. `server`/`web`/`tauri-web` `cargo check -D warnings` 통과. (`--features mobile`은 이 작업 이전부터 `login_modal`의 `interop::sign_in` import로 실패하며, CI는 이 조합을 검사하지 않습니다.)
+
+**P1 공용 — 진행 중**
+- 완료: UI 프리미티브(Button·Card·Row·Col·Input·Badge·Switch·Separator·Checkbox·Tooltip·LoadingIndicator·SeoMeta·ThemeSwitcher·SpaceCard·FileExtensionIcon·Collapsible·Pagination·CommentImageGrid·ImageUploadPreview·BottomSheet·ContextMenu·ScrollArea·Select·Tabs·Sheet·Dialog), Popup·Toast·Layover·scroll lock, 테마, ErrorBoundary/ErrorPage, AuthContext(`lib/auth.tsx`).
+- 진행 중(병렬): LoginModal·회원가입, 리치 에디터 래퍼. 보류: PremiumSwitch(멤버십 조회), 알림 부트스트랩.
+
+**P2 소형·공개 — 진행 중**
+- 완료(DOM 일치 확인): `/privacy`, `/terms`, `/child-safety`, 404, `/me/character`(비로그인), `/essence`.
+- 진행 중(병렬): `/membership`, `/credentials`, `/my-ai`, `/my-follower`, `/launchpad/return`, `/onboarding/connections`. 대기: `/`(LoginModal 이후).
+
 ---
 
 ## 10. 전환 방식 (결정 D2)
