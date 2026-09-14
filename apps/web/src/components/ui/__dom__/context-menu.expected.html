@@ -1,0 +1,12 @@
+<!-- ContextMenu { ContextMenuTrigger { "Right click here" }
+       ContextMenuContent { ContextMenuItem { value: "edit", index: 0, "Edit" }
+                            ContextMenuItem { value: "undo", index: 1, disabled: true, "Undo" } } }
+     after a right-click at clientX 12 / clientY 34 (dioxus_primitives::context_menu).
+     Open with no item focused: the menu div itself is tabindex 0; pointer-events is a style (`auto` while open). -->
+<div tabindex="0" data-state="open" data-disabled="false">
+  <div role="button" aria-haspopup="menu" aria-expanded="true">Right click here</div>
+  <div id="dxc-0" role="menu" aria-orientation="vertical" style="position:fixed;left:12px;top:34px;pointer-events:auto;" tabindex="0" data-state="open" class="context-menu-content">
+    <div role="menuitem" tabindex="-1" aria-disabled="false" data-disabled="false" class="context-menu-item">Edit</div>
+    <div role="menuitem" tabindex="-1" aria-disabled="true" data-disabled="true" class="context-menu-item">Undo</div>
+  </div>
+</div>

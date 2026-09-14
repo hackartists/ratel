@@ -1,0 +1,39 @@
+<!-- Pagination { PaginationContent {
+       PaginationItem { PaginationPrevious { href: "#" } }
+       PaginationItem { PaginationLink { href: "#", is_active: true, "1" } }
+       PaginationItem { PaginationLink { href: "#", "2" } }
+       PaginationItem { PaginationEllipsis {} }
+       PaginationItem { PaginationNext { href: "#" } } } }
+     app/ratel/src/common/components/pagination/component.rs. data-kind / aria-current are omitted when None. -->
+<nav class="pagination" data-slot="pagination" role="navigation" aria-label="pagination">
+  <ul class="pagination-content" data-slot="pagination-content">
+    <li class="pagination-item" data-slot="pagination-item">
+      <a class="pagination-link" data-slot="pagination-link" data-active="false" data-size="default" data-kind="previous" aria-label="Go to previous page" href="#">
+        <svg class="pagination-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="15 6 9 12 15 18"></polyline></svg>
+        <span class="pagination-label">Previous</span>
+      </a>
+    </li>
+    <li class="pagination-item" data-slot="pagination-item">
+      <a class="pagination-link" data-slot="pagination-link" data-active="true" data-size="icon" aria-current="page" href="#">1</a>
+    </li>
+    <li class="pagination-item" data-slot="pagination-item">
+      <a class="pagination-link" data-slot="pagination-link" data-active="false" data-size="icon" href="#">2</a>
+    </li>
+    <li class="pagination-item" data-slot="pagination-item">
+      <span class="pagination-ellipsis" data-slot="pagination-ellipsis" aria-hidden="true">
+        <svg class="pagination-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="5" cy="12" r="1.5"></circle>
+          <circle cx="12" cy="12" r="1.5"></circle>
+          <circle cx="19" cy="12" r="1.5"></circle>
+        </svg>
+        <span class="sr-only">More pages</span>
+      </span>
+    </li>
+    <li class="pagination-item" data-slot="pagination-item">
+      <a class="pagination-link" data-slot="pagination-link" data-active="false" data-size="default" data-kind="next" aria-label="Go to next page" href="#">
+        <span class="pagination-label">Next</span>
+        <svg class="pagination-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="9 6 15 12 9 18"></polyline></svg>
+      </a>
+    </li>
+  </ul>
+</nav>
