@@ -40,6 +40,15 @@ function LucideSvg({
   );
 }
 
+export function Plus(props: LucideProps) {
+  return (
+    <LucideSvg {...props}>
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </LucideSvg>
+  );
+}
+
 export function X(props: LucideProps) {
   return (
     <LucideSvg {...props}>

@@ -14,7 +14,18 @@ import { goto } from "../utils";
 // review (no pixel assertions). Read-only: page loads only.
 //
 // Add a route here once its page is ported.
-const ROUTES = ["/privacy", "/terms", "/child-safety", "/no/such/page", "/me/character"];
+const ROUTES = [
+  "/privacy",
+  "/terms",
+  "/child-safety",
+  "/no/such/page",
+  "/me/character",
+  // Signed out: the unverified hand-back card (no/invalid signature).
+  "/launchpad/return",
+  "/launchpad/return?project_id=p1&conversion_id=c1234567890abcdef&brand_tx_id=b1&deducted_points=1200&remaining_points=300&round_id=r1&community_url=https%3A%2F%2Fexample.com&ts=1&sig=bad",
+  // Signed out: full interstitial with no connections.
+  "/onboarding/connections",
+];
 
 const DIOXUS_BASE_URL = (process.env.DIOXUS_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
 
