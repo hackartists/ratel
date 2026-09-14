@@ -6,11 +6,11 @@
 // `<div className="fixed inset-0 z-[100]" data-testid="poll-arena-overlay"><Suspense fallback={null}>`,
 // so this component renders only `.poll-arena` and suspends on the poll query.
 //
-// Gap (documented, not implemented): Rust's encrypted-vote path
-// (`encrypted_upload_enabled` polls — canister ABE encryption, session voter
-// key derivation via PBKDF2, `poll-encrypted-secret-*` modal) is not ported.
-// Encrypted polls render the same UI but submitting shows an error toast
-// instead of encrypting client-side; see `onSubmit` below.
+// Rust's encrypted-vote path (`encrypted_upload_enabled` polls — canister
+// ABE encryption, session voter key derivation via PBKDF2,
+// `poll-encrypted-secret-*` modal) is ported via `@/lib/poll-encryption`,
+// whose CP-ABE step runs through the `attr-voting-wasm` wasm-bindgen module;
+// see `doSubmit` below.
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import type { Answer, Question, SpacePartition, SpacePollEntityType, VoteEncryptionMaterialResponse } from "@ratel/ts-bridges";
@@ -555,9 +555,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
         return;
       }
       try {
-        // Gap (documented, not ported): this always throws — see
-        // `apps/web/src/lib/poll-encryption.ts` header for why.
-        const enc = encryptAnswersForCanister(encryptionMaterial, answers, Date.now());
+        const enc = await encryptAnswersForCanister(encryptionMaterial, answers, Date.now());
         clientCiphertextJson = enc.ciphertext_json;
         clientVoterTag = enc.voter_tag;
       } catch (e) {

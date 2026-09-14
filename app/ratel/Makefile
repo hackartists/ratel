@@ -261,6 +261,24 @@ gen-ts:
 		cargo test --no-default-features --features tauri-web,ts-bridge --lib -- ts_bridge_manifest_ export_bindings_
 	node "$(TS_BRIDGES_DIR)/scripts/gen-handlers.mjs"
 
+# wasm-bindgen build of packages/attr-voting-wasm for apps/web (React port of
+# client-side ABE vote encryption — mirrors
+# features/spaces/pages/actions/actions/poll/services/client_vote_encryption.rs).
+# Output is committed to apps/web/src/lib/attr-voting-wasm; the build is
+# reproducible (same wasm-bindgen-cli version -> byte-identical .js/.wasm), so
+# CI does not need to regenerate it, but re-run this after touching
+# packages/attr-voting or packages/attr-voting-wasm.
+ATTR_VOTING_WASM_OUT_DIR ?= $(abspath $(CURDIR)/../../apps/web/src/lib/attr-voting-wasm)
+
+gen-attr-voting-wasm:
+	cd "$(CURDIR)/../.." && cargo build -p attr-voting-wasm --target wasm32-unknown-unknown --release
+	@command -v wasm-bindgen >/dev/null 2>&1 || { \
+		echo "wasm-bindgen CLI not found — installing wasm-bindgen-cli 0.2.118 (must match the wasm-bindgen crate version in Cargo.lock)"; \
+		cargo install wasm-bindgen-cli --version 0.2.118 --locked; \
+	}
+	wasm-bindgen --target web --out-dir "$(ATTR_VOTING_WASM_OUT_DIR)" --out-name attr_voting_wasm \
+		"$(CURDIR)/../../target/wasm32-unknown-unknown/release/attr_voting_wasm.wasm"
+
 js/node_modules:
 	npm i
 

@@ -908,6 +908,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "attr-voting-wasm"
+version = "0.1.0"
+dependencies = [
+ "attr-voting",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"

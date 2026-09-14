@@ -13,29 +13,22 @@
 //     `save_session_vote_secret`) — localStorage/sessionStorage bookkeeping,
 //     same storage keys as Rust so a future full port reads back the same
 //     records.
-//
-// NOT ported — blocked, see `encryptAnswersForCanister` below:
-//   `attr_voting::vote::encrypt_vote_json_with_pk_json`, which
-//   `client_vote_encryption.rs::encrypt_answers_for_canister` calls. That
-//   function is Ciphertext-Policy Attribute-Based Encryption (the `rabe`
-//   crate's BSW scheme, over the `rabe-bn` pairing-friendly curve — real
-//   bilinear-pairing cryptography, not a symmetric primitive WebCrypto
-//   exposes). There is no pairing/CP-ABE library anywhere in
-//   `pnpm-lock.yaml`, and implementing BN-curve pairings + a CP-ABE scheme
-//   from scratch in TypeScript is not something to hand-roll for a voting
-//   feature. What would unblock this (either needs a package.json edit,
-//   which is out of scope here):
-//     1. An npm package implementing CP-ABE (BSW07) over a pairing-friendly
-//        curve compatible with `rabe`'s ciphertext format, OR
-//     2. A prebuilt wasm-bindgen bundle of `packages/attr-voting` (built
-//        with `wasm-pack build --target web`, which needs `cargo` — not
-//        available in this environment) checked into the repo and loaded
-//        as a static ESM module (no npm dependency needed for that path,
-//        since a hand-built `.js`+`.wasm` pair can be imported directly).
-//   `encryptAnswersForCanister` below throws a descriptive error instead of
-//   silently producing an insecure or wrong ciphertext.
+//   - `attr_voting::vote::encrypt_vote_json_with_pk_json`, which
+//     `client_vote_encryption.rs::encrypt_answers_for_canister` calls. That
+//     function is Ciphertext-Policy Attribute-Based Encryption (the `rabe`
+//     crate's BSW scheme, over the `rabe-bn` pairing-friendly curve — real
+//     bilinear-pairing cryptography, not a symmetric primitive WebCrypto
+//     exposes). Rather than reimplementing BN-curve pairings + CP-ABE in
+//     TypeScript, `packages/attr-voting` is compiled to wasm via a thin
+//     `wasm-bindgen` shim crate (`packages/attr-voting-wasm`) and the
+//     generated `.js`/`.wasm` pair is checked into
+//     `./attr-voting-wasm/` (regenerate with
+//     `make -C app/ratel gen-attr-voting-wasm`). `encryptAnswersForCanister`
+//     below calls into that wasm module — see `encryptVoteJsonWithPkJson`.
 
 import type { Answer, VoteEncryptionMaterialResponse } from "@ratel/ts-bridges";
+import init, { encrypt_vote_json_with_pk_json } from "./attr-voting-wasm/attr_voting_wasm";
+import wasmUrl from "./attr-voting-wasm/attr_voting_wasm_bg.wasm?url";
 
 /** Rust `attr_voting::vote::ClientEncryptedVote`. */
 export interface ClientEncryptedVote {
@@ -184,24 +177,54 @@ export function saveSessionVoteSecret(userSecret: string): void {
   }
 }
 
+/** Rust `attr_voting::types::VotePayload`, field-for-field. */
+export interface VotePayload {
+  choice: string;
+  metadata: unknown | null;
+}
+
+/** Rust `ClientVotePayloadMetadata` (client_vote_encryption.rs, private). */
+interface ClientVotePayloadMetadata {
+  poll_id: string;
+  submitted_at_ms: number;
+}
+
+let wasmInitPromise: Promise<void> | null = null;
+
+/** Lazily initializes the `attr-voting-wasm` module (idempotent, shared across calls). */
+function ensureWasmInit(): Promise<void> {
+  if (wasmInitPromise === null) {
+    wasmInitPromise = init(wasmUrl).then(() => undefined);
+  }
+  return wasmInitPromise;
+}
+
 /**
- * Rust `encrypt_answers_for_canister` (client_vote_encryption.rs) —
- * **NOT PORTED**. See the file header: this needs CP-ABE (`rabe`'s BSW
- * scheme over the `rabe-bn` pairing curve), which has no JS/WASM
- * equivalent available without either a new npm dependency or a
- * `cargo`/`wasm-pack`-built artifact, both outside this session's tools.
- *
- * Throws so callers surface an explicit, honest error instead of
- * submitting an unencrypted or malformed payload for an encrypted poll.
+ * Rust `attr_voting::vote::encrypt_vote_json_with_pk_json`, called through
+ * the `packages/attr-voting-wasm` wasm-bindgen shim. Encrypts `payload` with
+ * CP-ABE (rabe's BSW scheme) under `publicKeyJson`, scoped to `voterId`, and
+ * returns the ciphertext serialized as JSON
+ * (`attr_voting::vote::EncryptedVote`), ready to ship to the server as-is.
  */
-export function encryptAnswersForCanister(
-  _material: VoteEncryptionMaterialResponse,
-  _answers: Answer[],
-  _submittedAtMs: number,
-): ClientEncryptedVote {
-  throw new Error(
-    "Encrypted voting is not available in the web app yet: client-side CP-ABE " +
-      "encryption (attr-voting's rabe/BSW pairing scheme) has no JS/WASM port. " +
-      "See apps/web/src/lib/poll-encryption.ts for what's needed.",
-  );
+export async function encryptVoteJsonWithPkJson(publicKeyJson: string, voterId: string, payload: VotePayload): Promise<string> {
+  await ensureWasmInit();
+  return encrypt_vote_json_with_pk_json(publicKeyJson, voterId, JSON.stringify(payload));
+}
+
+/**
+ * Rust `encrypt_answers_for_canister` (client_vote_encryption.rs). Builds
+ * the same `VotePayload` (`choice` = JSON-serialized `answers`, `metadata` =
+ * `{ poll_id, submitted_at_ms }`) and encrypts it under the poll's authority
+ * public key, scoped to the voter's blind tag — matching the Dioxus web
+ * build byte-for-byte (same JSON serialization, same ABE policy/attribute
+ * derived from `voter_tag`).
+ */
+export async function encryptAnswersForCanister(material: VoteEncryptionMaterialResponse, answers: Answer[], submittedAtMs: number): Promise<ClientEncryptedVote> {
+  const choice = JSON.stringify(answers);
+  const metadata: ClientVotePayloadMetadata = { poll_id: material.poll_id, submitted_at_ms: submittedAtMs };
+  const payload: VotePayload = { choice, metadata };
+
+  const ciphertextJson = await encryptVoteJsonWithPkJson(material.authority_public_key_json, material.voter_tag, payload);
+
+  return { voter_tag: material.voter_tag, ciphertext_json: ciphertextJson };
 }
