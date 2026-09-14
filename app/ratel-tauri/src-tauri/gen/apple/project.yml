@@ -79,8 +79,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.1.0
-        CFBundleVersion: 0.1.0
+        CFBundleShortVersionString: 0.1.2
+        CFBundleVersion: 0.1.2
         # `remote-notification` lets the app process background data pushes and
         # token refreshes; alert pushes work without it, but FCM recommends it.
         UIBackgroundModes:
