@@ -25,6 +25,9 @@ const ROUTES = [
   "/launchpad/return?project_id=p1&conversion_id=c1234567890abcdef&brand_tx_id=b1&deducted_points=1200&remaining_points=300&round_id=r1&community_url=https%3A%2F%2Fexample.com&ts=1&sig=bad",
   // Signed out: full interstitial with no connections.
   "/onboarding/connections",
+  "/membership",
+  // Signed out: the root error page in both apps (its loaders need a session).
+  "/credentials",
 ];
 
 const DIOXUS_BASE_URL = (process.env.DIOXUS_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
