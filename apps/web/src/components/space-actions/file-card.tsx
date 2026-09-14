@@ -27,13 +27,13 @@ export function FileCard({ file, editable, onDelete }: FileCardProps) {
       <div className="shrink-0 [&>svg]:size-9">
         <FileExtensionIcon ext={file.ext} size={36} />
       </div>
-      <div className="flex flex-col gap-1 justify-start items-start w-full min-w-0">
-        <p className="w-full text-xs font-semibold truncate text-web-font-primary">{file.name}</p>
-        {file.size !== "" && <p className="text-xs font-normal text-card-meta">{file.size}</p>}
+      <div className="flex flex-col w-full justify-start items-start gap-1 min-w-0">
+        <p className="font-semibold text-xs text-web-font-primary truncate w-full">{file.name}</p>
+        {file.size !== "" && <p className="font-normal text-xs text-card-meta">{file.size}</p>}
       </div>
       {editable && (
         <Button
-          className="!p-0 shrink-0 size-6 !text-red-400 hover:!bg-transparent hover:!text-red-300"
+          className="size-6 shrink-0 !p-0 !text-red-400 hover:!bg-transparent hover:!text-red-300"
           size={ButtonSize.Icon}
           buttonStyle={ButtonStyle.Text}
           onClick={(e) => {

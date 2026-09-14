@@ -147,7 +147,7 @@ export function AiModeratorSetting({ spaceId, discussionId }: { spaceId: string;
 
           <MaterialList spaceId={spaceId} discussionId={discussionId} />
 
-          <div className="flex gap-5 items-start p-5 w-full rounded-[12px] border border-web-card-stroke3 bg-web-card-bg2">
+          <div className="flex gap-5 items-start p-5 w-full border rounded-[12px] border-web-card-stroke3 bg-web-card-bg2">
             <Info
               width="18"
               height="18"

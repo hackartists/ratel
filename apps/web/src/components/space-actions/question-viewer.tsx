@@ -128,7 +128,7 @@ export function QuestionViewer({
       {body}
 
       {(onPrev !== undefined || onNext !== undefined) && (
-        <div className="flex gap-3 justify-end items-center pt-2 w-full">
+        <div className="flex w-full items-center justify-end gap-3 pt-2">
           {index > 0 && onPrev !== undefined && (
             <Button buttonStyle={ButtonStyle.Outline} shape={ButtonShape.Square} className="min-w-[120px]" onClick={onPrev}>
               {tr.btnBack}
@@ -161,8 +161,8 @@ function QuestionTitle({
   isRequired?: boolean | null;
 }) {
   return (
-    <div className="flex flex-col gap-1 mb-3" data-question-title-wrap="true">
-      <div className="flex gap-1 items-center">
+    <div className="mb-3 flex flex-col gap-1" data-question-title-wrap="true">
+      <div className="flex items-center gap-1">
         <span className="text-lg font-semibold text-poll-question-title" data-question-title="true">
           {title}
         </span>
@@ -179,6 +179,9 @@ function QuestionTitle({
 
 const OPTION_BASE_CLASS =
   "group relative flex min-h-[88px] w-full items-center overflow-hidden rounded-xl text-left transition-all bg-option-card-bg hover:bg-option-card-hover-bg aria-selected:bg-gradient-to-r aria-selected:from-primary/80 aria-selected:to-primary aria-selected:shadow-[0_8px_20px_rgba(0,0,0,0.2)] aria-selected:ring-2 aria-selected:ring-primary/90";
+/** The "other" answer card: `OPTION_BASE_CLASS` without the selected-state ring (question_viewer.rs:341). */
+const OTHER_OPTION_BASE_CLASS =
+  "group relative flex min-h-[88px] w-full items-center overflow-hidden rounded-xl text-left transition-all bg-option-card-bg hover:bg-option-card-hover-bg aria-selected:bg-gradient-to-r aria-selected:from-primary/80 aria-selected:to-primary aria-selected:shadow-[0_8px_20px_rgba(0,0,0,0.2)]";
 
 interface ChoiceQuestion {
   title: string;
@@ -230,7 +233,7 @@ function ChoiceViewer({
   return (
     <>
       <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
-      <div className="grid grid-cols-1 gap-3 w-full md:grid-cols-2">
+      <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2">
         {question.options.map((option, optIdx) => {
           const isSelected = multi ? selectedMulti.includes(optIdx) : selectedSingle === optIdx;
           return (
@@ -252,14 +255,14 @@ function ChoiceViewer({
               }}
             >
               <div className="absolute inset-y-0 left-0 w-[72px] bg-option-card-accent group-aria-selected:bg-primary" />
-              <div className="flex relative z-10 justify-between items-center px-5 py-4 w-full">
+              <div className="relative z-10 flex w-full items-center justify-between px-5 py-4">
                 <div className="w-10 shrink-0" />
                 <span className="text-[20px] font-semibold tracking-[0.2px] text-text-primary group-aria-selected:text-text-third">
                   {option}
                 </span>
-                <div className="flex justify-center items-center w-10 shrink-0">
+                <div className="flex w-10 shrink-0 items-center justify-center">
                   {isSelected && (
-                    <div className="flex justify-center items-center bg-white rounded-full size-6">
+                    <div className="flex size-6 items-center justify-center rounded-full bg-white">
                       <Check className="size-4 [&>path]:stroke-primary" />
                     </div>
                   )}
@@ -273,7 +276,7 @@ function ChoiceViewer({
       {enableOtherOption && question.allow_other === true && (
         <div
           aria-selected={otherSelected ? "true" : "false"}
-          className={`${OPTION_BASE_CLASS} ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+          className={`${OTHER_OPTION_BASE_CLASS} ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
           onClick={() => {
             if (disabled) return;
             if (multi) {
@@ -284,7 +287,7 @@ function ChoiceViewer({
           }}
         >
           <div className="absolute inset-y-0 left-0 w-[72px] bg-option-card-accent group-aria-selected:bg-primary" />
-          <div className="flex relative z-10 items-center px-5 py-4 w-full">
+          <div className="relative z-10 flex w-full items-center px-5 py-4">
             <div className="w-[64px] shrink-0" />
             <div className="flex-1 pr-4">
               <Input
@@ -297,9 +300,9 @@ function ChoiceViewer({
                 onChange={(e) => emit({ answer: multi ? selectedMulti : null, other: e.target.value })}
               />
             </div>
-            <div className="flex justify-center items-center w-10 shrink-0">
+            <div className="flex w-10 shrink-0 items-center justify-center">
               {otherSelected && (
-                <div className="flex justify-center items-center bg-white rounded-full size-6">
+                <div className="flex size-6 items-center justify-center rounded-full bg-white">
                   <Check className="size-4 [&>path]:stroke-primary" />
                 </div>
               )}
@@ -344,7 +347,7 @@ function SubjectiveViewer({
   };
 
   return (
-    <div className="flex flex-col gap-[10px] w-full">
+    <div className="flex w-full flex-col gap-[10px]">
       <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
       {isShort ? (
         <Input
@@ -400,7 +403,7 @@ function CheckboxViewer({
               key={`checkbox-${index}-${optIdx}`}
               type="button"
               aria-selected={isSelected ? "true" : "false"}
-              className="flex gap-3 items-center p-3 w-full rounded-lg border transition-colors cursor-pointer group border-input-box-border hover:border-border-subtle aria-selected:border-primary aria-selected:bg-primary/10"
+              className="group flex w-full items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors border-input-box-border hover:border-border-subtle aria-selected:border-primary aria-selected:bg-primary/10"
               disabled={disabled}
               onClick={() => {
                 let next: number[];
@@ -412,7 +415,7 @@ function CheckboxViewer({
                 onChange({ answer_type: "checkbox", answer: next });
               }}
             >
-              <div className="flex justify-center items-center w-4 h-4 rounded border-2 border-foreground-muted group-aria-selected:border-primary group-aria-selected:bg-primary">
+              <div className="w-4 h-4 rounded border-2 flex items-center justify-center border-foreground-muted group-aria-selected:border-primary group-aria-selected:bg-primary">
                 {isSelected && <Check className="size-3 [&>path]:stroke-white" />}
               </div>
               <span className="text-sm text-foreground-muted group-aria-selected:text-text-primary">{option}</span>
@@ -441,7 +444,7 @@ function DropdownViewer({
     <>
       <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
       <select
-        className="p-3 w-full text-white rounded-lg border border-neutral-700 bg-neutral-900 focus:border-blue-500 outline-none"
+        className="w-full p-3 rounded-lg border border-neutral-700 bg-neutral-900 text-white focus:border-blue-500 outline-none"
         disabled={disabled}
         value={selected === null ? "" : String(selected)}
         onChange={(e) => {
@@ -486,13 +489,13 @@ function LinearScaleViewer({
   return (
     <>
       <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
-      <div className="flex flex-col gap-5 w-full select-none">
-        <div className="flex justify-between items-center w-full text-sm font-medium text-text-primary-muted">
+      <div className="flex w-full flex-col gap-5 select-none">
+        <div className="flex w-full items-center justify-between text-sm font-medium text-text-primary-muted">
           <span className="max-w-[40%] truncate">{question.min_label}</span>
-          <span className="max-w-[40%] text-right truncate">{question.max_label}</span>
+          <span className="max-w-[40%] truncate text-right">{question.max_label}</span>
         </div>
         <div className="w-full">
-          <div className="flex flex-wrap gap-2 justify-center px-1 pb-1">
+          <div className="flex flex-wrap justify-center gap-2 px-1 pb-1">
             {values.map((val) => {
               const isSelected = selected === val;
               return (

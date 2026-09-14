@@ -37,7 +37,7 @@ export function MaterialList({ spaceId, discussionId }: { spaceId: string; discu
             .catch((e) => toast.error(e));
         }}
       >
-        <div className="flex gap-2 justify-center items-center py-3 px-4 w-full border border-dashed rounded-[8px] cursor-pointer transition-colors border-border hover:border-primary/50">
+        <div className="flex gap-2 justify-center items-center py-3 px-4 w-full border border-dashed rounded-[8px] cursor-pointer border-border hover:border-primary/50 transition-colors">
           <Upload1 width="16" height="16" className="[&>path]:stroke-foreground-muted" />
           <span className="text-[13px] font-medium text-foreground-muted">{tr.uploadPdf}</span>
         </div>
@@ -56,7 +56,7 @@ export function MaterialList({ spaceId, discussionId }: { spaceId: string; discu
               </div>
               <button
                 type="button"
-                className="p-1 rounded transition-colors shrink-0 hover:bg-destructive/10"
+                className="shrink-0 p-1 rounded transition-colors hover:bg-destructive/10"
                 onClick={() => {
                   deleteMaterial(spaceId, discussionId, item.material_id)
                     .then(refresh)
