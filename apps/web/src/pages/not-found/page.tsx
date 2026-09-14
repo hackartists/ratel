@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { useLocation } from "react-router-dom";
 
 // The catch-all route — `PageNotFound` at the bottom of app/ratel/src/route.rs.
@@ -41,8 +42,23 @@ function rustDebugString(value: string): string {
   return `${out}"`;
 }
 
+// Dev-only Playwright harness for the shared editor (no ported page renders it
+// yet and the route table is frozen): `?__editor_harness=1` on any unknown
+// path. `import.meta.env.DEV` is a literal `false` in production builds, so
+// this branch and its dynamic import are removed from the bundle.
+const EditorHarness = import.meta.env.DEV
+  ? lazy(() => import("@/components/editor/__harness__/editor-harness"))
+  : null;
+
 export function Component() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  if (EditorHarness && new URLSearchParams(search).get("__editor_harness") === "1") {
+    return (
+      <Suspense fallback={null}>
+        <EditorHarness />
+      </Suspense>
+    );
+  }
   const rest = `[${routeSegments(pathname).map(rustDebugString).join(", ")}]`;
 
   return (
