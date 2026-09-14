@@ -1,3 +1,4 @@
+import { useCreatePost } from "@ratel/ts-bridges/hooks";
 import { useNavigate } from "react-router-dom";
 import { LOGIN_MODAL_TITLE, useLoginModal } from "@/components/auth";
 import { useRatelArenaTopbarI18n } from "@/i18n/generated/components/arena_topbar/ratel-arena-topbar.i18n";
@@ -27,6 +28,7 @@ export function RatelArenaTopbar({ active }: { active?: RatelArenaTopbarSection 
   const username = useUserContext().user?.username ?? null;
 
   const loginModal = useLoginModal();
+  const createPost = useCreatePost();
 
   /**
    * Signed out: Rust opens `LoginModal { on_success: on_login_success }` (a
@@ -60,9 +62,15 @@ export function RatelArenaTopbar({ active }: { active?: RatelArenaTopbarSection 
           aria-label={t.create}
           aria-current={isHome ? "page" : undefined}
           data-testid="home-btn-create"
-          // Signed in: `create_post_handler(None)` then the post editor
-          // (component.rs:52-64). BLOCKED on the auth port, like the rest.
-          onClick={requireUser(() => {})}
+          // Signed in: `create_post_handler(None)`, then the post editor for the
+          // new post (component.rs:52-64). Rust only logs a failure.
+          onClick={requireUser(() =>
+            createPost.mutate(null, {
+              // `post_pk` is the `Partition` string (`FEED#<id>`); the route takes the id.
+              onSuccess: (resp) => navigate(`/posts/${resp.post_pk.replace(/^FEED#/, "")}/edit`),
+              onError: (e) => console.error("Failed to create post:", e),
+            }),
+          )}
         >
           <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 20h9" />
