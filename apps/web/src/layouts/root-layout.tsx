@@ -4,6 +4,7 @@ import { Outlet } from "react-router-dom";
 import { applyPersistedLanguage } from "@/i18n";
 import { PopupProvider, PopupZone } from "@/lib/popup";
 import { createQueryClient } from "@/lib/query-client";
+import { ThemeProvider } from "@/lib/theme";
 import { ToastProvider, ToastZone } from "@/lib/toast";
 
 // Dioxus `App` services (PopupService, ToastService in app/ratel/src/app.rs)
@@ -25,13 +26,15 @@ export function Component() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <PopupProvider>
-        <ToastProvider>
-          <Outlet />
-          <PopupZone />
-          <ToastZone />
-        </ToastProvider>
-      </PopupProvider>
+      <ThemeProvider>
+        <PopupProvider>
+          <ToastProvider>
+            <Outlet />
+            <PopupZone />
+            <ToastZone />
+          </ToastProvider>
+        </PopupProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

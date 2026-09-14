@@ -7,6 +7,7 @@ import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 // Side-effect import: augments vite's `UserConfig` with `ssgOptions`.
 import "vite-react-ssg";
+import { PRERENDERED_ROUTES } from "./src/prerendered-routes";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -156,6 +157,7 @@ export default defineConfig({
     rootContainerId: "main",
     script: "defer",
     beastiesOptions: false,
-    includedRoutes: () => ["/"],
+    // main.tsx hydrates exactly these paths and client-renders the rest.
+    includedRoutes: () => [...PRERENDERED_ROUTES],
   },
 });
