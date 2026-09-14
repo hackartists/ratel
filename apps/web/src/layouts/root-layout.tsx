@@ -1,6 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
+import { ErrorBoundary } from "@/components/error-page";
 import { applyPersistedLanguage } from "@/i18n";
 import { PopupProvider, PopupZone } from "@/lib/popup";
 import { createQueryClient } from "@/lib/query-client";
@@ -29,7 +30,12 @@ export function Component() {
       <ThemeProvider>
         <PopupProvider>
           <ToastProvider>
-            <Outlet />
+            {/* Dioxus: ErrorBoundary > SuspenseBoundary (empty fallback) > outlet. */}
+            <ErrorBoundary>
+              <Suspense fallback={null}>
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
             <PopupZone />
             <ToastZone />
           </ToastProvider>
