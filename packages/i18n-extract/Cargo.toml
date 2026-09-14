@@ -1,0 +1,11 @@
+[package]
+name = "i18n-extract"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+description = "Extracts dioxus-translate strings from app/ratel into TypeScript bundles for apps/web"
+publish = false
+
+[dependencies]
+serde_json.workspace = true
+syn = { version = "2.0.96", features = ["full", "visit", "parsing"] }

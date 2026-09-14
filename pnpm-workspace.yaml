@@ -3,3 +3,4 @@
 # `js/`, `playwright/`, `docs/` and `contracts/` projects stay out of pnpm.
 packages:
   - "apps/web"
+  - "packages/ts-bridges"

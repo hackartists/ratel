@@ -7816,6 +7816,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "i18n-extract"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
