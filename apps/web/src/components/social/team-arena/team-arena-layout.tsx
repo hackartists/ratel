@@ -5,7 +5,7 @@ import {
   useUnfollowUserDeleteApiMyFollowerFollow,
 } from "@ratel/ts-bridges/hooks";
 import { SelectedCategoryProvider } from "@/components/social/wall-context";
-import { TeamArenaProvider, useTeamArena } from "@/components/social/team-arena-context";
+import { TeamArenaProvider, TeamArenaTab, useTeamArena } from "@/components/social/team-arena-context";
 import { useUserContext } from "@/lib/auth";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import teamArenaScript from "../../../../../../app/ratel/src/features/social/pages/team_arena/script.js?url&no-inline";
@@ -70,7 +70,12 @@ function TeamArenaChrome() {
         username={ctx.username}
         displayName={ctx.displayName}
         profileUrl={ctx.profileUrl}
-        active={ctx.activeTab}
+        // Always Home, like the running Dioxus app: `TeamArenaLayout` rebuilds
+        // its context (`Signal::new(TeamArenaTab::Home)`) on every render, so a
+        // page's `active_tab.set(..)` never reaches the topbar and no HUD button
+        // ever gets `arena-topbar__hud--active` (measured on hard loads and SPA
+        // navigation). Tracked in the migration doc §12; fix both sides together.
+        active={TeamArenaTab.Home}
         canEdit={ctx.canEdit}
         isMember={ctx.isMember}
         isParentEligible={ctx.isParentEligible}

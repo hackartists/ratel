@@ -297,6 +297,7 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 - SocialLayout 사이드바가 금지된 `use_resource`를 씁니다 → React에서는 훅으로 정리됩니다.
 - `LoadingIndicator`가 unpkg `@latest` lottie를 불러옵니다 → 버전을 고정합니다.
 - PortOne SDK가 전역 외에 3곳에서 다시 주입됩니다 → 한 번만 로드합니다.
+- 팀 아레나 상단바의 활성 탭 표시가 동작하지 않습니다. `TeamArenaLayout`이 렌더마다 `wall_ctx.into()`로 `TeamArenaContext`(`Signal::new(TeamArenaTab::Home)`)를 새로 만들어 `provide_context`로 교체하므로, 하위 페이지가 `active_tab.set(...)`해도 상단바에 반영되지 않습니다. 실행 중인 Dioxus 앱은 직접 진입·SPA 이동 모두 `arena-topbar__hud--active`를 한 번도 붙이지 않는 것을 실측했습니다. React는 DOM 동일성을 위해 상단바에 항상 Home을 넘겨 같은 결과를 냅니다. 전환 후 컨텍스트를 한 번만 만들고 양쪽을 함께 고칩니다.
 
 ---
 
