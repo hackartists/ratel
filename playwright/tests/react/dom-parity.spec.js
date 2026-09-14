@@ -98,4 +98,43 @@ test.describe("DOM parity: Dioxus vs React", () => {
       }
     });
   }
+
+  // Interactions that only open UI (no API calls): each clicks the same
+  // `data-testid` in both apps, waits for the same element, then compares.
+  const INTERACTIONS = [
+    {
+      name: "login modal opened from the arena topbar",
+      route: "/me/character",
+      click: "home-btn-drafts",
+      waitFor: "email-input",
+    },
+  ];
+
+  for (const { name, route, click, waitFor } of INTERACTIONS) {
+    test(`#main matches on ${route} with the ${name}`, async ({ page, context }, testInfo) => {
+      const dioxusPage = await context.newPage();
+      try {
+        for (const [p, url] of [
+          [dioxusPage, `${DIOXUS_BASE_URL}${route}`],
+          [page, route],
+        ]) {
+          await goto(p, url);
+          await p.getByTestId(click).click();
+          await expect(p.getByTestId(waitFor)).toBeVisible();
+        }
+
+        const dioxus = await dioxusPage.evaluate(serializeMain);
+        const react = await page.evaluate(serializeMain);
+
+        const shot = `${slug(route)}-${slug(name)}`;
+        await dioxusPage.screenshot({ path: testInfo.outputPath(`${shot}-dioxus.png`), fullPage: true });
+        await page.screenshot({ path: testInfo.outputPath(`${shot}-react.png`), fullPage: true });
+
+        expect(dioxus, "Dioxus #main").not.toBeNull();
+        expect(react).toEqual(dioxus);
+      } finally {
+        await dioxusPage.close();
+      }
+    });
+  }
 });

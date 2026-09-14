@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { LOGIN_MODAL_TITLE, useLoginModal } from "@/components/auth";
 import { useRatelArenaTopbarI18n } from "@/i18n/generated/components/arena_topbar/ratel-arena-topbar.i18n";
 import { useUserContext } from "@/lib/auth";
 
@@ -25,11 +26,14 @@ export function RatelArenaTopbar({ active }: { active?: RatelArenaTopbarSection 
   // every button except Settings opens `LoginModal` when signed out, else navigates.
   const username = useUserContext().user?.username ?? null;
 
+  const loginModal = useLoginModal();
+
   /**
-   * Signed out: Rust opens `LoginModal` with the title "Start building your
-   * Essence" (component.rs:44-50). BLOCKED on the LoginModal port (P1).
+   * Signed out: Rust opens `LoginModal { on_success: on_login_success }` (a
+   * no-op callback) with the title "Start building your Essence"
+   * (component.rs:42-50).
    */
-  const openLogin = () => {};
+  const openLogin = () => loginModal.open({ title: LOGIN_MODAL_TITLE, onSuccess: () => {} });
 
   /** Rust `go_*` handlers: the login modal when signed out, else navigate. */
   const requireUser = (go: (username: string) => void) => () => {
