@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { Editor } from "@/components/editor";
 
 // app/ratel/src/features/spaces/pages/actions/components/action_description_editor.rs —
 // description editor for the in-space action creators (discussion / quiz).
 //
 // Mobile (< 768px, `use_is_mobile`) renders a plain `<textarea>` whose text is
 // stored as the same HTML the rich editor emits (each line wrapped in `<p>`).
-// Desktop renders the shared rich-text `Editor`, which is being ported
-// separately (apps/web/src/components/editor). Until it lands the desktop
-// branch uses the same textarea so authoring keeps working.
+// Desktop renders the shared rich-text `Editor` with the caller's class.
 //
 // Snapshots `content` once at mount, like the rich editor; remount with a
 // `key` to push new content in.
@@ -63,10 +62,15 @@ export function ActionDescriptionEditor({
   );
 
   if (isMobile) return textarea;
-  // editor: desktop renders `common::components::editor::Editor` (RichEditor)
-  // with `class`, `content`, `editable`, `placeholder`, `on_content_change`.
-  // Swap in apps/web/src/components/editor once it is ported.
-  return textarea;
+  return (
+    <Editor
+      className={className}
+      content={content}
+      editable={editable}
+      placeholder={placeholder}
+      onContentChange={(html) => onContentChange?.(html)}
+    />
+  );
 }
 
 /** Editor HTML → plain text for the textarea, keeping paragraph/line breaks. */

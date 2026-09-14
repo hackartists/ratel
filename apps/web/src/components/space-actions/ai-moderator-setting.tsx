@@ -5,7 +5,7 @@ import { Info } from "@/components/icons/help-support";
 import { Card, CardDirection } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { CrossAxisAlign, MainAxisAlign } from "@/components/ui/layout";
-import { Switch } from "@/components/ui/switch";
+import { PremiumSwitch } from "@/components/ui/premium-switch";
 import { TextArea } from "@/components/ui/textarea";
 import { ContentAlign, ContentSide, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAiModeratorSettingI18n } from "@/i18n/generated/features/ai_moderator/components/ai-moderator-setting.i18n";
@@ -14,11 +14,8 @@ import { MaterialList } from "./material-list";
 
 // app/ratel/src/features/ai_moderator/components/ai_moderator_setting.
 //
-// Rust binds the toggle to `PremiumSwitch` (a membership-gated Switch); that
-// component's React port is deferred pending the membership-query work (see
-// docs/superpower/2026-09-14-react-frontend-migration.md §9.1, P1 "보류").
-// This uses the plain `Switch` instead — same boolean toggle behavior, no
-// membership gate — and should switch to `PremiumSwitch` once it lands.
+// The enable toggle is a `PremiumSwitch`, like Rust: paid members get the
+// switch, everyone else an "Unlock" link to their memberships page.
 export function AiModeratorSetting({ spaceId, discussionId }: { spaceId: string; discussionId: string }) {
   const tr = useAiModeratorSettingI18n();
   const toast = useToast();
@@ -109,7 +106,7 @@ export function AiModeratorSetting({ spaceId, discussionId }: { spaceId: string;
               </Tooltip>
             </div>
             <div data-testid="ai-moderator-toggle">
-              <Switch active={enabled} label={tr.enableAiModerator} onToggle={() => toggleEnabled()} />
+              <PremiumSwitch active={enabled} label={tr.enableAiModerator} onToggle={() => toggleEnabled()} />
             </div>
           </Card>
         )}
