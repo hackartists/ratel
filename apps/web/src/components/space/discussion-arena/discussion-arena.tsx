@@ -9,13 +9,10 @@
 //     `/comments/:commentId` deep-link variant) — no overlay provider, so
 //     "Back" replaces the route with `/spaces/:spaceId`.
 //
-// Gaps (documented, not ported):
-//   - No 5s new-comment polling / `sort_tick` time-decay re-sort interval
-//     (see `hooks/use-discussion-arena.tsx` header). Comments re-rank once
-//     per data change instead of continuously.
-//   - `bindCommentTextObservers` in `script.js` measures overflow via
-//     ResizeObserver and sets `data-truncatable` — that still runs
-//     unmodified through this file's `useLegacyScript`; nothing to port here.
+// The 5s new-comment poll and the `sort_tick` time-decay re-sort live in
+// `hooks/use-discussion-arena.tsx`. `bindCommentTextObservers` in `script.js`
+// (overflow measurement → `data-truncatable`) runs unmodified through this
+// file's `useLegacyScript`.
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import discussionScript from "../../../../../../app/ratel/src/features/spaces/pages/index/action_pages/discussion/script.js?url&no-inline";
