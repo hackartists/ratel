@@ -34,6 +34,12 @@ const ROUTES = [
   "/membership",
   // Signed out: the root error page in both apps (its loaders need a session).
   "/credentials",
+  // Arcade, signed out: every page's loaders reject the session, so both apps
+  // render the root error page (`Error::Internal` for the text/plain 401).
+  "/arcade/home",
+  "/arcade/leaderboard",
+  "/arcade/games/fact-or-fold/matching/parity-round",
+  "/arcade/games/fact-or-fold/rounds/parity-round",
 ];
 
 const DIOXUS_BASE_URL = (process.env.DIOXUS_BASE_URL || "http://localhost:8080").replace(/\/$/, "");

@@ -27,7 +27,12 @@ function variantText(enumName: string, data: unknown): string | null {
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     const server = error.server;
-    return (server && variantText("Error", server.data)) ?? server?.message ?? error.body ?? error.message;
+    // No serialized `common::Error` (text/plain extractor rejection such as
+    // "No session found", gateway page, network failure): the Dioxus client
+    // gets a `ServerFnError`, which converts to `Error::Internal`
+    // (common/types/error.rs `impl From<ServerFnError> for Error`).
+    if (!server) return variantText("Error", "Internal") ?? error.body ?? error.message;
+    return variantText("Error", server.data) ?? server.message;
   }
   if (error instanceof Error) return error.message;
   return String(error);
