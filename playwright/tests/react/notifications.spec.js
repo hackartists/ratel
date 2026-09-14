@@ -29,19 +29,28 @@ async function isViteDev(page) {
   return page.evaluate(() => document.querySelector('script[src="/@vite/client"]') !== null);
 }
 
-/** Signs in through the LoginModal on /me/character and returns the first unread-count response. */
-async function signIn(page) {
+/** Opens the LoginModal on /me/character and requests a code: the modal waits on the code step, still signed out. */
+async function openCodeStep(page) {
   await goto(page, "/me/character");
   await clickNoNav(page, { testId: "home-btn-drafts" });
   await waitPopup(page, { visible: true });
   await fill(page, { testId: "email-input" }, EMAIL);
   await clickNoNav(page, { testId: "continue-button" });
   await expect(page.getByTestId("code-input")).toBeVisible();
+}
+
+/** Finishes the code step and returns the first unread-count response. */
+async function verifyCode(page) {
   await fill(page, { testId: "code-input" }, CODE);
   const unreadCount = page.waitForResponse((r) => isGet(r, "/api/inbox/unread-count"));
   await clickNoNav(page, { testId: "continue-button" });
   await waitPopup(page, { visible: false });
   return unreadCount;
+}
+
+async function signIn(page) {
+  await openCodeStep(page);
+  return verifyCode(page);
 }
 
 test.describe.serial("React notifications", () => {
@@ -51,12 +60,11 @@ test.describe.serial("React notifications", () => {
       if (new URL(request.url()).pathname.startsWith("/api/inbox")) polled.push(request.url());
     });
 
-    const unreadCount = signIn(page);
+    await openCodeStep(page);
     // The login modal is up, the user still signed out: no inbox traffic yet.
-    await expect(page.getByTestId("code-input")).toBeVisible();
     expect(polled).toEqual([]);
 
-    const response = await unreadCount;
+    const response = await verifyCode(page);
     expect(response.status()).toBe(200);
     // The global (root-layout) scope sends no space filter.
     expect(new URL(response.url()).searchParams.has("space_id")).toBe(false);
