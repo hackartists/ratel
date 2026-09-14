@@ -126,3 +126,25 @@ export function contentDocumentToHtml(doc: ContentDocument): string {
 export function contentBodyToHtml(body: ContentBody): string {
   return body.content_type === "html_content" ? body.data : contentDocumentToHtml(body.data);
 }
+
+/** Rust `ContentBody::html`. */
+export function htmlContent(html: string): ContentBody {
+  return { content_type: "html_content", data: html };
+}
+
+/** Rust `ContentBody::to_html`. */
+export function toHtml(body: ContentBody): string {
+  return contentBodyToHtml(body);
+}
+
+/** Strips tags, leaving plain text — the private `strip_html` helper duplicated in post_edit and the compose sidebar. */
+export function stripHtml(html: string): string {
+  let result = "";
+  let inTag = false;
+  for (const ch of html) {
+    if (ch === "<") inTag = true;
+    else if (ch === ">") inTag = false;
+    else if (!inTag) result += ch;
+  }
+  return result;
+}
