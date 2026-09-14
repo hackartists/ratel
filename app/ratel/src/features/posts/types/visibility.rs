@@ -11,7 +11,7 @@ use rmcp::schemars;
 // `SerializeDisplay`, e.g. `"Public"` / `"TeamOnly#<pk>"`). Native PG enums
 // cannot represent the `TeamOnly(String)` data variant, so JSONB is used.
 #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "string"))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "\"PUBLIC\" | \"PRIVATE\" | \"BROADCAST\" | `TEAM_ONLY#${string}`"))]
 pub enum Visibility {
     #[default]
     Public,

@@ -1,11 +1,10 @@
 import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import type { ConnectionResponse, FeedPartition, Post, SocialPlatform, TeamItem } from "@ratel/ts-bridges";
+import type { ConnectionResponse, FeedPartition, Post, SocialPlatform, TeamItem, Visibility } from "@ratel/ts-bridges";
 import { useCreateSpace, useDeletePost, useGetPost, useGetUserTeams, useUpdatePost } from "@ratel/ts-bridges/hooks";
 import { useAuth } from "@/lib/auth";
 import { htmlContent, stripHtml, toHtml } from "@/lib/content-body";
-import { isVisibility } from "@/lib/posts-enums";
 import { useToast } from "@/lib/toast";
 import { useCrossPosting, type UseCrossPosting } from "@/components/cross-posting/use-cross-posting";
 
@@ -33,8 +32,8 @@ function defaultPost(): Post {
     title: "",
     body: { content_type: "html_content", data: "" },
     post_type: 0,
-    status: "Draft",
-    visibility: "Public",
+    status: "DRAFT",
+    visibility: "PUBLIC",
     shares: 0,
     likes: 0,
     comments: 0,
@@ -68,7 +67,7 @@ function resolveEnabledPlatforms(
   connections: ConnectionResponse[],
   overrides: Partial<Record<SocialPlatform, boolean>>,
 ): SocialPlatform[] | null {
-  if (!isVisibility(vis, "Public")) return null;
+  if (vis !== "PUBLIC") return null;
   const enabled = (["bluesky", "linkedin", "threads"] as SocialPlatform[]).filter((p) => {
     const c = connections.find((c) => c.platform === p);
     if (!c || c.status !== "connected") return false;
@@ -94,7 +93,7 @@ export interface UsePostEdit {
   postKind: PostKind;
   setPostKind: (k: PostKind) => void;
   visibility: string;
-  setVisibility: (v: "Public" | "Private") => void;
+  setVisibility: (v: "PUBLIC" | "PRIVATE") => void;
   spaceEnabled: boolean;
   setSpaceEnabled: (v: boolean) => void;
   hasExistingSpace: boolean;
@@ -141,7 +140,7 @@ export function usePostEdit(postId: FeedPartition): UsePostEdit {
 
   const existingSpaceId = post.space_pk?.startsWith("SPACE#") ? post.space_pk.slice("SPACE#".length) : null;
   const hasExistingSpace = existingSpaceId !== null;
-  const alreadyPublishedPublic = isPostStatusPublished(post.status) && isVisibility(post.visibility, "Public");
+  const alreadyPublishedPublic = post.status === "PUBLISHED" && post.visibility === "PUBLIC";
   const initialSelectedTeamPk = post.author_type === 2 && post.user_pk.startsWith("TEAM#") ? post.user_pk : null;
 
   const [title, setTitle] = useState("");
@@ -149,7 +148,7 @@ export function usePostEdit(postId: FeedPartition): UsePostEdit {
   const [categories, setCategories] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [postKind, setPostKind] = useState<PostKind>("post");
-  const [visibility, setVisibilityState] = useState<string>("Public");
+  const [visibility, setVisibilityState] = useState<Visibility>("PUBLIC");
   const [spaceEnabled, setSpaceEnabled] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [asDropdownOpen, setAsDropdownOpen] = useState(false);
@@ -174,7 +173,7 @@ export function usePostEdit(postId: FeedPartition): UsePostEdit {
     setTitle(post.title);
     setContentState(initialContent);
     setCategories(post.categories);
-    setVisibilityState(post.visibility ?? "Public");
+    setVisibilityState(post.visibility ?? "PUBLIC");
     setSpaceEnabled(hasExistingSpace);
     setSelectedTeamPk(initialSelectedTeamPk);
     lastSaved.current = { title: post.title, content: initialContent, categories: post.categories };
@@ -399,10 +398,6 @@ export function usePostEdit(postId: FeedPartition): UsePostEdit {
     commitSaveDraft,
     discardDraft,
   };
-}
-
-function isPostStatusPublished(status: string): boolean {
-  return status.toUpperCase() === "PUBLISHED";
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {

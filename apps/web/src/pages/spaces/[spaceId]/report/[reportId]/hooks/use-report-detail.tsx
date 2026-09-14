@@ -5,7 +5,6 @@ import type { ActionSource, Analyze, AnalyzeItem, ChartType, GetReportResponse }
 import { canEdit, useSpaceData } from "@/components/space-data/use-space-data";
 import type { EditorSlashSignal } from "@/components/editor";
 import { useReportDetailI18n, type ReportDetailI18n } from "@/i18n/generated/features/spaces/pages/report/views/detail/report-detail.i18n";
-import { isReportPublished } from "../../report-status";
 import {
   ACTION_SOURCE_VARIANTS,
   actionSourceToken,
@@ -371,7 +370,7 @@ export function useReportDetail(spaceId: string, reportId: string): UseReportDet
           title,
           description: subtitle,
           blocks: null,
-          status: "Published",
+          status: "PUBLISHED",
           html_contents: bodyHtml,
         });
         lastSavedRef.current = { title, subtitle, bodyHtml };
@@ -522,7 +521,7 @@ export function useReportDetail(spaceId: string, reportId: string): UseReportDet
     report,
     analyzes,
     canEdit: canEditReport,
-    isPublished: isReportPublished(report.status),
+    isPublished: report.status === "PUBLISHED",
     // Hardcoded in the Rust loader too — not run through `translate!`.
     eyebrow: "Action · Report",
     author: report.author,

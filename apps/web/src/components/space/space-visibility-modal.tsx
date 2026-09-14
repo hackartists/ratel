@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { SpaceVisibility as ApiSpaceVisibility } from "@ratel/ts-bridges";
 import { Internet } from "@/components/icons/internet-script";
 import { Lock1 } from "@/components/icons/security";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
@@ -19,8 +20,8 @@ const RADIO_IDLE = "w-5 h-5 rounded-full border-2 flex items-center justify-cent
 
 export interface SpaceVisibilityModalProps {
   /** Rust default `SpaceVisibility::Private`. */
-  initial?: string;
-  onConfirm: (visibility: string) => void;
+  initial?: ApiSpaceVisibility;
+  onConfirm: (visibility: ApiSpaceVisibility) => void;
   onCancel?: (e: React.MouseEvent) => void;
 }
 

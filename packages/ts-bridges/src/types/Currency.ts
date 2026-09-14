@@ -5,4 +5,4 @@
  * (`#[postgres(text)]`); the wire form is still driven by the manual
  * `Display`/`FromStr` below (`"USD"`/`"KRW"`).
  */
-export type Currency = string;
+export type Currency = "USD" | "KRW";

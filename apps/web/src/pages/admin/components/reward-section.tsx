@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { RewardCondition, RewardPeriod, RewardResponse } from "@ratel/ts-bridges";
+import type { RewardCondition, RewardPeriod, RewardResponse, RewardUserBehavior } from "@ratel/ts-bridges";
 import { useAdminRewardsI18n } from "@/i18n/generated/features/admin/views/main/admin-rewards.i18n";
 import { useAdminLiteralsI18n, type AdminLiteralsI18n } from "../admin-literals.i18n";
 import { formatWithCommas, parseI64 } from "../hooks/format";
@@ -12,7 +12,7 @@ import { useDioxusInput } from "../hooks/use-dioxus-input";
 type LiteralKey = Parameters<AdminLiteralsI18n["text"]>[0];
 
 /** `RewardUserBehavior::all()`; `value` is the enum's Display (DynamoEnum UPPER_SNAKE). */
-const BEHAVIORS: ReadonlyArray<{ value: string; label: LiteralKey }> = [
+const BEHAVIORS: ReadonlyArray<{ value: RewardUserBehavior; label: LiteralKey }> = [
   { value: "RESPOND_POLL", label: "behavior_respond_poll" },
   { value: "DISCUSSION_COMMENT", label: "behavior_discussion_comment" },
   { value: "QUIZ_ANSWER", label: "behavior_quiz_answer" },
@@ -90,7 +90,7 @@ function conditionLabel(condition: RewardCondition, lit: AdminLiteralsI18n): str
 }
 
 interface FormState {
-  behavior: string;
+  behavior: RewardUserBehavior;
   point: number;
   period: RewardPeriod;
   conditionType: ConditionType;

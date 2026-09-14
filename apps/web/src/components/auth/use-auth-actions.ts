@@ -87,7 +87,7 @@ export function useAuthActions(): AuthActions {
       signIn(resp);
     },
     loginWithGoogle: async (accessToken) => {
-      const resp = await login.mutateAsync({ provider: "Google", access_token: accessToken, device_id: loginDeviceId() });
+      const resp = await login.mutateAsync({ provider: "GOOGLE", access_token: accessToken, device_id: loginDeviceId() });
       rememberRefreshToken(resp.refresh_token);
       signIn(resp);
     },

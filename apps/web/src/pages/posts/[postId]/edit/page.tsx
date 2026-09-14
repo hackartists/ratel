@@ -316,7 +316,7 @@ export function Component() {
               {tr.visibility}
             </div>
             <div className="vis-row">
-              <button className="vis-opt" aria-selected={dataBool(visibility.toUpperCase() === "PUBLIC")} onClick={() => setVisibility("Public")}>
+              <button className="vis-opt" aria-selected={dataBool(visibility === "PUBLIC")} onClick={() => setVisibility("PUBLIC")}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10" />
                   <line x1="2" y1="12" x2="22" y2="12" />
@@ -324,7 +324,7 @@ export function Component() {
                 </svg>
                 <span>{tr.visibilityPublic}</span>
               </button>
-              <button className="vis-opt" aria-selected={dataBool(visibility.toUpperCase() === "PRIVATE")} onClick={() => setVisibility("Private")}>
+              <button className="vis-opt" aria-selected={dataBool(visibility === "PRIVATE")} onClick={() => setVisibility("PRIVATE")}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -332,7 +332,7 @@ export function Component() {
                 <span>{tr.visibilityPrivate}</span>
               </button>
             </div>
-            {alreadyPublishedPublic && visibility.toUpperCase() === "PRIVATE" && (
+            {alreadyPublishedPublic && visibility === "PRIVATE" && (
               <div className="syndication-remain-notice" role="note" data-testid="syndication-remain-notice">
                 <div className="syndication-remain-notice__title" data-testid="syndication-remain-notice-title">
                   {tr.visibilitySyndicatedRemainTitle}
@@ -352,7 +352,7 @@ export function Component() {
             {tr.discardDraft}
           </button>
 
-          {visibility.toUpperCase() === "PUBLIC" && (
+          {visibility === "PUBLIC" && (
             <CrossPostSidebar content={content} crossPosting={crossPosting} onConnectRequest={(p) => void onCpConnect(p)} />
           )}
         </aside>

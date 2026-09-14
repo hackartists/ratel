@@ -1,11 +1,12 @@
 // `MembershipTier` of app/ratel/src/features/membership/components/membership_plan/i18n.rs
 // (the UI tier), and conversions to/from the API `MembershipTier`, whose wire
 // form is the DynamoEnum UPPER_SNAKE string (`"PRO"`, `"ENTERPRISE#<name>"`).
+import type { MembershipTier } from "@ratel/ts-bridges";
 
 export type UiMembershipTier = "Free" | "Pro" | "Max" | "Vip" | "Enterprise";
 
 /** API tier string for a purchase request. */
-export function apiTierString(tier: UiMembershipTier): string {
+export function apiTierString(tier: UiMembershipTier): MembershipTier {
   switch (tier) {
     case "Pro":
       return "PRO";

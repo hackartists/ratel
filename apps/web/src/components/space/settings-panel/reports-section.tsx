@@ -10,8 +10,8 @@ import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index
 export function ReportsSection({ spaceId }: { spaceId: string }) {
   const tr = useSpaceViewerI18n();
   const { data } = useSuspenseQuery({
-    queryKey: ["listReports", spaceId, null, "Published"],
-    queryFn: () => listReports(spaceId, null, "Published"),
+    queryKey: ["listReports", spaceId, null, "PUBLISHED"],
+    queryFn: () => listReports(spaceId, null, "PUBLISHED"),
   });
   const reports = data.items;
   if (reports.length === 0) return null;

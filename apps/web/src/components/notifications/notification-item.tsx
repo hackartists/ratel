@@ -33,7 +33,7 @@ function contentsOf(p: InboxPayload, tr: NotificationsI18n, t: EnumT): [string, 
       return [
         tr.spaceStatusTitle({
           space: p.space_title,
-          status: t("SpaceStatus", p.new_status as "Designing"),
+          status: t("SpaceStatus", p.new_status),
         }),
         "",
         null,

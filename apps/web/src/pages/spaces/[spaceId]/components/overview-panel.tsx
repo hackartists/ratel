@@ -2,7 +2,7 @@ import * as React from "react";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useCreateFileLink, useDeleteFileLink, useUpdateSpaceContent } from "@ratel/ts-bridges/hooks";
 import { getOverviewFiles } from "@ratel/ts-bridges";
-import type { File } from "@ratel/ts-bridges";
+import type { File, FileLinkTarget } from "@ratel/ts-bridges";
 import { FileUploadZone } from "@/components/space/file-upload-zone";
 import { useSpaceContext } from "@/components/space/space-context";
 import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
@@ -15,7 +15,7 @@ import { DEFAULT_PROFILE, formatNumber } from "./format";
 // page renders it the same way: the suspending query lives here.
 
 /** `FileLinkTarget::Overview` wire string (DynamoEnum Display, SCREAMING_SNAKE like `PRIVATE`). */
-const LINK_TARGET_OVERVIEW = "OVERVIEW";
+const LINK_TARGET_OVERVIEW: FileLinkTarget = "OVERVIEW";
 
 export function OverviewPanel({
   open,

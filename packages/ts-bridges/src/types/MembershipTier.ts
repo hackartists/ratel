@@ -8,4 +8,4 @@
  * etc. The DB `pg_label` (snake_case unit labels + raw enterprise inner string)
  * is a separate, internally-consistent channel.
  */
-export type MembershipTier = string;
+export type MembershipTier = "FREE" | "PRO" | "MAX" | "VIP" | `ENTERPRISE#${string}`;

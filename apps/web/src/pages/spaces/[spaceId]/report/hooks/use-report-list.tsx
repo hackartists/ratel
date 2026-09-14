@@ -3,7 +3,6 @@ import { createContext, useContext, useState, useTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { createReport, deleteReport, listReports } from "@ratel/ts-bridges";
 import type { ListResponse, ReportListItem, ReportStatus } from "@ratel/ts-bridges";
-import { isReportPublished } from "../report-status";
 
 // app/ratel/src/features/spaces/pages/report/hooks/use_report_list_context.rs
 // Reports list context: the unfiltered list (stats), the status-filtered list
@@ -14,7 +13,7 @@ import { isReportPublished } from "../report-status";
 export type ReportFilter = "All" | "Drafts" | "Published";
 
 function toStatus(filter: ReportFilter): ReportStatus | null {
-  return filter === "All" ? null : filter === "Drafts" ? "Draft" : "Published";
+  return filter === "All" ? null : filter === "Drafts" ? "DRAFT" : "PUBLISHED";
 }
 
 export interface PendingDelete {
@@ -115,8 +114,8 @@ export function useReportList(spaceId: string): UseReportList {
     spaceId,
     allReports: allReports.data,
     items: filteredReports.data.items,
-    draftsCount: all.filter((r) => !isReportPublished(r.status)).length,
-    publishedCount: all.filter((r) => isReportPublished(r.status)).length,
+    draftsCount: all.filter((r) => r.status !== "PUBLISHED").length,
+    publishedCount: all.filter((r) => r.status === "PUBLISHED").length,
     totalCount: all.length,
     filter,
     setFilter: (next) => startTransition(() => setFilterState(next)),

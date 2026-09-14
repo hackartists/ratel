@@ -44,9 +44,11 @@ export function getContents(
       return [
         tr.spaceStatusTitle({
           space: payload.space_title,
-          // `SpaceStatus` is a string alias in the generated types; the value is
-          // always a Rust variant name.
-          status: translateEnum("SpaceStatus", payload.new_status as Parameters<TranslateEnum>[1]),
+          // `SpaceStatus` (common/types/space/space_status.rs) serializes via a
+          // manual `impl Serialize` that emits the exact Rust variant name
+          // ("Designing"/"Open"/...), so the generated `SpaceStatus` union
+          // already matches the `enum.i18n` variant keys with no remapping.
+          status: translateEnum("SpaceStatus", payload.new_status),
         }),
         "",
         null,

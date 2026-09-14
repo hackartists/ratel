@@ -9,7 +9,6 @@ import { dataBool } from "@/lib/dom";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import listScript from "../../../../../../../app/ratel/src/features/spaces/pages/report/views/script.js?url&no-inline";
 import { ReportListProvider, useReportList, useReportListContext } from "./hooks/use-report-list";
-import { isReportPublished } from "./report-status";
 
 // app/ratel/src/features/spaces/pages/report/views/{mod.rs,list_page.rs}
 // (`SpaceReportPage` → `ReportListPage`). Carousel list of the space's
@@ -305,13 +304,13 @@ function ReportCard({ idx, item, editable }: { idx: number; item: ReportListItem
       <div className="report-card__top">
         <span
           className={
-            isReportPublished(item.status)
+            item.status === "PUBLISHED"
               ? "report-card__badge report-card__badge--published"
               : "report-card__badge report-card__badge--draft"
           }
         >
           <StatusIcon status={item.status} />
-          {isReportPublished(item.status) ? tr.statusPublished : tr.statusDraft}
+          {item.status === "PUBLISHED" ? tr.statusPublished : tr.statusDraft}
         </span>
         {editable && (
           <div className="report-card__menu-wrap">
@@ -417,7 +416,7 @@ function formatRelativeTime(timestampMillis: number, tr: ReportListI18n): string
 }
 
 function StatusIcon({ status }: { status: ReportStatus }) {
-  return isReportPublished(status) ? (
+  return status === "PUBLISHED" ? (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
       <polyline points="22 4 12 14.01 9 11.01" />
