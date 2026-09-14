@@ -540,17 +540,8 @@ function DiscussionArenaContent({ targetCommentId }: { targetCommentId: string |
   const navigate = useNavigate();
   useLegacyScript(discussionScript, { module: true });
 
-  if (!arena.disc) return null;
-  const { post, space_action } = arena.disc;
-
-  const status: "InProgress" | "NotStarted" | "Finish" =
-    space_action.status === "Ongoing" ? "InProgress" : space_action.status === "Finish" ? "Finish" : "NotStarted";
-  const isInProgress = status === "InProgress";
-  const canRespond = role === "Creator" || role === "Participant";
-  const canExecute = canExecuteSpaceAction(role, space_action.prerequisite, space.status, space_action.status, true, space.join_anytime);
-  const isCreator = role === "Creator";
-  const canComment = canRespond && canExecute && (isCreator || isInProgress);
-
+  // Every hook runs before the `arena.disc` early return below, so the hook
+  // order is identical while the discussion is loading and once it arrives.
   const [deepLinkTarget] = React.useState(targetCommentId);
   const [deepLinkDone, setDeepLinkDone] = React.useState(targetCommentId === null);
   React.useEffect(() => {
@@ -598,6 +589,17 @@ function DiscussionArenaContent({ targetCommentId }: { targetCommentId: string |
     if (!match) return null;
     return { author: match.author_display_name, text: match.content };
   }, [arena.activeReplyThread, arena.comments]);
+
+  if (!arena.disc) return null;
+  const { post, space_action } = arena.disc;
+
+  const status: "InProgress" | "NotStarted" | "Finish" =
+    space_action.status === "Ongoing" ? "InProgress" : space_action.status === "Finish" ? "Finish" : "NotStarted";
+  const isInProgress = status === "InProgress";
+  const canRespond = role === "Creator" || role === "Participant";
+  const canExecute = canExecuteSpaceAction(role, space_action.prerequisite, space.status, space_action.status, true, space.join_anytime);
+  const isCreator = role === "Creator";
+  const canComment = canRespond && canExecute && (isCreator || isInProgress);
 
   const onBack = () => {
     if (overlayCtx) {

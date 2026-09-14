@@ -77,8 +77,11 @@ export function clearKycHistory(): boolean {
  * `interop::verify_identity`: calls into `window.ratel.user_credential`
  * (bundled into `ratel-app-shell.js`, loaded globally) to open the PortOne
  * identity-verification flow, then finalizes the resulting credential.
+ * Testing builds (`VITE_BYPASS=true`, Rust `cfg(feature = "bypass")`) skip
+ * PortOne and sign an empty id, which a `bypass` backend accepts.
  */
 export async function verifyIdentity(storeId: string, channelKey: string, prefix: string): Promise<CredentialResponse> {
+  if (import.meta.env.VITE_BYPASS === "true") return signAttributesHandler({ type: "port_one", id: "" });
   const ns = (window as unknown as { ratel?: { user_credential?: { request_identity_verification?: (s: string, c: string, p: string) => Promise<unknown> } } }).ratel
     ?.user_credential;
   let value: unknown;

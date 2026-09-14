@@ -3,6 +3,12 @@
 interface ImportMetaEnv {
   /** "1" for the Tauri (Android/iOS) build; see vite.config.ts. */
   readonly VITE_TAURI?: string;
+  /**
+   * "true" for testing builds against a `bypass` backend — Rust
+   * `cfg(feature = "bypass")`: identity verification skips PortOne and signs an
+   * empty id (see src/lib/identity-verification.ts). Never set for real deployments.
+   */
+  readonly VITE_BYPASS?: string;
   /** API origin the Tauri build calls through the native `api_request` command. */
   readonly VITE_MOBILE_API_URL?: string;
   /** Rust `WalletConnectConfig` (`WALLETCONNECT_PROJECT_ID`); see components/auth/interop.ts. */
