@@ -1,93 +1,82 @@
-// Language state for the React app, mirroring packages/dioxus-translate so
-// existing users keep their setting and server error messages stay in the
-// same language (docs/superpower/2026-09-14-react-frontend-migration.md §7):
+// i18next setup for the React app, following the biyard/asset console
+// convention: every bundle is a co-located `*.i18n.tsx` module exporting
+// `i18n = { en, ko }` plus a typed `use<Name>I18n()` hook, registered here as
+// a namespace. During the migration the bundles are generated from the Dioxus
+// `translate!` blocks (`./generated`, packages/i18n-extract).
+//
+// Language rules mirror packages/dioxus-translate so existing users keep their
+// setting and server error messages stay in the same language
+// (docs/superpower/2026-09-14-react-frontend-migration.md §7):
 //   - `localStorage["language"]`, else the browser language, else English;
 //   - any stored value other than "ko" reads as English (Rust `FromStr`);
-//   - switching persists to `localStorage["language"]` and the `language`
-//     cookie the server reads.
-// Translation bundles come from the extraction tool (`generated/`).
-import { useSyncExternalStore } from "react";
+//   - `setLanguage` persists to `localStorage["language"]` and the
+//     `language` cookie the server reads (Rust `Language::switch`).
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
+import { modules } from "./generated";
 
-export type Language = "en" | "ko";
+export const SUPPORTED_LANGUAGES = ["en", "ko"] as const;
+export type AppLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+export const LANG_STORAGE_KEY = "language";
 
-export const STORAGE_KEY = "language";
-export const DEFAULT_LANGUAGE: Language = "en";
-
-/** A `translate!` block: the same keys in every language. */
-export interface Bundle<K extends string = string> {
-  en: Record<K, string>;
-  ko: Record<K, string>;
+const en: Record<string, Record<string, unknown>> = {};
+const ko: Record<string, Record<string, unknown>> = {};
+for (const [ns, mod] of Object.entries(modules)) {
+  en[ns] = mod.en;
+  ko[ns] = mod.ko;
 }
+const namespaces = Object.keys(modules);
 
 /**
- * A `#[derive(Translate)]` enum. Variants marked `#[translate(from)]`
- * delegate to the inner type's translation and are listed in `delegates`.
+ * Prerendered HTML is always English; the client switches to the persisted or
+ * browser language in `applyPersistedLanguage()` after hydration.
  */
-export interface EnumBundle<V extends string = string> extends Bundle<V> {
-  delegates?: Record<string, string>;
+export function initI18n(isClient: boolean): typeof i18n {
+  if (i18n.isInitialized) return i18n;
+  void isClient;
+  void i18n.use(initReactI18next).init({
+    resources: { en, ko },
+    lng: "en",
+    fallbackLng: "en",
+    supportedLngs: SUPPORTED_LANGUAGES as unknown as string[],
+    nonExplicitSupportedLngs: true,
+    ns: namespaces,
+    defaultNS: false,
+    interpolation: { escapeValue: false },
+    react: { useSuspense: false },
+    initImmediate: false,
+  });
+  return i18n;
 }
 
-export function parseLanguage(value: string): Language {
-  return value === "ko" ? "ko" : "en";
+export function parseLanguage(value: string | null | undefined): AppLanguage {
+  return value?.startsWith("ko") ? "ko" : "en";
 }
 
-function detectLanguage(): Language {
-  if (typeof window === "undefined") return DEFAULT_LANGUAGE;
+function detectLanguage(): AppLanguage {
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored !== null) return parseLanguage(stored);
+    const saved = window.localStorage.getItem(LANG_STORAGE_KEY);
+    if (saved !== null) return parseLanguage(saved);
   } catch {
-    // storage blocked
+    // storage blocked: fall through to the browser language
   }
-  const browser = window.navigator?.language;
-  return browser ? parseLanguage(browser.split("-")[0]) : DEFAULT_LANGUAGE;
+  return parseLanguage(window.navigator?.language);
 }
 
-let current: Language | undefined;
-const listeners = new Set<() => void>();
-
-export function getLanguage(): Language {
-  current ??= detectLanguage();
-  return current;
-}
-
-/** Changes the language for this page view only (Rust `set_language`). */
-export function setLanguage(next: Language): void {
-  if (getLanguage() === next) return;
-  current = next;
-  for (const listener of listeners) listener();
-}
-
-/** Toggles and persists the language (Rust `Language::switch`). */
-export function switchLanguage(): Language {
-  const next: Language = getLanguage() === "ko" ? "en" : "ko";
-  setLanguage(next);
+export function setLanguage(lang: AppLanguage): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, next);
+    window.localStorage.setItem(LANG_STORAGE_KEY, lang);
   } catch {
-    // storage blocked
+    // storage blocked: the cookie and in-memory language still switch
   }
-  document.cookie = `language=${next}; path=/;`;
-  return next;
+  document.cookie = `language=${lang}; path=/;`;
+  if (lang !== i18n.resolvedLanguage) void i18n.changeLanguage(lang);
 }
 
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+export function applyPersistedLanguage(): void {
+  if (typeof window === "undefined") return;
+  const lang = detectLanguage();
+  if (lang !== i18n.resolvedLanguage) void i18n.changeLanguage(lang);
 }
 
-/** The server snapshot is the default so prerendered HTML hydrates cleanly. */
-export function useLanguage(): Language {
-  return useSyncExternalStore(subscribe, getLanguage, () => DEFAULT_LANGUAGE);
-}
-
-export function useTranslate<K extends string>(bundle: Bundle<K>): Record<K, string> {
-  return bundle[useLanguage()];
-}
-
-/** Replaces `{name}` placeholders, as call sites do with `str::replace` in Rust. */
-export function interpolate(template: string, values: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (match, name: string) =>
-    name in values ? String(values[name]) : match,
-  );
-}
+export default i18n;
