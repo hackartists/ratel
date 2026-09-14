@@ -1,0 +1,101 @@
+import { test, expect } from "@playwright/test";
+import { goto } from "../utils";
+
+// DOM parity between the Dioxus app and the React port
+// (docs/superpower/2026-09-14-react-frontend-migration.md §8.3).
+//
+//   REACT_APP=1 PLAYWRIGHT_BASE_URL=http://localhost:4173 \
+//   DIOXUS_BASE_URL=http://localhost:8080 \
+//     npx playwright test tests/react/dom-parity.spec.js --project=React
+//
+// Each route loads in both apps; `#main` is serialized into a normalized tree
+// and compared, so a failure prints a structural diff. A full-page screenshot
+// of each app lands in the test's output dir under test-results/ for manual
+// review (no pixel assertions). Read-only: page loads only.
+//
+// Add a route here once its page is ported.
+const ROUTES = ["/privacy", "/terms", "/child-safety", "/no/such/page"];
+
+const DIOXUS_BASE_URL = (process.env.DIOXUS_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
+
+/** Runs in the page: `#main` as a plain tree. */
+function serializeMain() {
+  // Dioxus bookkeeping attributes, not rendered output.
+  const IGNORED_ATTRS = new Set(["data-dioxus-id", "data-node-hydration"]);
+  const SKIPPED_TAGS = new Set(["SCRIPT", "STYLE", "TEMPLATE"]);
+  const URL_ATTRS = new Set(["href", "src"]);
+
+  // Hashed build assets differ per app: Dioxus `/assets/logo-dxh1a2b3c.png`,
+  // Vite `/assets/logo-AbC123_x.png`. Compare by basename without the hash.
+  const normalizeUrl = (value) => {
+    if (!/(^|\/)assets\//.test(value)) return value;
+    const base = value.split(/[?#]/)[0].split("/").pop();
+    return base.replace(/-dxh[0-9a-f]+(?=\.[^.]+$)/, "").replace(/-[A-Za-z0-9_-]{8}(?=\.[^.]+$)/, "");
+  };
+
+  const attrsOf = (el) => {
+    const out = {};
+    for (const { name, value } of el.attributes) {
+      if (IGNORED_ATTRS.has(name)) continue;
+      if (name === "id" || name === "role") out[name] = value;
+      else if (name === "class") out.class = value.split(/\s+/).filter(Boolean).join(" ");
+      else if (name.startsWith("data-") || name.startsWith("aria-")) out[name] = value;
+      // The browser's own serialization, so `color:red;` and `color: red` compare equal.
+      else if (name === "style") out.style = el.style.cssText;
+      else if (URL_ATTRS.has(name)) out[name] = normalizeUrl(value);
+    }
+    return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  };
+
+  const walk = (el) => {
+    const children = [];
+    // Adjacent text nodes (Dioxus splits them around hydration comments)
+    // count as one run.
+    let text = "";
+    const flush = () => {
+      const trimmed = text.trim();
+      if (trimmed) children.push(trimmed);
+      text = "";
+    };
+    for (const node of el.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.data;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (SKIPPED_TAGS.has(node.tagName)) continue;
+        flush();
+        children.push(walk(node));
+      }
+      // Comments: skipped without breaking the text run.
+    }
+    flush();
+    return { tag: el.tagName.toLowerCase(), attrs: attrsOf(el), children };
+  };
+
+  const main = document.getElementById("main");
+  return main ? walk(main) : null;
+}
+
+const slug = (route) => route.replace(/^\//, "").replace(/[^a-z0-9]+/gi, "-") || "index";
+
+test.describe("DOM parity: Dioxus vs React", () => {
+  for (const route of ROUTES) {
+    test(`#main matches on ${route}`, async ({ page, context }, testInfo) => {
+      const dioxusPage = await context.newPage();
+      try {
+        await goto(dioxusPage, `${DIOXUS_BASE_URL}${route}`);
+        await goto(page, route);
+
+        const dioxus = await dioxusPage.evaluate(serializeMain);
+        const react = await page.evaluate(serializeMain);
+
+        await dioxusPage.screenshot({ path: testInfo.outputPath(`${slug(route)}-dioxus.png`), fullPage: true });
+        await page.screenshot({ path: testInfo.outputPath(`${slug(route)}-react.png`), fullPage: true });
+
+        expect(dioxus, "Dioxus #main").not.toBeNull();
+        expect(react).toEqual(dioxus);
+      } finally {
+        await dioxusPage.close();
+      }
+    });
+  }
+});

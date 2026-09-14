@@ -1,4 +1,7 @@
-// Placeholder for the Dioxus `ChildSafetyPage` route; ported in a later phase.
+import { LegalDocument } from "@/components/legal/legal-document";
+import { useChildSafetyI18n } from "./i18n";
+
+// `/child-safety` — app/ratel/src/views/child_safety/mod.rs (`ChildSafetyPage`).
 export function Component() {
-  return null;
+  return <LegalDocument data={useChildSafetyI18n()} />;
 }
