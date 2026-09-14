@@ -32,19 +32,31 @@ import { useEffect } from "react";
 
 const loaded = new Set<string>();
 
-/** Appends `<script defer src={url}>` to `<head>` unless this URL was already loaded. */
-export function loadLegacyScript(url: string): void {
+/**
+ * Appends `<script defer src={url}>` to `<head>` unless this URL was already
+ * loaded. Pass `{ module: true }` for a script that is a Dioxus
+ * `document::Script { r#type: "module", .. }` (one page script:
+ * `features/spaces/pages/index/action_pages/discussion/script.js`, which uses
+ * top-level `export` and therefore needs `type="module"` rather than a plain
+ * classic script — `defer` is implicit for modules).
+ */
+export function loadLegacyScript(url: string, options?: { module?: boolean }): void {
   if (typeof document === "undefined" || loaded.has(url)) return;
   loaded.add(url);
   const script = document.createElement("script");
-  script.defer = true;
+  if (options?.module) {
+    script.type = "module";
+  } else {
+    script.defer = true;
+  }
   script.src = url;
   document.head.appendChild(script);
 }
 
 /** Loads a legacy page script after the calling component mounts. */
-export function useLegacyScript(url: string): void {
+export function useLegacyScript(url: string, options?: { module?: boolean }): void {
   useEffect(() => {
-    loadLegacyScript(url);
-  }, [url]);
+    loadLegacyScript(url, options);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, options?.module]);
 }
