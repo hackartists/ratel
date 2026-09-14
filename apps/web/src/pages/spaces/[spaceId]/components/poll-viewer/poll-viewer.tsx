@@ -13,12 +13,19 @@
 // instead of encrypting client-side; see `onSubmit` below.
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import type { Answer, Question, SpacePartition, SpacePollEntityType } from "@ratel/ts-bridges";
-import { useGetPoll, useRespondPoll } from "@ratel/ts-bridges/hooks";
+import type { Answer, Question, SpacePartition, SpacePollEntityType, VoteEncryptionMaterialResponse } from "@ratel/ts-bridges";
+import { useGetEncryptionMaterial, useGetPoll, useRespondPoll } from "@ratel/ts-bridges/hooks";
 import { canExecuteSpaceAction } from "@/components/space/access";
 import { useActionOverlay, useCompletedActionCard, useOptionalActionOverlay } from "@/components/space/action-overlay";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
 import { useActionPollI18n } from "@/i18n/generated/features/spaces/pages/index/action_pages/poll/action-poll.i18n";
+import {
+  buildStoredVoterKeyFromEncryptionMaterial,
+  encryptAnswersForCanister,
+  loadSessionVoteSecret,
+  saveSessionVoteSecret,
+  saveStoredVoterKey,
+} from "@/lib/poll-encryption";
 import { useToast } from "@/lib/toast";
 
 type PollStep = "Overview" | "Poll";
@@ -468,6 +475,45 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
     // one-shot `use_signal(|| initial_answers)`.
   }, [poll?.sk, poll?.my_response]);
 
+  const encryptionEnabled = poll?.encrypted_upload_enabled ?? false;
+  const [clientSecret, setClientSecret] = React.useState<string | null>(null);
+  const [secretInput, setSecretInput] = React.useState("");
+  const [showSecretModal, setShowSecretModal] = React.useState(false);
+  const [applyingSecret, setApplyingSecret] = React.useState(false);
+
+  const canSubmitForSecret = poll ? canRespond && canExecuteSpaceAction(role, poll.space_action.prerequisite, space.status, poll.space_action.status, true, space.join_anytime) && poll.status === "InProgress" && poll.my_response === null : false;
+  const needsSecret = encryptionEnabled && canSubmitForSecret;
+  const materialQuery = useGetEncryptionMaterial(spaceId, pollId, { enabled: needsSecret });
+  const encryptionMaterial: VoteEncryptionMaterialResponse | undefined = materialQuery.data;
+  const loadingMaterial = materialQuery.isLoading;
+
+  // Kick off the (slow) keygen request and decide whether to prompt the
+  // user. Mirrors Rust's first `use_effect` in `ActionPollViewer`.
+  React.useEffect(() => {
+    if (!needsSecret) return;
+    const sessionSecret = loadSessionVoteSecret() ?? "";
+    if (sessionSecret !== "" && clientSecret === null) {
+      setSecretInput(sessionSecret);
+    } else if (clientSecret === null) {
+      setShowSecretModal(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsSecret]);
+
+  // Auto-finalize when both material and a (session-derived) secret are
+  // present without the modal being shown. Mirrors Rust's second `use_effect`.
+  React.useEffect(() => {
+    if (clientSecret !== null || showSecretModal) return;
+    if (!encryptionMaterial || secretInput === "") return;
+    buildStoredVoterKeyFromEncryptionMaterial(encryptionMaterial, secretInput)
+      .then((stored) => {
+        saveStoredVoterKey(stored);
+        setClientSecret(secretInput);
+      })
+      .catch((e) => toast.warn(e instanceof Error ? e.message : String(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientSecret, showSecretModal, encryptionMaterial, secretInput]);
+
   if (!poll) return null;
 
   const questions = poll.questions;
@@ -499,16 +545,32 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   };
 
   const doSubmit = async () => {
+    let clientCiphertextJson: string | null = null;
+    let clientVoterTag: string | null = null;
+
     if (poll.encrypted_upload_enabled) {
-      // Gap: client-side canister encryption is not ported — see file header.
-      toast.error(tr.encryptedSecretRequired);
-      return;
+      if (!encryptionMaterial || clientSecret === null) {
+        toast.warn(tr.encryptedSecretRequired);
+        setShowSecretModal(true);
+        return;
+      }
+      try {
+        // Gap (documented, not ported): this always throws — see
+        // `apps/web/src/lib/poll-encryption.ts` header for why.
+        const enc = encryptAnswersForCanister(encryptionMaterial, answers, Date.now());
+        clientCiphertextJson = enc.ciphertext_json;
+        clientVoterTag = enc.voter_tag;
+      } catch (e) {
+        toast.warn(e instanceof Error ? e.message : String(e));
+        return;
+      }
     }
+
     try {
       await respondPoll.mutateAsync({
         spacePk: spaceId,
         pollSk: pollId,
-        req: { answers, client_ciphertext_json: null, client_voter_tag: null },
+        req: { answers, client_ciphertext_json: clientCiphertextJson, client_voter_tag: clientVoterTag },
       });
     } catch (err) {
       toast.error(err);
@@ -840,6 +902,135 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
                 }}
               >
                 {tr.submitConfirmAction}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSecretModal && (
+        <div className="poll-confirm-overlay">
+          <div className="poll-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="poll-confirm-modal__title">{tr.encryptedSecretTitle}</h3>
+            <p className="poll-confirm-modal__desc">{tr.encryptedSecretDescription}</p>
+            <input
+              data-testid="poll-encrypted-secret-input"
+              type="password"
+              placeholder={tr.encryptedSecretPlaceholder}
+              value={secretInput}
+              disabled={applyingSecret}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "8px",
+                border: "1px solid var(--color-card-border, #2a2a3a)",
+                background: "var(--color-input-box-bg, #0c0c1a)",
+                color: "var(--color-text-primary, #f0f0f5)",
+                fontSize: "14px",
+                margin: "12px 0",
+              }}
+              onChange={(e) => setSecretInput(e.target.value)}
+            />
+            {loadingMaterial && !encryptionMaterial && (
+              <div
+                data-testid="poll-encrypted-material-loading"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  color: "var(--color-foreground-muted, #8888a8)",
+                  fontSize: "13px",
+                  margin: "4px 0 12px",
+                }}
+              >
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: "14px",
+                    height: "14px",
+                    border: "2px solid currentColor",
+                    borderTopColor: "transparent",
+                    borderRadius: "50%",
+                    animation: "spin 0.8s linear infinite",
+                  }}
+                />
+                {tr.encryptedMaterialLoading}
+              </div>
+            )}
+            {applyingSecret && (
+              <div
+                data-testid="poll-encrypted-secret-applying"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  color: "var(--color-foreground-muted, #8888a8)",
+                  fontSize: "13px",
+                  margin: "4px 0 12px",
+                }}
+              >
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: "14px",
+                    height: "14px",
+                    border: "2px solid currentColor",
+                    borderTopColor: "transparent",
+                    borderRadius: "50%",
+                    animation: "spin 0.8s linear infinite",
+                  }}
+                />
+                {tr.encryptedSecretApplying}
+              </div>
+            )}
+            <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+            <div className="poll-confirm-modal__actions">
+              <button
+                className="poll-btn poll-btn--back"
+                disabled={applyingSecret}
+                onClick={() => {
+                  setSecretInput("");
+                  setShowSecretModal(false);
+                  if (overlayCtx) {
+                    overlay.setOverlay(null);
+                  } else {
+                    navigate(`/spaces/${spaceId}`);
+                  }
+                }}
+              >
+                {tr.encryptedSecretCancel}
+              </button>
+              <button
+                className="poll-btn poll-btn--submit"
+                data-testid="poll-encrypted-secret-continue"
+                disabled={secretInput === "" || loadingMaterial || !encryptionMaterial || applyingSecret}
+                onClick={() => {
+                  void (async () => {
+                    const s = secretInput;
+                    if (s === "") return;
+                    if (!encryptionMaterial) {
+                      toast.warn(tr.encryptedMaterialLoadFailed);
+                      return;
+                    }
+                    setApplyingSecret(true);
+                    // Yield once so the disabled/"Applying…" state paints
+                    // before PBKDF2 blocks the main thread briefly.
+                    await new Promise((resolve) => setTimeout(resolve, 0));
+                    try {
+                      const stored = await buildStoredVoterKeyFromEncryptionMaterial(encryptionMaterial, s);
+                      saveStoredVoterKey(stored);
+                      saveSessionVoteSecret(s);
+                      setClientSecret(s);
+                      setSecretInput("");
+                      setShowSecretModal(false);
+                    } catch (e) {
+                      toast.warn(e instanceof Error ? e.message : String(e));
+                    }
+                    setApplyingSecret(false);
+                  })();
+                }}
+              >
+                {applyingSecret ? tr.encryptedSecretApplying : tr.encryptedSecretContinue}
               </button>
             </div>
           </div>

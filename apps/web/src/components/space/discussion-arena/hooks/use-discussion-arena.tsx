@@ -3,10 +3,15 @@
 // `DiscussionArenaPage` mount and consumed by `CommentItem` / `ReplyItem` /
 // `CommentCardBody` the same way the Rust context is.
 //
-// Gaps (documented, not ported — see the file header of
-// `../discussion-arena.tsx` for the full list): no 5s new-comment poll, no
-// `sort_tick` time-decay re-sort interval. Comments are ranked by
-// `commentScore` once per data change instead of continuously.
+// Ports the 5s new-comment poll (`use_interval(5000, ...)` in Rust) and the
+// `sort_tick` time-decay re-sort: a single `setInterval(5000)` bumps
+// `sortTick` unconditionally (so the memo below re-sorts even with no new
+// data — the freshness term in `commentScore` decays with wall-clock time)
+// and fetches `listComments(.., since: lastSeenAt)`, merging any new items
+// into `polledNew` (deduped against the already-paginated `pages`, same as
+// Rust `merge_and_rank_comments`). Cleared on unmount via the effect's
+// cleanup function, like Rust's interval being dropped when the component
+// unmounts.
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { listComments, listReplies } from "@ratel/ts-bridges";
@@ -61,9 +66,21 @@ export function commentScore(comment: DiscussionCommentResponse, nowSeconds: num
   return likesTerm + repliesTerm + timeTerm + freshTerm;
 }
 
-/** Rust `merge_and_rank_comments` (without the polled-buffer merge — see gap note above). */
-export function rankComments(items: DiscussionCommentResponse[], nowSeconds: number): DiscussionCommentResponse[] {
-  return [...items].sort((a, b) => commentScore(b, nowSeconds) - commentScore(a, nowSeconds));
+/**
+ * Rust `merge_and_rank_comments`: merges the paginated base set with the
+ * poll-driven `polled` buffer (base wins on sk collision — a loader refetch
+ * after edit/delete must clobber a stale polled snapshot) and ranks the
+ * union by `commentScore`.
+ */
+export function mergeAndRankComments(
+  base: DiscussionCommentResponse[],
+  polled: DiscussionCommentResponse[],
+  nowSeconds: number,
+): DiscussionCommentResponse[] {
+  const baseSks = new Set(base.map((c) => c.sk));
+  const merged = [...base, ...polled.filter((p) => !baseSks.has(p.sk))];
+  merged.sort((a, b) => commentScore(b, nowSeconds) - commentScore(a, nowSeconds));
+  return merged;
 }
 
 export interface UseDiscussionArena {
@@ -175,8 +192,53 @@ export function DiscussionArenaProvider({
       .catch((err) => toast.error(err))
       .finally(() => setLoadingMore(false));
   };
+  // Poll-driven "new since last seen" buffer + the time-decay re-sort tick.
+  // `lastSeenAtRef` mirrors Rust's `use_signal(|| items().max(created_at))`
+  // one-shot init — seeded from whatever `pages` holds on first render
+  // (usually still empty, since the query hasn't resolved yet) — and is then
+  // owned by the interval below, not by React state, so the 5s period never
+  // resets when new data arrives (matching `use_interval`'s fixed period).
+  const [polledNew, setPolledNew] = React.useState<DiscussionCommentResponse[]>([]);
+  const [sortTick, setSortTick] = React.useState(0);
+  const lastSeenAtRef = React.useRef<number | null>(null);
+  if (lastSeenAtRef.current === null) {
+    const maxCreated = pages.flat().reduce((m, c) => Math.max(m, c.created_at), 0);
+    lastSeenAtRef.current = maxCreated > 0 ? maxCreated : Math.floor(Date.now() / 1000);
+  }
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      // Bump unconditionally so the score-sort memo re-runs every tick, even
+      // when no new comments arrived (the fresh-boost decays with time so
+      // positions need to update independently of fetch results).
+      setSortTick((t) => t + 1);
+      const since = lastSeenAtRef.current ?? Math.floor(Date.now() / 1000);
+      listComments(spaceId, discussionSk, null, since)
+        .then((resp) => {
+          if (resp.items.length === 0) return;
+          const newMax = resp.items.reduce((m, c) => Math.max(m, c.created_at), since);
+          setPolledNew((list) => {
+            const existingSks = new Set(list.map((x) => x.sk));
+            // Reverse the newest-first server order so chronological append
+            // keeps existing items at stable indices.
+            const toAdd = [...resp.items].reverse().filter((item) => !existingSks.has(item.sk));
+            return toAdd.length > 0 ? [...list, ...toAdd] : list;
+          });
+          if (newMax > since) lastSeenAtRef.current = newMax;
+        })
+        .catch((e) => console.debug("arena comment poll failed:", e));
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [spaceId, discussionSk]);
+
   const nowSeconds = Math.floor(Date.now() / 1000);
-  const comments = React.useMemo(() => rankComments(pages.flat(), nowSeconds), [pages, nowSeconds]);
+  const comments = React.useMemo(
+    () => mergeAndRankComments(pages.flat(), polledNew, nowSeconds),
+    // `sortTick` is the point of this memo depending on it: it forces a
+    // recompute (with a freshly-read `nowSeconds`) purely from time passing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pages, polledNew, sortTick],
+  );
 
   const [activeReplyThread, setActiveReplyThread] = React.useState<string | null>(null);
   const [sheetExpanded, setSheetExpanded] = React.useState(false);
@@ -310,6 +372,9 @@ export function DiscussionArenaProvider({
       { spaceId, discussionSk, commentSk: toCommentTargetId(skStr) },
       {
         onSuccess: () => {
+          // Drop any polled snapshot so the poll (which only fires on
+          // created_at > cursor) doesn't resurrect the entry.
+          setPolledNew((list) => list.filter((c) => c.sk !== skStr));
           refreshComments();
           void queryClient.invalidateQueries({ queryKey: ["getComment", spaceId, discussionSk, activeReplyThread] });
         },
