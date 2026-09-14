@@ -1,0 +1,5 @@
+# React frontend workspace (docs/superpower/2026-09-14-react-frontend-migration.md).
+# Listed explicitly: `packages/*` also holds Rust crates, and the npm-managed
+# `js/`, `playwright/`, `docs/` and `contracts/` projects stay out of pnpm.
+packages:
+  - "apps/web"

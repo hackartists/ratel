@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Ratel</title>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
+    <!--ratel:viewport-->
+    <meta charset="UTF-8" />
+    <!-- Ported verbatim from app/ratel/index.html. Sets `data-theme` before
+         first paint so theme-scoped CSS (120+ `[data-theme="light"]` rules)
+         resolves on the very first render. Same storage key + `system`
+         resolution as js/src/ratel-app-shell/common/theme.js. -->
+    <script>
+      (function () {
+        try {
+          var t = window.localStorage.getItem("ratel-common-theme");
+          if (!t || t === "system") {
+            t = window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          }
+          document.documentElement.setAttribute("data-theme", t);
+        } catch (e) {}
+      })();
+    </script>
+    <!-- Ported verbatim from app/ratel/index.html. The credentials page reads
+         the PortOne identity-verification return query from here. -->
+    <script>
+      (function () {
+        try {
+          window.__ratelInitialSearch = window.location.search || "";
+        } catch (e) {}
+      })();
+    </script>
+    <!--ratel:head-->
+  </head>
+  <body>
+    <div id="main"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

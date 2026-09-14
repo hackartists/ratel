@@ -1,0 +1,13 @@
+/* Tailwind input for the React app.
+ *
+ * Imports the Dioxus app's own input so its tokens, @theme blocks, the
+ * `light:` variant and its Rust-source scan stay a single source. Scanning
+ * the Rust sources too keeps every class the Dioxus build generates (strum
+ * `serialize` strings, class fragments in comments) while pages move over;
+ * scripts/tailwind-parity.mjs checks the output against that build.
+ *
+ * Keep glob patterns out of this comment: a double-star followed by a slash
+ * closes the comment early and the rest is parsed as a declaration. */
+@import "../../../../app/ratel/tailwind.css";
+
+@source "../**/*.{ts,tsx}";
