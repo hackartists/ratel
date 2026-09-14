@@ -5,6 +5,15 @@ import { useLocation } from "react-router-dom";
 // The Rust component hardcodes English (no `translate!` block), so the text
 // stays English in every language, exactly as in the Dioxus app.
 
+// DEV-ONLY: `vite dev` + `?__notifications_harness=1` appends the notification
+// test harness (components/notifications/dev-harness.tsx) until a ported page
+// shows the bell. `import.meta.env.DEV` is statically false in production
+// builds, so the branch and its chunk are dropped and this page renders only
+// the Rust 404 (checked by playwright/tests/react/dom-parity.spec.js).
+const NotificationsHarness = import.meta.env.DEV
+  ? lazy(() => import("@/components/notifications/dev-harness"))
+  : null;
+
 /**
  * The `rest: Vec<String>` the Dioxus router hands the catch-all: the path
  * without one trailing slash, split on "/", each segment percent-decoded
@@ -60,12 +69,18 @@ export function Component() {
     );
   }
   const rest = `[${routeSegments(pathname).map(rustDebugString).join(", ")}]`;
+  const harnessParams = NotificationsHarness ? new URLSearchParams(search) : null;
 
   return (
     <>
       <h1>Page not found</h1>
       <p>We are terribly sorry, but the page you requested doesn't exist.</p>
       <pre style={{ color: "red" }}>{`log:\nattempted to navigate to: ${rest}`}</pre>
+      {NotificationsHarness && harnessParams?.get("__notifications_harness") === "1" && (
+        <Suspense fallback={null}>
+          <NotificationsHarness spaceId={harnessParams.get("space_id")} />
+        </Suspense>
+      )}
     </>
   );
 }

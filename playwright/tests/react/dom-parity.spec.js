@@ -14,11 +14,17 @@ import { goto } from "../utils";
 // review (no pixel assertions). Read-only: page loads only.
 //
 // Add a route here once its page is ported.
+//
+// `/no/such/page?__notifications_harness=1` and `?__editor_harness=1` prove the
+// dev-only harnesses (apps/web/src/pages/not-found/page.tsx) are compiled out of
+// the production build: against `vite preview` the page must still equal Dioxus.
 const ROUTES = [
   "/privacy",
   "/terms",
   "/child-safety",
   "/no/such/page",
+  "/no/such/page?__notifications_harness=1",
+  "/no/such/page?__editor_harness=1",
   "/me/character",
   // Signed out: the unverified hand-back card (no/invalid signature).
   "/launchpad/return",

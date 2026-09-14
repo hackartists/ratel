@@ -202,6 +202,7 @@ export * from "./useListFollowers";
 export * from "./useListFollowings";
 export * from "./useListHotSpaces";
 export * from "./useListInbox";
+export * from "./useListInboxInfinite";
 export * from "./useListMaterials";
 export * from "./useListMembers";
 export * from "./useListModerationFlags";
