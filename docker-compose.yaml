@@ -100,6 +100,37 @@ services:
     profiles:
       - testing
 
+  # web-testing — serves the React static build (apps/web/dist) for local
+  # Playwright runs against the `testing` profile, mirroring what
+  # deploy/pr-preview/35-web.yaml runs in-cluster. Point Playwright's
+  # PLAYWRIGHT_BASE_URL at http://localhost:4173 to test against this
+  # service instead of app-shell-testing directly (docs/superpower/
+  # 2026-09-14-react-frontend-migration.md § 5.1). PROXY_API=1 makes the
+  # small Node server (apps/web/server/serve.mjs) itself forward /api, /v3,
+  # /mcp, /hooks, /launchpad/* to API_ORIGIN — there is no ingress here to
+  # do the path split the way k3s does, so the web pod does it locally.
+  web-testing:
+    image: node:22-alpine
+    restart: always
+    working_dir: /app
+    environment:
+      PORT: "3000"
+      PROXY_API: "1"
+      API_ORIGIN: http://app-shell-testing:8080
+    volumes:
+      - ./apps/web/dist:/app/dist:ro
+      - ./apps/web/server:/app/server:ro
+    ports:
+      - "4173:3000"
+    command: ["node", "server/serve.mjs"]
+    depends_on:
+      app-shell-testing:
+        condition: service_healthy
+    networks:
+      - ratel-network
+    profiles:
+      - testing
+
   app-shell:
     image: rust
     restart: always

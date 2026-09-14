@@ -13,9 +13,6 @@ AWS_ACCOUNT_ID ?= $(shell aws sts get-caller-identity --query "Account" --output
 	mkdir -p .build
 	docker run --rm ghcr.io/foundry-rs/foundry:latest "cast wallet new --json" > .build/evm-keys.json
 
-preview:
-	dx server -p preview
-
 run: .build/evm-keys
 	COMMIT=${COMMIT} docker compose --profile development up -d --remove-orphans
 
@@ -83,6 +80,11 @@ test-analyze-discussion:
 		cargo run --bin test_analyze_discussion --features server -- \
 		$(SPACE) $(REPORT) $(DISCUSSION)
 
+# Brings up app-shell-testing (API) + web-testing (React static build,
+# localhost:4173) + their infra. Point Playwright's PLAYWRIGHT_BASE_URL at
+# http://localhost:4173 to exercise the same web/app-shell split the
+# in-cluster ingress does (deploy/pr-preview/35-web.yaml,
+# docs/superpower/2026-09-14-react-frontend-migration.md § 5.1).
 testing: .build/evm-keys
 	COMMIT=$(COMMIT) RESET_DB=true docker compose --profile testing up -d --remove-orphans
 
