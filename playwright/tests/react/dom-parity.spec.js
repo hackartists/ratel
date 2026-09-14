@@ -14,7 +14,7 @@ import { goto } from "../utils";
 // review (no pixel assertions). Read-only: page loads only.
 //
 // Add a route here once its page is ported.
-const ROUTES = ["/privacy", "/terms", "/child-safety", "/no/such/page"];
+const ROUTES = ["/privacy", "/terms", "/child-safety", "/no/such/page", "/me/character"];
 
 const DIOXUS_BASE_URL = (process.env.DIOXUS_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
 

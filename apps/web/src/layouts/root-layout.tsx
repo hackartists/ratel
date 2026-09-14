@@ -3,16 +3,17 @@ import { Suspense, useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { ErrorBoundary } from "@/components/error-page";
 import { applyPersistedLanguage } from "@/i18n";
+import { AuthProvider, useAuth } from "@/lib/auth";
 import { PopupProvider, PopupZone } from "@/lib/popup";
 import { createQueryClient } from "@/lib/query-client";
 import { ThemeProvider } from "@/lib/theme";
 import { ToastProvider, ToastZone } from "@/lib/toast";
 
-// Dioxus `App` services (PopupService, ToastService in app/ratel/src/app.rs)
-// plus `RootLayout` (app/ratel/src/root_layout.rs): the route outlet, then the
-// popup zone, then the toast stack — same sibling order. Providers render no
-// DOM. Auth/team contexts, the error boundary and notification bootstrap move
-// here with P1.
+// Dioxus `App` services (PopupService, ToastService, ThemeService in
+// app/ratel/src/app.rs) plus `RootLayout` (app/ratel/src/root_layout.rs):
+// AuthContext, then the route outlet under ErrorBoundary > SuspenseBoundary,
+// then the popup zone and the toast stack — same sibling order. Providers
+// render no DOM. The notification bootstrap moves here with P1.
 export function Component() {
   // Created once per page load (per render root during prerendering).
   const [queryClient] = useState(createQueryClient);
@@ -30,17 +31,27 @@ export function Component() {
       <ThemeProvider>
         <PopupProvider>
           <ToastProvider>
-            {/* Dioxus: ErrorBoundary > SuspenseBoundary (empty fallback) > outlet. */}
-            <ErrorBoundary>
-              <Suspense fallback={null}>
-                <Outlet />
-              </Suspense>
-            </ErrorBoundary>
-            <PopupZone />
-            <ToastZone />
+            <AuthProvider>
+              <RouteOutlet />
+              <PopupZone />
+              <ToastZone />
+            </AuthProvider>
           </ToastProvider>
         </PopupProvider>
       </ThemeProvider>
     </QueryClientProvider>
+  );
+}
+
+function RouteOutlet() {
+  const auth = useAuth();
+  return (
+    // A session error on the error page signs the user out before navigating
+    // (Rust ErrorPage resets UserContext).
+    <ErrorBoundary onAuthError={auth.reset}>
+      <Suspense fallback={null}>
+        <Outlet />
+      </Suspense>
+    </ErrorBoundary>
   );
 }

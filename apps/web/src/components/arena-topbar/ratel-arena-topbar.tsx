@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useRatelArenaTopbarI18n } from "@/i18n/generated/components/arena_topbar/ratel-arena-topbar.i18n";
+import { useUserContext } from "@/lib/auth";
 
 // app/ratel/src/components/arena_topbar/component.rs — the shared arena topbar
 // (Home Arena keeps its own inline one). Kept under components/ like the Rust
@@ -17,21 +18,16 @@ export type RatelArenaTopbarSection = (typeof RatelArenaTopbarSection)[keyof typ
 
 const BRAND_LOGO = "https://metadata.ratel.foundation/logos/logo-symbol.png";
 
-// BLOCKED — no auth context in the React app yet. Rust reads the signed-in
-// user from `use_user_context()` (component.rs:32-38); every button except
-// Settings then either opens `LoginModal` (signed out) or navigates. Until
-// the auth context and `LoginModal` are ported, the signed-out branch is a
-// no-op and the signed-in branches are unreachable.
-const SIGNED_IN_USERNAME_PLACEHOLDER: string | null = null;
-
 export function RatelArenaTopbar({ active }: { active?: RatelArenaTopbarSection }) {
   const t = useRatelArenaTopbarI18n();
   const navigate = useNavigate();
-  const username = SIGNED_IN_USERNAME_PLACEHOLDER;
+  // Rust reads the signed-in user from `use_user_context()` (component.rs:32-38);
+  // every button except Settings opens `LoginModal` when signed out, else navigates.
+  const username = useUserContext().user?.username ?? null;
 
   /**
    * Signed out: Rust opens `LoginModal` with the title "Start building your
-   * Essence" (component.rs:44-50). BLOCKED on the LoginModal/auth port.
+   * Essence" (component.rs:44-50). BLOCKED on the LoginModal port (P1).
    */
   const openLogin = () => {};
 
