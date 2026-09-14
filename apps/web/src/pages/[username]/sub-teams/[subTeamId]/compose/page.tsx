@@ -1,4 +1,8 @@
-// Placeholder for the Dioxus `TeamSubTeamDirectComposePage` route; ported in a later phase.
+import { useParams } from "react-router-dom";
+import { BroadcastComposer } from "@/components/sub-team-composer";
+
+// Dioxus `TeamSubTeamDirectComposePage` (app/ratel/src/features/sub_team/pages/broadcast_compose/component.rs).
 export function Component() {
-  return null;
+  const { username, subTeamId } = useParams<{ username: string; subTeamId: string }>();
+  return <BroadcastComposer username={username ?? ""} targetChildTeamId={subTeamId} />;
 }
