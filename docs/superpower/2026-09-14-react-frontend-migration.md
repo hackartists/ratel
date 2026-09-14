@@ -254,7 +254,16 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 - 같은 과정에서 맞춘 것: 스페이스 액션 컴포넌트 4개의 Tailwind 클래스 문자열 순서를 Rust와 일치(앱 전체 스캔 결과 순서만 다른 문자열 0개), 쿼리 재시도 제거(Rust `use_loader`는 재시도하지 않음), DOM 동일성 스펙은 `#main`에 내용이 생긴 뒤 비교(React는 데이터가 오면 클라이언트 렌더).
 - 주의: Playwright 실행을 겹치면 새 실행이 `test-results/`를 비워 앞선 실행의 trace 쓰기가 `ENOENT`로 실패합니다. 한 번에 하나씩 실행합니다.
 
-**진행 중(후속)**: 투표 복호화·검증 wasm export와 액션 투표 페이지 연결(`lib/poll-crypto.ts` 제거), `DynamoEnum`/`SerializeDisplay` enum의 TS 리터럴을 실제 JSON 값에 맞추는 ts-rs 주석(예: `ReportStatus`는 `"DRAFT"`/`"PUBLISHED"`), 팀 페이지를 SocialLayout 컨텍스트로 옮기고(활성 탭 표시) `space-context:` 등 임시 로컬 로드 78곳 정리.
+**후속 정리 — 완료**:
+- 암호화 투표: wasm에 `decrypt_vote_json_with_key_json` export를 추가해 검증 패널이 실제로 복호화·검증합니다. 액션 투표 페이지도 `lib/poll-encryption.ts`를 쓰고 `lib/poll-crypto.ts`(스텁)는 삭제했습니다. wasm 재생성은 결정적(두 번 빌드 바이트 동일)이고, 네이티브 Rust와 양방향 암·복호화 결과가 일치합니다.
+- TS 타입: `DynamoEnum`/사용자 정의 `Serialize` enum 15개에 ts-rs 주석(`rename_all`, 리터럴 유니온 `type`)만 추가해 생성 타입이 실제 JSON과 같아졌습니다(예: `ReportStatus` = `"DRAFT" | "PUBLISHED"`, `MembershipTier` = `"FREE" | … | \`ENTERPRISE#${string}\``). `make gen-ts` 재실행 차이 0, 이를 가리던 우회 코드(`isReportPublished` 등)는 삭제했습니다.
+- 컨텍스트: 팀 페이지 7곳을 SocialLayout의 wall/team-arena 컨텍스트로 옮겨 페이지당 `getWallByUsername` 1회, 중복 `use-wall-context.ts` 삭제. `space-context:` 등 임시 로컬 로드는 공유 컨텍스트로 교체했고, SocialLayout 밖 전체 화면 라우트(하위팀 신청·작성기 등)만 Rust와 같이 로컬 조회를 유지합니다.
+
+**최종 검증 (HEAD `1f0c15dc1`)**:
+- `typecheck`·`build`·`parity:tailwind`(누락 0)·`parity:routes`(73/73), React Playwright 140개 → 103 통과·37 건너뜀(개발 서버 전용)·실패 0.
+- 기존 E2E(React, `VITE_BYPASS=true`): Desktop 199 → 196 통과·3 스펙 스킵, SysAdmin 10 통과·3 스펙 스킵, Mobile 4 통과·17 스킵(Dioxus와 동일).
+- 팀 아레나 상단바 활성 탭: 직접 진입·SPA 이동 모두 두 앱 DOM 일치(§12의 Rust 버그 참고).
+- 기기: Android 에뮬레이터·iOS 시뮬레이터 모두 최신 번들로 스모크(부팅 → 네이티브 로그인 → 로그인 후 페이지 → 새로고침 뒤 세션 유지) 통과, 로그인 상태 라우트 39개 스윕에서 오류·404·준비 안 됨 0건.
 
 **P6 아케이드·관리자 — 완료**: 아케이드 레이아웃·홈·리더보드·Fact-or-Fold 매칭/게임룸(Rust와 같은 폴링 주기), 관리자 레이아웃 2개·페이지 7개. 실시간 갱신은 Rust와 같이 폴링만 씁니다(SSE 구독 없음).
 
