@@ -11,13 +11,15 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { createReadStream } from "node:fs";
 import { stat, readFile } from "node:fs/promises";
-import { gzipSync, createGzip } from "node:zlib";
+import { gzip as gzipCallback, createGzip } from "node:zlib";
+import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { matchMetaRoute, injectMeta, createMetaFetcher } from "./meta.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const gzipAsync = promisify(gzipCallback);
 
 /**
  * Prefixes the Rust `app-shell` owns, mirrored from `API_PREFIXES` in
@@ -81,6 +83,28 @@ const HOP_BY_HOP_HEADERS = [
   "transfer-encoding",
   "upgrade",
 ];
+
+/**
+ * Page HTML caching. Every extension-less request resolves to the same few
+ * HTML files, and the link-preview meta for a space/post changes rarely, so
+ * the finished page — meta injected, plain and gzipped — is kept in memory
+ * and a request only looks it up and writes it. This is what the Dioxus
+ * server's `ssr_cache` did for anonymous `/spaces/**` pages; without it every
+ * request re-read index.html and gzipped it synchronously, which saturated
+ * the pod's single thread under load (tc14).
+ *   - `htmlCacheTtlMs`: how long a page with meta (or without meta routes) lives;
+ *     matches the meta fetcher's own 60s cache.
+ *   - `htmlNegativeTtlMs`: a meta route whose lookup failed (private or missing
+ *     space, upstream timeout) is served unmodified and retried after this.
+ *   - `templateCheckMs`: how often an HTML file's mtime is re-checked, so a
+ *     rebuilt dist (local runs) is picked up without a restart.
+ */
+const HTML_CACHE_DEFAULTS = {
+  htmlCacheTtlMs: 60_000,
+  htmlNegativeTtlMs: 10_000,
+  htmlCacheMaxEntries: 1000,
+  templateCheckMs: 5_000,
+};
 
 function matchesApiPrefix(pathname, prefixes) {
   return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -166,36 +190,110 @@ async function sendFile(req, res, absPath, pathname, ext) {
   return 200;
 }
 
-/** Serves an in-memory HTML buffer (prerendered / SPA-fallback / meta-injected). */
-function sendHtml(req, res, buffer) {
+/** Writes a cached page (`{ plain, gzipped }` buffers). */
+function sendPage(req, res, page) {
   const compress = acceptsGzip(req);
-  const headers = { "content-type": MIME[".html"], "cache-control": "no-cache" };
-
-  if (req.method === "HEAD") {
-    if (!compress) headers["content-length"] = String(buffer.length);
-    res.writeHead(200, headers);
-    res.end();
-    return;
-  }
-
-  if (compress) {
-    headers["content-encoding"] = "gzip";
-    res.writeHead(200, headers);
-    res.end(gzipSync(buffer));
-  } else {
-    headers["content-length"] = String(buffer.length);
-    res.writeHead(200, headers);
-    res.end(buffer);
-  }
+  const body = compress ? page.gzipped : page.plain;
+  const headers = {
+    "content-type": MIME[".html"],
+    "cache-control": "no-cache",
+    "content-length": String(body.length),
+  };
+  if (compress) headers["content-encoding"] = "gzip";
+  res.writeHead(200, headers);
+  res.end(req.method === "HEAD" ? undefined : body);
 }
 
-async function maybeInjectMeta(html, pathname, config) {
-  if (!config.metaFetcher) return html;
-  const match = matchMetaRoute(pathname);
-  if (!match) return html;
-  const meta = await config.metaFetcher.getMeta(match.kind, match.id);
-  if (!meta) return html; // any failure -> unmodified page
-  return injectMeta(html, meta);
+/**
+ * In-memory page cache with request coalescing: concurrent misses for the
+ * same key share one build instead of each fetching meta and gzipping.
+ */
+function createPageCache({ htmlCacheMaxEntries }) {
+  /** @type {Map<string, { page: { plain: Buffer, gzipped: Buffer }, expiresAt: number }>} */
+  const entries = new Map();
+  /** @type {Map<string, Promise<{ plain: Buffer, gzipped: Buffer }>>} */
+  const inflight = new Map();
+
+  async function get(key, build) {
+    const hit = entries.get(key);
+    if (hit && hit.expiresAt > Date.now()) return hit.page;
+    if (hit) entries.delete(key);
+
+    const pending = inflight.get(key);
+    if (pending) return pending;
+
+    const promise = (async () => {
+      const { page, ttlMs } = await build();
+      entries.set(key, { page, expiresAt: Date.now() + ttlMs });
+      while (entries.size > htmlCacheMaxEntries) {
+        entries.delete(entries.keys().next().value);
+      }
+      return page;
+    })();
+    inflight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      inflight.delete(key);
+    }
+  }
+
+  return { get, entries };
+}
+
+/**
+ * HTML file contents, read once and re-validated by mtime at most every
+ * `templateCheckMs`; `resolve` caches which HTML file a path maps to on the
+ * same schedule (dist does not change inside a k3s pod).
+ */
+function createTemplateStore(distDir, { templateCheckMs }) {
+  /** @type {Map<string, { text: string, mtimeMs: number, checkedAt: number }>} */
+  const templates = new Map();
+  /** @type {Map<string, { htmlPath: string | null, checkedAt: number }>} */
+  const resolutions = new Map();
+  const MAX_RESOLUTIONS = 5000;
+
+  async function resolve(pathname) {
+    const now = Date.now();
+    const cached = resolutions.get(pathname);
+    if (cached && now - cached.checkedAt < templateCheckMs) return cached.htmlPath;
+
+    // No extension: an explicitly prerendered page wins, then the SPA shell.
+    const candidates = [
+      resolveWithinDist(distDir, joinPath(pathname, "index.html")),
+      resolveWithinDist(distDir, `${pathname}.html`),
+      resolveWithinDist(distDir, "/index.html"),
+    ];
+    let htmlPath = null;
+    for (const candidate of candidates) {
+      if (candidate && (await isFile(candidate))) {
+        htmlPath = candidate;
+        break;
+      }
+    }
+    resolutions.set(pathname, { htmlPath, checkedAt: now });
+    while (resolutions.size > MAX_RESOLUTIONS) {
+      resolutions.delete(resolutions.keys().next().value);
+    }
+    return htmlPath;
+  }
+
+  async function load(htmlPath) {
+    const now = Date.now();
+    const cached = templates.get(htmlPath);
+    if (cached && now - cached.checkedAt < templateCheckMs) return cached;
+
+    const { mtimeMs } = await stat(htmlPath);
+    if (cached && cached.mtimeMs === mtimeMs) {
+      cached.checkedAt = now;
+      return cached;
+    }
+    const entry = { text: await readFile(htmlPath, "utf8"), mtimeMs, checkedAt: now };
+    templates.set(htmlPath, entry);
+    return entry;
+  }
+
+  return { resolve, load };
 }
 
 async function serveStatic(req, res, pathname, config) {
@@ -217,31 +315,30 @@ async function serveStatic(req, res, pathname, config) {
     return 404;
   }
 
-  // No extension: an explicitly prerendered page wins, then the SPA shell.
-  const candidates = [
-    resolveWithinDist(config.distDir, joinPath(pathname, "index.html")),
-    resolveWithinDist(config.distDir, `${pathname}.html`),
-  ];
-  let htmlPath = null;
-  for (const candidate of candidates) {
-    if (candidate && (await isFile(candidate))) {
-      htmlPath = candidate;
-      break;
-    }
-  }
-  if (!htmlPath) {
-    const fallback = resolveWithinDist(config.distDir, "/index.html");
-    if (fallback && (await isFile(fallback))) htmlPath = fallback;
-  }
+  const htmlPath = await config.templates.resolve(pathname);
   if (!htmlPath) {
     res.writeHead(404, { "content-type": MIME[".txt"] });
     res.end("not found");
     return 404;
   }
 
-  const html = await readFile(htmlPath, "utf8");
-  const injected = await maybeInjectMeta(html, pathname, config);
-  sendHtml(req, res, Buffer.from(injected, "utf8"));
+  const template = await config.templates.load(htmlPath);
+  const metaRoute = config.metaFetcher ? matchMetaRoute(pathname) : null;
+  const key = `${htmlPath}|${template.mtimeMs}|${metaRoute ? `${metaRoute.kind}:${metaRoute.id}` : ""}`;
+
+  const page = await config.pages.get(key, async () => {
+    let html = template.text;
+    let ttlMs = config.htmlCacheTtlMs;
+    if (metaRoute) {
+      const meta = await config.metaFetcher.getMeta(metaRoute.kind, metaRoute.id);
+      if (meta) html = injectMeta(html, meta);
+      else ttlMs = config.htmlNegativeTtlMs; // any failure -> unmodified page, retried soon
+    }
+    const plain = Buffer.from(html, "utf8");
+    return { page: { plain, gzipped: await gzipAsync(plain) }, ttlMs };
+  });
+
+  sendPage(req, res, page);
   return 200;
 }
 
@@ -328,13 +425,26 @@ function proxyRequest(req, res, apiOrigin) {
  *     end-to-end testing only — off in k3s, where the ingress does this).
  *   - `metaFetcher`: override the meta fetcher (tests inject a fake one;
  *     otherwise one is built from `apiOrigin`).
+ *   - `logRequests`: `"all"` logs every request; otherwise (default) only
+ *     errors (status >= 400) and requests slower than 1s. Logging each of
+ *     thousands of requests per second costs the single thread real time.
+ *   - `htmlCacheTtlMs` / `htmlNegativeTtlMs` / `htmlCacheMaxEntries` /
+ *     `templateCheckMs`: page cache tuning (see HTML_CACHE_DEFAULTS).
  */
 export function createRequestHandler(config) {
+  const cacheOptions = { ...HTML_CACHE_DEFAULTS };
+  for (const key of Object.keys(HTML_CACHE_DEFAULTS)) {
+    if (config[key] !== undefined) cacheOptions[key] = config[key];
+  }
   const resolved = {
     distDir: config.distDir,
     apiOrigin: config.apiOrigin || "",
     proxyApi: Boolean(config.proxyApi),
     metaFetcher: config.metaFetcher ?? (config.apiOrigin ? createMetaFetcher(config.apiOrigin) : null),
+    logAll: config.logRequests === "all",
+    ...cacheOptions,
+    templates: createTemplateStore(config.distDir, cacheOptions),
+    pages: createPageCache(cacheOptions),
   };
 
   return async function handleRequest(req, res) {
@@ -355,6 +465,7 @@ export function createRequestHandler(config) {
       if (pathname === "/healthz") {
         res.writeHead(200, { "content-type": MIME[".txt"] });
         res.end("ok");
+        return;
       } else if (resolved.proxyApi && matchesApiPrefix(pathname, API_PREFIXES)) {
         statusCode = await proxyRequest(req, res, resolved.apiOrigin);
       } else {
@@ -371,7 +482,9 @@ export function createRequestHandler(config) {
       console.error(`[serve] ${req.method} ${pathname} threw:`, err);
     } finally {
       const ms = Number(process.hrtime.bigint() - start) / 1e6;
-      console.log(`${req.method} ${pathname} ${statusCode} ${ms.toFixed(1)}ms`);
+      if (pathname !== "/healthz" && (resolved.logAll || statusCode >= 400 || ms >= 1000)) {
+        console.log(`${req.method} ${pathname} ${statusCode} ${ms.toFixed(1)}ms`);
+      }
     }
   };
 }
@@ -383,6 +496,7 @@ export function configFromEnv() {
     distDir: process.env.DIST_DIR ? path.resolve(process.env.DIST_DIR) : path.resolve(here, "../dist"),
     apiOrigin: process.env.API_ORIGIN || "",
     proxyApi: process.env.PROXY_API === "1",
+    logRequests: process.env.LOG_REQUESTS || "",
   };
 }
 
