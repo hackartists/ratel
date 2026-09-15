@@ -3,26 +3,20 @@
 // (interop/web/take_pg_return.js, interop/web/kyc_clear_history.js) as plain
 // async functions. Behaviour and storage keys are unchanged.
 
+import { requestCredentialIdentityVerification } from "@/lib/portone-identity";
+
 interface KycWindow {
-  ratel?: {
-    user_credential?: {
-      request_identity_verification?: (storeId: string, channelKey: string, prefix: string) => Promise<unknown>;
-    };
-  };
   __ratelInitialSearch?: string | null;
 }
 
 const kycWindow = () => window as unknown as KycWindow;
 
 /**
- * Rust `request_identity_verification` (`window.ratel.user_credential`, from
- * js/src/ratel-app-shell/users/credential.js). Opens the PortOne SDK and
- * resolves to the `identityVerificationId`.
+ * Rust `request_identity_verification`: opens the PortOne SDK and resolves to
+ * the `identityVerificationId` PortOne returns (see `@/lib/portone`).
  */
 export function requestIdentityVerification(storeId: string, channelKey: string, prefix: string): Promise<unknown> {
-  const request = kycWindow().ratel?.user_credential?.request_identity_verification;
-  if (typeof request !== "function") return Promise.reject(new Error("window.ratel.user_credential is not loaded"));
-  return request(storeId, channelKey, prefix);
+  return requestCredentialIdentityVerification(storeId, channelKey, prefix);
 }
 
 /**

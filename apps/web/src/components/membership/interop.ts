@@ -4,16 +4,13 @@
 // the unmodified apps/web/shell-js/src/ratel-app-shell/membership/index.js that the
 // app shell loads globally.
 
-interface RatelMembershipJs {
-  requestIdentityVerification(storeId: string, channelKey: string, prefix: string): Promise<string>;
-}
+import { requestMembershipIdentityVerification } from "@/lib/portone-identity";
 
 interface TauriInternals {
   invoke<R>(cmd: string, args?: Record<string, unknown>): Promise<R>;
 }
 
 type MembershipWindow = Window & {
-  ratel?: { membership?: RatelMembershipJs };
   __TAURI_INTERNALS__?: TauriInternals;
   isTauri?: boolean;
   __ratelInitialSearch?: string;
@@ -23,9 +20,7 @@ const win = () => window as MembershipWindow;
 
 /** `request_identity_verification` — resolves with the identity verification id. */
 export function requestIdentityVerification(storeId: string, channelKey: string, prefix: string): Promise<string> {
-  const js = win().ratel?.membership;
-  if (!js) return Promise.reject(new Error("window.ratel.membership is not loaded"));
-  return js.requestIdentityVerification(storeId, channelKey, prefix);
+  return requestMembershipIdentityVerification(storeId, channelKey, prefix);
 }
 
 /** `stash_membership_tier` (web/stash_membership_tier.js). Tauri only. */
