@@ -34,6 +34,22 @@ ENV ENV=local \
     QDRANT_PREFIX=ratel-local \
     RUST_LOG=info
 
+# Optional third-party keys (Firebase, PortOne), passed by docker-compose from
+# the host env. Build args are visible to RUN only (not kept in the runtime
+# image); empty ones are unset before cargo so app/ratel's option_env!
+# fallbacks behave as if the key were not provided.
+ARG FIREBASE_API_KEY=
+ARG FIREBASE_AUTH_DOMAIN=
+ARG FIREBASE_PROJECT_ID=
+ARG FIREBASE_STORAGE_BUCKET=
+ARG FIREBASE_MESSAGING_SENDER_ID=
+ARG FIREBASE_APP_ID=
+ARG FIREBASE_MEASUREMENT_ID=
+ARG PORTONE_STORE_ID=
+ARG PORTONE_INICIS_CHANNEL_KEY=
+ARG PORTONE_KPN_CHANNEL_KEY=
+ARG PORTONE_API_SECRET=
+
 # `server,bypass,local-dev` = the PR-preview feature set: verification code
 # 000000 is accepted, and /designs + /roadmap are served. Built from the
 # workspace root, so app/ratel/.cargo's size-optimised LTO release profile
@@ -44,7 +60,10 @@ ARG CARGO_PROFILE=release
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    cargo build --profile "${CARGO_PROFILE}" -p app-shell --bin app-shell \
+    for key in FIREBASE_API_KEY FIREBASE_AUTH_DOMAIN FIREBASE_PROJECT_ID FIREBASE_STORAGE_BUCKET FIREBASE_MESSAGING_SENDER_ID FIREBASE_APP_ID FIREBASE_MEASUREMENT_ID PORTONE_STORE_ID PORTONE_INICIS_CHANNEL_KEY PORTONE_KPN_CHANNEL_KEY PORTONE_API_SECRET; do \
+        eval "[ -n \"\${$key}\" ]" || unset "$key"; \
+    done \
+    && cargo build --profile "${CARGO_PROFILE}" -p app-shell --bin app-shell \
         --no-default-features --features "${FEATURES}" \
     && out_dir="$([ "${CARGO_PROFILE}" = "dev" ] && echo debug || echo "${CARGO_PROFILE}")" \
     && mkdir -p /out \

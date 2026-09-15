@@ -67,7 +67,9 @@ REACT_APP=1 PLAYWRIGHT_BASE_URL=http://localhost:4173 npx playwright test --proj
 - **DynamoDB 관리 화면**이 필요하면: `docker compose --profile local --profile infra up -d dynamodb-admin` → http://localhost:8081 (8081을 다른 곳에서 쓰면 뜨지 않으므로 기본 실행에서는 뺐습니다)
 - **API가 준비되지 않음**: `make local-logs` 로 `local-api` 로그를 확인하세요. 서버는 시작할 때 Postgres 스키마 마이그레이션을 먼저 실행합니다.
 - **빌드가 메모리 부족으로 실패**: Docker Desktop 설정에서 메모리를 8GB 이상으로 늘리세요.
-- **Firebase · WalletConnect · PortOne 흐름 테스트**: 기본값은 빈 키입니다. `VITE_FIREBASE_API_KEY=… VITE_WALLETCONNECT_PROJECT_ID=… make local` 처럼 환경변수로 넘기면 웹 이미지에 들어갑니다(사용 가능한 이름은 `docker-compose.yaml`의 `local-web.build.args`).
+- **Google 로그인 · PortOne · WalletConnect**: 키가 없으면 동작하지 않습니다. 키를 환경변수로 넣고 실행하세요 — `FIREBASE_*`, `PORTONE_STORE_ID`, `PORTONE_INICIS_CHANNEL_KEY`, `PORTONE_KPN_CHANNEL_KEY`, `PORTONE_API_SECRET`, `WALLETCONNECT_PROJECT_ID` (또는 `VITE_` 접두 이름). 예: `ratel_envs && make local` (값을 export하는 셸 함수가 있으면). 웹·API 이미지가 이 값으로 다시 빌드됩니다.
+  - 자격증명 페이지의 본인인증은 기본(`VITE_BYPASS=true`)이면 PortOne을 건너뛰고 통과합니다. 실제 PortOne 창으로 확인하려면 `VITE_BYPASS=false` 와 `PORTONE_API_SECRET`이 필요합니다.
+  - 키를 넣으면 구독 화면의 결제가 실제 PortOne 상점으로 연결됩니다. 로컬에서도 결제 진행은 누르지 마세요.
 
 ## Docker 없이 개발할 때
 
