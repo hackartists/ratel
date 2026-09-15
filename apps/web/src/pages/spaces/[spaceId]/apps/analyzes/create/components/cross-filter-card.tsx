@@ -1,5 +1,5 @@
 import type { AnalyzeFilterSource } from "@ratel/ts-bridges";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { dataBool } from "@/lib/dom";
 import { badge, typeLabel, useAnalyzeCreateContext } from "../hooks/use-analyze-create";
 

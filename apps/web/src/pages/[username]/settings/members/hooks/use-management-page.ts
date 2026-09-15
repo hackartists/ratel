@@ -7,7 +7,7 @@ import {
   type TeamMemberList,
   type TeamRole,
 } from "@/components/team-member/use-team-members";
-import { useTeamSettingsI18n } from "@/i18n/generated/features/social/pages/setting/team/views/team-settings.i18n";
+import { useTeamSettingsI18n } from "@/pages/[username]/settings/i18n";
 import { useUserContext } from "@/lib/auth";
 
 // State of app/ratel/src/features/social/pages/setting/team/views/management_page.rs

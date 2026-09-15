@@ -1,5 +1,5 @@
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useFactFoldAdminStatsI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/admin/stats/fact-fold-admin-stats.i18n";
+import { useFactFoldAdminStatsI18n } from "./i18n";
 import { useAdminLiteralsI18n } from "../../admin-literals.i18n";
 
 // app/ratel/src/features/arcade/games/fact_or_fold/pages/admin/stats/component.rs

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { LaunchpadTokenCard, RewardHero } from "@/components/launchpad-partner";
-import { useUserRewardsI18n } from "@/i18n/generated/features/social/pages/reward/user/views/user-rewards.i18n";
+import { useUserRewardsI18n } from "./user-rewards.i18n";
 import { useUserRewards } from "../hooks/use-user-rewards";
 import { RewardHistorySection } from "./reward-history-section";
 

@@ -1,7 +1,7 @@
 import { MoreElement, useSentinelKey } from "@/components/team-member/more-element";
 import { isAdminOrOwner, useTeamMemberPermissionResult } from "@/components/team-member/use-team-members";
 import { TeamArenaTab, useTeamArena, useTeamArenaTab } from "@/components/social/team-arena-context";
-import { useTeamMemberI18n } from "@/i18n/generated/features/social/pages/member/views/team-member.i18n";
+import { useTeamMemberI18n } from "./i18n";
 import { useToast } from "@/lib/toast";
 import { InviteMemberModal } from "./components/invite-member-modal";
 import { MemberCard } from "./components/member-card";

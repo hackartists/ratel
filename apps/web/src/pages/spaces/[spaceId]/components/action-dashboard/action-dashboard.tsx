@@ -12,8 +12,8 @@ import type { SpaceActionSummary, SpaceActionType, SpacePartition } from "@ratel
 import { useActionOverlay, useCompletedActionCard } from "@/components/space/action-overlay";
 import { EntityPrefix, subPartitionId, useCreateSpaceAction } from "@/components/space/create-space-action";
 import { useSpaceContext } from "@/components/space/space-context";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 import { dataBool } from "@/lib/dom";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import { useToast } from "@/lib/toast";

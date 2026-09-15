@@ -1,32 +1,15 @@
-// app/ratel/src/features/auth/interop (wallet_connect.rs, google_auth.rs) and
-// services (device_id.rs, restore_session.rs) as plain async functions.
+// The auth interop (wallet connect, Google sign-in) and services (device id,
+// session restore) of the former Dioxus app, as plain async functions.
 //
-// Wallet connect and Firebase live in the global `wallet-connect.js` and
-// `ratel-app-shell.js` scripts (loaded by index.html). The Rust drivers in
-// interop/web/*.js call `window.walletConnect.*` and
-// `window.ratel.invoke(method, args)`; these functions do the same, and — like
-// the drivers' `try { … } catch { dioxus.send(null) }` — turn a JS failure
-// into `null`.
+// Wallet connect lives in `./wallet-connect` and Firebase in `./firebase`, both
+// loaded on demand (the login modal preloads them). Like the old Rust drivers'
+// `try { … } catch { dioxus.send(null) }`, a JS failure becomes a
+// `LocalAuthError` the modal shows.
 import { refreshSessionHandler } from "@ratel/ts-bridges";
 import { ApiError } from "@ratel/ts-bridges/runtime";
 import { googleSignInNative, isTauri } from "@/lib/native";
-
-interface WalletConnectGlobal {
-  initialize(projectId: string, appName: string, appDescription: string, appUrl: string): void;
-  connect(): Promise<WalletConnectResult>;
-  signMessage(message: string): Promise<string>;
-  openWalletApp(): Promise<void>;
-}
-
-interface RatelGlobal {
-  invoke?: (method: string, args?: unknown) => unknown;
-}
-
-const globals = () =>
-  window as unknown as {
-    walletConnect?: WalletConnectGlobal;
-    ratel?: RatelGlobal;
-  };
+import { initFirebase as initFirebaseSdk, preloadFirebase, signIn as firebaseSignIn } from "./firebase";
+import * as wallet from "./wallet-connect";
 
 /** Rust `WalletConnectResult`. */
 export interface WalletConnectResult {
@@ -89,7 +72,7 @@ const FIREBASE_CONFIG = {
 export function walletInitialize(): void {
   const { projectId, appName, appDescription, appUrl } = WALLET_CONNECT_CONFIG;
   try {
-    globals().walletConnect?.initialize(projectId, appName, appDescription, appUrl);
+    wallet.initialize(projectId, appName, appDescription, appUrl);
   } catch (e) {
     console.error("Failed to initialize WalletConnect:", e);
   }
@@ -98,7 +81,7 @@ export function walletInitialize(): void {
 /** Rust `wallet_connect()`: connect via QR, keep the session alive. */
 export async function walletConnect(): Promise<WalletConnectResult> {
   try {
-    const result = await globals().walletConnect?.connect();
+    const result = await wallet.connect();
     if (result) return result;
   } catch {
     // wc_connect.js sends null.
@@ -109,7 +92,7 @@ export async function walletConnect(): Promise<WalletConnectResult> {
 /** Rust `wallet_sign_message()`: sign with the active session. */
 export async function walletSignMessage(message: string): Promise<string> {
   try {
-    const signature = await globals().walletConnect?.signMessage(message);
+    const signature = await wallet.signMessage(message);
     if (typeof signature === "string") return signature;
   } catch {
     // wc_sign_message.js sends null.
@@ -120,7 +103,7 @@ export async function walletSignMessage(message: string): Promise<string> {
 /** Rust `wallet_open_app()`: open the wallet for a pending sign request. */
 export async function walletOpenApp(): Promise<void> {
   try {
-    await globals().walletConnect?.openWalletApp();
+    await wallet.openWalletApp();
   } catch {
     throw new LocalAuthError("WalletConnectFailed");
   }
@@ -132,16 +115,30 @@ export async function walletOpenApp(): Promise<void> {
 export async function initFirebase(): Promise<void> {
   if (isTauri()) return; // The native build never initializes the Firebase JS SDK.
   try {
-    await globals().ratel?.invoke?.("init_firebase", FIREBASE_CONFIG);
+    await initFirebaseSdk(FIREBASE_CONFIG);
   } catch (e) {
     console.error("Failed to initialize Firebase:", e);
   }
 }
 
 /**
- * Rust `sign_in()`. Web: Firebase `signInWithPopup` through
- * `window.ratel.invoke("signIn")`. Tauri: the native `google_sign_in` command
- * (tauri-plugin-google-auth), which returns Google's tokens but no email.
+ * Starts downloading the Firebase SDK so a later Google click can open its
+ * popup without waiting (a popup opened after a network wait gets blocked).
+ */
+export function warmUpGoogleSignIn(): void {
+  if (isTauri()) return;
+  preloadFirebase().catch((e) => console.error("Failed to load Firebase:", e));
+}
+
+/** Starts downloading the WalletConnect SDK so the first wallet click does not wait for it. */
+export function warmUpWalletConnect(): void {
+  wallet.preloadWalletConnect().catch((e) => console.error("Failed to load WalletConnect:", e));
+}
+
+/**
+ * Rust `sign_in()`. Web: Firebase `signInWithPopup` (`./firebase`). Tauri: the
+ * native `google_sign_in` command (tauri-plugin-google-auth), which returns
+ * Google's tokens but no email.
  */
 export async function googleSignIn(): Promise<UserInfo> {
   if (isTauri()) {
@@ -155,14 +152,14 @@ export async function googleSignIn(): Promise<UserInfo> {
   }
   let result: unknown = null;
   try {
-    result = await globals().ratel?.invoke?.("signIn");
+    result = await firebaseSignIn();
   } catch (e) {
     console.error("signIn threw", e);
   }
   if (result && typeof result === "object" && typeof (result as UserInfo).access_token === "string") {
     return result as UserInfo;
   }
-  // invoke_with_args.js sends null → the Rust `recv` fails with OnlyWebFunction.
+  // A failed popup resolves `undefined` → the Rust `recv` failed with OnlyWebFunction.
   throw new LocalAuthError("OnlyWebFunction");
 }
 

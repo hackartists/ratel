@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import type { SubTeamAnnouncementResponse } from "@ratel/ts-bridges";
 import { ChevronRight, Clock, Hash, MessageSquare, Pencil, Pin, Send, Trash2, Users } from "@/components/icons/lucide";
-import { useSubTeamI18n, type SubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n, type SubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { charCount, diffDays, formatYmd, stripHtmlChars } from "../hooks/format";
 import { useSubTeamManagement } from "../hooks/use-sub-team-management";
 import { MoreElement } from "./more-element";

@@ -8,9 +8,9 @@ import { InfiniteMore } from "@/components/space-actions/infinite-more";
 import { useSpaceContext } from "@/components/space/space-context";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
 import { SpaceCard } from "@/components/ui/space-card";
-import { useFollowFullCardI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/follow/components/follow_viewer_card/follow-full-card.i18n";
-import { useFollowUserListI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/follow/components/follow_user_list/follow-user-list.i18n";
-import { useFollowViewerI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/follow/views/main/viewer/follow-viewer.i18n";
+import { useFollowFullCardI18n } from "./follow-full-card.i18n";
+import { useFollowUserListI18n } from "./follow-user-list.i18n";
+import { useFollowViewerI18n } from "./follow-viewer.i18n";
 import { useToast } from "@/lib/toast";
 import { useFollowUsers, type FollowUserItem } from "../hooks/use-follow-users";
 

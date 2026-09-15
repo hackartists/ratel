@@ -1,6 +1,6 @@
 // PortOne store / channel settings for the browser SDK calls
-// (`window.PortOne.requestIdentityVerification`, wrapped by the unmodified
-// ratel-app-shell helpers). The SDK script itself is loaded once, globally,
+// (`window.PortOne.requestIdentityVerification`, wrapped by
+// `@/lib/portone-identity`). The SDK script itself is loaded once, globally,
 // from index.html (vite.config.ts `legacyHead`).
 //
 // Rust bakes these in at compile time with `option_env!`; the React build

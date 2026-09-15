@@ -2,7 +2,7 @@ import { Button, ButtonStyle } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { MainAxisAlign } from "@/components/ui/layout";
 import { Row } from "@/components/ui/row";
-import type { PostEditI18n } from "@/i18n/generated/features/posts/views/post_edit/post-edit.i18n";
+import type { PostEditI18n } from "@/pages/posts/[postId]/edit/i18n";
 
 // app/ratel/src/features/posts/views/post_edit/component.rs (`DiscardDraftConfirm`).
 

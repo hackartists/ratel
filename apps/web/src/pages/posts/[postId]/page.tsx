@@ -2,7 +2,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import postDetailScript from "../../../legacy-scripts/features/posts/views/post_detail/script.js?url&no-inline";
 import { SyndicationPanel } from "@/components/cross-posting/syndication-panel";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { usePostDetailSyndicatedI18n, type PostDetailSyndicatedI18n } from "@/i18n/generated/features/posts/views/post_detail/post-detail-syndicated.i18n";
+import { usePostDetailSyndicatedI18n, type PostDetailSyndicatedI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 import { toHtml } from "@/lib/content-body";
 import { dataBool } from "@/lib/dom";

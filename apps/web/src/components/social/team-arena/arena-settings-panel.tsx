@@ -3,7 +3,7 @@ import { LoginModal, SignupModal } from "@/components/auth";
 import { useSignOut } from "@/components/auth/use-sign-out";
 import { AccountDeletionConfirm } from "@/components/profile-dropdown/account-deletion-confirm";
 import { setLanguage } from "@/i18n";
-import { useTeamArenaI18n } from "@/i18n/generated/features/social/pages/team_arena/team-arena.i18n";
+import { useTeamArenaI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 import { useLanguage } from "@/lib/language";
 import { usePopup } from "@/lib/popup";

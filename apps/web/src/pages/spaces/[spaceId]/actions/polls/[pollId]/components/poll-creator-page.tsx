@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ActionEditFooter, ActionEditSaveBusProvider } from "@/components/space-actions/action-edit-footer";
 import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
 import { useSpace } from "@/components/space/space-context";
-import { usePollCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/views/main/creator/poll-creator.i18n";
+import { usePollCreatorI18n } from "./poll-creator.i18n";
 import { usePoll } from "../hooks/use-poll";
 import { PollConfigCard } from "./poll-config-card";
 import { PollContentCard } from "./poll-content-card";

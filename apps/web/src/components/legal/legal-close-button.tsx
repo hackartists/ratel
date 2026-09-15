@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { useLegalCloseI18n } from "@/i18n/generated/views/legal-close.i18n";
+import { useLegalCloseI18n } from "./i18n";
 
 // app/ratel/src/views/legal_close.rs — the "X" on the standalone legal pages
 // (privacy, terms, child safety). Pops history like Dioxus `nav.go_back()`;

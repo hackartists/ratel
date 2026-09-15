@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { AccountDeletionConfirm } from "@/components/account/account-deletion-confirm";
 import { signOut } from "@/components/auth/sign-out";
 import { setLanguage } from "@/i18n";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 import { useAuth } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 import { useLanguage } from "@/lib/language";

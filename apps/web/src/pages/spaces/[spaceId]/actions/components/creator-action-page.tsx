@@ -8,7 +8,7 @@ import { Settings2 } from "@/components/icons/settings";
 import { AddCircle } from "@/components/icons/validations";
 import { Button, ButtonShape, ButtonSize, ButtonStyle } from "@/components/ui/button";
 import { SpaceCard } from "@/components/ui/space-card";
-import { useCreatorActionPageI18n } from "@/i18n/generated/features/spaces/pages/actions/views/main/creator_page/creator-action-page.i18n";
+import { useCreatorActionPageI18n } from "./creator-action-page.i18n";
 import { LayoverSize, useLayover } from "@/lib/layover";
 import { ActionsTitle } from "./actions-title";
 

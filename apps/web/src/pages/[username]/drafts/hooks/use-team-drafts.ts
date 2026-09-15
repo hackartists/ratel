@@ -5,7 +5,7 @@ import type { TeamDraftPermission } from "@ratel/ts-bridges";
 import { useCreatePost, useDeletePost } from "@ratel/ts-bridges/hooks";
 import { useUserContext } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
-import { useTeamDraftI18n } from "@/i18n/generated/features/social/pages/draft/team/views/team-draft.i18n";
+import { useTeamDraftI18n } from "@/pages/[username]/drafts/i18n";
 import { partitionId, useDraftsList, type DraftsList } from "./use-drafts-list";
 
 // app/ratel/src/features/social/pages/draft/team/views/mod.rs (`Home`): the

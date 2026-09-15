@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import type { SubjectResponse } from "@ratel/ts-bridges";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useFactFoldAdminScheduleI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/admin/schedule/fact-fold-admin-schedule.i18n";
+import { useFactFoldAdminScheduleI18n } from "./i18n";
 import { useAdminLiteralsI18n } from "../../admin-literals.i18n";
 import { useAdminSchedule } from "../hooks/use-admin-schedule";
 

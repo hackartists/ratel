@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { CredentialResponse } from "@ratel/ts-bridges";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useCredentialsI18n } from "@/i18n/generated/features/social/pages/credentials/views/credentials.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useCredentialsI18n } from "@/pages/credentials/credentials.i18n";
 import { usePopup } from "@/lib/popup";
 import { useToast } from "@/lib/toast";
 

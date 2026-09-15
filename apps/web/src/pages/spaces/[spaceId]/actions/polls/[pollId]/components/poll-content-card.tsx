@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Question } from "@ratel/ts-bridges";
 import { useUpdatePoll } from "@ratel/ts-bridges/hooks";
 import { AutosaveStatusBadge, type SaveStatus } from "@/components/space-actions/autosave-status-badge";
-import { usePollCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/views/main/creator/poll-creator.i18n";
+import { usePollCreatorI18n } from "./poll-creator.i18n";
 import { useToast } from "@/lib/toast";
 import { usePoll } from "../hooks/use-poll";
 

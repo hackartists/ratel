@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import type { SubTeamAnnouncementResponse } from "@ratel/ts-bridges";
 import { Send } from "@/components/icons/lucide";
 import { Button, ButtonShape, ButtonSize, ButtonStyle } from "@/components/ui/button";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { DirectAnnouncementRow } from "./direct-announcement-row";
 
 // app/ratel/src/features/sub_team/pages/detail/component.rs

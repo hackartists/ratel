@@ -13,6 +13,4 @@
 **/.DS_Store
 apps/web/dist
 apps/web/.cache
-apps/web/assets/ratel-app-shell.js
-apps/web/assets/wallet-connect.js
 packages/ts-bridges/.gen

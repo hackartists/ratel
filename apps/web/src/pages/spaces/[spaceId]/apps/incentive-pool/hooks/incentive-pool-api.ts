@@ -7,6 +7,7 @@ import {
   refreshSpaceIncentiveTokens,
 } from "@ratel/ts-bridges";
 import { buildEnv } from "./format";
+import { deploySpaceIncentive, type DeploySpaceIncentiveResult } from "./incentive-pool-contract";
 
 // app/ratel/src/features/spaces/pages/apps/apps/incentive_pool/{utils/service.rs,interop/mod.rs}
 // — composite calls for the incentive pool page over the generated handlers.
@@ -45,32 +46,13 @@ export async function refreshTokens(spaceId: string): Promise<SpaceIncentiveToke
   return loadTokens(spaceId);
 }
 
-interface JsDeployResponse {
-  incentiveAddress: string;
-  deployBlock: number;
-  transactionHash: string;
-  adminAddress: string;
-}
-
-interface IncentivePoolBridge {
-  deploySpaceIncentive(req: {
-    admins: string[];
-    incentiveRecipientCount: number;
-    rankingBps: number;
-    mode: number;
-    env: string;
-  }): Promise<JsDeployResponse>;
-}
-
 /**
- * `deploy_space_incentive`: `window.ratel.space_incentive_pool.deploySpaceIncentive`
- * (the same JS entry point the Rust interop binds). Rejects when it is absent.
+ * `deploy_space_incentive`. Before, this looked the deployer up on
+ * `window.ratel.space_incentive_pool`, a name the global bundle never
+ * registered, so it always rejected; now it is imported directly.
  */
-async function deploySpaceIncentive(mode: number, rankingBps: number, recipientCount: number): Promise<JsDeployResponse> {
-  const bridge = (window as unknown as { ratel?: { space_incentive_pool?: IncentivePoolBridge } }).ratel
-    ?.space_incentive_pool;
-  if (!bridge) throw new Error("window.ratel.space_incentive_pool is not loaded");
-  return bridge.deploySpaceIncentive({
+function deployIncentive(mode: number, rankingBps: number, recipientCount: number): Promise<DeploySpaceIncentiveResult> {
+  return deploySpaceIncentive({
     admins: [],
     incentiveRecipientCount: recipientCount,
     rankingBps,
@@ -86,7 +68,7 @@ export async function registerIncentivePool(
   rankingBps: number,
   recipientCount: number,
 ): Promise<[SpaceIncentive, SpaceIncentiveToken[]]> {
-  const deploy = await deploySpaceIncentive(contractMode, rankingBps, recipientCount);
+  const deploy = await deployIncentive(contractMode, rankingBps, recipientCount);
   const created = await createSpaceIncentive(spaceId, {
     contract_address: deploy.incentiveAddress,
     deploy_block: deploy.deployBlock,

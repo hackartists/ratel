@@ -1,4 +1,4 @@
-import { useArcadeLayoutI18n } from "@/i18n/generated/features/arcade/arcade-layout.i18n";
+import { useArcadeLayoutI18n } from "./arcade-layout.i18n";
 import { useArcadeWalletState } from "./hooks/use-arcade-wallet";
 
 // app/ratel/src/features/arcade/components/chip_balance.rs — the chip balance

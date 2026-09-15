@@ -200,10 +200,6 @@ web-build:
 	@if [ ! -d "$(WORKSPACE_ROOT)/node_modules" ]; then \
 		cd $(WORKSPACE_ROOT) && corepack pnpm install --frozen-lockfile; \
 	fi
-	@if [ ! -d "$(WEB_DIR)/shell-js/node_modules" ]; then \
-		npm ci --prefix $(WEB_DIR)/shell-js; \
-	fi
-	npm run build --prefix $(WEB_DIR)/shell-js
 	cd $(WORKSPACE_ROOT) && \
 		VITE_TAURI=1 \
 		VITE_BASE=/ \

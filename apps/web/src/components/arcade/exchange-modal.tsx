@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { useArcadeExchangeModalI18n } from "@/i18n/generated/features/arcade/arcade-exchange-modal.i18n";
+import { useArcadeExchangeModalI18n } from "./i18n";
 import { errorMessage } from "@/lib/server-error";
 import { fill } from "./format";
 import { useArcadeWalletConvert, useArcadeWalletState } from "./hooks/use-arcade-wallet";

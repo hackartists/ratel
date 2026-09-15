@@ -75,7 +75,7 @@
       }
 
       track.addEventListener('scroll', updateActive, { passive: true });
-      // Initial pass + small retries — Dioxus may insert post-cards after
+      // Initial pass + small retries — React may insert post-cards after
       // this script runs (CSR / hydration window), so a single pass on
       // bind would leave every card ghosted until the user touches the
       // scroll. The retries keep the active class in sync once cards

@@ -1,6 +1,6 @@
 import type { BetResponse, RationaleResponse, RoundParticipantSummary } from "@ratel/ts-bridges";
 import { displayName, fill, initials, withVariant } from "@/components/arcade/format";
-import { useFactFoldRoomI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/game_room/fact-fold-room.i18n";
+import { useFactFoldRoomI18n } from "@/pages/arcade/games/fact-or-fold/rounds/[roundId]/i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 import { useFactFoldRound, useRoundBets, useRoundParticipants, useRoundRationales } from "../hooks/use-fact-fold-round";

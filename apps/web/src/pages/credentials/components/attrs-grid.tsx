@@ -2,7 +2,7 @@ import type { DidAttributeItem } from "@ratel/ts-bridges";
 import {
   useCredentialsI18n,
   type CredentialsI18n,
-} from "@/i18n/generated/features/social/pages/credentials/views/credentials.i18n";
+} from "@/pages/credentials/credentials.i18n";
 import { usePopup } from "@/lib/popup";
 import { useCredentials } from "../hooks/use-credentials";
 import { CodeModal } from "./code-modal";

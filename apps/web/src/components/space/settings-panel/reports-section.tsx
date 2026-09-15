@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { listReports } from "@ratel/ts-bridges";
 import type { ReportListItem } from "@ratel/ts-bridges";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 
 // app/ratel/src/features/spaces/pages/index/settings_panel/reports_section/component.rs
 // (`ReportsSection`): published reports only; hidden while the list is empty.

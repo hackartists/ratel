@@ -6,16 +6,16 @@
  *     `scroll-snap-align: center` so the closest card snaps to centre.
  *   - A `scroll` listener finds the card nearest the track centre,
  *     toggles `.is-active` on that card and the matching dot, and
- *     updates the prev/next disabled state. Dioxus owns NONE of this
+ *     updates the prev/next disabled state. React owns NONE of this
  *     state — it just renders the structure.
  *   - Prev / next / dot click handlers are attached here (not on the
- *     Dioxus side) and call `scrollToCard(index)`.
+ *     React side) and call `scrollToCard(index)`.
  *   - Window-level keydown listener: ArrowLeft → previous card,
  *     ArrowRight → next card. Skipped while typing in inputs and
  *     no-ops when the carousel isn't in the DOM (other routes).
  *   - Wrapped in the standard MutationObserver bind-once pattern so
- *     it works under both SSR (defer-loaded) and CSR (Dioxus mounts
- *     the page after the script tag has already executed).
+ *     it works whether the page is already in the DOM when the script
+ *     runs or React mounts it afterwards.
  */
 (function () {
   function initCarousel() {
@@ -191,13 +191,13 @@
     });
   }
 
-  // Try immediately (works for SSR with defer).
+  // Try immediately (page already in the DOM).
   initCarousel();
   // Also observe for CSR rendering. Two cases:
   //   (a) Track is fresh (no `analyzeCarouselBound` flag) → init it.
   //   (b) Track was previously bound but the page just re-mounted
   //       (user navigated detail → list); the bind flag persists on
-  //       the new DOM node only if Dioxus re-uses it. Either way,
+  //       the new DOM node only if React re-uses it. Either way,
   //       call the recentre helper if exposed so the carousel snaps
   //       to centre after the layout settles.
   new MutationObserver(function () {

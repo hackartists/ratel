@@ -2,7 +2,7 @@
 // `QuestionCardView`: one single/multiple-choice question as option tiles.
 // Other question types render nothing (Rust `_ => return rsx! {}`).
 import type { Answer, Question, QuizCorrectAnswer } from "@ratel/ts-bridges";
-import { useQuizArenaI18n } from "@/i18n/generated/features/spaces/pages/index/action_pages/quiz/quiz-arena.i18n";
+import { useQuizArenaI18n } from "./i18n";
 import { dataBool } from "@/lib/dom";
 import { LETTERS, checkCorrect, checkSelected, toggleMulti, toggleSingle } from "./quiz-helpers";
 

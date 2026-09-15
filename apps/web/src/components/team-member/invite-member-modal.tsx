@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Clear } from "@/components/icons/validations";
-import { useInviteMemberI18n } from "@/i18n/generated/features/social/pages/member/views/invite-member.i18n";
+import { useInviteMemberI18n } from "./i18n";
 import { errorMessage } from "@/lib/server-error";
 import { useTeamMemberActions, type FindUserQueryType, type FoundUserResponse, type TeamRole } from "./use-team-members";
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { SubTeamApplicationResponse } from "@ratel/ts-bridges";
 import { FileText, X } from "@/components/icons/lucide";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { dataBool } from "@/lib/dom";
 import { avatarVariantFor, buildSnapshotRows, formatWhen, shortId, teamInitials } from "../hooks/format";
 import { useSubTeamManagement } from "../hooks/use-sub-team-management";

@@ -2,7 +2,7 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { useDeleteAccount } from "@ratel/ts-bridges/hooks";
 import { signOut } from "@/components/auth/sign-out";
-import { useProfileDropdownI18n } from "@/i18n/generated/components/profile_dropdown/profile-dropdown.i18n";
+import { useProfileDropdownI18n } from "@/components/profile-dropdown/i18n";
 import { useAuth } from "@/lib/auth";
 import { usePopup } from "@/lib/popup";
 

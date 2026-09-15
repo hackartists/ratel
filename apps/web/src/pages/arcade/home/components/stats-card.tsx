@@ -1,5 +1,5 @@
 import type { UserStatsResponse } from "@ratel/ts-bridges";
-import { useArcadeHomeI18n } from "@/i18n/generated/features/arcade/arcade-home.i18n";
+import { useArcadeHomeI18n } from "@/pages/arcade/i18n";
 
 // app/ratel/src/features/arcade/pages/home/component.rs — `StatsCard`.
 

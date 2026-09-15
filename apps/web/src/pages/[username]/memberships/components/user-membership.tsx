@@ -1,5 +1,5 @@
 import { Sparkles } from "@/components/icons/lucide";
-import { useMembershipPageI18n } from "@/i18n/generated/features/social/pages/membership/user/views/membership-page.i18n";
+import { useMembershipPageI18n } from "./membership-page.i18n";
 import { useUserMembership } from "../hooks/use-membership";
 import { formatDate, formatMembershipTierLabel } from "./format";
 import { PurchaseHistory } from "./purchase-history";

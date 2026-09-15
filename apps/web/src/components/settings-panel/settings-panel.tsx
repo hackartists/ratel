@@ -1,7 +1,7 @@
 import { useSignOut } from "@/components/auth";
 import { AccountDeletionConfirm } from "@/components/profile-dropdown/account-deletion-confirm";
 import { setLanguage } from "@/i18n";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 import { useLanguage } from "@/lib/language";

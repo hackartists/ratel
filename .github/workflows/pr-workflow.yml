@@ -179,14 +179,6 @@ jobs:
       - name: Typecheck
         run: pnpm -C apps/web typecheck
 
-      # apps/web/shell-js (formerly app/ratel/js) writes
-      # ratel-app-shell.js / wallet-connect.js into apps/web/assets/, which
-      # the React build below bundles.
-      - name: Build shared JS assets
-        run: |
-          npm ci --prefix apps/web/shell-js
-          npm run build --prefix apps/web/shell-js
-
       - name: Build
         run: pnpm -C apps/web build
 
@@ -195,10 +187,10 @@ jobs:
   # after the React frontend migration — docs/superpower/
   # 2026-09-14-react-frontend-migration.md § 5.1): no more dx/dioxus-cli, no
   # wasm32-unknown-unknown target, no GTK/webkit desktop deps. The i18n
-  # drift check is gone too — `translate!`/`Translate` sources it extracted
-  # from are being deleted, and apps/web/src/i18n/generated is the source of
-  # truth now. gen-ts stays, since packages/ts-bridges is still generated
-  # from the Rust route macros.
+  # drift check is gone too — the `translate!`/`Translate` sources it extracted
+  # from were deleted, and the web i18n bundles (co-located `*.i18n.tsx` in
+  # apps/web/src) are edited directly. gen-ts stays, since
+  # packages/ts-bridges is still generated from the Rust route macros.
   rust-check:
     runs-on: self-hosted
 
@@ -705,11 +697,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Build shared JS assets (apps/web/shell-js — formerly app/ratel/js)
-        run: |
-          npm ci --prefix apps/web/shell-js
-          npm run build --prefix apps/web/shell-js
 
       - name: Build web (React static site)
         env:

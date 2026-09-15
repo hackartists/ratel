@@ -5,7 +5,7 @@ import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import {
   useSpaceAnalyzesAppI18n,
   type SpaceAnalyzesAppI18n,
-} from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+} from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { dataBool } from "@/lib/dom";
 import { humanizeGroupValue, questionTitle } from "@/components/analyzes/analyze-excel";
 import { useSpaceAnalyzePoll } from "./hooks/use-space-analyze-poll";

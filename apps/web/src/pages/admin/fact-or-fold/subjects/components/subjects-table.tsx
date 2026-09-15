@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { SubjectResponse, SubjectStatus, Verdict } from "@ratel/ts-bridges";
-import { useFactFoldAdminSubjectsI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/admin/subjects/fact-fold-admin-subjects.i18n";
+import { useFactFoldAdminSubjectsI18n } from "@/pages/admin/fact-or-fold/subjects/i18n";
 import { useAdminLiteralsI18n } from "../../../admin-literals.i18n";
 import { displayError } from "../../../hooks/format";
 import type { AdminSubjectActions } from "../../hooks/use-admin-subjects";

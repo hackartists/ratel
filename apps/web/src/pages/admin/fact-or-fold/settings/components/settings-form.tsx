@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { FactOrFoldSettingsResponse, UpdateFactOrFoldSettingsRequest } from "@ratel/ts-bridges";
-import { useFactFoldAdminSettingsI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/admin/settings/fact-fold-admin-settings.i18n";
+import { useFactFoldAdminSettingsI18n } from "./i18n";
 import { displayError, parseF64, parseI32, parseI64, roundToI32 } from "../../../hooks/format";
 import { useDioxusInput } from "../../../hooks/use-dioxus-input";
 

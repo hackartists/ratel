@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { isTauri, printPage } from "@/lib/native";
 import { useToast } from "@/lib/toast";
-import { useReportDetailI18n } from "@/i18n/generated/features/spaces/pages/report/views/detail/report-detail.i18n";
+import { useReportDetailI18n } from "@/pages/spaces/[spaceId]/report/[reportId]/i18n";
 import { useReportDetailContext } from "../hooks/use-report-detail";
 
 // app/ratel/src/features/spaces/pages/report/views/detail/top_bar.rs

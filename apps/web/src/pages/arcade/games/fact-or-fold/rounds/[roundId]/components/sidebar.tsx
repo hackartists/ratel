@@ -3,7 +3,7 @@ import type { RoundResponse } from "@ratel/ts-bridges";
 import {
   useFactFoldRoomI18n,
   type FactFoldRoomI18n,
-} from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/game_room/fact-fold-room.i18n";
+} from "@/pages/arcade/games/fact-or-fold/rounds/[roundId]/i18n";
 import { nextStageName, stageIndex, stageName } from "./round-format";
 
 // app/ratel/src/features/arcade/games/fact_or_fold/pages/game_room/component.rs

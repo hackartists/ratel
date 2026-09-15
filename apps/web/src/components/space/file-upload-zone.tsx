@@ -1,6 +1,6 @@
 import type { File, FileExtension } from "@ratel/ts-bridges";
 import { FileUploader } from "@/components/ui/file-uploader";
-import { useSpaceFileI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/file/space-file.i18n";
+import { useSpaceFileI18n } from "@/pages/spaces/[spaceId]/apps/files/space-file.i18n";
 
 // app/ratel/src/features/spaces/pages/apps/apps/file/components/file_upload_zone.rs
 // (`FileUploadZone`), shared by the overview panel and the file app. Also

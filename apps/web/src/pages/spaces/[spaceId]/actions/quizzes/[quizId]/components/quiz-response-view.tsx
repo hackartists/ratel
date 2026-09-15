@@ -8,7 +8,7 @@ import { FullActionLayover } from "@/components/space-actions/full-action-layove
 import { hasAnswerForQuestion, QuestionViewer, shouldAutoNext } from "@/components/space-actions/question-viewer";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
-import { useQuizReadI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/quiz/views/main/quiz-read.i18n";
+import { useQuizReadI18n } from "./quiz-read.i18n";
 import { timeAgo } from "@/lib/time";
 import { useToast } from "@/lib/toast";
 import { useQuizProvider } from "../hooks/use-quiz";

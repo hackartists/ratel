@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import type { AnalyzeReport } from "@ratel/ts-bridges";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/report/banner/component.rs
 // "Selected cross filters" strip above the split: the report's filter chips,

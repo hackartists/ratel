@@ -5,7 +5,7 @@ import { getOverviewFiles } from "@ratel/ts-bridges";
 import type { File, FileLinkTarget } from "@ratel/ts-bridges";
 import { FileUploadZone } from "@/components/space/file-upload-zone";
 import { useSpaceContext } from "@/components/space/space-context";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { dataBool } from "@/lib/dom";
 import { useToast } from "@/lib/toast";
 import { DEFAULT_PROFILE, formatNumber } from "./format";

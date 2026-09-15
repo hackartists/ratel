@@ -1,5 +1,5 @@
 import type { FollowTargetAggregate } from "@ratel/ts-bridges";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { useAnalyzeReportDetailContext } from "../hooks/use-analyze-report-detail";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/report/follow_panel/component.rs

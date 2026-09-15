@@ -1,7 +1,7 @@
 import {
   useCharacterPageI18n,
   type CharacterPageI18n,
-} from "@/i18n/generated/features/character/pages/character_page/character-page.i18n";
+} from "@/pages/me/character/i18n";
 import type { CharacterSkillResponse, SkillId } from "../hooks/use-character";
 
 // app/ratel/src/features/character/pages/character_page/skill_card/component.rs

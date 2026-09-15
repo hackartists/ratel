@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { ChevronLeft, FileText, Hash, Lock, Search, TriangleAlert, Users, X } from "@/components/icons/lucide";
 import { MoreElement } from "@/components/ui/more-element";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { useFindTeam } from "@ratel/ts-bridges/hooks";
 import { DirectAnnouncementCard } from "./components/direct-announcement-card";
 import { formatLastActive, useSubTeamActivity } from "./hooks/use-sub-team-activity";

@@ -1,0 +1,35 @@
+// Ported from: app/ratel/src/features/spaces/pages/actions/components/delete_action_popup/mod.rs (`DeleteActionPopupTranslate`). Namespace "deleteActionPopup".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  title: "Delete action?",
+  description: "Deleted actions cannot be restored.",
+  cancel: "Cancel",
+  confirm: "Confirm",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  title: "삭제하시겠습니까?",
+  description: "삭제된 액션은 복구할 수 없습니다.",
+  cancel: "취소",
+  confirm: "확인",
+};
+
+export const i18n = { en, ko };
+
+export interface DeleteActionPopupI18n {
+  title: string;
+  description: string;
+  cancel: string;
+  confirm: string;
+}
+
+export function useDeleteActionPopupI18n(): DeleteActionPopupI18n {
+  const { t } = useTranslation("deleteActionPopup");
+  return {
+    title: t("title"),
+    description: t("description"),
+    cancel: t("cancel"),
+    confirm: t("confirm"),
+  };
+}

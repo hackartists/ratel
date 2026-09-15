@@ -3,7 +3,7 @@ import type { SpaceVisibility as ApiSpaceVisibility } from "@ratel/ts-bridges";
 import { Internet } from "@/components/icons/internet-script";
 import { Lock1 } from "@/components/icons/security";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
-import { useSpaceCommonSpaceVisibilityModalVisibilityModalI18n } from "@/i18n/generated/features/spaces/space_common/components/space_visibility_modal/space-common-space-visibility-modal-visibility-modal.i18n";
+import { useSpaceCommonSpaceVisibilityModalVisibilityModalI18n } from "./space-common-space-visibility-modal-visibility-modal.i18n";
 import { usePopup } from "@/lib/popup";
 import { SpaceVisibility } from "./space-context";
 

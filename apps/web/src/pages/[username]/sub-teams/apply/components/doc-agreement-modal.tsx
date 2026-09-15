@@ -1,7 +1,7 @@
 import type { ApplyContextDocument } from "@ratel/ts-bridges";
 import { Check, FileText, Info, Paperclip, X } from "@/components/icons/lucide";
 import { dataBool } from "@/lib/dom";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 
 // app/ratel/src/features/sub_team/pages/apply/doc_agreement_modal/component.rs
 // (`DocAgreementModal`) — overlay shown when the applicant clicks a required

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useCredentialsI18n } from "@/i18n/generated/features/social/pages/credentials/views/credentials.i18n";
+import { useCredentialsI18n } from "./credentials.i18n";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import credentialsScript from "../../legacy-scripts/features/social/pages/credentials/views/script.js?url&no-inline";
 import { AttrsGrid } from "./components/attrs-grid";

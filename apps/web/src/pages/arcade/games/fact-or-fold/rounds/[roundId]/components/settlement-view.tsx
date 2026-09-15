@@ -10,7 +10,7 @@ import type {
 } from "@ratel/ts-bridges";
 import { displayName, monogram, withVariant } from "@/components/arcade/format";
 import { ARCADE_HOME_PATH } from "@/components/arcade/paths";
-import { useFactFoldRoomI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/game_room/fact-fold-room.i18n";
+import { useFactFoldRoomI18n } from "@/pages/arcade/games/fact-or-fold/rounds/[roundId]/i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 import {

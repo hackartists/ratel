@@ -1,6 +1,6 @@
 import type { DidAttributeItem, DidSummaryResponse } from "@ratel/ts-bridges";
-import type { CredentialsI18n } from "@/i18n/generated/features/social/pages/credentials/views/credentials.i18n";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
+import type { CredentialsI18n } from "@/pages/credentials/credentials.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useUserContext } from "@/lib/auth";
 import { usePopup } from "@/lib/popup";
 import { useToast } from "@/lib/toast";

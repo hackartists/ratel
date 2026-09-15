@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BlueskyConnectModal } from "@/components/cross-posting/bluesky-connect-modal";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useOnboardingPageI18n } from "@/i18n/generated/features/cross_posting/onboarding-page.i18n";
+import { useOnboardingPageI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
 import { useOnboarding } from "./hooks/use-onboarding";

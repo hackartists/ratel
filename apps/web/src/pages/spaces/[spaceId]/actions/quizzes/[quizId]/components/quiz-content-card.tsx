@@ -6,7 +6,7 @@ import { ActionDescriptionEditor } from "@/components/space-actions/action-descr
 import { AutosaveStatusBadge, type SaveStatus } from "@/components/space-actions/autosave-status-badge";
 import { FileUploader } from "@/components/ui/file-uploader";
 import { FileExtension, FileExtensionIcon } from "@/components/ui/file-extension-icon";
-import { useQuizCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/quiz/views/main/creator/quiz-creator.i18n";
+import { useQuizCreatorI18n } from "./quiz-creator.i18n";
 import { extractFilenameFromUrl, fileExtensionFromNameOrUrl } from "@/lib/file-ext";
 import { useToast } from "@/lib/toast";
 import { useQuiz } from "../hooks/use-quiz";

@@ -4,7 +4,7 @@ import { getReport, listReportAnalyzes, updateReport } from "@ratel/ts-bridges";
 import type { ActionSource, Analyze, AnalyzeItem, ChartType, GetReportResponse } from "@ratel/ts-bridges";
 import { isSpaceAdmin, useSpaceContext } from "@/components/space/space-context";
 import type { EditorSlashSignal } from "@/components/editor";
-import { useReportDetailI18n, type ReportDetailI18n } from "@/i18n/generated/features/spaces/pages/report/views/detail/report-detail.i18n";
+import { useReportDetailI18n, type ReportDetailI18n } from "@/pages/spaces/[spaceId]/report/[reportId]/i18n";
 import {
   ACTION_SOURCE_VARIANTS,
   actionSourceToken,

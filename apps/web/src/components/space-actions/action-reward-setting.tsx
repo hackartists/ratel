@@ -5,7 +5,7 @@ import { findTeamHandler, getTeamMembershipHandler } from "@ratel/ts-bridges";
 import type { SpaceActionStatus } from "@ratel/ts-bridges";
 import { useUpdateSpaceAction } from "@ratel/ts-bridges/hooks";
 import { Switch } from "@/components/ui/switch";
-import { useArenaRewardI18n } from "@/i18n/generated/features/spaces/pages/actions/components/action_reward_setting/arena-reward.i18n";
+import { useArenaRewardI18n } from "./arena-reward.i18n";
 import { useAuth, useUserMembership } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
 import { isActionLocked } from "./access";

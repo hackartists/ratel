@@ -2,8 +2,8 @@
 // (`InboxPayload::get_contents`) and the `relative_time` helper of
 // components/notification_panel/notification_item/component.rs.
 import type { ErrorCategory, InboxPayload, SocialPlatform } from "@ratel/ts-bridges";
-import type { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import type { NotificationsI18n } from "@/i18n/generated/features/notifications/notifications.i18n";
+import type { useEnumI18n } from "@/i18n/enums.i18n";
+import type { NotificationsI18n } from "./i18n";
 
 type TranslateEnum = ReturnType<typeof useEnumI18n>;
 

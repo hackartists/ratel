@@ -9,7 +9,7 @@ import {
   FACT_FOLD_ROUND_PATTERN,
 } from "@/components/arcade/paths";
 import { monogram } from "@/components/arcade/format";
-import { useArcadeLayoutI18n } from "@/i18n/generated/features/arcade/arcade-layout.i18n";
+import { useArcadeLayoutI18n } from "@/components/arcade/arcade-layout.i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 

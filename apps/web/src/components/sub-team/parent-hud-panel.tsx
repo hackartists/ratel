@@ -5,7 +5,7 @@ import { useCancelChildApplication } from "@ratel/ts-bridges/hooks";
 import { getParentRelationshipHandler } from "@ratel/ts-bridges";
 import { ChevronRight, Clock, FileText, GraduationCap, House, Info, LogOut, Pencil, X } from "@/components/icons/lucide";
 import { useTeamArena } from "@/components/social/team-arena-context";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 
 // app/ratel/src/features/sub_team/components/parent_hud_panel/component.rs
 // (`ParentHudPanel`) + hooks/use_parent_relationship.rs: the graduation-cap HUD

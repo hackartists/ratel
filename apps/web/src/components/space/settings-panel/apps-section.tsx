@@ -8,9 +8,9 @@ import { File as FileIcon } from "@/components/icons/file";
 import { Apps } from "@/components/icons/layouts";
 import { Settings2 } from "@/components/icons/settings";
 import { UserGroup } from "@/components/icons/user";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
-import { useSpaceAppTypeI18n } from "@/i18n/generated/features/spaces/pages/apps/types/space-app-type.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
+import { useSpaceAppTypeI18n } from "./i18n";
 import { useToast } from "@/lib/toast";
 
 // app/ratel/src/features/spaces/pages/index/settings_panel/apps_section/component.rs (`AppsSection`)

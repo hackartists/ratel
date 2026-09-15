@@ -1,7 +1,7 @@
 import { useCreatePost } from "@ratel/ts-bridges/hooks";
 import { useNavigate } from "react-router-dom";
 import { LOGIN_MODAL_TITLE, useLoginModal } from "@/components/auth";
-import { useRatelArenaTopbarI18n } from "@/i18n/generated/components/arena_topbar/ratel-arena-topbar.i18n";
+import { useRatelArenaTopbarI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 
 // app/ratel/src/components/arena_topbar/component.rs — the shared arena topbar

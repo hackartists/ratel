@@ -1,6 +1,6 @@
 import { LoginModal } from "@/components/auth";
 import { useSpaceContext } from "@/components/space/space-context";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { usePopup } from "@/lib/popup";
 
 // app/ratel/src/features/spaces/pages/index/signin_card/component.rs (`SigninCard`):

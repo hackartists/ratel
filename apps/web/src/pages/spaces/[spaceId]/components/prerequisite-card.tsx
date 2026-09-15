@@ -4,8 +4,8 @@ import { listActions } from "@ratel/ts-bridges";
 import type { SpaceActionSummary, SpaceActionType } from "@ratel/ts-bridges";
 import { useActionOverlay } from "@/components/space/action-overlay";
 import { spaceQueryKeys, useSpaceContext } from "@/components/space/space-context";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { dataBool } from "@/lib/dom";
 
 // app/ratel/src/features/spaces/pages/index/prerequisite_card/component.rs (`PrerequisiteCard`).

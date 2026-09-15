@@ -1,9 +1,9 @@
 // Mobile bottom-sheet drag-to-dismiss for the post detail comments panel.
-// Opens by Dioxus toggling `comments_open` (slides up via CSS animation).
+// Opens by React toggling `commentsOpen` (slides up via CSS animation).
 // This script handles the downward-drag gesture: while dragging, the sheet
 // follows the finger/mouse; release past a threshold fires a click on the
-// backdrop so Dioxus's `close_comments` handler runs and tears down the
-// sheet state. Below the threshold, the sheet snaps back to position 0.
+// backdrop so React's `setCommentsOpen(false)` handler runs and tears down
+// the sheet state. Below the threshold, the sheet snaps back to position 0.
 //
 // Desktop keeps the panel as a static right-side column — the handle is
 // CSS-hidden above 720px so this gesture effectively only runs on mobile.
@@ -48,8 +48,8 @@
       sheet.classList.remove("dragging");
       if (!dragging) return;
       if (currentDy > DISMISS_THRESHOLD_PX) {
-        // Animate fully off-screen before Dioxus unmounts, so the exit
-        // feels continuous with the drag.
+        // Animate fully off-screen before React unmounts the panel, so the
+        // exit feels continuous with the drag.
         sheet.style.transform = "translateY(100%)";
         setTimeout(clickBackdrop, 180);
       } else {
@@ -116,9 +116,9 @@
 //   tier-3: any other referrer (generic "from somewhere" copy)
 // No referrer + no utm_source → bar stays hidden.
 //
-// The bar is rendered only when the viewer is signed-out (Dioxus controls
-// the `[data-show="true"]` toggle via session check). This script only
-// owns the platform classification.
+// The bar is rendered only when the viewer is signed-out (React's
+// `isSignedOut` check in page.tsx gates the wrapper div). This script only
+// owns the `data-show`/tier/platform classification.
 (function () {
   function classify() {
     try {

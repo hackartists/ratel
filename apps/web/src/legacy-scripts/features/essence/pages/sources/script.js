@@ -1,6 +1,6 @@
 /* Essence Sources — keyboard shortcut (⌘K / Ctrl+K focuses search input).
-   Dioxus owns filter/selection/toggle state through signals; this script is
-   only for DOM behavior that RSX can't express declaratively (global
+   React owns filter/selection/toggle state (useEssenceSources); this script is
+   only for DOM behavior that JSX can't express declaratively (global
    keyboard capture outside the input element). */
 
 (function () {

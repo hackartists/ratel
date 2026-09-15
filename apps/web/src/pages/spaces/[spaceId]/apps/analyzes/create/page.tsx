@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { CfSunjiCard } from "./components/cf-sunji-card";
 import { CrossFilterCard } from "./components/cross-filter-card";
 import { FooterCreate, FooterPreview } from "./components/footers";

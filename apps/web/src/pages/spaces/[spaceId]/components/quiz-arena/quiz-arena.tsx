@@ -11,7 +11,7 @@ import { useRespondQuiz } from "@ratel/ts-bridges/hooks";
 import { canExecuteSpaceAction } from "@/components/space/access";
 import { useActionOverlay, useCompletedActionCard } from "@/components/space/action-overlay";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
-import { useQuizArenaI18n } from "@/i18n/generated/features/spaces/pages/index/action_pages/quiz/quiz-arena.i18n";
+import { useQuizArenaI18n } from "./i18n";
 import { useToast } from "@/lib/toast";
 import { useQuiz } from "./hooks/use-quiz";
 import { QuestionCardView } from "./question-card-view";

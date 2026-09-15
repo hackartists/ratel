@@ -1,6 +1,6 @@
 // app/ratel/src/features/spaces/pages/index/action_dashboard/quest_edit_button/component.rs —
 // `QuestEditButton`: the admin "edit" icon on a quest card (does not open the card).
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 
 export function QuestEditButton({ actionId, onEdit }: { actionId: string; onEdit: () => void }) {
   const tr = useSpaceViewerI18n();

@@ -1,0 +1,147 @@
+// Ported from: app/ratel/src/features/social/pages/member/views/i18n.rs (`TeamMemberTranslate`). Namespace "teamMember".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  members_label: "Members",
+  team_management: "Team Management",
+  members_subhead: "members · manage access and roles",
+  add_member_btn: "Add Member",
+  filter_all: "All",
+  filter_owner: "Owner",
+  filter_admin: "Admin",
+  filter_member: "Member",
+  role_owner: "Owner",
+  role_admin: "Admin",
+  role_member: "Member",
+  search_placeholder: "Search by name…",
+  action_make_admin: "Make Admin",
+  action_make_member: "Make Member",
+  action_remove: "Remove from team",
+  role_updated: "Member role updated",
+  member_removed: "Member removed",
+  empty_title: "No members yet",
+  empty_desc: "Invite teammates to collaborate on proposals and governance.",
+  invite_title: "Invite Member",
+  invite_group_label: "Group",
+  invite_role_admin: "Admin — full management access",
+  invite_role_member: "Member — standard access",
+  invite_input_label: "Email, name, or phone",
+  invite_input_placeholder: "e.g. john@example.com, sarah, 01012345678",
+  invite_hint: "Separate multiple recipients with commas. Each will receive an invite.",
+  invite_send: "Send Invite",
+  invite_sending: "Sending…",
+  invite_success: "Invitation sent",
+  invite_searching: "Searching…",
+  invite_not_found: "Not found:",
+  invite_already_added: "Already added:",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  members_label: "멤버",
+  team_management: "팀 관리",
+  members_subhead: "명 · 권한과 역할을 관리하세요",
+  add_member_btn: "멤버 추가",
+  filter_all: "전체",
+  filter_owner: "소유자",
+  filter_admin: "관리자",
+  filter_member: "멤버",
+  role_owner: "소유자",
+  role_admin: "관리자",
+  role_member: "멤버",
+  search_placeholder: "이름으로 검색…",
+  action_make_admin: "관리자로 변경",
+  action_make_member: "멤버로 변경",
+  action_remove: "팀에서 제거",
+  role_updated: "역할이 변경되었습니다",
+  member_removed: "멤버가 제거되었습니다",
+  empty_title: "멤버가 없습니다",
+  empty_desc: "팀원을 초대해 함께 활동해보세요.",
+  invite_title: "멤버 초대",
+  invite_group_label: "그룹",
+  invite_role_admin: "관리자 — 전체 관리 권한",
+  invite_role_member: "멤버 — 기본 권한",
+  invite_input_label: "이메일, 이름, 또는 전화번호",
+  invite_input_placeholder: "예: john@example.com, sarah, 01012345678",
+  invite_hint: "여러 명은 콤마(,)로 구분해 입력하세요. 각각에게 초대장이 전송됩니다.",
+  invite_send: "초대 보내기",
+  invite_sending: "보내는 중…",
+  invite_success: "초대를 보냈습니다",
+  invite_searching: "검색 중…",
+  invite_not_found: "찾을 수 없음:",
+  invite_already_added: "이미 추가됨:",
+};
+
+export const i18n = { en, ko };
+
+export interface TeamMemberI18n {
+  membersLabel: string;
+  teamManagement: string;
+  membersSubhead: string;
+  addMemberBtn: string;
+  filterAll: string;
+  filterOwner: string;
+  filterAdmin: string;
+  filterMember: string;
+  roleOwner: string;
+  roleAdmin: string;
+  roleMember: string;
+  searchPlaceholder: string;
+  actionMakeAdmin: string;
+  actionMakeMember: string;
+  actionRemove: string;
+  roleUpdated: string;
+  memberRemoved: string;
+  emptyTitle: string;
+  emptyDesc: string;
+  inviteTitle: string;
+  inviteGroupLabel: string;
+  inviteRoleAdmin: string;
+  inviteRoleMember: string;
+  inviteInputLabel: string;
+  inviteInputPlaceholder: string;
+  inviteHint: string;
+  inviteSend: string;
+  inviteSending: string;
+  inviteSuccess: string;
+  inviteSearching: string;
+  inviteNotFound: string;
+  inviteAlreadyAdded: string;
+}
+
+export function useTeamMemberI18n(): TeamMemberI18n {
+  const { t } = useTranslation("teamMember");
+  return {
+    membersLabel: t("members_label"),
+    teamManagement: t("team_management"),
+    membersSubhead: t("members_subhead"),
+    addMemberBtn: t("add_member_btn"),
+    filterAll: t("filter_all"),
+    filterOwner: t("filter_owner"),
+    filterAdmin: t("filter_admin"),
+    filterMember: t("filter_member"),
+    roleOwner: t("role_owner"),
+    roleAdmin: t("role_admin"),
+    roleMember: t("role_member"),
+    searchPlaceholder: t("search_placeholder"),
+    actionMakeAdmin: t("action_make_admin"),
+    actionMakeMember: t("action_make_member"),
+    actionRemove: t("action_remove"),
+    roleUpdated: t("role_updated"),
+    memberRemoved: t("member_removed"),
+    emptyTitle: t("empty_title"),
+    emptyDesc: t("empty_desc"),
+    inviteTitle: t("invite_title"),
+    inviteGroupLabel: t("invite_group_label"),
+    inviteRoleAdmin: t("invite_role_admin"),
+    inviteRoleMember: t("invite_role_member"),
+    inviteInputLabel: t("invite_input_label"),
+    inviteInputPlaceholder: t("invite_input_placeholder"),
+    inviteHint: t("invite_hint"),
+    inviteSend: t("invite_send"),
+    inviteSending: t("invite_sending"),
+    inviteSuccess: t("invite_success"),
+    inviteSearching: t("invite_searching"),
+    inviteNotFound: t("invite_not_found"),
+    inviteAlreadyAdded: t("invite_already_added"),
+  };
+}

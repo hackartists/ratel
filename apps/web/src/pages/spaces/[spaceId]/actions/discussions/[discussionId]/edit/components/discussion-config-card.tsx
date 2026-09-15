@@ -4,7 +4,7 @@ import { ActionStatusControl } from "@/components/space-actions/action-status-co
 import { ActionDeleteButton } from "@/components/space-actions/delete-action";
 import { AiModeratorSetting } from "@/components/space-actions/ai-moderator-setting";
 import { PrerequisiteTile } from "@/components/space-actions/prerequisite-tile";
-import { useDiscussionEditorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/discussion/views/editor/discussion-editor.i18n";
+import { useDiscussionEditorI18n } from "@/pages/spaces/[spaceId]/actions/discussions/[discussionId]/edit/i18n";
 import { useDiscussion } from "../hooks/use-discussion";
 
 // discussion/views/editor/config_card/component.rs (`ConfigCard`).

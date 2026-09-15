@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { RevealSource, Verdict } from "@ratel/ts-bridges";
-import { useFactFoldAdminNewSubjectI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/admin/new_subject/fact-fold-admin-new-subject.i18n";
+import { useFactFoldAdminNewSubjectI18n } from "@/pages/admin/fact-or-fold/subjects/new/i18n";
 import { dataBool } from "@/lib/dom";
 import { useAdminLiteralsI18n } from "../../../../admin-literals.i18n";
 import { useDioxusInput } from "../../../../hooks/use-dioxus-input";

@@ -1,6 +1,6 @@
 import { RatelArenaTopbar, RatelArenaTopbarSection } from "@/components/arena-topbar/ratel-arena-topbar";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useCharacterPageI18n } from "@/i18n/generated/features/character/pages/character_page/character-page.i18n";
+import { useCharacterPageI18n } from "./i18n";
 import { CharacterHero } from "./components/character-hero";
 import { SkillCard } from "./components/skill-card";
 import { useCharacter } from "./hooks/use-character";

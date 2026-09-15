@@ -1,10 +1,10 @@
-// app/ratel/src/features/social/pages/credentials/interop/mod.rs and its
-// `web/*.js` drivers, translated from the Dioxus `dioxus.send`/`recv` eval
-// channel to plain browser APIs — the underlying JS behavior (reading the
-// PortOne redirect return, popping PG pages from history, calling into
-// `window.ratel.user_credential`) is unchanged.
+// The credentials interop of the former Dioxus app and its `web/*.js` drivers,
+// as plain browser APIs — the behavior (reading the PortOne redirect return,
+// popping PG pages from history, starting PortOne identity verification through
+// `@/lib/portone-identity`) is unchanged.
 import { signAttributesHandler } from "@ratel/ts-bridges";
 import type { CredentialResponse } from "@ratel/ts-bridges";
+import { requestCredentialIdentityVerification } from "@/lib/portone-identity";
 
 /** Distinguishes the two failure modes `verifyIdentity` can throw, matching
  * `common::Error::PortOneRequestFailure` / `PortOneInicisInvalidIdentity`. */
@@ -74,22 +74,16 @@ export function clearKycHistory(): boolean {
 }
 
 /**
- * `interop::verify_identity`: calls into `window.ratel.user_credential`
- * (bundled into `ratel-app-shell.js`, loaded globally) to open the PortOne
- * identity-verification flow, then finalizes the resulting credential.
+ * `interop::verify_identity`: opens the PortOne identity-verification flow
+ * (`@/lib/portone`), then finalizes the resulting credential.
  * Testing builds (`VITE_BYPASS=true`, Rust `cfg(feature = "bypass")`) skip
  * PortOne and sign an empty id, which a `bypass` backend accepts.
  */
 export async function verifyIdentity(storeId: string, channelKey: string, prefix: string): Promise<CredentialResponse> {
   if (import.meta.env.VITE_BYPASS === "true") return signAttributesHandler({ type: "port_one", id: "" });
-  const ns = (window as unknown as { ratel?: { user_credential?: { request_identity_verification?: (s: string, c: string, p: string) => Promise<unknown> } } }).ratel
-    ?.user_credential;
   let value: unknown;
   try {
-    if (!ns?.request_identity_verification) {
-      throw new Error("PortOne SDK not loaded");
-    }
-    value = await ns.request_identity_verification(storeId, channelKey, prefix);
+    value = await requestCredentialIdentityVerification(storeId, channelKey, prefix);
   } catch {
     throw new PortOneError("request_failed");
   }

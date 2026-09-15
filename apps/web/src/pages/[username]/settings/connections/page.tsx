@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useConnectionsPageI18n } from "@/i18n/generated/features/cross_posting/connections-page.i18n";
+import { useConnectionsPageI18n } from "./i18n";
 import { useToast } from "@/lib/toast";
 import { BlueskyConnectModal } from "@/components/cross-posting/bluesky-connect-modal";
 import { ConnectionsHero } from "./components/connections-hero";

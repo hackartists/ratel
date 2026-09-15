@@ -3,7 +3,7 @@ import { LevelChip } from "@/components/character/level-chip";
 import { AlignJustify } from "@/components/icons/alignments";
 import { Edit1 } from "@/components/icons/edit";
 import { LayoutGrid } from "@/components/icons/lucide";
-import { useUserHomeI18n } from "@/i18n/generated/features/social/user_views/home/user-home.i18n";
+import { useUserHomeI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 import { TeamHeader } from "./team-header";

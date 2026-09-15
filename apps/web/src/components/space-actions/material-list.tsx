@@ -3,7 +3,7 @@ import { deleteMaterial, listMaterials, uploadMaterial } from "@ratel/ts-bridges
 import { Delete2 } from "@/components/icons/edit";
 import { Upload1 } from "@/components/icons/upload-download";
 import { FileExtension, FileExtensionIcon } from "@/components/ui/file-extension-icon";
-import { useMaterialListI18n } from "@/i18n/generated/features/ai_moderator/components/material-list.i18n";
+import { useMaterialListI18n } from "./material-list.i18n";
 import { FileUploader } from "@/components/ui/file-uploader";
 import { useToast } from "@/lib/toast";
 

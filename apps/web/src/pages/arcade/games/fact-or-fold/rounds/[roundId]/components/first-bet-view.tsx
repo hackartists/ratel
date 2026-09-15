@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { BetResponse, BetSide } from "@ratel/ts-bridges";
-import { useFactFoldRoomI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/game_room/fact-fold-room.i18n";
+import { useFactFoldRoomI18n } from "@/pages/arcade/games/fact-or-fold/rounds/[roundId]/i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 import { useFactFoldRound, useRoundBets, useRoundInsider } from "../hooks/use-fact-fold-round";

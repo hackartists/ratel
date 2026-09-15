@@ -1,0 +1,79 @@
+// Ported from: app/ratel/src/features/spaces/pages/actions/components/create_action_modal/i18n.rs (`CreateActionModalTranslate`). Namespace "createActionModal".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  title: "Select Action Type",
+  quiz_title: "Quiz",
+  quiz_caption: "Focused learning space",
+  poll_title: "Poll",
+  poll_caption: "Create a quick vote",
+  discussion_title: "Discussion",
+  discussion_caption: "Centralize your thoughts",
+  follow_title: "Follow",
+  follow_caption: "Follow creator's space",
+  preview_title: "Preview",
+  preview_empty: "Select an action type above to see a preview.",
+  back: "Back",
+  create: "Create",
+  creating: "Creating...",
+  create_failed: "Failed to create action. Please try again.",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  title: "액션 유형 선택",
+  quiz_title: "퀴즈",
+  quiz_caption: "집중 학습 공간",
+  poll_title: "투표",
+  poll_caption: "빠르게 투표를 생성하세요",
+  discussion_title: "토론",
+  discussion_caption: "생각을 모아보세요",
+  follow_title: "팔로우",
+  follow_caption: "크리에이터 스페이스 팔로우",
+  preview_title: "미리보기",
+  preview_empty: "위에서 액션 유형을 선택하면 미리보기를 확인할 수 있습니다.",
+  back: "뒤로",
+  create: "생성",
+  creating: "생성 중...",
+  create_failed: "액션 생성에 실패했습니다. 다시 시도해 주세요.",
+};
+
+export const i18n = { en, ko };
+
+export interface CreateActionModalI18n {
+  title: string;
+  quizTitle: string;
+  quizCaption: string;
+  pollTitle: string;
+  pollCaption: string;
+  discussionTitle: string;
+  discussionCaption: string;
+  followTitle: string;
+  followCaption: string;
+  previewTitle: string;
+  previewEmpty: string;
+  back: string;
+  create: string;
+  creating: string;
+  createFailed: string;
+}
+
+export function useCreateActionModalI18n(): CreateActionModalI18n {
+  const { t } = useTranslation("createActionModal");
+  return {
+    title: t("title"),
+    quizTitle: t("quiz_title"),
+    quizCaption: t("quiz_caption"),
+    pollTitle: t("poll_title"),
+    pollCaption: t("poll_caption"),
+    discussionTitle: t("discussion_title"),
+    discussionCaption: t("discussion_caption"),
+    followTitle: t("follow_title"),
+    followCaption: t("follow_caption"),
+    previewTitle: t("preview_title"),
+    previewEmpty: t("preview_empty"),
+    back: t("back"),
+    create: t("create"),
+    creating: t("creating"),
+    createFailed: t("create_failed"),
+  };
+}

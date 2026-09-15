@@ -1,5 +1,5 @@
 import type { ConnectionResponse, SocialPlatform } from "@ratel/ts-bridges";
-import { useComposeSidebarI18n } from "@/i18n/generated/features/cross_posting/compose-sidebar.i18n";
+import { useComposeSidebarI18n } from "./compose-sidebar.i18n";
 import { dataBool } from "@/lib/dom";
 import { stripHtml } from "@/lib/content-body";
 import { charLimit, displayName, PlatformLogo } from "./social-platform";

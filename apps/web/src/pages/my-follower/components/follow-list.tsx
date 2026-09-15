@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Plus } from "@/components/icons/lucide";
 import { Button, ButtonSize, ButtonStyle } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useFollowListI18n } from "@/i18n/generated/features/my_follower/components/follow-list.i18n";
+import { useFollowListI18n } from "./follow-list.i18n";
 import type { FollowUserItem, Partition } from "../hooks/use-my-follower";
 import type { FollowTab } from "./follow-tabs";
 

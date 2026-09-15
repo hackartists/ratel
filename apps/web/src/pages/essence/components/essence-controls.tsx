@@ -1,4 +1,4 @@
-import { useEssenceSourcesI18n } from "@/i18n/generated/features/essence/pages/sources/essence-sources.i18n";
+import { useEssenceSourcesI18n } from "@/pages/essence/i18n";
 import { useEssenceSources, type EssenceSort } from "../hooks/use-essence-sources";
 
 // app/ratel/src/features/essence/pages/sources/controls/component.rs — search

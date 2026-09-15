@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ActionEditFooter, ActionEditSaveBusProvider } from "@/components/space-actions/action-edit-footer";
 import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
 import { useSpace } from "@/components/space/space-context";
-import { useQuizCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/quiz/views/main/creator/quiz-creator.i18n";
+import { useQuizCreatorI18n } from "./quiz-creator.i18n";
 import { useQuizProvider, QuizProvider } from "../hooks/use-quiz";
 import { QuizConfigCard } from "./quiz-config-card";
 import { QuizContentCard } from "./quiz-content-card";

@@ -1,4 +1,4 @@
-import { useTeamDaoI18n } from "@/i18n/generated/features/social/pages/dao/views/team-dao.i18n";
+import { useTeamDaoI18n } from "./i18n";
 
 // app/ratel/src/features/social/pages/dao/views/viewer_page.rs (`ViewerPage`).
 export function ViewerPage({ username }: { username: string }) {

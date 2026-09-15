@@ -9,7 +9,7 @@ import { roleFromPermissions } from "@/components/social/team-arena/team-role";
 import { useTeamContext } from "@/components/social/use-team-context";
 import { SelectedCategoryProvider, useSelectedCategory, useWallContext } from "@/components/social/wall-context";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
-import { useTeamMenuI18n } from "@/i18n/generated/features/social/team-menu.i18n";
+import { useTeamMenuI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 import { usePopup } from "@/lib/popup";
 

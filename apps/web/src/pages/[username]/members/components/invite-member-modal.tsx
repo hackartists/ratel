@@ -6,7 +6,7 @@ import {
   type FoundUserResponse,
   type TeamRole,
 } from "@/components/team-member/use-team-members";
-import { useTeamMemberI18n } from "@/i18n/generated/features/social/pages/member/views/team-member.i18n";
+import { useTeamMemberI18n } from "@/pages/[username]/members/i18n";
 import { useToast } from "@/lib/toast";
 import { RoleDropdown } from "./role-dropdown";
 

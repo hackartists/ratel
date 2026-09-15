@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { getCredentialsHandler, getDidSummaryHandler, signAttributesHandler } from "@ratel/ts-bridges";
-import { useCredentialsI18n } from "@/i18n/generated/features/social/pages/credentials/views/credentials.i18n";
+import { useCredentialsI18n } from "@/pages/credentials/credentials.i18n";
 import { useUserContext } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
 import { useLegacyScript } from "@/lib/legacy-scripts";

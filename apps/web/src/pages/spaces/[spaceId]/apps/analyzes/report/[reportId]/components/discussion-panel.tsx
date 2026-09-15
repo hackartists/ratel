@@ -7,7 +7,7 @@ import type {
   SpaceAnalyzeDiscussionResult,
   TermScore,
 } from "@ratel/ts-bridges";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { useToast } from "@/lib/toast";
 import { DEFAULT_DISCUSSION_PARAMS, useAnalyzeReportDetailContext } from "../hooks/use-analyze-report-detail";
 

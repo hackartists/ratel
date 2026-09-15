@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useBlueskyConnectModalI18n } from "@/i18n/generated/features/cross_posting/bluesky-connect-modal.i18n";
+import { useBlueskyConnectModalI18n } from "./bluesky-connect-modal.i18n";
 import { dataBool } from "@/lib/dom";
 
 // app/ratel/src/features/cross_posting/components/bluesky_connect_modal

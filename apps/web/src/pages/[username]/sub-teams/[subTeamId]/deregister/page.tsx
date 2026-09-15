@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Check, ChevronLeft, Info, LogOut, TriangleAlert } from "@/components/icons/lucide";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { useFindTeam } from "@ratel/ts-bridges/hooks";
 import { useSubTeamDeregister } from "./hooks/use-sub-team-deregister";
 

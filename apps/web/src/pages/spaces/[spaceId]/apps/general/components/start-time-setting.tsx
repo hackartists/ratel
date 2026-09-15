@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useGeneralI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/general/general.i18n";
+import { useGeneralI18n } from "@/pages/spaces/[spaceId]/apps/general/i18n";
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { useSpaceGeneralSettings } from "../hooks/use-space-general-settings";
 import { datetimeLocalToEpochMs, epochMsToDatetimeLocal } from "./format";

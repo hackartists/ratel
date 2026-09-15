@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDeleteAccount } from "@ratel/ts-bridges/hooks";
 import { useSignOut } from "@/components/auth";
-import { useProfileDropdownI18n } from "@/i18n/generated/components/profile_dropdown/profile-dropdown.i18n";
+import { useProfileDropdownI18n } from "./i18n";
 import { usePopup } from "@/lib/popup";
 
 // app/ratel/src/components/profile_dropdown/mod.rs (`AccountDeletionConfirm`,

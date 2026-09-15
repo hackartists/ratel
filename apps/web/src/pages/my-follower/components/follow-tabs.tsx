@@ -1,4 +1,4 @@
-import { useFollowTabsI18n } from "@/i18n/generated/features/my_follower/components/follow-tabs.i18n";
+import { useFollowTabsI18n } from "./follow-tabs.i18n";
 
 // app/ratel/src/features/my_follower/components/follow_tabs.rs (`FollowTabs`).
 

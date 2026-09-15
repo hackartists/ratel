@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ChevronLeft, Clock, FileText, Plus, Star } from "@/components/icons/lucide";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { useFindTeam, useListTeamBylaws } from "@ratel/ts-bridges/hooks";
 import { BylawCard } from "./components/bylaw-card";
 

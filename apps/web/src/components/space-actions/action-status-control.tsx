@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { SpaceActionStatus } from "@ratel/ts-bridges";
 import { useUpdateSpaceAction } from "@ratel/ts-bridges/hooks";
 import { Button, ButtonSize, ButtonStyle } from "@/components/ui/button";
-import { useActionStatusControlI18n } from "@/i18n/generated/features/spaces/pages/actions/components/action_status_control/action-status-control.i18n";
+import { useActionStatusControlI18n } from "./action-status-control.i18n";
 import { useToast } from "@/lib/toast";
 
 // app/ratel/src/features/spaces/pages/actions/components/action_status_control —

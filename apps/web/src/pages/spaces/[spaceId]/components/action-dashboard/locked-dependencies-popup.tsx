@@ -2,8 +2,8 @@
 // `LockedDependenciesPopup`: lists the unmet actions blocking a locked quest
 // card; picking one scrolls its card into view and closes the popup.
 import type { SpaceActionSummary, SpaceActionType, SpacePartition } from "@ratel/ts-bridges";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useLockedDependenciesPopupI18n } from "@/i18n/generated/features/spaces/pages/index/action_dashboard/locked_dependencies_popup/locked-dependencies-popup.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useLockedDependenciesPopupI18n } from "./i18n";
 import { useToast } from "@/lib/toast";
 
 export function LockedDependenciesPopup({
