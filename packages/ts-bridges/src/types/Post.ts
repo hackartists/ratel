@@ -12,20 +12,6 @@ import type { SpaceVisibilityJson } from "./SpaceVisibilityJson";
 import type { StringVec } from "./StringVec";
 import type { Visibility } from "./Visibility";
 
-/**
- * Wire form of [`Post`] — identical plus the legacy `pk`/`sk` keys.
- *
- * Same reason as `UserWire`: the shipped mobile build (the last release before
- * the DynamoDB→Postgres cut) declares `pk: Partition` and `sk: EntityType` as
- * REQUIRED, so a payload without them fails to parse and the feed dies whole.
- * Both are derivable from `id` — that build wrote `pk: Partition::Feed(uid)`
- * and `sk: EntityType::Post` — so they are recomputed here rather than stored.
- *
- * The other renamed fields need no bridging: `user_pk`/`space_pk` hold the same
- * prefixed strings a `Partition` serializes to, and `BodyJson`/`StringVec`/
- * `FileVec`/`AuthorTypeJson`/`SpaceVisibilityJson` are `#[serde(transparent)]`
- * newtypes, so their JSON is unchanged from the old `Vec<_>`/`ContentBody`.
- */
 export type Post = {
 /**
  * `Partition::Feed(id)` — renders as `FEED#{id}`.

@@ -250,13 +250,17 @@ test:
 # barrels. Output is committed; CI regenerates it and requires no diff.
 TS_BRIDGES_DIR ?= $(abspath $(CURDIR)/../../packages/ts-bridges)
 
+# --test-threads=1: ts-rs writes a type's file both from its own export test and
+# from every parent that exports it as a dependency (the latter without the
+# type's doc comment). Run in parallel, the last writer wins at random and the
+# committed output drifts; serially the order — and the output — is fixed.
 gen-ts:
 	rm -rf "$(TS_BRIDGES_DIR)/.gen" "$(TS_BRIDGES_DIR)/src/types"
 	# ts-rs writes non-exported dependencies to their default path under
 	# TS_RS_EXPORT_DIR; drop any such stragglers so they can't mask a missing export.
 	find "$(TS_BRIDGES_DIR)/src" -maxdepth 1 -name '*.ts' ! -name index.ts -delete
 	DYNAMO_TABLE_PREFIX=$(DYNAMO_TABLE_PREFIX) TS_SERVER_FN_PACKAGE_DIR="$(TS_BRIDGES_DIR)" TS_RS_EXPORT_DIR="$(TS_BRIDGES_DIR)/src" \
-		cargo test --no-default-features --features tauri-web,ts-bridge --lib -- ts_bridge_manifest_ export_bindings_
+		cargo test --no-default-features --features tauri-web,ts-bridge --lib -- ts_bridge_manifest_ export_bindings_ --test-threads=1
 	node "$(TS_BRIDGES_DIR)/scripts/gen-handlers.mjs"
 
 # wasm-bindgen build of packages/attr-voting-wasm for apps/web (React port of

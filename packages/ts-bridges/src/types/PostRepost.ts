@@ -3,12 +3,6 @@ import type { BodyJson } from "./BodyJson";
 import type { EntityType } from "./EntityType";
 import type { Partition } from "./Partition";
 
-/**
- * Wire form of [`PostRepost`] — identical plus the legacy `pk`/`sk` keys.
- *
- * Same reason as `UserWire`. The DynamoDB identity was
- * `(owner feed, PostRepost)`; `owner_pk` still holds that partition string.
- */
 export type PostRepost = {
 /**
  * The reposting owner's feed partition, parsed from `owner_pk`.
