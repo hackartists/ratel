@@ -283,6 +283,13 @@ jobs:
       # React migration (docs/superpower/2026-09-14-react-frontend-migration.md):
       # the committed TypeScript API client (packages/ts-bridges) must match
       # what the Rust sources generate. Regenerate and fail on any diff.
+      # `make gen-ts` renders the TS client with node (packages/ts-bridges/
+      # scripts/gen-handlers.mjs). The cargo checks above no longer need it.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: gen-ts drift check
         env:
           DYNAMO_TABLE_PREFIX: ratel-dev
