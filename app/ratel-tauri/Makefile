@@ -65,6 +65,15 @@ else
 endif
 NDK_HOME ?= $(ANDROID_NDK_HOME)
 GOOGLE_OAUTH_CLIENT_ID ?=
+# Android native Google sign-in needs the Firebase WEB OAuth client id baked in
+# at compile time (src-tauri/src/commands/google_sign_in.rs). CI passes it from
+# secrets; for local builds fall back to the `client_type: 3` entry of
+# google-services.json (a public id that ships in the app) when it is not set.
+ifeq ($(strip $(GOOGLE_OAUTH_CLIENT_ID)),)
+  ifneq ($(wildcard google-services.json),)
+    GOOGLE_OAUTH_CLIENT_ID := $(shell python3 -c 'import json;d=json.load(open("google-services.json"));print(next((o["client_id"] for c in d.get("client",[]) for o in c.get("oauth_client",[]) if o.get("client_type")==3),""))' 2>/dev/null)
+  endif
+endif
 
 # adb target device for install/launch. Override: `make debug-apk DEVICE=emulator-5554`.
 # Defaults to ANDROID_SERIAL, else the first attached device — so `adb` doesn't
