@@ -1,11 +1,11 @@
-// app/ratel/src/features/social/pages/dao/{config.rs, interop/mod.rs,
-// models/dao_contract.rs} and the clipboard / external-link helpers of
-// components/dao_info_card.rs, as plain async functions.
+// The team DAO config, contract interop and the clipboard / external-link
+// helpers of the former Dioxus DAO page, as plain async functions.
 //
-// The Rust interop is a `wasm_bindgen` extern on
-// `window.ratel.ratel_team_dao.{createDAO, copyText}` (interop/mod.rs:6); these
-// functions call exactly that path. A missing namespace throws inside the
-// `try`, like the `catch` shim wasm_bindgen generates.
+// The contract calls live in `./team-dao-contract` and are imported directly.
+// Before, both the Dioxus interop and this file looked them up on
+// `window.ratel.ratel_team_dao`, a name the global bundle never registered (it
+// used `window.ratel.social.teams`), so DAO creation and copy always failed.
+import { copyText, createDAO } from "./team-dao-contract";
 
 /** Rust `Config::default()` (config.rs) — `option_env!` values baked in at build time. */
 const ENV = import.meta.env as unknown as Record<string, string | undefined>;
@@ -42,15 +42,6 @@ export class DaoWalletError extends Error {
     this.name = "DaoWalletError";
   }
 }
-
-interface TeamDaoGlobal {
-  initialize(config: unknown): void;
-  createDAO(admins: string[], network: string, rpcUrl: string, blockExplorerUrl: string): Promise<unknown>;
-  copyText(text: string): Promise<unknown>;
-}
-
-const teamDao = (): TeamDaoGlobal =>
-  (window as unknown as { ratel: { ratel_team_dao: TeamDaoGlobal } }).ratel.ratel_team_dao;
 
 /** Rust `format_js_error` (dao_contract.rs). */
 function formatJsError(err: unknown): DaoWalletError {
@@ -89,7 +80,7 @@ export async function createDao(
 ): Promise<CreateDaoResult> {
   let value: unknown;
   try {
-    value = await teamDao().createDAO([...admins], network, rpcUrl, blockExplorerUrl);
+    value = await createDAO([...admins], network, rpcUrl, blockExplorerUrl);
   } catch (e) {
     throw formatJsError(e);
   }
@@ -114,7 +105,7 @@ export async function createDao(
  */
 export async function copyToClipboard(text: string): Promise<void> {
   if (IS_TAURI_WEB) throw new Error("Clipboard is only available on web");
-  await teamDao().copyText(text);
+  await copyText(text);
 }
 
 /** Rust `after_copy_delay` — 2s on the web build, none elsewhere. */

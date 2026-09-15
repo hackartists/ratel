@@ -24,6 +24,7 @@ Unchanged: the PortOne `<script>` from `cdn.portone.io`, the inline theme script
 ## Pre-existing bugs this fixes
 
 - **Incentive pool deploy and team DAO creation never worked through the bundle.** The JS registered `ratel.spaces.apps.incentive_pool` / `ratel.social.teams`, but the callers (Rust `wasm_bindgen` before the migration, the React port now) read `ratel.space_incentive_pool` / `ratel.ratel_team_dao`, which nothing sets. Importing the module directly removes the name lookup.
+- **Not fixed here — the incentive pool contract artifact is missing.** `deploySpaceIncentive` fetches `/assets/space-incentive-artifact.json`, which 404s: it was added at `app/spaces/apps/incentive-pool/assets/` in 3301696a7 and deleted without a replacement in 8f1688fcd ("Migrated"); `contracts/artifacts` is gitignored build output. So even with the name fixed, a deploy stops after the wallet steps with `Failed to load SpaceIncentive artifact (status=404)`. The lost artifact's constructor matches today's call (`admins`, `{mode, numOfTargets, rankingBps}`), but whether its bytecode matches the current `SpaceIncentive.sol` is unverified — restoring it (or building it from `contracts/`) is a decision for the contract owners, since it deploys on-chain.
 
 ## Loading strategy
 
