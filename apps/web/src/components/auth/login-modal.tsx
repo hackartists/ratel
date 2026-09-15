@@ -18,6 +18,7 @@ import {
   walletInitialize,
   walletOpenApp,
   walletSignMessage,
+  warmUpGoogleSignIn,
 } from "./interop";
 import { SignupModal } from "./signup-modal";
 import { useAuthActions } from "./use-auth-actions";
@@ -62,6 +63,12 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   // Read once, like the Rust `use_signal(|| is_ios())`.
   const [ios] = React.useState(isIos);
   const [android] = React.useState(isAndroid);
+
+  // Load the Firebase SDK as soon as the modal opens, so "Continue with Google"
+  // reaches the popup inside the click's user gesture.
+  React.useEffect(() => {
+    warmUpGoogleSignIn();
+  }, []);
 
   const errorText = (e: unknown) =>
     e instanceof LocalAuthError

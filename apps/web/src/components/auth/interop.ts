@@ -10,6 +10,7 @@
 import { refreshSessionHandler } from "@ratel/ts-bridges";
 import { ApiError } from "@ratel/ts-bridges/runtime";
 import { googleSignInNative, isTauri } from "@/lib/native";
+import { initFirebase as initFirebaseSdk, preloadFirebase, signIn as firebaseSignIn } from "./firebase";
 
 interface WalletConnectGlobal {
   initialize(projectId: string, appName: string, appDescription: string, appUrl: string): void;
@@ -18,14 +19,9 @@ interface WalletConnectGlobal {
   openWalletApp(): Promise<void>;
 }
 
-interface RatelGlobal {
-  invoke?: (method: string, args?: unknown) => unknown;
-}
-
 const globals = () =>
   window as unknown as {
     walletConnect?: WalletConnectGlobal;
-    ratel?: RatelGlobal;
   };
 
 /** Rust `WalletConnectResult`. */
@@ -132,16 +128,25 @@ export async function walletOpenApp(): Promise<void> {
 export async function initFirebase(): Promise<void> {
   if (isTauri()) return; // The native build never initializes the Firebase JS SDK.
   try {
-    await globals().ratel?.invoke?.("init_firebase", FIREBASE_CONFIG);
+    await initFirebaseSdk(FIREBASE_CONFIG);
   } catch (e) {
     console.error("Failed to initialize Firebase:", e);
   }
 }
 
 /**
- * Rust `sign_in()`. Web: Firebase `signInWithPopup` through
- * `window.ratel.invoke("signIn")`. Tauri: the native `google_sign_in` command
- * (tauri-plugin-google-auth), which returns Google's tokens but no email.
+ * Starts downloading the Firebase SDK so a later Google click can open its
+ * popup without waiting (a popup opened after a network wait gets blocked).
+ */
+export function warmUpGoogleSignIn(): void {
+  if (isTauri()) return;
+  preloadFirebase().catch((e) => console.error("Failed to load Firebase:", e));
+}
+
+/**
+ * Rust `sign_in()`. Web: Firebase `signInWithPopup` (`./firebase`). Tauri: the
+ * native `google_sign_in` command (tauri-plugin-google-auth), which returns
+ * Google's tokens but no email.
  */
 export async function googleSignIn(): Promise<UserInfo> {
   if (isTauri()) {
@@ -155,14 +160,14 @@ export async function googleSignIn(): Promise<UserInfo> {
   }
   let result: unknown = null;
   try {
-    result = await globals().ratel?.invoke?.("signIn");
+    result = await firebaseSignIn();
   } catch (e) {
     console.error("signIn threw", e);
   }
   if (result && typeof result === "object" && typeof (result as UserInfo).access_token === "string") {
     return result as UserInfo;
   }
-  // invoke_with_args.js sends null → the Rust `recv` fails with OnlyWebFunction.
+  // A failed popup resolves `undefined` → the Rust `recv` failed with OnlyWebFunction.
   throw new LocalAuthError("OnlyWebFunction");
 }
 
