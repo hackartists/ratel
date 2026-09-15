@@ -19,7 +19,8 @@ name: Mobile release (local Mac runner)
 # Differences from mobile-release.yml, all because the machine is someone's
 # own Mac rather than a throwaway VM:
 #   - No actions/cache and no global Xcode switch (setup-xcode needs sudo): the
-#     job picks the newest installed Xcode 26+ through DEVELOPER_DIR.
+#     job picks the newest installed Xcode 26+ through DEVELOPER_DIR and
+#     xcodebuild/xcrun wrappers on PATH.
 #   - Rust targets, tauri-cli and xcodegen come from the Mac's own toolchains.
 #   - The signing keychain is added to the keychain search list only when the
 #     Mac does not already hold the same distribution identity, and the
@@ -287,9 +288,21 @@ jobs:
             echo "::error::Xcode 26 or later is required (App Store uploads need the iOS 26 SDK). Install it into /Applications."
             exit 1
           fi
-          echo "DEVELOPER_DIR=$best/Contents/Developer" >> "$GITHUB_ENV"
-          DEVELOPER_DIR="$best/Contents/Developer" xcodebuild -version
-          DEVELOPER_DIR="$best/Contents/Developer" xcodebuild -showsdks | grep -i ios
+          developer_dir="$best/Contents/Developer"
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          # `cargo tauri ios build` (cargo-mobile2) runs xcodebuild with an
+          # explicit environment of HOME, PATH and a few others, which drops
+          # DEVELOPER_DIR, so the /usr/bin shims fall back to `xcode-select -p`.
+          # Wrappers first on PATH pin the choice through that.
+          wrappers="$RUNNER_TEMP/xcode-bin"
+          mkdir -p "$wrappers"
+          for tool in xcodebuild xcrun; do
+            printf '#!/bin/sh\nDEVELOPER_DIR="%s" exec /usr/bin/%s "$@"\n' "$developer_dir" "$tool" > "$wrappers/$tool"
+            chmod +x "$wrappers/$tool"
+          done
+          echo "$wrappers" >> "$GITHUB_PATH"
+          env -i HOME="$HOME" PATH="$wrappers:/usr/bin:/bin" xcodebuild -version
+          env -i HOME="$HOME" PATH="$wrappers:/usr/bin:/bin" xcodebuild -showsdks | grep -i ios
 
       - uses: actions/setup-node@v4
         with:
