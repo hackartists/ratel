@@ -144,6 +144,7 @@ export async function googleSignIn(): Promise<UserInfo> {
   if (isTauri()) {
     try {
       const token = await googleSignInNative();
+      if (!token.access_token) throw new Error("google_sign_in returned no access token");
       return { access_token: token.access_token, id_token: token.id_token ?? "", email: null };
     } catch (e) {
       console.error("google_sign_in threw", e);

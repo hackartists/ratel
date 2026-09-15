@@ -82,15 +82,24 @@ export function printPage(jobName: string): Promise<void> {
 
 // ── Auth (google_sign_in.rs) ──
 
-/** tauri-plugin-google-auth `TokenResponse` (the fields the app reads). */
 export interface GoogleTokenResponse {
   access_token: string;
   id_token?: string | null;
 }
 
+/**
+ * tauri-plugin-google-auth `TokenResponse` as it crosses IPC: the struct is
+ * `#[serde(rename_all = "camelCase")]`, so the fields arrive as `accessToken`.
+ */
+interface NativeGoogleTokenResponse {
+  accessToken: string;
+  idToken?: string | null;
+}
+
 /** `google_sign_in`: the native Google flow; returns tokens but no email. */
-export function googleSignInNative(): Promise<GoogleTokenResponse> {
-  return invoke<GoogleTokenResponse>("google_sign_in");
+export async function googleSignInNative(): Promise<GoogleTokenResponse> {
+  const token = await invoke<NativeGoogleTokenResponse>("google_sign_in");
+  return { access_token: token.accessToken, id_token: token.idToken };
 }
 
 // ── Links (external_url.rs, tauri-plugin-opener) ──
