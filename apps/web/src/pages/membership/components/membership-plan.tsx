@@ -1,4 +1,4 @@
-import { useMembershipPlanI18n } from "@/i18n/generated/features/membership/components/membership_plan/membership-plan.i18n";
+import { useMembershipPlanI18n } from "./i18n";
 import { useLanguage } from "@/lib/language";
 import { useMembershipPlan } from "../hooks/use-membership-plan";
 import { MembershipCard } from "./membership-card";

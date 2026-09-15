@@ -4,7 +4,7 @@
 // namespace, following `#[translate(from)]` delegates into the wrapped enum.
 import { ApiError } from "@ratel/ts-bridges/runtime";
 import i18n from "@/i18n";
-import { delegates } from "@/i18n/generated/enums.i18n";
+import { delegates } from "@/i18n/enums.i18n";
 
 const DELEGATES = delegates as Record<string, Record<string, string> | undefined>;
 

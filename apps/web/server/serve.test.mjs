@@ -390,6 +390,103 @@ test("meta cache serves a second identical lookup without hitting the upstream a
 });
 
 // ---------------------------------------------------------------------------
+// Page cache (finished HTML kept in memory, like the Dioxus ssr_cache)
+// ---------------------------------------------------------------------------
+
+test("a failed meta lookup is cached briefly, so repeated requests don't re-hit the upstream", async () => {
+  const distDir = await makeDist({ "index.html": GENERIC_INDEX });
+  let hitCount = 0;
+  const upstream = await startFakeUpstream((req, res) => {
+    hitCount += 1;
+    res.writeHead(404).end();
+  });
+  const handler = createRequestHandler({ distDir, apiOrigin: `http://127.0.0.1:${upstream.address().port}` });
+  const server = await listen(handler);
+  try {
+    for (let i = 0; i < 3; i++) {
+      const res = await fetch(serverUrl(server, "/spaces/private1"));
+      assert.equal(await res.text(), GENERIC_INDEX);
+    }
+    assert.equal(hitCount, 1);
+  } finally {
+    await closeAll(server, upstream);
+  }
+});
+
+test("concurrent requests for an uncached page share one meta lookup", async () => {
+  const distDir = await makeDist({ "index.html": GENERIC_INDEX });
+  let hitCount = 0;
+  const upstream = await startFakeUpstream((req, res) => {
+    hitCount += 1;
+    setTimeout(() => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ title: "Busy Space", content: "" }));
+    }, 50);
+  });
+  const handler = createRequestHandler({ distDir, apiOrigin: `http://127.0.0.1:${upstream.address().port}` });
+  const server = await listen(handler);
+  try {
+    const bodies = await Promise.all(
+      Array.from({ length: 10 }, () => fetch(serverUrl(server, "/spaces/busy")).then((r) => r.text())),
+    );
+    assert.equal(hitCount, 1);
+    for (const body of bodies) assert.match(body, /<title data-rh="true">Busy Space<\/title>/);
+  } finally {
+    await closeAll(server, upstream);
+  }
+});
+
+test("a rebuilt index.html is served without restarting the server", async () => {
+  const distDir = await makeDist({ "index.html": GENERIC_INDEX });
+  const handler = createRequestHandler({ distDir, templateCheckMs: 0 });
+  const server = await listen(handler);
+  try {
+    assert.equal(await (await fetch(serverUrl(server, "/some/page"))).text(), GENERIC_INDEX);
+    const rebuilt = GENERIC_INDEX.replace("<title>Ratel</title>", "<title>Rebuilt</title>");
+    // Make sure the mtime moves even on filesystems with coarse timestamps.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await writeFile(path.join(distDir, "index.html"), rebuilt);
+    const { utimes } = await import("node:fs/promises");
+    const later = new Date(Date.now() + 5000);
+    await utimes(path.join(distDir, "index.html"), later, later);
+    assert.equal(await (await fetch(serverUrl(server, "/some/page"))).text(), rebuilt);
+  } finally {
+    await closeAll(server);
+  }
+});
+
+test("cached pages keep the gzip/plain contract and HEAD returns no body", async () => {
+  const distDir = await makeDist({ "index.html": GENERIC_INDEX });
+  const handler = createRequestHandler({ distDir });
+  const server = await listen(handler);
+  try {
+    const gz = await fetch(serverUrl(server, "/cached"), { headers: { "accept-encoding": "gzip" } });
+    assert.equal(gz.headers.get("content-encoding"), "gzip");
+    assert.equal(gz.headers.get("cache-control"), "no-cache");
+    assert.equal(await gz.text(), GENERIC_INDEX);
+
+    const plain = await fetch(serverUrl(server, "/cached"), { headers: { "accept-encoding": "identity" } });
+    assert.equal(plain.headers.get("content-encoding"), null);
+    assert.equal(await plain.text(), GENERIC_INDEX);
+
+    const head = await new Promise((resolve, reject) => {
+      const req = httpRequest(serverUrl(server, "/cached"), { method: "HEAD" }, (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => resolve({ status: res.statusCode, length: res.headers["content-length"], body: Buffer.concat(chunks) }));
+      });
+      req.on("error", reject);
+      req.end();
+    });
+    assert.equal(head.status, 200);
+    assert.equal(head.length, String(Buffer.byteLength(GENERIC_INDEX)));
+    assert.equal(head.body.length, 0);
+  } finally {
+    await closeAll(server);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Proxy (PROXY_API=1 local end-to-end testing mode)
 // ---------------------------------------------------------------------------
 

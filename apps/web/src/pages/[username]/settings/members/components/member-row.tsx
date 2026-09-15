@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Ellipsis, ShieldCheck, User, UserMinus } from "@/components/icons/lucide";
 import { Button, ButtonShape, ButtonSize, ButtonStyle } from "@/components/ui/button";
 import type { TeamMemberResponse, TeamRole } from "@/components/team-member/use-team-members";
-import { useTeamSettingsI18n } from "@/i18n/generated/features/social/pages/setting/team/views/team-settings.i18n";
+import { useTeamSettingsI18n } from "@/pages/[username]/settings/i18n";
 
 // `MemberRow` (app/ratel/src/features/social/pages/setting/team/views/management_page.rs):
 // avatar, name, role label and — for managers, on non-owner rows — a "…"

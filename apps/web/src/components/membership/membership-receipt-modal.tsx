@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import {
   useMembershipReceiptI18n,
   type MembershipReceiptI18n,
-} from "@/i18n/generated/features/membership/components/membership_receipt_modal/membership-receipt.i18n";
+} from "./membership-receipt.i18n";
 import { usePopup } from "@/lib/popup";
 import type { UiMembershipTier } from "./membership-tier";
 

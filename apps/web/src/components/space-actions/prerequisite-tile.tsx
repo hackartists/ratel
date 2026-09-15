@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useUpdateSpaceAction } from "@ratel/ts-bridges/hooks";
 import { Switch } from "@/components/ui/switch";
-import { usePrerequisiteTileI18n } from "@/i18n/generated/features/spaces/pages/actions/components/prerequisite_tile/prerequisite-tile.i18n";
+import { usePrerequisiteTileI18n } from "./prerequisite-tile.i18n";
 import { useToast } from "@/lib/toast";
 
 // app/ratel/src/features/spaces/pages/actions/components/prerequisite_tile —

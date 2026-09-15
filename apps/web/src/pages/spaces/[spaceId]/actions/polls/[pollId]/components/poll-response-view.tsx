@@ -7,8 +7,8 @@ import { FullActionLayover } from "@/components/space-actions/full-action-layove
 import { hasAnswerForQuestion, QuestionViewer, shouldAutoNext } from "@/components/space-actions/question-viewer";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
-import { usePollParticipantI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/views/main/participant/poll-participant.i18n";
-import { usePollReadI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/views/main/poll-read.i18n";
+import { usePollParticipantI18n } from "./poll-participant.i18n";
+import { usePollReadI18n } from "./poll-read.i18n";
 import {
   buildStoredVoterKeyFromEncryptionMaterial,
   encryptAnswersForCanister,

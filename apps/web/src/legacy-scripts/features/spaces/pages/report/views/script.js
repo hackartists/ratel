@@ -1,7 +1,7 @@
 // Reports list carousel — direct port of the JS block in
 // `assets/design/reports/reports-list.html`. Only the carousel slice
 // (active-card detection + dot navigation) is ported here; filter chips
-// are handled in Dioxus instead. A MutationObserver re-binds on CSR
+// are handled in React (report/page.tsx). A MutationObserver re-binds on CSR
 // remounts so navigating into the page from another route still wires
 // up the scroll/resize handlers.
 
@@ -93,7 +93,7 @@
     window.addEventListener("resize", updateActive);
     requestAnimationFrame(updateActive);
 
-    // Filter chips mutate `hidden` from the Dioxus side; observe DOM
+    // Switching a filter chip re-renders the card list in React; observe DOM
     // changes within the track and rebuild dots / re-pick active card.
     var mo = new MutationObserver(function () {
       rebuildDots();

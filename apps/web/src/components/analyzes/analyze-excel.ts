@@ -8,7 +8,7 @@ import type {
   SpacePanelQuotaResponse,
   SpacePollUserAnswer,
 } from "@ratel/ts-bridges";
-import type { SpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import type { SpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import type { AnalyzeExcelMerge } from "./analyze-interop";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/hooks/use_space_analyze_poll.rs

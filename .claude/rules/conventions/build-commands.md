@@ -29,9 +29,6 @@ cd app/ratel && make build           # or: make build-testing (bypass + local-de
 ## React web app (apps/web/)
 
 ```bash
-# Shared JS bundles (ratel-app-shell.js, wallet-connect.js) -> apps/web/assets
-npm ci --prefix apps/web/shell-js && npm run build --prefix apps/web/shell-js
-
 pnpm -C apps/web typecheck
 pnpm -C apps/web build               # -> apps/web/dist
 pnpm -C apps/web dev                 # :5173, proxies API paths to VITE_API_TARGET (default dev)

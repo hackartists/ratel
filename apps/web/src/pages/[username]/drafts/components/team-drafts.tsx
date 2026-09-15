@@ -6,7 +6,7 @@ import { isAdminOrOwner, TeamArenaTab, useTeamArenaTab } from "@/components/soci
 import {
   useTeamDraftI18n,
   type TeamDraftI18n,
-} from "@/i18n/generated/features/social/pages/draft/team/views/team-draft.i18n";
+} from "@/pages/[username]/drafts/i18n";
 import { toPlainText } from "../hooks/draft-text";
 import { partitionId } from "../hooks/use-drafts-list";
 import { useTeamDrafts, useTeamDraftsPermission } from "../hooks/use-team-drafts";

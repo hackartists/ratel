@@ -14,10 +14,10 @@
  * here would just be visual noise without any data effect. Those live
  * with CREATE / preview only.
  *
- * Dioxus owns NONE of this state — it just renders the structure.
+ * React owns NONE of this state — it just renders the structure.
  * Wrapped in the standard MutationObserver bind-once pattern so it
- * works under both SSR (defer-loaded) and CSR (Dioxus mounts the page
- * after the script tag has already executed). The bind guard is on
+ * works whether the page is already in the DOM when the script runs or
+ * React mounts it afterwards. The bind guard is on
  * `.sidebar` (the unique anchor that exists once per page).
  */
 (function () {
@@ -56,9 +56,9 @@
       });
   }
 
-  // Try immediately (SSR with defer).
+  // Try immediately (page already in the DOM).
   initDetail();
-  // Also observe for CSR rendering (Dioxus adds elements after script runs).
+  // Also observe for CSR rendering (React adds elements after script runs).
   new MutationObserver(function () {
     var sidebar = document.querySelector(".analyze-arena .sidebar");
     if (sidebar && !sidebar.dataset.analyzeDetailBound) {

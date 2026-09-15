@@ -1,4 +1,4 @@
-import { useLevelChipI18n } from "@/i18n/generated/features/character/components/level_chip/level-chip.i18n";
+import { useLevelChipI18n } from "./i18n";
 import { usePublicLevel } from "./use-public-level";
 
 // app/ratel/src/features/character/components/level_chip/component.rs

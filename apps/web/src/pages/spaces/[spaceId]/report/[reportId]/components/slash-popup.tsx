@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { dataBool } from "@/lib/dom";
-import { useReportDetailI18n } from "@/i18n/generated/features/spaces/pages/report/views/detail/report-detail.i18n";
+import { useReportDetailI18n } from "@/pages/spaces/[spaceId]/report/[reportId]/i18n";
 import { actionSourceToken } from "./chart-figure-html";
 import { useReportDetailContext, type SlashOption } from "../hooks/use-report-detail";
 

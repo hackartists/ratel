@@ -1,4 +1,4 @@
-import { useLaunchpadPartnerI18n } from "@/i18n/generated/features/launchpad_partner/launchpad-partner.i18n";
+import { useLaunchpadPartnerI18n } from "./i18n";
 import { usePopup } from "@/lib/popup";
 import { fmtCommasUnsigned } from "./format";
 import { useLaunchpadEntryUrl } from "./use-launchpad";

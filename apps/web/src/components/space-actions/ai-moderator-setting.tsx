@@ -8,7 +8,7 @@ import { CrossAxisAlign, MainAxisAlign } from "@/components/ui/layout";
 import { PremiumSwitch } from "@/components/ui/premium-switch";
 import { TextArea } from "@/components/ui/textarea";
 import { ContentAlign, ContentSide, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useAiModeratorSettingI18n } from "@/i18n/generated/features/ai_moderator/components/ai-moderator-setting.i18n";
+import { useAiModeratorSettingI18n } from "./ai-moderator-setting.i18n";
 import { useToast } from "@/lib/toast";
 import { MaterialList } from "./material-list";
 

@@ -10,8 +10,8 @@ import { MembershipPurchaseModal, type CustomerInfo } from "@/components/members
 import { MembershipReceiptModal } from "@/components/membership/membership-receipt-modal";
 import { apiTierToUi, type UiMembershipTier } from "@/components/membership/membership-tier";
 import { TeamArenaTab, useTeamArena, useTeamArenaTab } from "@/components/social/team-arena-context";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useTeamSubscriptionI18n } from "@/i18n/generated/features/social/pages/setting/team/views/subscription_page/team-subscription.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useTeamSubscriptionI18n } from "./i18n";
 import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/language";
 import { usePopup } from "@/lib/popup";

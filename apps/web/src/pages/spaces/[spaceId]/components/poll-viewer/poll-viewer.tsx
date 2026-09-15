@@ -18,7 +18,7 @@ import { useGetEncryptionMaterial, useGetPoll, useRespondPoll } from "@ratel/ts-
 import { canExecuteSpaceAction } from "@/components/space/access";
 import { useActionOverlay, useCompletedActionCard, useOptionalActionOverlay } from "@/components/space/action-overlay";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
-import { useActionPollI18n } from "@/i18n/generated/features/spaces/pages/index/action_pages/poll/action-poll.i18n";
+import { useActionPollI18n } from "./i18n";
 import {
   buildStoredVoterKeyFromEncryptionMaterial,
   encryptAnswersForCanister,

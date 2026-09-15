@@ -1,0 +1,27 @@
+// Ported from: app/ratel/src/features/ai_moderator/components/material_list.rs (`MaterialListTranslate`). Namespace "materialList".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  reference_materials: "Reference Materials",
+  upload_pdf: "Upload PDF",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  reference_materials: "참고 자료",
+  upload_pdf: "PDF 업로드",
+};
+
+export const i18n = { en, ko };
+
+export interface MaterialListI18n {
+  referenceMaterials: string;
+  uploadPdf: string;
+}
+
+export function useMaterialListI18n(): MaterialListI18n {
+  const { t } = useTranslation("materialList");
+  return {
+    referenceMaterials: t("reference_materials"),
+    uploadPdf: t("upload_pdf"),
+  };
+}

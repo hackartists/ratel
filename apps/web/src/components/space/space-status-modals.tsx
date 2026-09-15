@@ -1,8 +1,8 @@
 import * as React from "react";
 import { useUpdateSpace } from "@ratel/ts-bridges/hooks";
 import type { SpacePartition } from "@ratel/ts-bridges";
-import { useSpaceEndModalI18n } from "@/i18n/generated/features/spaces/space_common/components/space_end_modal/space-end-modal.i18n";
-import { useSpaceStartModalI18n } from "@/i18n/generated/features/spaces/space_common/components/space_start_modal/space-start-modal.i18n";
+import { useSpaceEndModalI18n } from "./space-end-modal.i18n";
+import { useSpaceStartModalI18n } from "./space-start-modal.i18n";
 import { usePopup } from "@/lib/popup";
 import { useToast } from "@/lib/toast";
 

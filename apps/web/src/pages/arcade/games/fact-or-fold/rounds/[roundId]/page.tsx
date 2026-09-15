@@ -1,7 +1,7 @@
 import { useParams } from "react-router-dom";
 import type { RoundResponse } from "@ratel/ts-bridges";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useFactFoldRoomI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/game_room/fact-fold-room.i18n";
+import { useFactFoldRoomI18n } from "./i18n";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import stageScrollScript from "../../../../../../legacy-scripts/features/arcade/games/fact_or_fold/pages/game_room/stage_scroll.js?url&no-inline";
 import { FirstBetView } from "./components/first-bet-view";

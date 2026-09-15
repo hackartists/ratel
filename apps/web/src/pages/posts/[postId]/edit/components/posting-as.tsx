@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import type { TeamItem } from "@ratel/ts-bridges";
-import type { PostEditI18n } from "@/i18n/generated/features/posts/views/post_edit/post-edit.i18n";
+import type { PostEditI18n } from "@/pages/posts/[postId]/edit/i18n";
 import { dataBool } from "@/lib/dom";
 import { useDismissOnOutsideClick } from "@/lib/use-dismiss-on-outside-click";
 

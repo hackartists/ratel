@@ -2,7 +2,7 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 import {
   useFactFoldAdminLayoutI18n,
   type FactFoldAdminLayoutI18n,
-} from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/admin/fact-fold-admin-layout.i18n";
+} from "./fact-fold-admin-layout.i18n";
 import { dataBool } from "@/lib/dom";
 
 const TABS: ReadonlyArray<{ path: string; testId: string; label: keyof FactFoldAdminLayoutI18n }> = [

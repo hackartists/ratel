@@ -5,13 +5,14 @@
 // and the `data-bound="true"` flag prevents double-initialization across
 // re-renders.
 //
-// Communication with the surrounding Dioxus component:
+// Communication with the surrounding React component (`Editor` in
+// components/editor/editor.tsx):
 //   - The component renders the initial HTML directly into `.re-content`
-//     via RSX `dangerous_inner_html` so JS doesn't need to touch
+//     via `dangerouslySetInnerHTML` so JS doesn't need to touch
 //     editor markup at boot.
-//   - On every (debounced, IME-safe) input we dispatch a `change`
-//     CustomEvent on the root with the latest HTML in `detail`. Dioxus
-//     subscribes via `onchange` on the root div.
+//   - On every (debounced, IME-safe) input we assign `.re-bridge`'s
+//     `value` to the latest HTML and dispatch a native `input` event on
+//     it, which React observes via a ref-attached native listener.
 
 (function () {
   function init(root) {
@@ -24,8 +25,8 @@
     var charCountEl = root.querySelector(".re-char-count");
     var bridge = root.querySelector(".re-bridge");
 
-    // Placeholder + editable state are owned by the Dioxus prop layer
-    // and forwarded via data attributes on the root.
+    // Placeholder + editable state are owned by the React `Editor`
+    // component's props and forwarded via data attributes on the root.
     var placeholder = root.dataset.placeholder || "Type here\u2026";
     editor.setAttribute("data-placeholder", placeholder);
     var editable = root.dataset.editable !== "false";
@@ -71,9 +72,10 @@
       var words = text.trim() ? text.trim().split(/\s+/).length : 0;
       if (wordCountEl) wordCountEl.textContent = words;
       if (charCountEl) charCountEl.textContent = text.length;
-      // Bridge to Dioxus via a real <input>: dispatching `input` on a
-      // text input is the only event Dioxus serializes consistently
-      // across web, mobile, and desktop targets.
+      // Bridge to React via a real <input>: React's synthetic onChange
+      // doesn't fire for a value set by script, but a native `input`
+      // listener (attached via ref) does — and this holds in the
+      // Tauri-wrapped mobile build too, which reuses this same bundle.
       if (bridge) {
         bridge.value = html;
         bridge.dispatchEvent(new Event("input", { bubbles: true }));

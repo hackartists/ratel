@@ -1,4 +1,4 @@
-import { useEssenceSourcesI18n } from "@/i18n/generated/features/essence/pages/sources/essence-sources.i18n";
+import { useEssenceSourcesI18n } from "@/pages/essence/i18n";
 import { dataBool } from "@/lib/dom";
 import { useEssenceSources } from "../hooks/use-essence-sources";
 

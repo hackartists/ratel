@@ -4,7 +4,7 @@ import { isSpaceAdmin, useSpaceContext } from "@/components/space/space-context"
 import {
   useReportListI18n,
   type ReportListI18n,
-} from "@/i18n/generated/features/spaces/pages/report/views/report-list.i18n";
+} from "./i18n";
 import { dataBool } from "@/lib/dom";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import listScript from "../../../../legacy-scripts/features/spaces/pages/report/views/script.js?url&no-inline";

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useActionEditTopbarI18n } from "@/i18n/generated/features/spaces/pages/actions/components/action_edit_topbar/action-edit-topbar.i18n";
+import { useActionEditTopbarI18n } from "./action-edit-topbar.i18n";
 
 // app/ratel/src/features/spaces/pages/actions/components/action_edit_topbar.
 

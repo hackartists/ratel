@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MoreElement } from "@/components/ui/more-element";
-import { useMyFollowerI18n } from "@/i18n/generated/features/my_follower/views/home/my-follower.i18n";
+import { useMyFollowerI18n } from "./i18n";
 import { useToast } from "@/lib/toast";
 import { FollowList } from "./components/follow-list";
 import { FollowTabs, type FollowTab } from "./components/follow-tabs";

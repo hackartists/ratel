@@ -1,5 +1,5 @@
 import type { Question } from "@ratel/ts-bridges";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { badge, correctIndicesFor, optionsOf, useAnalyzeCreateContext } from "../hooks/use-analyze-create";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/create/cf_sunji/component.rs

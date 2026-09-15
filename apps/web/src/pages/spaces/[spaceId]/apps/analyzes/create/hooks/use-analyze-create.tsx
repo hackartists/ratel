@@ -26,7 +26,7 @@ import type {
   QuizCorrectAnswer,
   QuizResponse,
 } from "@ratel/ts-bridges";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useToast } from "@/lib/toast";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/hooks/use_analyze_create.rs

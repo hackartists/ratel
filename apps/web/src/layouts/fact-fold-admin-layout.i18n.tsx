@@ -1,0 +1,59 @@
+// Ported from: app/ratel/src/features/arcade/games/fact_or_fold/pages/admin/i18n.rs (`FactFoldAdminLayoutTranslate`). Namespace "factFoldAdminLayout".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  brand: "RATEL ARCADE",
+  brand_sub: "Admin · Fact or Fold",
+  tab_subjects: "Subjects",
+  tab_schedule: "Schedule",
+  tab_stats: "Stats",
+  tab_reports: "Reports",
+  tab_settings: "Settings",
+  new_subject_cta: "New subject",
+  queue_alert: "Scheduled queue is running low — schedule new subjects soon.",
+  queue_days_remaining: "{{days}}d remaining",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  brand: "라텔 오락실",
+  brand_sub: "관리자 · Fact or Fold",
+  tab_subjects: "대상",
+  tab_schedule: "스케줄",
+  tab_stats: "통계",
+  tab_reports: "신고",
+  tab_settings: "설정",
+  new_subject_cta: "신규 대상",
+  queue_alert: "스케줄 큐가 부족합니다 — 신규 대상을 곧 등록해주세요.",
+  queue_days_remaining: "{{days}}일 남음",
+};
+
+export const i18n = { en, ko };
+
+export interface FactFoldAdminLayoutI18n {
+  brand: string;
+  brandSub: string;
+  tabSubjects: string;
+  tabSchedule: string;
+  tabStats: string;
+  tabReports: string;
+  tabSettings: string;
+  newSubjectCta: string;
+  queueAlert: string;
+  queueDaysRemaining: (values: { days: string | number }) => string;
+}
+
+export function useFactFoldAdminLayoutI18n(): FactFoldAdminLayoutI18n {
+  const { t } = useTranslation("factFoldAdminLayout");
+  return {
+    brand: t("brand"),
+    brandSub: t("brand_sub"),
+    tabSubjects: t("tab_subjects"),
+    tabSchedule: t("tab_schedule"),
+    tabStats: t("tab_stats"),
+    tabReports: t("tab_reports"),
+    tabSettings: t("tab_settings"),
+    newSubjectCta: t("new_subject_cta"),
+    queueAlert: t("queue_alert"),
+    queueDaysRemaining: (values) => t("queue_days_remaining", { replace: values }),
+  };
+}

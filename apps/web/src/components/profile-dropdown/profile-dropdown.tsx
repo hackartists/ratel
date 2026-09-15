@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSignOut } from "@/components/auth";
 import { TeamCreationPopup } from "@/components/team-creation/team-creation-popup";
-import { useProfileDropdownI18n } from "@/i18n/generated/components/profile_dropdown/profile-dropdown.i18n";
+import { useProfileDropdownI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 import { usePopup } from "@/lib/popup";
 import { useTeamContext } from "@/lib/teams";

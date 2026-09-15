@@ -1,5 +1,5 @@
 import type { DidSummaryResponse } from "@ratel/ts-bridges";
-import type { CredentialsI18n } from "@/i18n/generated/features/social/pages/credentials/views/credentials.i18n";
+import type { CredentialsI18n } from "@/pages/credentials/credentials.i18n";
 import { timeAgo } from "@/components/posts/post-helpers";
 
 // app/ratel/src/features/social/pages/credentials/views/mod.rs (`StatsStrip`).

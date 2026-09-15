@@ -5,8 +5,8 @@ import { Button, ButtonShape } from "@/components/ui/button";
 import { Input, InputType } from "@/components/ui/input";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
 import { WalletConnect } from "@/components/icons/wallet";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useLoginModalI18n } from "@/i18n/generated/features/auth/components/login_modal/login-modal.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useLoginModalI18n } from "./login-modal.i18n";
 import { isAndroid, isIos } from "@/lib/platform";
 import { usePopup } from "@/lib/popup";
 import {
@@ -18,6 +18,8 @@ import {
   walletInitialize,
   walletOpenApp,
   walletSignMessage,
+  warmUpGoogleSignIn,
+  warmUpWalletConnect,
 } from "./interop";
 import { SignupModal } from "./signup-modal";
 import { useAuthActions } from "./use-auth-actions";
@@ -62,6 +64,14 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   // Read once, like the Rust `use_signal(|| is_ios())`.
   const [ios] = React.useState(isIos);
   const [android] = React.useState(isAndroid);
+
+  // Load the Firebase SDK as soon as the modal opens, so "Continue with Google"
+  // reaches the popup inside the click's user gesture; the wallet SDK likewise,
+  // so the first "Connect wallet" does not also wait for a download.
+  React.useEffect(() => {
+    warmUpGoogleSignIn();
+    warmUpWalletConnect();
+  }, []);
 
   const errorText = (e: unknown) =>
     e instanceof LocalAuthError

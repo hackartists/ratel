@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { TeamArenaTab } from "@/components/social/team-arena-context";
 import { useTeamContext } from "@/components/social/use-team-context";
 import { ParentHudPanel } from "@/components/sub-team/parent-hud-panel";
-import { useTeamArenaI18n } from "@/i18n/generated/features/social/pages/team_arena/team-arena.i18n";
+import { useTeamArenaI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 import { usePopup } from "@/lib/popup";
 import { useDismissOnOutsideClick } from "@/lib/use-dismiss-on-outside-click";

@@ -6,7 +6,7 @@ import { Input, InputType } from "@/components/ui/input";
 import {
   useMembershipPurchaseI18n,
   type MembershipPurchaseI18n,
-} from "@/i18n/generated/features/membership/components/membership_purchase_modal/membership-purchase.i18n";
+} from "@/components/membership/membership-purchase.i18n";
 import { useLanguage } from "@/lib/language";
 import { usePopup } from "@/lib/popup";
 import { MembershipTier } from "./membership-plan-items";

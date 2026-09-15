@@ -1,4 +1,4 @@
-import { useTeamDaoI18n } from "@/i18n/generated/features/social/pages/dao/views/team-dao.i18n";
+import { useTeamDaoI18n } from "./i18n";
 import { fillCount } from "../hooks/use-team-dao";
 import { InformationCircleIcon } from "./dao-icons";
 

@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { SpaceActionSummary } from "@ratel/ts-bridges";
 import { useUpdateSpaceAction } from "@ratel/ts-bridges/hooks";
 import { ContentAlign, PopoverContent, PopoverRoot, PopoverTrigger } from "@/components/ui/popover";
-import { useActionDependencySelectorI18n } from "@/i18n/generated/features/spaces/pages/actions/components/action_dependency_selector/action-dependency-selector.i18n";
+import { useActionDependencySelectorI18n } from "./action-dependency-selector.i18n";
 import { useToast } from "@/lib/toast";
 import { useSpaceActionList } from "./use-space-action-list";
 

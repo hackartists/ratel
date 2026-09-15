@@ -8,7 +8,7 @@ import { Input, InputType } from "@/components/ui/input";
 import { CrossAxisAlign, MainAxisAlign } from "@/components/ui/layout";
 import { Row } from "@/components/ui/row";
 import { TextArea } from "@/components/ui/textarea";
-import { useUserSettingsI18n } from "@/i18n/generated/features/social/pages/setting/user/views/user-settings.i18n";
+import { useUserSettingsI18n } from "./i18n";
 import { useAuth } from "@/lib/auth";
 import { errorMessage } from "@/lib/server-error";
 import { useChangePassword, useMcpSecret, useUserBilling, useUserDetail } from "../hooks/use-user-settings";

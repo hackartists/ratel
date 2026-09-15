@@ -1,0 +1,75 @@
+// Ported from: app/ratel/src/features/spaces/pages/apps/apps/file/i18n.rs (`SpaceFileTranslate`). Namespace "spaceFile".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  page_title: "Files",
+  tab_all: "All",
+  tab_overview: "Overview",
+  tab_boards: "Discussions",
+  tab_quiz: "Quiz",
+  attached_files: "Attached Files",
+  upload: "Upload",
+  uploading: "Uploading...",
+  drag_or_click: "Click to upload a file (max 50MB)",
+  btn_edit: "Edit",
+  btn_save: "Save",
+  btn_discard: "Discard",
+  no_files: "No files uploaded yet.",
+  no_permission: "No permission",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  page_title: "파일",
+  tab_all: "전체",
+  tab_overview: "개요",
+  tab_boards: "토론",
+  tab_quiz: "퀴즈",
+  attached_files: "첨부 파일",
+  upload: "업로드",
+  uploading: "업로드 중...",
+  drag_or_click: "클릭하여 파일을 업로드하세요 (최대 50MB)",
+  btn_edit: "편집",
+  btn_save: "저장",
+  btn_discard: "취소",
+  no_files: "아직 업로드된 파일이 없습니다.",
+  no_permission: "권한이 없습니다",
+};
+
+export const i18n = { en, ko };
+
+export interface SpaceFileI18n {
+  pageTitle: string;
+  tabAll: string;
+  tabOverview: string;
+  tabBoards: string;
+  tabQuiz: string;
+  attachedFiles: string;
+  upload: string;
+  uploading: string;
+  dragOrClick: string;
+  btnEdit: string;
+  btnSave: string;
+  btnDiscard: string;
+  noFiles: string;
+  noPermission: string;
+}
+
+export function useSpaceFileI18n(): SpaceFileI18n {
+  const { t } = useTranslation("spaceFile");
+  return {
+    pageTitle: t("page_title"),
+    tabAll: t("tab_all"),
+    tabOverview: t("tab_overview"),
+    tabBoards: t("tab_boards"),
+    tabQuiz: t("tab_quiz"),
+    attachedFiles: t("attached_files"),
+    upload: t("upload"),
+    uploading: t("uploading"),
+    dragOrClick: t("drag_or_click"),
+    btnEdit: t("btn_edit"),
+    btnSave: t("btn_save"),
+    btnDiscard: t("btn_discard"),
+    noFiles: t("no_files"),
+    noPermission: t("no_permission"),
+  };
+}

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Editor } from "@/components/editor";
 import { FileUploader, type UploadedFileMeta } from "@/components/ui/file-uploader";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { dataBool } from "@/lib/dom";
 import type { File as SubTeamFile } from "@ratel/ts-bridges";
 import { AttachmentRow } from "./attachment-row";

@@ -4,7 +4,7 @@ import { Chest } from "@/components/icons/ratel";
 import { ShieldLock } from "@/components/icons/security";
 import { Extra } from "@/components/icons/validations";
 import { Button, ButtonStyle } from "@/components/ui/button";
-import { useIncentivePoolI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/incentive_pool/incentive-pool.i18n";
+import { useIncentivePoolI18n } from "./i18n";
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { DistributionModeCard, IconActionButton, SectionCard, SummaryStatCard } from "./components/cards";
 import { formatTokenBalance, usdtTokens } from "./hooks/format";

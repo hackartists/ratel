@@ -4,7 +4,7 @@ import { ActionRewardSetting } from "@/components/space-actions/action-reward-se
 import { ActionStatusControl } from "@/components/space-actions/action-status-control";
 import { ActionDeleteButton } from "@/components/space-actions/delete-action";
 import { PrerequisiteTile } from "@/components/space-actions/prerequisite-tile";
-import { useFollowCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/follow/views/main/creator/follow-creator.i18n";
+import { useFollowCreatorI18n } from "./follow-creator.i18n";
 
 // follow/views/main/creator/config_card — dependencies, reward, prerequisite,
 // lifecycle status and the danger zone.

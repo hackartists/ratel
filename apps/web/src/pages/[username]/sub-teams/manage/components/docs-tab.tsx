@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SubTeamDocumentResponse, UpdateSubTeamDocumentRequest } from "@ratel/ts-bridges";
 import { FileText } from "@/components/icons/lucide";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { dataBool } from "@/lib/dom";
 import { charCount, formatYmd, prettySize, stripHtmlToPlain, totalAttachmentBytes } from "../hooks/format";
 import { useDomProp } from "../hooks/use-dom-value";

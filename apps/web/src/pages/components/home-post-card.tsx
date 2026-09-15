@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import type { PostResponse } from "@ratel/ts-bridges";
-import { useHomeArenaI18n } from "@/i18n/generated/views/index/home-arena.i18n";
+import { useHomeArenaI18n } from "./i18n";
 import { contentBodyToHtml } from "@/lib/content-body";
 import { formatPostDate } from "./format";
 

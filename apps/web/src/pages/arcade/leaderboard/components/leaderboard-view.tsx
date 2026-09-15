@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import type { LeaderboardEntryResponse } from "@ratel/ts-bridges";
 import { displayName, fill, initials, withVariant } from "@/components/arcade/format";
-import { useArcadeHomeI18n } from "@/i18n/generated/features/arcade/arcade-home.i18n";
+import { useArcadeHomeI18n } from "@/pages/arcade/i18n";
 import { useUserContext } from "@/lib/auth";
 
 // app/ratel/src/features/arcade/pages/home/component.rs — `LeaderboardView`,

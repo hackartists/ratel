@@ -1,6 +1,6 @@
 import type { PanelAttribute } from "@ratel/ts-bridges";
 import { useState } from "react";
-import { usePanelsI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/panels/panels.i18n";
+import { usePanelsI18n } from "@/pages/spaces/[spaceId]/apps/panels/i18n";
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { AGE_MAX, panelAttributes } from "../hooks/panel-logic";
 import { useSpacePanels } from "../hooks/use-space-panels";

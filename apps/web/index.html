@@ -5,13 +5,13 @@
     <meta content="text/html;charset=utf-8" http-equiv="Content-Type" />
     <!--ratel:viewport-->
     <meta charset="UTF-8" />
-    <!-- Lets the shared Playwright helpers (playwright/tests/utils.js) tell
-         this app from the Dioxus app, which has no such tag. -->
+    <!-- Marks the React app for the shared Playwright helpers
+         (playwright/tests/utils.js `isReactApp`). -->
     <meta name="ratel-app" content="react" />
-    <!-- Ported verbatim from app/ratel/index.html. Sets `data-theme` before
+    <!-- Carried over from the former Dioxus index.html. Sets `data-theme` before
          first paint so theme-scoped CSS (120+ `[data-theme="light"]` rules)
          resolves on the very first render. Same storage key + `system`
-         resolution as js/src/ratel-app-shell/common/theme.js. -->
+         resolution as src/lib/theme.tsx. -->
     <script>
       (function () {
         try {
@@ -25,7 +25,7 @@
         } catch (e) {}
       })();
     </script>
-    <!-- Ported verbatim from app/ratel/index.html. The credentials page reads
+    <!-- Carried over from the former Dioxus index.html. The credentials page reads
          the PortOne identity-verification return query from here. -->
     <script>
       (function () {

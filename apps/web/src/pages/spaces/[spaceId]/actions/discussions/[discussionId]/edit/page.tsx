@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ActionEditFooter, ActionEditSaveBusProvider } from "@/components/space-actions/action-edit-footer";
 import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
 import { useSpace } from "@/components/space/space-context";
-import { useDiscussionEditorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/discussion/views/editor/discussion-editor.i18n";
+import { useDiscussionEditorI18n } from "./i18n";
 import { DiscussionConfigCard } from "./components/discussion-config-card";
 import { DiscussionContentCard } from "./components/discussion-content-card";
 import { DiscussionProvider, useDiscussionProvider } from "./hooks/use-discussion";

@@ -1,4 +1,4 @@
-import { useTeamDaoI18n } from "@/i18n/generated/features/social/pages/dao/views/team-dao.i18n";
+import { useTeamDaoI18n } from "./i18n";
 import { useCopyAddress } from "../hooks/use-team-dao";
 import { CheckIcon, ClipboardIcon, ExternalLinkIcon } from "./dao-icons";
 

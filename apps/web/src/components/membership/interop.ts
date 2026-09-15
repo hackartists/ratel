@@ -1,19 +1,14 @@
-// app/ratel/src/features/membership/interop (+ web/*.js drivers) and the
-// `enterprise_contact` helper of the team subscription page. The PortOne call
-// goes to `window.ratel.membership.requestIdentityVerification`, defined by
-// the unmodified apps/web/shell-js/src/ratel-app-shell/membership/index.js that the
-// app shell loads globally.
+// The membership interop (and its `web/*.js` drivers) of the former Dioxus app
+// and the `enterprise_contact` helper of the team subscription page. PortOne
+// identity verification goes through `@/lib/portone-identity`.
 
-interface RatelMembershipJs {
-  requestIdentityVerification(storeId: string, channelKey: string, prefix: string): Promise<string>;
-}
+import { requestMembershipIdentityVerification } from "@/lib/portone-identity";
 
 interface TauriInternals {
   invoke<R>(cmd: string, args?: Record<string, unknown>): Promise<R>;
 }
 
 type MembershipWindow = Window & {
-  ratel?: { membership?: RatelMembershipJs };
   __TAURI_INTERNALS__?: TauriInternals;
   isTauri?: boolean;
   __ratelInitialSearch?: string;
@@ -23,9 +18,7 @@ const win = () => window as MembershipWindow;
 
 /** `request_identity_verification` — resolves with the identity verification id. */
 export function requestIdentityVerification(storeId: string, channelKey: string, prefix: string): Promise<string> {
-  const js = win().ratel?.membership;
-  if (!js) return Promise.reject(new Error("window.ratel.membership is not loaded"));
-  return js.requestIdentityVerification(storeId, channelKey, prefix);
+  return requestMembershipIdentityVerification(storeId, channelKey, prefix);
 }
 
 /** `stash_membership_tier` (web/stash_membership_tier.js). Tauri only. */

@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import type { LobbyResponse, UserStatsResponse } from "@ratel/ts-bridges";
 import { fill } from "@/components/arcade/format";
 import { factFoldMatchingPath, factFoldRoundPath } from "@/components/arcade/paths";
-import { useArcadeHomeI18n, type ArcadeHomeI18n } from "@/i18n/generated/features/arcade/arcade-home.i18n";
+import { useArcadeHomeI18n, type ArcadeHomeI18n } from "@/pages/arcade/i18n";
 import { errorMessage } from "@/lib/server-error";
 import { useJoinRound } from "../hooks/use-arcade-home";
 import { StatsCard } from "./stats-card";

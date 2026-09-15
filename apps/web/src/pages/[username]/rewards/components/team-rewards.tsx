@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import type { TeamPartition } from "@ratel/ts-bridges";
 import { LaunchpadTokenCard, RewardHero } from "@/components/launchpad-partner";
 import { TeamArenaTab, useTeamArenaTab } from "@/components/social/team-arena-context";
-import { useTeamRewardsI18n } from "@/i18n/generated/features/social/pages/reward/team/views/team-rewards.i18n";
+import { useTeamRewardsI18n } from "./team-rewards.i18n";
 import { useTeamRewardPermission, useTeamRewardPoints } from "../hooks/use-team-rewards";
 import { RewardHistorySection } from "./reward-history-section";
 

@@ -1,7 +1,7 @@
 import { useGetSpaceFiles, useListFileLinks } from "@ratel/ts-bridges/hooks";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useSpaceFileI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/file/space-file.i18n";
+import { useSpaceFileI18n } from "./space-file.i18n";
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { dataBool } from "@/lib/dom";
 import { FileRow } from "./components/file-row";

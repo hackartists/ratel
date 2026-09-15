@@ -1,5 +1,5 @@
 import type { AnalyzeFilterSource, AnalyzeRecordRow } from "@ratel/ts-bridges";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/records/component.rs
 // `RecordsTable` + `UserCell` — shared by the records page and the CREATE

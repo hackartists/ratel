@@ -1,8 +1,8 @@
 import * as React from "react";
 import type { SpaceActionSummary } from "@ratel/ts-bridges";
 import { useSpace } from "@/components/space/space-context";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { formatNumber } from "./format";
 
 // app/ratel/src/features/spaces/pages/index/waiting_card/component.rs (`WaitingCard`).

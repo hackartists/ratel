@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import type { LobbyResponse } from "@ratel/ts-bridges";
 import { fill, monogram, withVariant } from "@/components/arcade/format";
 import { ARCADE_HOME_PATH } from "@/components/arcade/paths";
-import { useFactFoldMatchingI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/matching/fact-fold-matching.i18n";
+import { useFactFoldMatchingI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 import { useLeaveLobby } from "../hooks/use-fact-fold-matching";
 

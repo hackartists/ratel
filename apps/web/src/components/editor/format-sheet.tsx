@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEditorI18n, type EditorI18n } from "@/i18n/generated/common/components/editor/editor.i18n";
+import { useEditorI18n, type EditorI18n } from "./i18n";
 import { EditorSvg, Glyph } from "./icons";
 
 // Mobile format surface of the editor (below 980px `main.css` hides the

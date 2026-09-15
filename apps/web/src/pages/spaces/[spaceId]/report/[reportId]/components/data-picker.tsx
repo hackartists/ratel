@@ -1,6 +1,6 @@
 import type { ActionSource, Analyze, AnalyzeItem, CrossFilterChip } from "@ratel/ts-bridges";
 import { dataBool } from "@/lib/dom";
-import { useReportDetailI18n } from "@/i18n/generated/features/spaces/pages/report/views/detail/report-detail.i18n";
+import { useReportDetailI18n } from "@/pages/spaces/[spaceId]/report/[reportId]/i18n";
 import { ACTION_SOURCE_VARIANTS, actionSourceToken } from "./chart-figure-html";
 import { useReportDetailContext } from "../hooks/use-report-detail";
 

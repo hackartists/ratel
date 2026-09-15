@@ -1,7 +1,7 @@
 // app/ratel/src/features/spaces/pages/index/action_dashboard/type_picker_modal/component.rs —
 // `TypePickerModal`: the admin bottom sheet choosing the type of a new action.
 import type { SpaceActionType } from "@ratel/ts-bridges";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 
 export function TypePickerModal({
   open,

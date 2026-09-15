@@ -22,8 +22,7 @@ function tailwindCliEntry(): string {
   return resolve(dirname(pkgPath), bin);
 }
 
-// Stylesheets, images and the shell-js bundles (`shell-js/`, built into this
-// directory) served at `/assets/*` and copied into the build output.
+// Stylesheets and images served at `/assets/*` and copied into the build output.
 const LEGACY_ASSETS = resolve(here, "assets");
 const TAILWIND_INPUT = resolve(here, "src/styles/tailwind.css");
 const TAILWIND_OUT = resolve(here, ".cache/tailwind.css");
@@ -42,13 +41,13 @@ const API_PREFIXES = ["/api", "/v3", "/mcp", "/hooks", "/launchpad/health", "/la
 const BASE = process.env.VITE_BASE ?? "/";
 const IS_TAURI = process.env.VITE_TAURI === "1";
 
-// Mirrors app/ratel/src/app.rs: the Tauri shell disables pinch zoom so iOS
+// Mirrors the former Dioxus app.rs: the Tauri shell disables pinch zoom so iOS
 // WKWebView doesn't auto-zoom focused inputs; the browser keeps user zoom.
 const VIEWPORT = IS_TAURI
   ? "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
   : "width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content";
 
-// Same elements, same order as the Dioxus `App` head (app/ratel/src/app.rs).
+// Same elements, same order as the former Dioxus `App` head (app.rs).
 // `main.css` has no @layer, and tailwind's unlayered globals only win because
 // tailwind loads last — so this order is load-bearing and must not be left to
 // Vite's CSS bundling.
@@ -61,8 +60,6 @@ function legacyHead(base: string): string {
     `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700&display=swap" />`,
     `<link rel="stylesheet" href="${a("main.css")}" />`,
     `<link rel="stylesheet" href="${a("dx-components-theme.css")}" />`,
-    `<script type="module" src="${a("ratel-app-shell.js")}"></script>`,
-    `<script type="module" src="${a("wallet-connect.js")}"></script>`,
     `<script src="https://cdn.portone.io/v2/browser-sdk.js"></script>`,
     `<link rel="stylesheet" href="${base}${TAILWIND_URL.slice(1)}" />`,
   ].join("\n    ");

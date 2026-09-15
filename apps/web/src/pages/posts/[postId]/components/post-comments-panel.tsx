@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PostCommentResponse } from "@ratel/ts-bridges";
 import { MentionAutocomplete } from "@/components/mentions/mention-autocomplete";
-import type { PostDetailSyndicatedI18n } from "@/i18n/generated/features/posts/views/post_detail/post-detail-syndicated.i18n";
+import type { PostDetailSyndicatedI18n } from "@/pages/posts/[postId]/i18n";
 import { parseMentionSegments } from "@/lib/mention";
 import type { UsePostDetail } from "../hooks/use-post-detail";
 

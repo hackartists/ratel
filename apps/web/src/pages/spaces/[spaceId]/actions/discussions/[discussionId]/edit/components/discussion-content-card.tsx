@@ -7,7 +7,7 @@ import { AutosaveStatusBadge, type SaveStatus } from "@/components/space-actions
 import { FileUploader } from "@/components/ui/file-uploader";
 import { useSpace } from "@/components/space/space-context";
 import { FileExtension, FileExtensionIcon } from "@/components/ui/file-extension-icon";
-import { useDiscussionEditorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/discussion/views/editor/discussion-editor.i18n";
+import { useDiscussionEditorI18n } from "@/pages/spaces/[spaceId]/actions/discussions/[discussionId]/edit/i18n";
 import { extractFilenameFromUrl, fileExtensionFromNameOrUrl } from "@/lib/file-ext";
 import { useToast } from "@/lib/toast";
 import { useDiscussion } from "../hooks/use-discussion";

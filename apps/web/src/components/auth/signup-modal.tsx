@@ -1,8 +1,8 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "@ratel/ts-bridges/runtime";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useSignupModalI18n } from "@/i18n/generated/features/auth/components/sign_up_modal/signup-modal.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useSignupModalI18n } from "./signup-modal.i18n";
 import { usePopup } from "@/lib/popup";
 import { LocalAuthError, serverErrorText } from "./interop";
 import { useAuthActions, type SignupProfile } from "./use-auth-actions";

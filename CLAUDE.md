@@ -8,7 +8,7 @@ Ratel is a decentralized legislative platform. Monorepo: React web app (`apps/we
 - **Frontend**: React 18 + Vite (`apps/web`, TailwindCSS v4, react-query, react-i18next). The Dioxus UI was removed; the Dioxus-specific rules under `.claude/rules` apply only to history/backend macros.
 - **Backend**: Axum 0.8.1 REST API (`app/ratel`, server functions via Dioxus fullstack macros, API-only binary)
 - **Database**: DynamoDB (single-table design)
-- **i18n**: `apps/web/src/i18n` bundles (web); `Translate` derives on server error enums
+- **i18n**: web bundles sit next to the code that uses them (`i18n.tsx` / `<name>.i18n.tsx`, typed `use<Name>I18n()` hook), registered in `apps/web/src/i18n/modules.ts`; `Translate` derives on server error enums
 - **Testing**: Playwright (e2e), `cargo test` (unit/integration)
 
 ## Monorepo Layout

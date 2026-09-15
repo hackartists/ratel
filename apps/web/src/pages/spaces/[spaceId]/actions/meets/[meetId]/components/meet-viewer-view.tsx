@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useMeetActionI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/meet/components/meet_page/meet-action.i18n";
+import { useMeetActionI18n } from "@/pages/spaces/[spaceId]/i18n";
 import { useMeet } from "../hooks/use-meet";
 
 // meet/components/meet_page/viewer_view.rs — scheduled / live / ended states.

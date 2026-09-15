@@ -1,4 +1,4 @@
-import { useCharacterPageI18n } from "@/i18n/generated/features/character/pages/character_page/character-page.i18n";
+import { useCharacterPageI18n } from "@/pages/me/character/i18n";
 import type { CharacterResponse } from "../hooks/use-character";
 
 // app/ratel/src/features/character/pages/character_page/character_hero/component.rs

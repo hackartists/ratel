@@ -1,6 +1,6 @@
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { Card } from "@/components/ui/card";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/analyze/discussion/page.rs
 // (`SpaceAnalyzeDiscussionPage`). Creator-only placeholder surface; renders

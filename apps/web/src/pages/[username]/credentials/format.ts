@@ -1,7 +1,7 @@
 // app/ratel/src/features/social/pages/credentials/views/mod.rs — date and
 // attribute-label formatting helpers used by the credentials page.
 import type { DidAttributeItem } from "@ratel/ts-bridges";
-import type { CredentialsI18n } from "@/i18n/generated/features/social/pages/credentials/views/credentials.i18n";
+import type { CredentialsI18n } from "@/pages/credentials/credentials.i18n";
 
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 export { YEAR_MS };

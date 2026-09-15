@@ -1,8 +1,8 @@
 import type { SpaceInvitationListItem, UserPartition } from "@ratel/ts-bridges";
 import { useState } from "react";
 import { MoreElement } from "@/components/ui/more-element";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useGeneralI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/general/general.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useGeneralI18n } from "@/pages/spaces/[spaceId]/apps/general/i18n";
 import { useToast } from "@/lib/toast";
 import { useSpaceGeneralSettings } from "../hooks/use-space-general-settings";
 import { inviteInitials, normalizeEmailInputs } from "./format";

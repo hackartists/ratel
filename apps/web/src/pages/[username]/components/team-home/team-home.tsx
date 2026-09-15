@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useTeamArena } from "@/components/social/team-arena-context";
 import { InfiniteMore } from "@/components/ui/infinite-more";
-import { useHomeI18n } from "@/i18n/generated/features/social/pages/home/views/home.i18n";
+import { useHomeI18n } from "./i18n";
 import { deriveCategorySummary, formatSince } from "./format";
 import { CatFilter, HudStat } from "./hud";
 import { PostCard } from "./post-card";

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useConnectionsPageI18n } from "@/i18n/generated/features/cross_posting/connections-page.i18n";
+import { useConnectionsPageI18n } from "@/pages/[username]/settings/connections/i18n";
 import { dataBool } from "@/lib/dom";
 import type { ConnectionResponse } from "../hooks/use-cross-posting";
 

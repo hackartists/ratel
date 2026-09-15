@@ -7,7 +7,7 @@ import { ActionDeleteButton } from "@/components/space-actions/delete-action";
 import { PrerequisiteTile } from "@/components/space-actions/prerequisite-tile";
 import { useSpace } from "@/components/space/space-context";
 import { Switch } from "@/components/ui/switch";
-import { usePollCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/views/main/creator/poll-creator.i18n";
+import { usePollCreatorI18n } from "./poll-creator.i18n";
 import { isActionLocked } from "@/components/space-actions/access";
 import { usePoll } from "../hooks/use-poll";
 

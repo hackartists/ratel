@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useUpdateSpaceAction } from "@ratel/ts-bridges/hooks";
 import { AutosaveStatusBadge, type SaveStatus } from "@/components/space-actions/autosave-status-badge";
 import { useDebouncedAutosave } from "@/components/space-actions/use-debounced-autosave";
-import { useFollowCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/follow/views/main/creator/follow-creator.i18n";
+import { useFollowCreatorI18n } from "./follow-creator.i18n";
 import { useToast } from "@/lib/toast";
 import { FollowerSetting } from "./follower-setting";
 

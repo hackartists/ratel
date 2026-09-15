@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { listAnalyzeReports } from "@ratel/ts-bridges";
 import type { AnalyzeReport, AnalyzeReportStatus } from "@ratel/ts-bridges";
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "./space-analyzes-app.i18n";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import { useToast } from "@/lib/toast";
 import homeScript from "../../../../../legacy-scripts/features/spaces/pages/apps/apps/analyzes/views/home/script.js?url&no-inline";

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { RankingEntryResponse } from "@ratel/ts-bridges";
 import { useSpaceContext } from "@/components/space/space-context";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 

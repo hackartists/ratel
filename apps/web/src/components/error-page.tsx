@@ -2,7 +2,7 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "@ratel/ts-bridges/runtime";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
-import { useErrorPageI18n } from "@/i18n/generated/components/error-page.i18n";
+import { useErrorPageI18n } from "./i18n";
 import { errorMessage } from "@/lib/server-error";
 
 // app/ratel/src/components/error_page.rs — the error boundary around the route

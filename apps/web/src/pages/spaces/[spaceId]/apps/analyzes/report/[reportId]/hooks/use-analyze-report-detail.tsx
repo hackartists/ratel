@@ -19,8 +19,8 @@ import type {
 } from "@ratel/ts-bridges";
 import { buildExcelData, buildExcelFileName } from "@/components/analyzes/analyze-excel";
 import { downloadAnalyzeExcel, SpaceAppLocalError } from "@/components/analyzes/analyze-interop";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useToast } from "@/lib/toast";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/hooks/use_analyze_report_detail.rs

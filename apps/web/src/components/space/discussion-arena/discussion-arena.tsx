@@ -22,7 +22,7 @@ import { ImageUploadPreview, type PendingImage } from "@/components/ui/image-upl
 import { MentionAutocomplete } from "@/components/ui/mention-autocomplete";
 import { useOptionalActionOverlay } from "@/components/space/action-overlay";
 import { useSpace, useSpaceRole } from "@/components/space/space-context";
-import { useDiscussionArenaI18n } from "@/i18n/generated/features/spaces/pages/index/action_pages/discussion/discussion-arena.i18n";
+import { useDiscussionArenaI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 import { useLegacyScript } from "@/lib/legacy-scripts";

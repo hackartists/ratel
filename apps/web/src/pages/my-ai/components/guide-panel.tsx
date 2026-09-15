@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { useMyAiI18n, type MyAiI18n } from "@/i18n/generated/features/me/pages/my_ai/my-ai.i18n";
+import { useMyAiI18n, type MyAiI18n } from "@/pages/my-ai/i18n";
 import { dataBool } from "@/lib/dom";
 
 // component.rs `GuideTabButton`, `render_panel` and the panel pieces
