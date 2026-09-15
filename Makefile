@@ -37,6 +37,18 @@ local-status:
 local-reset:
 	bash scripts/local-stack.sh reset
 
+# Build the mobile app and launch it on an Android emulator / iOS Simulator.
+#   make android                                          # API: dev
+#   MOBILE_API_ENDPOINT=http://localhost:8080 make ios    # API: `make local`
+# Run `ratel_envs` first for Firebase/PortOne keys. See docs/local-docker.md.
+MOBILE_API_ENDPOINT ?= https://dev.ratel.foundation
+.PHONY: android ios
+android:
+	MOBILE_API_ENDPOINT="$(MOBILE_API_ENDPOINT)" bash scripts/mobile-run.sh android
+
+ios:
+	MOBILE_API_ENDPOINT="$(MOBILE_API_ENDPOINT)" bash scripts/mobile-run.sh ios
+
 serve:
 	cd packages/$(SERVICE) && make serve
 

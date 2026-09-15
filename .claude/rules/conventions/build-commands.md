@@ -41,6 +41,14 @@ pnpm -C apps/web test:server         # static server + link-preview meta tests
 PROXY_API=1 API_ORIGIN=http://localhost:8080 PORT=4173 node apps/web/server/serve.mjs
 ```
 
+## Mobile (Tauri, app/ratel-tauri/)
+
+```bash
+# Build + install + launch on an Android emulator / iOS Simulator (scripts/mobile-run.sh)
+ratel_envs && make android                                    # API: https://dev.ratel.foundation
+MOBILE_API_ENDPOINT=http://localhost:8080 make ios            # API: `make local`
+```
+
 ## Playwright E2E Tests
 
 ```bash
