@@ -123,6 +123,8 @@ function TeamMemberHome({ teamPk, canEdit }: { teamPk: string; canEdit: boolean 
             </div>
             <div className="tm-empty-state__title">{tr.emptyTitle}</div>
             <div className="tm-empty-state__desc">{tr.emptyDesc}</div>
+            {/* Search filters the loaded pages only; keep paging while matches may still be unloaded. */}
+            <MoreElement hasMore={list.hasMore} loading={list.isLoading} onNext={list.next} sentinelKey={sentinelKey} />
           </div>
         ) : (
           <div className="tm-members-grid">

@@ -86,47 +86,48 @@ export function EnterpriseGrantSection() {
       <div className="admin-arena__subsection">
         <h3 className="admin-arena__subsection-title">{tr.enterpriseGrantedList}</h3>
 
+        {/* The list API pages user grants first and team grants second, so the
+            first page can be empty while `hasMore` still points at the team
+            phase. Keep loading instead of showing "none granted". */}
         {memberships.length === 0 ? (
-          list.isFetchingNextPage ? (
+          list.isFetchingNextPage || list.hasMore ? (
             <div className="admin-arena__table-empty">{tr.loading}</div>
           ) : (
             <div className="admin-arena__table-empty">{tr.enterpriseGrantedEmpty}</div>
           )
         ) : (
-          <>
-            <div className="admin-arena__table-wrap">
-              <table className="admin-arena__table">
-                <thead>
-                  <tr>
-                    <th>{tr.targetType}</th>
-                    <th>{tr.username}</th>
-                    <th>{tr.grantedCredits}</th>
-                    <th>{tr.maxCredit}</th>
+          <div className="admin-arena__table-wrap">
+            <table className="admin-arena__table">
+              <thead>
+                <tr>
+                  <th>{tr.targetType}</th>
+                  <th>{tr.username}</th>
+                  <th>{tr.grantedCredits}</th>
+                  <th>{tr.maxCredit}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {memberships.map((item) => (
+                  <tr key={item.username}>
+                    <td>{item.targetType === "team" ? tr.targetTeam : tr.targetUser}</td>
+                    <td>{item.username}</td>
+                    <td>{formatWithCommas(item.remainingCredits)}</td>
+                    <td>{formatWithCommas(item.maxCreditsPerSpace)}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {memberships.map((item) => (
-                    <tr key={item.username}>
-                      <td>{item.targetType === "team" ? tr.targetTeam : tr.targetUser}</td>
-                      <td>{item.username}</td>
-                      <td>{formatWithCommas(item.remainingCredits)}</td>
-                      <td>{formatWithCommas(item.maxCreditsPerSpace)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-            {list.hasMore && (
-              <MoreElement
-                hasMore={list.hasMore}
-                isLoading={list.isFetchingNextPage}
-                onNext={() => {
-                  if (!list.isFetchingNextPage) void list.fetchNextPage();
-                }}
-              />
-            )}
-          </>
+        {list.hasMore && (
+          <MoreElement
+            hasMore={list.hasMore}
+            isLoading={list.isFetchingNextPage}
+            onNext={() => {
+              if (!list.isFetchingNextPage) void list.fetchNextPage();
+            }}
+          />
         )}
       </div>
     </section>
