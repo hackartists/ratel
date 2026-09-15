@@ -106,10 +106,10 @@
     });
   }
 
-  // Try immediately (works for SSR with defer)
+  // Try immediately (page already in the DOM).
   initCarousel();
 
-  // Also observe for CSR rendering (Dioxus adds elements after script runs)
+  // Also observe for CSR rendering (React adds elements after script runs)
   var observer = new MutationObserver(function () {
     var track = document.getElementById("carousel-track");
     if (track && !track.dataset.carouselBound) {

@@ -1,7 +1,7 @@
 // Keep the active stage-step pill horizontally centered inside the
 // stage-timeline strip. Runs once on initial mount and re-runs every
 // time any `.stage-step` flips its `data-state` (which is how the
-// game_room component signals stage transitions). No-op on desktop —
+// `StageTimeline` component signals stage transitions). No-op on desktop —
 // the strip isn't horizontally scrollable so `scrollIntoView` does
 // nothing visible.
 (function () {

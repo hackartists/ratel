@@ -41,13 +41,13 @@ const API_PREFIXES = ["/api", "/v3", "/mcp", "/hooks", "/launchpad/health", "/la
 const BASE = process.env.VITE_BASE ?? "/";
 const IS_TAURI = process.env.VITE_TAURI === "1";
 
-// Mirrors app/ratel/src/app.rs: the Tauri shell disables pinch zoom so iOS
+// Mirrors the former Dioxus app.rs: the Tauri shell disables pinch zoom so iOS
 // WKWebView doesn't auto-zoom focused inputs; the browser keeps user zoom.
 const VIEWPORT = IS_TAURI
   ? "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
   : "width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content";
 
-// Same elements, same order as the Dioxus `App` head (app/ratel/src/app.rs).
+// Same elements, same order as the former Dioxus `App` head (app.rs).
 // `main.css` has no @layer, and tailwind's unlayered globals only win because
 // tailwind loads last — so this order is load-bearing and must not be left to
 // Vite's CSS bundling.

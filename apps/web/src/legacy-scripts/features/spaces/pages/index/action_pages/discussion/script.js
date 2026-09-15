@@ -1,6 +1,8 @@
-// ESM module. Loaded via `<script type="module">` for auto-init and
-// imported by wasm_bindgen for `resetComposerHeight`. Both paths are
-// idempotent thanks to `data-*-bound` flags so a double-load is safe.
+// ESM module. Loaded via `<script type="module">` for auto-init (see
+// `useLegacyScript(discussionScript, { module: true })` in discussion-arena.tsx). Auto-init
+// is idempotent thanks to `data-*-bound` flags so a double-load is safe.
+// `resetComposerHeight` is a named export with no current caller in the
+// React app — carried over from the Dioxus wasm_bindgen bridge below.
 
 function resizeTextarea(el) {
   // Reset to `auto` first — `scrollHeight` is clamped by the current
@@ -26,9 +28,11 @@ function initComposerAutogrow() {
   });
 }
 
-// Called from Rust after a successful submit. Programmatic value changes
-// from Dioxus's signal binding do not fire `input`, so the autogrow
-// listener never sees the clear and the inline height stays stretched.
+// Carried over from the Dioxus wasm_bindgen bridge, where Rust called this
+// after a successful submit — a programmatic `value` clear from Dioxus's
+// signal binding does not fire `input`, so the autogrow listener never saw
+// the clear and the inline height stayed stretched. Not currently called
+// from the React composer.
 export function resetComposerHeight() {
   var inputs = document.querySelectorAll(
     ".comment-input__textarea, .reply-input__field",
@@ -59,15 +63,16 @@ function initMentionFlip() {
   });
 }
 
-// Sheet expand state is Dioxus-managed (see `sheet_expanded` signal in
-// component.rs). The handle's click is wired via Rust `onclick`, and the
-// `data-expanded` attribute on `.comments-panel` drives the CSS
-// translate. Leaving expand state to JS caused it to reset whenever
-// Dioxus re-rendered the panel content (e.g., on Reply tap → thread
-// drill-down) because the `.expanded` class lived outside the VDOM.
+// Sheet expand state is React-managed (`sheetExpanded` / `setSheetExpanded`
+// in use-discussion-arena.tsx). The handle's click is wired via React's
+// `onClick` in discussion-arena.tsx, and the `data-expanded` attribute on
+// `.comments-panel` drives the CSS translate. Leaving expand state to JS
+// caused it to reset whenever React re-rendered the panel content (e.g., on
+// Reply tap → thread drill-down) because a JS-only `.expanded` class lived
+// outside React's render output.
 
-// Drag-to-resize the comments panel. The width is JS-owned because Dioxus
-// doesn't set `style` on `.comments-panel` — the inline width survives
+// Drag-to-resize the comments panel. The width is JS-owned because React
+// never sets `style` on `.comments-panel` — the inline width survives
 // re-renders. CSS provides `min-width: 420px` (the previous fixed width);
 // here we cap the upper bound at 70% of viewport so the discussion body
 // always keeps room. Listeners are attached to `document` (not the 6px
@@ -168,10 +173,11 @@ function bindCommentTextObservers() {
 // the two anchors (collapsed peek and the 75vh expanded height) and snaps to
 // whichever one it ended nearest, or to the one the flick was heading toward.
 //
-// `data-expanded` stays Dioxus-owned (see the note above): JS only writes an
+// `data-expanded` stays React-owned (see the note above): JS only writes an
 // inline `transform` while the finger is down, then hands the position back
 // to CSS. To flip the state it fires a click on the handle, which is the same
-// path a tap takes, so the Dioxus signal remains the single source of truth.
+// path a tap takes, so React's `sheetExpanded` state remains the single
+// source of truth.
 var SHEET_DRAG_SLOP_PX = 5;
 // px/ms. Above this a flick wins over position, so a short fast swipe down
 // closes a sheet that is still nearer the top.

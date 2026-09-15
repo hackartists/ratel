@@ -1,11 +1,12 @@
 // Report detail page — chart figure action delegation.
 //
 // Chart figures embedded in the editor's body carry two action buttons
-// (settings, trash) that Rust generates as plain HTML inside
-// `<figure contenteditable="false">…</figure>`. Buttons aren't React-
-// style components; they're inert HTML. This script delegates clicks
-// from any chart-action button to the page-level command bridge so the
-// Rust context can react (open swap panel, delete figure).
+// (settings, trash) that the report editor inserts as plain HTML inside
+// `<figure contenteditable="false">…</figure>`. Buttons aren't React
+// components; they're inert HTML. This script delegates clicks from any
+// chart-action button to the page-level command bridge
+// (report/[reportId]/page.tsx) so the page can react (open swap panel,
+// delete figure).
 //
 // Idempotent — `__bound` flag prevents double-init across CSR mounts.
 
@@ -53,8 +54,8 @@
   );
 
   // ── Slash popup keyboard navigation ───────────────────────
-  // When the slash popup is rendered (Rust shows it whenever the
-  // `slash` signal is `Some`), arrow / Enter / Esc must drive the
+  // When the slash popup is rendered (`SlashPopup`, shown while a slash
+  // command is open), arrow / Enter / Esc must drive the
   // popup, NOT the underlying contenteditable (which would otherwise
   // move the caret or insert a newline). The capture-phase listener
   // intercepts the key first; preventDefault stops the editor from
@@ -97,7 +98,7 @@
     true
   );
 
-  // Wait one frame for Dioxus to re-render the popup with the new
+  // Wait one frame for React to re-render the popup with the new
   // aria-selected button, then scroll it into view. `block: "nearest"`
   // means the list only scrolls when the active row is actually off-
   // screen — single-page lists don't get nudged for no reason.
