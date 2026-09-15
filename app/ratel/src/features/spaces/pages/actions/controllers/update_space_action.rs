@@ -9,6 +9,7 @@ use crate::features::membership::models::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum UpdateSpaceActionRequest {
     Credits { credits: u64 },
     Status { status: SpaceActionStatus },

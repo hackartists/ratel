@@ -2,6 +2,7 @@ use crate::common::models::auth::AdminUser;
 use crate::features::admin::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RewardResponse {
     pub reward_behavior: RewardUserBehavior,
     pub point: i64,

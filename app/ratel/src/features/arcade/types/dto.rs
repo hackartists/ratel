@@ -11,6 +11,7 @@ use rmcp::schemars;
 /// Snapshot returned by `GET /api/arcade/wallet`.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct WalletStateResponse {
     /// Current spendable chip balance.
     pub chip_balance: i64,
@@ -24,6 +25,7 @@ pub struct WalletStateResponse {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ConvertRpRequest {
     /// RP to debit. Must be >= `min_convert_rp` and <= caller's RP
     /// balance.
@@ -33,6 +35,7 @@ pub struct ConvertRpRequest {
 /// Result of a successful RP → chip conversion.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ConvertRpResponse {
     pub txn_id: String,
     pub rp_debited: i64,
@@ -42,6 +45,7 @@ pub struct ConvertRpResponse {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RedeemChipRequest {
     pub chip_amount: i64,
 }
@@ -53,6 +57,7 @@ pub struct RedeemChipRequest {
 /// 1 chip" decision.
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ArcadeSettingsResponse {
     /// Chips received per 1 RP converted, in basis points (10_000 =
     /// 1.0×). v1 default is 10_000 so 1 RP → 1 chip. Operator can
@@ -83,6 +88,7 @@ impl Default for ArcadeSettingsResponse {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateArcadeSettingsRequest {
     pub rp_to_chip_ratio_bps: Option<i32>,
     pub default_buy_in_chips: Option<i64>,

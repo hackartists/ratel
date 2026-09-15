@@ -19,6 +19,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct GetAnalyzeReportResponse {
     pub report: AnalyzeReport,
 
@@ -41,6 +42,7 @@ pub struct GetAnalyzeReportResponse {
 /// `pk` / `sk` aren't useful to the client.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct AnalyzeReportResultPayload {
     pub respondent_count: i64,
     pub poll_aggregates: Vec<PollQuestionAggregate>,

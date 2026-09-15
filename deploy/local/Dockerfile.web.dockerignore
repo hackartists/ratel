@@ -1,0 +1,18 @@
+# Build context for deploy/local/Dockerfile.web: only the pnpm workspace
+# the React app needs. Host-built artifacts are excluded so the image always
+# builds its own.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.npmrc
+!apps/web
+!packages/ts-bridges
+
+**/node_modules
+**/.DS_Store
+apps/web/dist
+apps/web/.cache
+apps/web/assets/ratel-app-shell.js
+apps/web/assets/wallet-connect.js
+packages/ts-bridges/.gen

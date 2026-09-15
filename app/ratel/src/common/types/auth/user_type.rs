@@ -16,6 +16,7 @@ use rmcp::schemars;
 )]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema_repr))]
 #[repr(u8)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "number"))]
 pub enum UserType {
     #[default]
     Individual = 1,

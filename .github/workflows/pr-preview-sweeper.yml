@@ -18,9 +18,9 @@ name: PR preview sweeper
 # PR does not exist). Any other response — rate limit, 5xx, network blip —
 # leaves the preview untouched and the next hourly pass retries.
 #
-# Registry tags (ratel-app-shell:pr-<num>) are out of scope here, same as in
-# pr-preview-cleanup.yml — deleting those needs digest lookups plus an offline
-# GC pass, which is home-infra's job.
+# Registry tags (ratel-app-shell:pr-<num>, ratel-web:pr-<num>) are out of
+# scope here, same as in pr-preview-cleanup.yml — deleting those needs digest
+# lookups plus an offline GC pass, which is home-infra's job.
 
 on:
   schedule:

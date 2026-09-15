@@ -1,0 +1,20 @@
+<!-- Sheet { open: true, SheetContent { side: SheetSide::Left,
+       SheetHeader { SheetTitle { "Menu" } SheetDescription { "Pick one" } } SheetFooter { "Footer" } } }
+     app/ratel/src/common/components/sheet + dioxus_primitives::dialog, client-rendered: the wrapper class
+     "sheet-root" replaces the primitive's static "dialog-overlay"; aria-hidden is omitted while open;
+     the close button is appended after the children. -->
+<div id="dxc-root" data-state="open" class="sheet-root" data-slot="sheet-root">
+  <div id="dxc-content" role="dialog" aria-modal="true" aria-labelledby="dxc-title" aria-describedby="dxc-desc" class="sheet" data-slot="sheet-content" data-side="left">
+    <div class="sheet-header" data-slot="sheet-header">
+      <h2 id="dxc-title" class="sheet-title" data-slot="sheet-title">Menu</h2>
+      <p id="dxc-desc" class="sheet-description" data-slot="sheet-description">Pick one</p>
+    </div>
+    <div class="sheet-footer" data-slot="sheet-footer">Footer</div>
+    <button class="sheet-close">
+      <svg class="sheet-close-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M18 6 6 18"></path>
+        <path d="m6 6 12 12"></path>
+      </svg>
+    </button>
+  </div>
+</div>

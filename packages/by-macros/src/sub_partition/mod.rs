@@ -47,6 +47,8 @@ fn generate_enum_impl(ident: Ident, ds: &DataEnum) -> proc_macro2::TokenStream {
 
             let struct_def = quote! {
                 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+                // Serialized as the bare prefix string (SerializeDisplay).
+                #[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "string"))]
                 #[derive(
                     Debug,
                     Clone,
@@ -120,6 +122,8 @@ fn generate_enum_impl(ident: Ident, ds: &DataEnum) -> proc_macro2::TokenStream {
 
                 let struct_def = quote! {
                     #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+                    // Serialized as the prefix-less id (SerializeDisplay).
+                    #[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "string"))]
                     #[derive(
                         Debug,
                         Clone,

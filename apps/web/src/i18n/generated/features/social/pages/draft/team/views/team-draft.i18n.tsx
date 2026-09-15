@@ -1,0 +1,105 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/social/pages/draft/team/views/i18n.rs (`TeamDraftTranslate`). Namespace "teamDraft".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  drafts_label: "Drafts",
+  drafts_title: "Drafts",
+  drafts_subhead: "unpublished · resume editing any time",
+  new_post: "New Post",
+  badge_draft: "Draft",
+  edit: "Edit",
+  untitled: "(Untitled draft)",
+  updated_just_now: "Just now",
+  updated_minutes: "min ago",
+  updated_hours: "h ago",
+  updated_days: "d ago",
+  empty_title: "No drafts available",
+  empty_desc: "Start a new post — your in-progress work will appear here.",
+  load_more: "Load more",
+  delete_title: "Delete Draft?",
+  delete_desc_pre: "Are you sure you want to delete this draft? This action ",
+  delete_desc_strong: "cannot be undone",
+  delete_desc_post: ".",
+  cancel: "Cancel",
+  confirm: "Confirm",
+  delete_success: "Draft deleted",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  drafts_label: "초안",
+  drafts_title: "초안",
+  drafts_subhead: "개의 미발행 글 · 언제든 다시 편집할 수 있습니다",
+  new_post: "새 글 작성",
+  badge_draft: "초안",
+  edit: "편집",
+  untitled: "(제목 없는 초안)",
+  updated_just_now: "방금 전",
+  updated_minutes: "분 전",
+  updated_hours: "시간 전",
+  updated_days: "일 전",
+  empty_title: "초안이 없습니다",
+  empty_desc: "새 글을 작성하면 작업 중인 초안이 여기에 표시됩니다.",
+  load_more: "더 보기",
+  delete_title: "초안을 삭제하시겠습니까?",
+  delete_desc_pre: "이 초안을 삭제하시겠습니까? 이 작업은 ",
+  delete_desc_strong: "되돌릴 수 없습니다",
+  delete_desc_post: ".",
+  cancel: "취소",
+  confirm: "확인",
+  delete_success: "초안이 삭제되었습니다",
+};
+
+export const i18n = { en, ko };
+
+export interface TeamDraftI18n {
+  draftsLabel: string;
+  draftsTitle: string;
+  draftsSubhead: string;
+  newPost: string;
+  badgeDraft: string;
+  edit: string;
+  untitled: string;
+  updatedJustNow: string;
+  updatedMinutes: string;
+  updatedHours: string;
+  updatedDays: string;
+  emptyTitle: string;
+  emptyDesc: string;
+  loadMore: string;
+  deleteTitle: string;
+  deleteDescPre: string;
+  deleteDescStrong: string;
+  deleteDescPost: string;
+  cancel: string;
+  confirm: string;
+  deleteSuccess: string;
+}
+
+export function useTeamDraftI18n(): TeamDraftI18n {
+  const { t } = useTranslation("teamDraft");
+  return {
+    draftsLabel: t("drafts_label"),
+    draftsTitle: t("drafts_title"),
+    draftsSubhead: t("drafts_subhead"),
+    newPost: t("new_post"),
+    badgeDraft: t("badge_draft"),
+    edit: t("edit"),
+    untitled: t("untitled"),
+    updatedJustNow: t("updated_just_now"),
+    updatedMinutes: t("updated_minutes"),
+    updatedHours: t("updated_hours"),
+    updatedDays: t("updated_days"),
+    emptyTitle: t("empty_title"),
+    emptyDesc: t("empty_desc"),
+    loadMore: t("load_more"),
+    deleteTitle: t("delete_title"),
+    deleteDescPre: t("delete_desc_pre"),
+    deleteDescStrong: t("delete_desc_strong"),
+    deleteDescPost: t("delete_desc_post"),
+    cancel: t("cancel"),
+    confirm: t("confirm"),
+    deleteSuccess: t("delete_success"),
+  };
+}

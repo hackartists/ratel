@@ -28,6 +28,8 @@
 //! - Remaining args (not path, not query, not extractor) for POST/PUT/PATCH
 //!   become the JSON body. Exactly one such arg is expected.
 
+mod ts_bridge;
+
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
@@ -396,8 +398,21 @@ pub fn server_fn_impl(method: &str, attr: TokenStream, item: TokenStream) -> Tok
         }
     };
 
+    // Empty unless TS_SERVER_FN_PACKAGE_DIR is set (TypeScript client generation).
+    let ts_bridge = ts_bridge::emit(ts_bridge::Handler {
+        method,
+        path: &route.path.value(),
+        name: fn_name.to_string(),
+        args: &client_args,
+        path_args: &path_args,
+        query_args: &query_args,
+        body_arg: body_idents.first().map(|i| i.to_string()),
+        output: fn_output,
+    });
+
     quote! {
         #tauri
+        #ts_bridge
     }
     .into()
 }

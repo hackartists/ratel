@@ -4,6 +4,7 @@ use crate::common::models::auth::TestAccount;
 use crate::features::admin::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateTestAccountRequest {
     pub email: String,
     #[serde(default)]
@@ -11,6 +12,7 @@ pub struct CreateTestAccountRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TestAccountResponse {
     pub email: String,
     pub note: String,

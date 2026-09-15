@@ -1,0 +1,45 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/spaces/pages/overview/views/i18n.rs (`OverviewTranslate`). Namespace "overview".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  btn_edit: "Edit",
+  btn_save: "Save",
+  placeholder: "Space content will appear here...",
+  save_failed: "Failed to save",
+  upload_image: "Upload Image",
+  remove_image: "Remove",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  btn_edit: "편집",
+  btn_save: "저장",
+  placeholder: "공간 콘텐츠가 여기에 표시됩니다...",
+  save_failed: "저장 실패",
+  upload_image: "이미지 업로드",
+  remove_image: "삭제",
+};
+
+export const i18n = { en, ko };
+
+export interface OverviewI18n {
+  btnEdit: string;
+  btnSave: string;
+  placeholder: string;
+  saveFailed: string;
+  uploadImage: string;
+  removeImage: string;
+}
+
+export function useOverviewI18n(): OverviewI18n {
+  const { t } = useTranslation("overview");
+  return {
+    btnEdit: t("btn_edit"),
+    btnSave: t("btn_save"),
+    placeholder: t("placeholder"),
+    saveFailed: t("save_failed"),
+    uploadImage: t("upload_image"),
+    removeImage: t("remove_image"),
+  };
+}

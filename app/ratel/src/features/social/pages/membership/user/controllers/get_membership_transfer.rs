@@ -9,6 +9,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "MembershipGetMembershipTransferPurchaseHistoryItem"))]
 pub struct PurchaseHistoryItem {
     pub tx_type: String,
     pub amount: i64,

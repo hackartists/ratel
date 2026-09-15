@@ -66,9 +66,19 @@ spec:
             - name: firebase
               mountPath: /usr/src/app/.gcp
               readOnly: true
+          # app-shell is API-only after the React frontend migration (see
+          # docs/superpower/2026-09-14-react-frontend-migration.md § 5.1) —
+          # `/` no longer exists. `/launchpad/health` is NOT a substitute:
+          # it is POST-only (app/ratel/src/features/launchpad_partner/
+          # server.rs:24 routes only `post(health)`, no GET) and every
+          # request must carry a valid HMAC signature over
+          # LAUNCHPAD_PARTNER_SECRET plus a matching project id
+          # (server.rs:39-68 `verify_and_parse`), which an unauthenticated
+          # kubelet probe cannot produce and which depends on config being
+          # present. A bare TCP check on the listener is what's left that's
+          # both unconditional and correct in every environment.
           readinessProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5

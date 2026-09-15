@@ -1,6 +1,7 @@
 use super::super::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RewardHistoryItem {
     pub created_at: i64,
     pub point: i64,

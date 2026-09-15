@@ -2,6 +2,7 @@ use crate::features::spaces::pages::actions::actions::meet::*;
 use crate::features::spaces::pages::actions::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct MeetResponse {
     pub pk: SpacePartition,
     pub sk: SpaceMeetEntityType,

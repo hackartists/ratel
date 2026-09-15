@@ -5,6 +5,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, serde_with::SerializeDisplay, serde_with::DeserializeFromStr, Default, DynamoEnum, Eq, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "PostsSpaceStatus", rename_all = "SCREAMING_SNAKE_CASE"))]
 pub enum SpaceStatus {
     #[default]
     Waiting, // Draft

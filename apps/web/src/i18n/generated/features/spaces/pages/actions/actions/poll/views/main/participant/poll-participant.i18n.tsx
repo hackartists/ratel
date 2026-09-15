@@ -1,0 +1,97 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/spaces/pages/actions/actions/poll/views/main/participant/i18n.rs (`PollParticipantTranslate`). Namespace "pollParticipant".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  btn_submit: "Submit",
+  btn_update: "Update",
+  btn_back: "Back",
+  btn_next: "Next",
+  btn_cancel: "Cancel",
+  btn_login: "Login to Participate",
+  poll_ended: "This poll has ended.",
+  poll_not_started: "This poll has not started yet.",
+  space_not_active: "This action is available only when the space is started or in progress.",
+  question_label: "Question",
+  no_questions: "No questions yet.",
+  submit_success: "Response submitted successfully.",
+  submit_error: "Failed to submit response.",
+  submit_confirm_title: "Submit response",
+  submit_confirm_description: "Once submitted, this response cannot be edited. Do you want to submit?",
+  submit_confirm_cancel: "Cancel",
+  submit_confirm_action: "Submit",
+  no_permission: "You do not have permission to participate in this poll.",
+  already_responded: "You have already participated in this poll.",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  btn_submit: "제출",
+  btn_update: "수정",
+  btn_back: "뒤로",
+  btn_next: "다음",
+  btn_cancel: "취소",
+  btn_login: "로그인하여 참여",
+  poll_ended: "이 투표가 종료되었습니다.",
+  poll_not_started: "이 투표는 아직 시작되지 않았습니다.",
+  space_not_active: "이 액션은 스페이스가 시작/진행중 상태일 때만 참여할 수 있습니다.",
+  question_label: "질문",
+  no_questions: "아직 질문이 없습니다.",
+  submit_success: "응답이 성공적으로 제출되었습니다.",
+  submit_error: "응답 제출에 실패했습니다.",
+  submit_confirm_title: "응답 제출",
+  submit_confirm_description: "한번 제출한 응답은 수정이 불가능합니다. 제출하시겠습니까?",
+  submit_confirm_cancel: "취소",
+  submit_confirm_action: "제출",
+  no_permission: "이 투표에 참여할 권한이 없습니다.",
+  already_responded: "이미 이 투표에 참여했습니다.",
+};
+
+export const i18n = { en, ko };
+
+export interface PollParticipantI18n {
+  btnSubmit: string;
+  btnUpdate: string;
+  btnBack: string;
+  btnNext: string;
+  btnCancel: string;
+  btnLogin: string;
+  pollEnded: string;
+  pollNotStarted: string;
+  spaceNotActive: string;
+  questionLabel: string;
+  noQuestions: string;
+  submitSuccess: string;
+  submitError: string;
+  submitConfirmTitle: string;
+  submitConfirmDescription: string;
+  submitConfirmCancel: string;
+  submitConfirmAction: string;
+  noPermission: string;
+  alreadyResponded: string;
+}
+
+export function usePollParticipantI18n(): PollParticipantI18n {
+  const { t } = useTranslation("pollParticipant");
+  return {
+    btnSubmit: t("btn_submit"),
+    btnUpdate: t("btn_update"),
+    btnBack: t("btn_back"),
+    btnNext: t("btn_next"),
+    btnCancel: t("btn_cancel"),
+    btnLogin: t("btn_login"),
+    pollEnded: t("poll_ended"),
+    pollNotStarted: t("poll_not_started"),
+    spaceNotActive: t("space_not_active"),
+    questionLabel: t("question_label"),
+    noQuestions: t("no_questions"),
+    submitSuccess: t("submit_success"),
+    submitError: t("submit_error"),
+    submitConfirmTitle: t("submit_confirm_title"),
+    submitConfirmDescription: t("submit_confirm_description"),
+    submitConfirmCancel: t("submit_confirm_cancel"),
+    submitConfirmAction: t("submit_confirm_action"),
+    noPermission: t("no_permission"),
+    alreadyResponded: t("already_responded"),
+  };
+}

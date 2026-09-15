@@ -1,4 +1,3 @@
-use crate::features::auth::models::user::{OptionalUser, User, SESSION_KEY_USER_ID};
 use crate::*;
 
 #[get("/api/user", user: OptionalUser) ]

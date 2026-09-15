@@ -154,7 +154,7 @@ BUILD_ENV ?= RUSTFLAGS="$(RUSTFLAGS)" AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) \
 					CROSS_POSTING_DATA_KEY='$(CROSS_POSTING_DATA_KEY)' \
 					CROSS_POSTING_DATA_KEY_PREVIOUS='$(CROSS_POSTING_DATA_KEY_PREVIOUS)' \
 
-.PHONY: env.sh test run android android-emulator ios build build-testing build-arm build-lambda docker
+.PHONY: env.sh test run android-emulator build build-testing build-arm build-lambda docker
 env.sh:
 	@echo "export AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID)" > $@
 	@echo "export AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY)" >> $@
@@ -240,24 +240,51 @@ env.sh:
 TEST ?=
 
 test:
-	mkdir -p ./test-build-target/debug/deps/public
-	npx @tailwindcss/cli -i tailwind.css -o ./assets/tailwind.css
 	$(BUILD_ENV) CARGO_TARGET_DIR=./test-build-target cargo test --features server,bypass --tests $(TEST) -- --test-threads=1 --nocapture
 
-js/node_modules:
-	npm i
+# TypeScript API client for apps/web (docs/superpower/2026-09-14-react-frontend-migration.md §4.2).
+# The route macros only expand to client stubs outside `fullstack`, so the
+# tauri-web build carries every handler. Its `ts-bridge` tests write one
+# manifest per handler (`ts_bridge_manifest_*`) and ts-rs exports the wire
+# types (`export_bindings_*`); gen-handlers.mjs renders the clients and
+# barrels. Output is committed; CI regenerates it and requires no diff.
+TS_BRIDGES_DIR ?= $(abspath $(CURDIR)/../../packages/ts-bridges)
 
-../../node_modules:
-	cd ../.. && npm i
+# --test-threads=1: ts-rs writes a type's file both from its own export test and
+# from every parent that exports it as a dependency (the latter without the
+# type's doc comment). Run in parallel, the last writer wins at random and the
+# committed output drifts; serially the order — and the output — is fixed.
+gen-ts:
+	rm -rf "$(TS_BRIDGES_DIR)/.gen" "$(TS_BRIDGES_DIR)/src/types"
+	# ts-rs writes non-exported dependencies to their default path under
+	# TS_RS_EXPORT_DIR; drop any such stragglers so they can't mask a missing export.
+	find "$(TS_BRIDGES_DIR)/src" -maxdepth 1 -name '*.ts' ! -name index.ts -delete
+	DYNAMO_TABLE_PREFIX=$(DYNAMO_TABLE_PREFIX) TS_SERVER_FN_PACKAGE_DIR="$(TS_BRIDGES_DIR)" TS_RS_EXPORT_DIR="$(TS_BRIDGES_DIR)/src" \
+		cargo test --no-default-features --features tauri-web,ts-bridge --lib -- ts_bridge_manifest_ export_bindings_ --test-threads=1
+	node "$(TS_BRIDGES_DIR)/scripts/gen-handlers.mjs"
 
-run: ../../node_modules js/node_modules
-	$(BUILD_ENV) dx serve --addr 0.0.0.0 --port $(PORT) --web --features $(RUN_FEATURES),fullstack --no-default-features --fullstack true
+# wasm-bindgen build of packages/attr-voting-wasm for apps/web (React port of
+# client-side ABE vote encryption — mirrors
+# features/spaces/pages/actions/actions/poll/services/client_vote_encryption.rs).
+# Output is committed to apps/web/src/lib/attr-voting-wasm; the build is
+# reproducible (same wasm-bindgen-cli version -> byte-identical .js/.wasm), so
+# CI does not need to regenerate it, but re-run this after touching
+# packages/attr-voting or packages/attr-voting-wasm.
+ATTR_VOTING_WASM_OUT_DIR ?= $(abspath $(CURDIR)/../../apps/web/src/lib/attr-voting-wasm)
 
-run-android: $(HOME)/.android/debug.keystore dx-res-debug
-	$(BUILD_ENV) $(ANDROID_ENV) dx serve --features $(RUN_FEATURES) --no-default-features --platform android --target $(ANDROID_TARGET) --fullstack false
+gen-attr-voting-wasm:
+	cd "$(CURDIR)/../.." && cargo build -p attr-voting-wasm --target wasm32-unknown-unknown --release
+	@command -v wasm-bindgen >/dev/null 2>&1 || { \
+		echo "wasm-bindgen CLI not found — installing wasm-bindgen-cli 0.2.118 (must match the wasm-bindgen crate version in Cargo.lock)"; \
+		cargo install wasm-bindgen-cli --version 0.2.118 --locked; \
+	}
+	wasm-bindgen --target web --out-dir "$(ATTR_VOTING_WASM_OUT_DIR)" --out-name attr_voting_wasm \
+		"$(CURDIR)/../../target/wasm32-unknown-unknown/release/attr_voting_wasm.wasm"
 
-run-tauri: ../../node_modules js/node_modules
-	$(BUILD_ENV) dx serve --addr 0.0.0.0 --port 8000 --no-default-features --debug-symbols false --features $(RUN_FEATURES),tauri-web --web --fullstack false
+# Local API server (the UI is apps/web: `pnpm -C apps/web dev`, which proxies
+# the API prefixes to VITE_API_TARGET).
+run:
+	$(BUILD_ENV) cargo run --no-default-features --features server,$(RUN_FEATURES) --bin app-shell
 
 $(HOME)/.android/debug.keystore:
 	keytool -genkey -v -keystore $@ -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Korea,O=Biyard,C=KR"
@@ -298,44 +325,34 @@ $(ANDROID_HOME)/$(SDK_IMAGE_PATH):
 android-emulator: $(HOME)/.android/debug.keystore $(HOME)/.android/avd/$(AVD_NAME).avd $(ANDROID_HOME)/emulator/emulator
 	$(ANDROID_HOME)/emulator/emulator -avd $(AVD_NAME) -netdelay none -netspeed full &
 
-dx-res-debug:
-	rm -rf $(CARGO_TARGET_DIR)/dx/app-shell/debug/android/app/app/src/main/res
-	mkdir -p $(CARGO_TARGET_DIR)/dx/app-shell/debug/android/app/app/src/main
-	cp -rf android/res $(CARGO_TARGET_DIR)/dx/app-shell/debug/android/app/app/src/main/
+# API-only server binary for the app-shell image. `SERVER_IMAGE_DIR` is the
+# docker/buildkit build context (Dockerfile: `COPY . .` + `CMD ["./server"]`).
+WORKSPACE_TARGET ?= $(abspath $(CURDIR)/../../target)
+SERVER_IMAGE_DIR ?= $(WORKSPACE_TARGET)/server-image
+SERVER_BUILD = $(BUILD_ENV) CARGO_TARGET_DIR=$(WORKSPACE_TARGET) cargo build --release --no-default-features --bin app-shell
 
-dx-res-release:
-	rm -rf $(CARGO_TARGET_DIR)/dx/app-shell/release/android/app/app/src/main/res
-	mkdir -p $(CARGO_TARGET_DIR)/dx/app-shell/release/android/app/app/src/main
-	cp -rf android/res $(CARGO_TARGET_DIR)/dx/app-shell/release/android/app/app/src/main/
-
-build-android: $(HOME)/.android/debug.keystore dx-res-release
-	$(BUILD_ENV) $(ANDROID_ENV) dx bundle --release --features $(RUN_FEATURES) --no-default-features --platform android --target $(ANDROID_TARGET)
-
-install-android:
-	adb $(LOGCAT_FLAG) install -r $(CARGO_TARGET_DIR)/dx/app-shell/release/android/app/app/build/outputs/apk/debug/app-debug.apk
-	adb $(LOGCAT_FLAG) shell am start -n "co.biyard.ratel/.MainActivity"
-
-ios:
-	$(BUILD_ENV) dx serve --addr 0.0.0.0 --port $(PORT) --ios --features $(RUN_FEATURES)
+define copy-server
+	mkdir -p $(SERVER_IMAGE_DIR)
+	cp $(1) $(SERVER_IMAGE_DIR)/server
+endef
 
 build:
-	$(BUILD_ENV) dx build --release --no-default-features --debug-symbols false --fullstack true @client --features web,fullstack --platform web @server --features server --platform server
-
-build-tauri: ../../node_modules js/node_modules
-	rm -rf $(CARGO_TARGET_DIR)/dx
-	$(BUILD_ENV) dx build --release --debug-symbols false --no-default-features --features tauri-web --platform web --fullstack false
+	$(SERVER_BUILD) --features server
+	$(call copy-server,$(WORKSPACE_TARGET)/release/app-shell)
 
 build-testing:
-	$(BUILD_ENV) dx build --release --no-default-features --debug-symbols false @client --features web,fullstack,bypass,beta --platform web @server --features server,bypass,local-dev --platform server
+	$(SERVER_BUILD) --features server,bypass,local-dev
+	$(call copy-server,$(WORKSPACE_TARGET)/release/app-shell)
 
 build-arm:
-	$(BUILD_ENV) dx build --release --no-default-features --debug-symbols false @client --features web,fullstack --platform web @server --features server --platform server --target aarch64-unknown-linux-gnu
+	$(SERVER_BUILD) --features server --target aarch64-unknown-linux-gnu
+	$(call copy-server,$(WORKSPACE_TARGET)/aarch64-unknown-linux-gnu/release/app-shell)
 
 build-lambda: env.sh
 	docker run -v $(PWD)/../..:/app -v $(HOME)/.cargo/bin:/root/.cargo/bin -w /app public.ecr.aws/sam/build-provided.al2023 /bin/bash -c "scripts/building-lambda-bootstrap.sh"
 
 docker:
-	docker build -t $(ECR):$(COMMIT) -f Dockerfile ../../target/dx/app-shell/release/web
+	docker build -t $(ECR):$(COMMIT) -f Dockerfile $(SERVER_IMAGE_DIR)
 
 docker.push:
 	docker tag $(ECR):$(COMMIT) $(ECR):$(ENV)

@@ -1,4 +1,8 @@
-# Build the dioxus-web bundle and assemble it into a Tauri Android APK.
+# Build the React web bundle (apps/web) and assemble it into a Tauri
+# Android APK. The mobile shell always bundles the React build now — see
+# docs/superpower/2026-09-14-react-frontend-migration.md § 6 (the Dioxus
+# `dx-build` target and the `FRONTEND=dx|web` selector this file used before
+# the migration are gone).
 #
 # Inputs you may override:
 #   ENV=local|dev|staging|prod   (default: local)
@@ -61,6 +65,15 @@ else
 endif
 NDK_HOME ?= $(ANDROID_NDK_HOME)
 GOOGLE_OAUTH_CLIENT_ID ?=
+# Android native Google sign-in needs the Firebase WEB OAuth client id baked in
+# at compile time (src-tauri/src/commands/google_sign_in.rs). CI passes it from
+# secrets; for local builds fall back to the `client_type: 3` entry of
+# google-services.json (a public id that ships in the app) when it is not set.
+ifeq ($(strip $(GOOGLE_OAUTH_CLIENT_ID)),)
+  ifneq ($(wildcard google-services.json),)
+    GOOGLE_OAUTH_CLIENT_ID := $(shell python3 -c 'import json;d=json.load(open("google-services.json"));print(next((o["client_id"] for c in d.get("client",[]) for o in c.get("oauth_client",[]) if o.get("client_type")==3),""))' 2>/dev/null)
+  endif
+endif
 
 # adb target device for install/launch. Override: `make debug-apk DEVICE=emulator-5554`.
 # Defaults to ANDROID_SERIAL, else the first attached device — so `adb` doesn't
@@ -124,21 +137,17 @@ endif
 CSP_OVERRIDE := default-src 'self' tauri: http://tauri.localhost http://localhost:8000 http://192.168.219.103:8000 https://ratel.foundation https://*.ratel.foundation; script-src 'self'  https://cdn.portone.io 'wasm-unsafe-eval' 'unsafe-eval' tauri: http://tauri.localhost https://www.gstatic.com; connect-src $(CSP_CONNECT); img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com
 
 DIST_DIR := $(CURDIR)/dist
-RATEL_DIR := $(CURDIR)/../ratel
-# dx writes its output under the workspace root's target/dx, not app/ratel/target/dx,
-# because the cargo workspace shares one target directory.
+# apps/web lives at the workspace root, alongside app/ratel and app/ratel-tauri.
 WORKSPACE_ROOT := $(CURDIR)/../..
+WEB_DIR := $(WORKSPACE_ROOT)/apps/web
 
-DX_CARGO_TARGET_DIR ?= $(PWD)/dx-tauri-target
-DX_BUILD_DIR = $(DX_CARGO_TARGET_DIR)/dx/app-shell/release/web/public
-
-.PHONY: help install-tauri-cli dx-build run-android build-android build-android-debug sign-apk run-apk debug-apk release-aab ios-init run-ios build-ios build-ios-sim testflight clean keystore.sha1 apk.sha1 FORCE
+.PHONY: help install-tauri-cli web-build run-android build-android build-android-debug sign-apk run-apk debug-apk release-aab ios-init run-ios build-ios build-ios-sim testflight clean keystore.sha1 apk.sha1 FORCE
 
 help:
 	@echo "Targets:"
-	@echo "  dx-build         — build the dioxus-web bundle and copy into ./dist"
-	@echo "  android-dev      — cargo tauri android dev (live reload, requires dx serve)"
-	@echo "  build-release    — full APK build: dx-build + cargo tauri android build"
+	@echo "  web-build        — build the React web bundle (apps/web) and copy into ./dist"
+	@echo "  android-dev      — cargo tauri android dev (live reload, requires the web dev server)"
+	@echo "  build-release    — full APK build: web-build + cargo tauri android build"
 	@echo "  install-debug    — build-release + adb install + launch on connected device"
 	@echo "  clean            — remove ./dist and src-tauri/target"
 	@echo
@@ -174,15 +183,43 @@ apk.sha1:
 	if [ -z "$$APKSIGNER" ]; then echo "ERROR: apksigner not found under $(ANDROID_HOME)/build-tools"; exit 1; fi; \
 	"$$APKSIGNER" verify --print-certs "$$APK" | grep "SHA-1 digest" | awk '{print $$NF}'
 
-# Run `dx build` and copy the produced web bundle into ./dist for Tauri.
-# MOBILE_API_URL must be forwarded into the app/ratel build so the wasm
-# `api_base_url()` (option_env!("MOBILE_API_URL")) is baked with THIS build's
-# target backend. Without it, app/ratel falls back to its own default
-# (http://$(HOST_IP):$(PORT)) and every mobile build silently talks to a local
-# IP instead of the ENV-selected backend (dev/staging/prod).
-dx-build:
-	cd $(RATEL_DIR) && CARGO_TARGET_DIR=$(DX_CARGO_TARGET_DIR) MOBILE_API_URL=$(MOBILE_API_URL) make build-tauri
-	rsync -a --delete "$(DX_BUILD_DIR)/" "$(DIST_DIR)/"
+# React frontend (apps/web) for the mobile WebView — the mobile shell always
+# bundles this now (docs/superpower/2026-09-14-react-frontend-migration.md
+# § 6; the old Dioxus `dx-build` target and the `FRONTEND=dx|web` selector
+# are gone). `VITE_TAURI=1` selects the Tauri viewport and routes API calls
+# through the native `api_request` command against VITE_MOBILE_API_URL (the
+# same ENV-selected MOBILE_API_URL the old dx build baked in). Firebase /
+# WalletConnect / PortOne keys are read from the VITE_* env at build time
+# (apps/web/src/vite-env.d.ts) — the plain (non-VITE_) names arrive here as
+# ordinary environment variables (exported by CI, or by hand per this
+# Makefile's usage comments), so make picks them up without a separate `?=`
+# declaration. VITE_BYPASS is intentionally never set here — store/device
+# builds never talk to a bypass-enabled backend.
+.PHONY: web-build
+web-build:
+	@if [ ! -d "$(WORKSPACE_ROOT)/node_modules" ]; then \
+		cd $(WORKSPACE_ROOT) && corepack pnpm install --frozen-lockfile; \
+	fi
+	@if [ ! -d "$(WEB_DIR)/shell-js/node_modules" ]; then \
+		npm ci --prefix $(WEB_DIR)/shell-js; \
+	fi
+	npm run build --prefix $(WEB_DIR)/shell-js
+	cd $(WORKSPACE_ROOT) && \
+		VITE_TAURI=1 \
+		VITE_BASE=/ \
+		VITE_MOBILE_API_URL="$(MOBILE_API_URL)" \
+		VITE_FIREBASE_API_KEY="$(FIREBASE_API_KEY)" \
+		VITE_FIREBASE_AUTH_DOMAIN="$(FIREBASE_AUTH_DOMAIN)" \
+		VITE_FIREBASE_PROJECT_ID="$(FIREBASE_PROJECT_ID)" \
+		VITE_FIREBASE_STORAGE_BUCKET="$(FIREBASE_STORAGE_BUCKET)" \
+		VITE_FIREBASE_MESSAGING_SENDER_ID="$(FIREBASE_MESSAGING_SENDER_ID)" \
+		VITE_FIREBASE_APP_ID="$(FIREBASE_APP_ID)" \
+		VITE_FIREBASE_MEASUREMENT_ID="$(FIREBASE_MEASUREMENT_ID)" \
+		VITE_WALLETCONNECT_PROJECT_ID="$(WALLETCONNECT_PROJECT_ID)" \
+		VITE_PORTONE_STORE_ID="$(PORTONE_STORE_ID)" \
+		VITE_PORTONE_INICIS_CHANNEL_KEY="$(PORTONE_INICIS_CHANNEL_KEY)" \
+		corepack pnpm -C apps/web build
+	rsync -a --delete "$(WEB_DIR)/dist/" "$(DIST_DIR)/"
 
 run: run-android
 
@@ -261,7 +298,7 @@ run-ios: install-tauri-cli $(IOS_CARGO_CONFIG) gsi-copy $(TAURI_OVERRIDE_FILE)
 #   ratel_envs; export ENV=prod MOBILE_API_URL=https://ratel.foundation
 #   export GOOGLE_OAUTH_CLIENT_ID=...
 #   make build-ios
-build-ios: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj dx-build
+build-ios: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj web-build
 	cd src-tauri && $(IOS_ENV) cargo tauri ios build
 	@echo
 	@echo "iOS output (.ipa):"
@@ -275,7 +312,7 @@ build-ios: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj dx-build
 # RatelFiles) is therefore invisible to the build: it compiles clean and
 # reports BUILD SUCCEEDED without the file, and the feature fails only at
 # runtime. Regenerating first keeps the project in step with the directory.
-build-ios-sim: install-tauri-cli $(IOS_CARGO_CONFIG) gsi-copy gen-xcodeproj dx-build
+build-ios-sim: install-tauri-cli $(IOS_CARGO_CONFIG) gsi-copy gen-xcodeproj web-build
 	# The CLI moves the freshly built .app into gen/apple/build/arm64-sim with a
 	# plain rename, which fails with "Directory not empty (os error 66)" when a
 	# previous build left one there — i.e. every run after the first. Clear it.
@@ -326,7 +363,7 @@ ASC_KEY_ID ?=
 ASC_ISSUER_ID ?=
 TF_BUILD_NUMBER ?= $(shell date +%s)
 
-testflight: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj dx-build
+testflight: install-tauri-cli $(IOS_CARGO_CONFIG) gen-xcodeproj web-build
 	@test -n "$(APPLE_DEVELOPMENT_TEAM)" || { echo "ERROR: set APPLE_DEVELOPMENT_TEAM (10-char Apple Team ID)"; exit 1; }
 	@test -n "$(ASC_KEY_ID)"             || { echo "ERROR: set ASC_KEY_ID (App Store Connect API Key ID)"; exit 1; }
 	@test -n "$(ASC_ISSUER_ID)"          || { echo "ERROR: set ASC_ISSUER_ID (App Store Connect API Issuer ID)"; exit 1; }
@@ -373,7 +410,7 @@ run-android: install-tauri-cli ndk-shims gs-copy $(TAURI_OVERRIDE_FILE)
 	@echo "Run 'cd ../ratel && PORT=8000 make run-tauri' in another terminal first."
 	cd src-tauri && $(ANDROID_ENV) cargo tauri android dev --config $(TAURI_OVERRIDE_FILE)
 
-build-android: install-tauri-cli ndk-shims gs-copy dx-build
+build-android: install-tauri-cli ndk-shims gs-copy web-build
 	cd src-tauri && $(ANDROID_ENV) cargo tauri android build --target $(TAURI_TARGET) --apk
 	@$(MAKE) sign-apk
 	@echo
@@ -397,7 +434,7 @@ build-android: install-tauri-cli ndk-shims gs-copy dx-build
 #
 # Bump the version in tauri.conf.json before each upload — Play requires a
 # strictly increasing versionCode.
-release-aab: install-tauri-cli ndk-shims gs-copy dx-build
+release-aab: install-tauri-cli ndk-shims gs-copy web-build
 	cd src-tauri && $(ANDROID_ENV) cargo tauri android build --target $(TAURI_TARGET) --aab
 	@echo
 	@echo "AAB output (upload this .aab to Play Console):"
@@ -439,7 +476,7 @@ run-apk: build-android
 gs-copy:
 	@cp -f google-services.json src-tauri/gen/android/app/google-services.json
 
-build-android-debug: install-tauri-cli ndk-shims gs-copy
+build-android-debug: install-tauri-cli ndk-shims gs-copy web-build
 	cd src-tauri && $(ANDROID_ENV) cargo tauri android build --target $(TAURI_TARGET) --apk --debug
 	@echo
 	@echo "APK output:"

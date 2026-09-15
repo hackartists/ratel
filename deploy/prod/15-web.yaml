@@ -1,0 +1,83 @@
+# web — serves the React static build for the PROD environment.
+# Image: built by prod-workflow's build-images job (pnpm -C apps/web build,
+# VITE_* baked at build time from the same GitHub secrets the app-shell
+# client build used — VITE_BYPASS is never set here) and packaged with
+# apps/web/Dockerfile, pushed as ratel-web:prod-<sha> / :prod. ${SHA_TAG}
+# pins each deploy to its commit — same substitution mechanism as
+# deploy/prod/10-app-shell.yaml.
+#
+# Ingress (deploy/prod/30-ingress.yaml) sends every path EXCEPT the API
+# prefixes (/api, /v3, /mcp, /hooks, /launchpad/health, /launchpad/points,
+# /admin/proxy) here. This Service answers everything else, falling back to
+# index.html for client-side routing.
+#
+# API_ORIGIN points at the in-namespace app-shell Service so the small Node
+# server (apps/web/server/serve.mjs) can fetch space/post metadata for
+# link-preview meta injection (docs/superpower/2026-09-14-react-frontend-
+# migration.md § 5.2). PROXY_API is intentionally NOT set here — prod's
+# ingress already splits API paths to app-shell directly, so the web pod
+# never needs to proxy /api itself.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: ratel-prod
+  labels:
+    app: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      nodeSelector:
+        biyard.io/node-class: main
+      containers:
+        - name: web
+          image: registry.infra.svc.cluster.local:5000/ratel-web:${SHA_TAG}
+          imagePullPolicy: IfNotPresent # sha-unique tag — content never changes under it
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: PORT
+              value: "3000"
+            - name: API_ORIGIN
+              value: http://app-shell:8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: ratel-prod
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

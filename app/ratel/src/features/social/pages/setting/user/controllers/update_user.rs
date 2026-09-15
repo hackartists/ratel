@@ -22,6 +22,7 @@ pub enum UpdateUserRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SettingUpdateUserUserProfileResponse"))]
 pub struct UserProfileResponse {
     pub username: String,
     pub display_name: String,
@@ -31,6 +32,7 @@ pub struct UserProfileResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SettingUpdateUserUserDetailResponse"))]
 pub struct UserDetailResponse {
     pub user: UserProfileResponse,
     pub evm_address: Option<String>,

@@ -11,6 +11,7 @@ use crate::common::*;
 /// - Global reward: `Reward##{behavior}` (when `space_pk` and `action_id` are `None`)
 /// - Space-scoped reward: `SpaceReward##{space_pk}##{action_id}##{behavior}`
 #[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "string"))]
 pub struct RewardKey {
     pub space_pk: Option<SpacePartition>,
     pub action_id: Option<String>,

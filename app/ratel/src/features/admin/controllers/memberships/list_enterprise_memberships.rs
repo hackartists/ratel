@@ -21,6 +21,7 @@ const TEAM_PHASE_BOOKMARK: &str = "team";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct EnterpriseMembershipGrantListItem {
     pub target_type: MembershipGrantTargetType,
     pub username: String,

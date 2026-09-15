@@ -1,0 +1,137 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/notifications/i18n.rs (`NotificationsTranslate`). Namespace "notifications".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  panel_title: "Notifications",
+  mark_all_read: "Mark all as read",
+  empty: "No notifications yet",
+  reply_title: "{{name}} replied to your comment",
+  discussion_comment_title: "{{name}} commented on {{discussion}}",
+  mention_title: "{{name}} mentioned you",
+  space_status_title: "{{space}} is now {{status}}",
+  space_invite_title: "{{name}} invited you to {{space}}",
+  action_ongoing_title: "New action ongoing: {{action_title}}",
+  action_ongoing_subtitle: "in {{space_title}}",
+  relative_now: "just now",
+  relative_minute: "{{n}}m ago",
+  relative_hour: "{{n}}h ago",
+  relative_day: "{{n}}d ago",
+  sub_team_app_submitted_title: "{{team}} submitted a sub-team application",
+  sub_team_app_approved_title: "{{parent}} approved your sub-team application",
+  sub_team_app_rejected_title: "{{parent}} rejected your sub-team application",
+  sub_team_app_returned_title: "{{parent}} returned your sub-team application for revision",
+  sub_team_ann_received_title: "{{parent}} published an announcement",
+  sub_team_ann_comment_title: "{{name}} commented on your announcement",
+  sub_team_deregistered_title: "{{parent}} removed your team as a sub-team",
+  sub_team_left_parent_title: "{{team}} left as a sub-team",
+  sub_team_parent_deleted_title: "{{parent}} was deleted — your team is no longer a sub-team",
+  xpost_failed_title: "Cross-posting to {{platform}} failed",
+  xpost_failed_network: "Temporary network error. Tap to retry from the post.",
+  xpost_failed_rate_limit: "{{platform}} rate limit reached. Tap to retry from the post in a moment.",
+  xpost_failed_auth_expired: "Your {{platform}} connection expired. Reconnect in Settings → Connections.",
+  xpost_failed_content_rejected: "{{platform}} rejected the content. Edit the post and try again.",
+  xpost_failed_unknown: "Cross-posting failed unexpectedly. Tap to retry from the post.",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  panel_title: "알림",
+  mark_all_read: "모두 읽음",
+  empty: "새 알림이 없습니다",
+  reply_title: "{{name}}님이 답글을 남겼습니다",
+  discussion_comment_title: "{{name}}님이 '{{discussion}}'에 댓글을 남겼습니다",
+  mention_title: "{{name}}님이 나를 언급했습니다",
+  space_status_title: "{{space}}가 {{status}}로 변경되었습니다",
+  space_invite_title: "{{name}}님이 {{space}}에 초대했습니다",
+  action_ongoing_title: "새 활동 시작: {{action_title}}",
+  action_ongoing_subtitle: "{{space_title}}에서",
+  relative_now: "방금",
+  relative_minute: "{{n}}분 전",
+  relative_hour: "{{n}}시간 전",
+  relative_day: "{{n}}일 전",
+  sub_team_app_submitted_title: "{{team}}팀이 하위팀 신청을 제출했습니다",
+  sub_team_app_approved_title: "{{parent}}팀이 하위팀 신청을 승인했습니다",
+  sub_team_app_rejected_title: "{{parent}}팀이 하위팀 신청을 반려했습니다",
+  sub_team_app_returned_title: "{{parent}}팀이 수정 요청과 함께 신청을 반송했습니다",
+  sub_team_ann_received_title: "{{parent}}팀이 공지를 게시했습니다",
+  sub_team_ann_comment_title: "{{name}}님이 공지에 댓글을 남겼습니다",
+  sub_team_deregistered_title: "{{parent}}팀이 하위팀 관계를 해제했습니다",
+  sub_team_left_parent_title: "{{team}}팀이 하위팀에서 탈퇴했습니다",
+  sub_team_parent_deleted_title: "{{parent}}팀이 삭제되어 더 이상 하위팀이 아닙니다",
+  xpost_failed_title: "{{platform}} 크로스포스팅에 실패했습니다",
+  xpost_failed_network: "일시적인 네트워크 오류입니다. 게시글에서 재시도해주세요.",
+  xpost_failed_rate_limit: "{{platform}} 요청 한도에 도달했습니다. 잠시 후 게시글에서 재시도해주세요.",
+  xpost_failed_auth_expired: "{{platform}} 연결이 만료되었습니다. 설정 → Connections에서 다시 연결해주세요.",
+  xpost_failed_content_rejected: "{{platform}}에서 콘텐츠를 거부했습니다. 게시글을 수정 후 다시 시도해주세요.",
+  xpost_failed_unknown: "예상치 못한 오류로 크로스포스팅에 실패했습니다. 게시글에서 재시도해주세요.",
+};
+
+export const i18n = { en, ko };
+
+export interface NotificationsI18n {
+  panelTitle: string;
+  markAllRead: string;
+  empty: string;
+  replyTitle: (values: { name: string | number }) => string;
+  discussionCommentTitle: (values: { discussion: string | number; name: string | number }) => string;
+  mentionTitle: (values: { name: string | number }) => string;
+  spaceStatusTitle: (values: { space: string | number; status: string | number }) => string;
+  spaceInviteTitle: (values: { name: string | number; space: string | number }) => string;
+  actionOngoingTitle: (values: { action_title: string | number }) => string;
+  actionOngoingSubtitle: (values: { space_title: string | number }) => string;
+  relativeNow: string;
+  relativeMinute: (values: { n: string | number }) => string;
+  relativeHour: (values: { n: string | number }) => string;
+  relativeDay: (values: { n: string | number }) => string;
+  subTeamAppSubmittedTitle: (values: { team: string | number }) => string;
+  subTeamAppApprovedTitle: (values: { parent: string | number }) => string;
+  subTeamAppRejectedTitle: (values: { parent: string | number }) => string;
+  subTeamAppReturnedTitle: (values: { parent: string | number }) => string;
+  subTeamAnnReceivedTitle: (values: { parent: string | number }) => string;
+  subTeamAnnCommentTitle: (values: { name: string | number }) => string;
+  subTeamDeregisteredTitle: (values: { parent: string | number }) => string;
+  subTeamLeftParentTitle: (values: { team: string | number }) => string;
+  subTeamParentDeletedTitle: (values: { parent: string | number }) => string;
+  xpostFailedTitle: (values: { platform: string | number }) => string;
+  xpostFailedNetwork: string;
+  xpostFailedRateLimit: (values: { platform: string | number }) => string;
+  xpostFailedAuthExpired: (values: { platform: string | number }) => string;
+  xpostFailedContentRejected: (values: { platform: string | number }) => string;
+  xpostFailedUnknown: string;
+}
+
+export function useNotificationsI18n(): NotificationsI18n {
+  const { t } = useTranslation("notifications");
+  return {
+    panelTitle: t("panel_title"),
+    markAllRead: t("mark_all_read"),
+    empty: t("empty"),
+    replyTitle: (values) => t("reply_title", { replace: values }),
+    discussionCommentTitle: (values) => t("discussion_comment_title", { replace: values }),
+    mentionTitle: (values) => t("mention_title", { replace: values }),
+    spaceStatusTitle: (values) => t("space_status_title", { replace: values }),
+    spaceInviteTitle: (values) => t("space_invite_title", { replace: values }),
+    actionOngoingTitle: (values) => t("action_ongoing_title", { replace: values }),
+    actionOngoingSubtitle: (values) => t("action_ongoing_subtitle", { replace: values }),
+    relativeNow: t("relative_now"),
+    relativeMinute: (values) => t("relative_minute", { replace: values }),
+    relativeHour: (values) => t("relative_hour", { replace: values }),
+    relativeDay: (values) => t("relative_day", { replace: values }),
+    subTeamAppSubmittedTitle: (values) => t("sub_team_app_submitted_title", { replace: values }),
+    subTeamAppApprovedTitle: (values) => t("sub_team_app_approved_title", { replace: values }),
+    subTeamAppRejectedTitle: (values) => t("sub_team_app_rejected_title", { replace: values }),
+    subTeamAppReturnedTitle: (values) => t("sub_team_app_returned_title", { replace: values }),
+    subTeamAnnReceivedTitle: (values) => t("sub_team_ann_received_title", { replace: values }),
+    subTeamAnnCommentTitle: (values) => t("sub_team_ann_comment_title", { replace: values }),
+    subTeamDeregisteredTitle: (values) => t("sub_team_deregistered_title", { replace: values }),
+    subTeamLeftParentTitle: (values) => t("sub_team_left_parent_title", { replace: values }),
+    subTeamParentDeletedTitle: (values) => t("sub_team_parent_deleted_title", { replace: values }),
+    xpostFailedTitle: (values) => t("xpost_failed_title", { replace: values }),
+    xpostFailedNetwork: t("xpost_failed_network"),
+    xpostFailedRateLimit: (values) => t("xpost_failed_rate_limit", { replace: values }),
+    xpostFailedAuthExpired: (values) => t("xpost_failed_auth_expired", { replace: values }),
+    xpostFailedContentRejected: (values) => t("xpost_failed_content_rejected", { replace: values }),
+    xpostFailedUnknown: t("xpost_failed_unknown"),
+  };
+}

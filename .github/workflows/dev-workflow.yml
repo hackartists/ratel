@@ -93,8 +93,9 @@ jobs:
       RUST_LOG: error
       RUSTFLAGS: "-D warnings"
       # The runner PODS have an 8Gi memory limit; an unbounded cold
-      # `dx build --release` OOM-killed runner-4 (exit 137, run
-      # 30898864146). Bound rustc parallelism so the build fits the pod.
+      # `cargo build --release` (the dx build this replaced hit the same
+      # ceiling) OOM-killed runner-4 (exit 137, run 30898864146). Bound
+      # rustc parallelism so the build fits the pod.
       CARGO_BUILD_JOBS: "2"
       SERVICE: app-shell
       DOMAIN: dev.ratel.foundation
@@ -188,8 +189,10 @@ jobs:
 
       - name: Install Rust toolchain
         # Idempotent (same pattern as pr-workflow's build-image): reuse the
-        # runner's stable toolchain, install only if absent; ensure the wasm
-        # target the dx client build needs.
+        # runner's stable toolchain, install only if absent. No wasm target
+        # here — app-shell is API-only after the React frontend migration
+        # (docs/superpower/2026-09-14-react-frontend-migration.md § 5.1), so
+        # nothing in this job compiles for wasm32-unknown-unknown anymore.
         run: |
           if ! command -v rustup >/dev/null 2>&1; then
             if [ -x "$HOME/.cargo/bin/rustup" ]; then
@@ -201,7 +204,6 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           fi
           rustup toolchain list | grep -q '^stable' || rustup toolchain install stable --profile minimal
-          rustup target list --installed | grep -q '^wasm32-unknown-unknown$' || rustup target add wasm32-unknown-unknown
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -249,26 +251,12 @@ jobs:
             echo "::warning::no known package manager; relying on preinstalled toolchain"
           fi
 
-      - name: Install Dioxus-cli (source build — binstall binaries need newer glibc)
+      - name: Build app-shell (make build — dev release, API only, no bypass/local-dev/lambda)
+        # `make build` is a plain `cargo build --release` (no dx/dioxus-cli,
+        # no wasm client) that leaves the binary at
+        # target/server-image/server — see the "Fixed contracts" section of
+        # docs/superpower/2026-09-14-react-frontend-migration.md § 5.1.
         run: |
-          # binstall's prebuilt dx targets a newer glibc than the runner image
-          # ships (`GLIBC_2.39 not found`, run 30897339573 — same failure the
-          # PR build-image job hit; binstall even overwrote a working
-          # source-built dx on the runner disk). Build from source with
-          # `--locked` (pins dioxus-cli's published Cargo.lock; git2 0.21
-          # breaks auth-git2 0.5.8 otherwise). ~/.cargo/bin persists on the
-          # self-hosted runner, so this is a one-time cost per runner.
-          if dx --version >/dev/null 2>&1; then
-            echo "working dx already present: $(dx --version)"
-          else
-            cargo install dioxus-cli --locked --force
-          fi
-
-      - name: Build app-shell (make build — dev release, no bypass/local-dev/lambda)
-        run: |
-          npm i
-          rm -rf target/dx
-
           cd app/ratel
           make build
 
@@ -276,10 +264,50 @@ jobs:
         run: |
           set -euo pipefail
           export NAME=ratel-app-shell
-          export CONTEXT=target/dx/app-shell/release/web
+          export CONTEXT=target/server-image
           export DOCKERFILE=app/ratel/Dockerfile
           IMAGE_TAG="${SHA_TAG}" bash scripts/buildkit-image.sh
           # Second push is a cache hit in buildkitd — just retags.
+          IMAGE_TAG=dev bash scripts/buildkit-image.sh
+
+      - name: Build shared JS assets (apps/web/shell-js — formerly app/ratel/js)
+        # This package moved out of app/ratel/js when the Dioxus UI build was
+        # dropped from app-shell (docs/superpower/2026-09-14-react-frontend-
+        # migration.md § 5.1). It writes ratel-app-shell.js / wallet-connect.js
+        # into apps/web/assets/, which the React build below bundles.
+        run: |
+          npm ci --prefix apps/web/shell-js
+          npm run build --prefix apps/web/shell-js
+
+      - name: Build web (React static site)
+        env:
+          # VITE_* build-time env for the React bundle — mapped from the SAME
+          # GitHub secrets the Rust client build used above for the
+          # equivalent non-VITE names (see the job env block). VITE_BYPASS is
+          # never set for dev — this environment's app-shell has no bypass
+          # feature. VITE_TAURI is never set for web.
+          VITE_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
+          VITE_WALLETCONNECT_PROJECT_ID: ${{ secrets.WALLETCONNECT_PROJECT_ID }}
+          VITE_PORTONE_STORE_ID: ${{ secrets.DEV_PORTONE_STORE_ID }}
+          VITE_PORTONE_INICIS_CHANNEL_KEY: ${{ secrets.DEV_PORTONE_INICIS_CHANNEL_KEY }}
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm -C apps/web build
+
+      - name: Push web image (buildkit → :dev-<sha> and :dev)
+        run: |
+          set -euo pipefail
+          export NAME=ratel-web
+          export CONTEXT=apps/web
+          export DOCKERFILE=apps/web/Dockerfile
+          IMAGE_TAG="${SHA_TAG}" bash scripts/buildkit-image.sh
           IMAGE_TAG=dev bash scripts/buildkit-image.sh
 
       - name: Build events binaries (ratel_cdc + ratel_worker, --features redpanda)
@@ -520,26 +548,48 @@ jobs:
             kubectl -n "${NAMESPACE}" rollout status "$d" --timeout=600s
           done
 
-      - name: Wait for app-shell to answer through ingress-nginx
+      - name: Wait for web + app-shell to answer through ingress-nginx
         # Pin the host to the ingress controller's ClusterIP (`-k`: the TLS
         # cert may still be issuing via DNS-01 on the very first deploy —
-        # routing works before the real cert lands).
+        # routing works before the real cert lands). Since the React
+        # frontend migration (docs/superpower/2026-09-14-react-frontend-
+        # migration.md § 5.1) "/" is served by the `web` Deployment, not
+        # app-shell (now API-only) — probe both backends through the same
+        # ingress so a deploy that broke either path split fails here, not
+        # in the smoke test. /launchpad/health only accepts POST with a
+        # signed body (see the readinessProbe comment on 10-app-shell.yaml),
+        # so a plain GET is expected to answer 404/405 — anything other than
+        # a connection failure or a 5xx proves the ingress → app-shell route
+        # itself works.
         run: |
           set -uo pipefail
           INGRESS_IP=$(kubectl -n infra get svc ingress-nginx-controller -o jsonpath='{.spec.clusterIP}')
           [ -n "$INGRESS_IP" ] || { echo "::error::ingress-nginx-controller service not found"; exit 1; }
           base="https://${HOST}"
           deadline=$(( $(date +%s) + 300 ))
-          echo "waiting for ${base}/ (ingress=${INGRESS_IP}) ..."
+          echo "waiting for ${base}/ (web, ingress=${INGRESS_IP}) ..."
           until curl -sfk --resolve "${HOST}:443:${INGRESS_IP}" -o /dev/null "${base}/"; do
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::app-shell did not answer within 300s"
+              echo "::error::web did not answer within 300s"
               kubectl -n "${NAMESPACE}" get pods -o wide || true
               exit 1
             fi
             sleep 10
           done
-          echo "✓ ingress serves app-shell at ${base}/"
+          echo "✓ ingress serves web at ${base}/"
+
+          deadline=$(( $(date +%s) + 120 ))
+          echo "waiting for ${base}/launchpad/health (app-shell, ingress=${INGRESS_IP}) ..."
+          until code=$(curl -sk --resolve "${HOST}:443:${INGRESS_IP}" -o /dev/null -w '%{http_code}' "${base}/launchpad/health"); \
+                [ "$code" != "000" ] && [ "$code" -lt 500 ]; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::app-shell did not answer within 120s (last code: ${code:-000})"
+              kubectl -n "${NAMESPACE}" get pods -o wide || true
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "✓ ingress serves app-shell at ${base}/launchpad/health (http ${code})"
 
       - name: Check the events tier (pods running + shadow-mode heartbeat)
         # Pods must be Running (their rollouts already succeeded above);

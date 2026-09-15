@@ -16,6 +16,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SpaceActionDependsOn(pub Vec<String>);
 
 impl std::ops::Deref for SpaceActionDependsOn {
@@ -159,10 +160,10 @@ impl SpaceAction {
     /// Build the absolute participant-facing deep link for this action. Used
     /// by inbox + email notifications.
     pub fn get_cta_url(&self) -> String {
+        // Same path the web app's space index route uses (`/spaces/:spaceId`).
         let space_id = SpacePartition(self.space_id.clone());
-        let route = Route::SpaceIndexPage { space_id };
         let endpoint = crate::common::CommonConfig::default().env.web_endpoint();
-        format!("{}{}", endpoint, route)
+        format!("{}/spaces/{}", endpoint, space_id)
     }
 }
 
@@ -182,6 +183,7 @@ impl SpaceAction {
 // No `JsonSchema` here: `SpaceAction` itself does not derive it, and
 // `SpaceActionDependsOn` has no impl.
 #[derive(Serialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SpaceAction"))]
 pub struct SpaceActionWire {
     /// `CompositePartition(SpacePartition(space_id), action_id)`.
     pub pk: CompositePartition<SpacePartition, String>,
@@ -267,5 +269,47 @@ mod shipped_client_compat_tests {
         json.as_object_mut().unwrap().remove("pk");
         let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
         assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
+    }
+}
+
+// TypeScript binding (`make gen-ts` only). `SpaceAction` serializes through
+// `SpaceActionWire`, which is exported under this name; delegate every method so
+// references, declarations and the output file all come from the wire struct.
+#[cfg(feature = "ts-bridge")]
+impl ts_rs::TS for SpaceAction {
+    type WithoutGenerics = Self;
+
+    fn ident() -> String {
+        <SpaceActionWire as ts_rs::TS>::ident()
+    }
+    fn decl() -> String {
+        <SpaceActionWire as ts_rs::TS>::decl()
+    }
+    fn decl_concrete() -> String {
+        <SpaceActionWire as ts_rs::TS>::decl_concrete()
+    }
+    fn name() -> String {
+        <SpaceActionWire as ts_rs::TS>::name()
+    }
+    fn inline() -> String {
+        <SpaceActionWire as ts_rs::TS>::inline()
+    }
+    fn inline_flattened() -> String {
+        <SpaceActionWire as ts_rs::TS>::inline_flattened()
+    }
+    fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <SpaceActionWire as ts_rs::TS>::visit_dependencies(v)
+    }
+    fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <SpaceActionWire as ts_rs::TS>::visit_generics(v)
+    }
+    fn output_path() -> Option<&'static std::path::Path> {
+        <SpaceActionWire as ts_rs::TS>::output_path()
     }
 }

@@ -22,6 +22,7 @@ use rmcp::schemars;
     DynamoEnum,
     SubPartition,
 )]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "string"))]
 pub enum EntityType {
     #[default]
     None,

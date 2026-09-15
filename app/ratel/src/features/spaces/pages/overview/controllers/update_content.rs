@@ -10,6 +10,7 @@ use crate::features::posts::models::Post;
 use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateContentRequest {
     pub content: String,
 }

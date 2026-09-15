@@ -4,8 +4,6 @@ use crate::common::models::auth::UserFollow;
 #[cfg(feature = "server")]
 use crate::common::models::space::SpaceCommon;
 #[cfg(feature = "server")]
-use crate::features::auth::models::user::OptionalUser;
-#[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::discussion::{SpacePost, SpacePostComment};
 #[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::follow::SpaceFollowUser;

@@ -172,6 +172,7 @@ pub async fn get_wall_by_username(username: String) -> Result<Wall> {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "user_type")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum Wall {
     User {
         id: UserPartition,

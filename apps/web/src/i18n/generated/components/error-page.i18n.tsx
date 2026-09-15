@@ -1,0 +1,33 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/components/error_page.rs (`ErrorPageTranslate`). Namespace "errorPage".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  title: "Something went wrong",
+  description: "We couldn't load this page.",
+  go_home: "Go home",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  title: "문제가 발생했습니다",
+  description: "페이지를 불러올 수 없습니다.",
+  go_home: "홈으로 이동",
+};
+
+export const i18n = { en, ko };
+
+export interface ErrorPageI18n {
+  title: string;
+  description: string;
+  goHome: string;
+}
+
+export function useErrorPageI18n(): ErrorPageI18n {
+  const { t } = useTranslation("errorPage");
+  return {
+    title: t("title"),
+    description: t("description"),
+    goHome: t("go_home"),
+  };
+}

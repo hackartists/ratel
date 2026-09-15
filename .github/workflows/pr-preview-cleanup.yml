@@ -29,9 +29,9 @@ name: PR preview cleanup
 # (LocalStack + Postgres + Qdrant live inside the namespace), so deleting the
 # namespace is the whole app-tier teardown.
 #
-# Registry note: the ratel-app-shell:pr-<num> tags in the in-cluster registry
-# are NOT deleted here (the registry API needs digest lookups + an offline GC
-# pass); registry housekeeping is home-infra's job.
+# Registry note: the ratel-app-shell:pr-<num> and ratel-web:pr-<num> tags in
+# the in-cluster registry are NOT deleted here (the registry API needs digest
+# lookups + an offline GC pass); registry housekeeping is home-infra's job.
 on:
   pull_request:
     types: [closed]

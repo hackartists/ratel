@@ -1,0 +1,13 @@
+/* Tailwind input for the React app.
+ *
+ * `tokens.css` holds the design tokens, @theme blocks, the `light:` variant
+ * and the global component rules (formerly app/ratel/tailwind.css).
+ * `safelist.css` keeps utilities that are only ever assembled at runtime
+ * (class names built from string fragments), which a source scan can't see.
+ *
+ * Keep glob patterns out of this comment: a double-star followed by a slash
+ * closes the comment early and the rest is parsed as a declaration. */
+@import "./tokens.css";
+@import "./safelist.css";
+
+@source "../**/*.{ts,tsx}";

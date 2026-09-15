@@ -9,6 +9,7 @@ use rmcp::schemars;
 // `"Published"`). Round-trips through the existing `SerializeDisplay` /
 // custom `Deserialize`. Additive — DynamoEntity/serde behavior is untouched.
 #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename_all = "SCREAMING_SNAKE_CASE"))]
 pub enum PostStatus {
     #[default]
     #[translate(en = "Draft", ko = "초안")]

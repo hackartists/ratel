@@ -5,6 +5,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerializeDisplay, DeserializeFromStr, Default, DynamoEnum)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename_all = "SCREAMING_SNAKE_CASE"))]
 pub enum OauthProvider {
     #[default]
     Google,

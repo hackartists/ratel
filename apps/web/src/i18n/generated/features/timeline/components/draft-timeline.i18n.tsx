@@ -1,0 +1,41 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/timeline/components/draft_row.rs (`DraftTimelineTranslate`). Namespace "draftTimeline".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  drafts_title: "Drafts",
+  delete_draft_title: "Delete Draft",
+  delete_draft_description: "Are you sure you want to delete this draft? This action cannot be undone.",
+  cancel: "Cancel",
+  confirm: "Confirm",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  drafts_title: "초안",
+  delete_draft_title: "초안 삭제",
+  delete_draft_description: "이 초안을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+  cancel: "취소",
+  confirm: "확인",
+};
+
+export const i18n = { en, ko };
+
+export interface DraftTimelineI18n {
+  draftsTitle: string;
+  deleteDraftTitle: string;
+  deleteDraftDescription: string;
+  cancel: string;
+  confirm: string;
+}
+
+export function useDraftTimelineI18n(): DraftTimelineI18n {
+  const { t } = useTranslation("draftTimeline");
+  return {
+    draftsTitle: t("drafts_title"),
+    deleteDraftTitle: t("delete_draft_title"),
+    deleteDraftDescription: t("delete_draft_description"),
+    cancel: t("cancel"),
+    confirm: t("confirm"),
+  };
+}

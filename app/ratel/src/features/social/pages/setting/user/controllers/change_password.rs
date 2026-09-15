@@ -8,6 +8,7 @@ use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ChangePasswordRequest {
     pub current_password: String,
     pub new_password: String,
@@ -15,6 +16,7 @@ pub struct ChangePasswordRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ChangePasswordResponse {
     pub success: bool,
 }

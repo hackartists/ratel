@@ -8,11 +8,13 @@ use crate::features::auth::User;
 use crate::spaces::{InvitationStatus, SpaceInvitationMember};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct InviteSpaceParticipantsRequest {
     pub emails: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct InviteSpaceParticipantsResponse {
     pub invited_emails: Vec<String>,
 }

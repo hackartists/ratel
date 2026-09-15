@@ -411,7 +411,7 @@ pub enum Error {
 
     #[error("{0}")]
     #[translate(from)]
-    FileUpload(#[from] crate::common::components::file_uploader::FileUploadError),
+    FileUpload(#[from] crate::common::types::FileUploadError),
 
     #[error("{0}")]
     #[translate(from)]

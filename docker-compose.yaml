@@ -69,6 +69,7 @@ services:
     profiles:
       - testing
       - infra
+      - local
 
   # postgres-seed — loads the Playwright fixtures (test users hi+user1@…,
   # hiteam, memberships, attribute codes) the migration-era replacement for the
@@ -97,6 +98,37 @@ services:
     networks:
       - ratel-network
     restart: "no"
+    profiles:
+      - testing
+
+  # web-testing — serves the React static build (apps/web/dist) for local
+  # Playwright runs against the `testing` profile, mirroring what
+  # deploy/pr-preview/35-web.yaml runs in-cluster. Point Playwright's
+  # PLAYWRIGHT_BASE_URL at http://localhost:4173 to test against this
+  # service instead of app-shell-testing directly (docs/superpower/
+  # 2026-09-14-react-frontend-migration.md § 5.1). PROXY_API=1 makes the
+  # small Node server (apps/web/server/serve.mjs) itself forward /api, /v3,
+  # /mcp, /hooks, /launchpad/* to API_ORIGIN — there is no ingress here to
+  # do the path split the way k3s does, so the web pod does it locally.
+  web-testing:
+    image: node:22-alpine
+    restart: always
+    working_dir: /app
+    environment:
+      PORT: "3000"
+      PROXY_API: "1"
+      API_ORIGIN: http://app-shell-testing:8080
+    volumes:
+      - ./apps/web/dist:/app/dist:ro
+      - ./apps/web/server:/app/server:ro
+    ports:
+      - "4173:3000"
+    command: ["node", "server/serve.mjs"]
+    depends_on:
+      app-shell-testing:
+        condition: service_healthy
+    networks:
+      - ratel-network
     profiles:
       - testing
 
@@ -211,6 +243,7 @@ services:
       - testing
       - development
       - infra
+      - local
 
   # DynamoDB initialization
   localstack-init:
@@ -234,6 +267,7 @@ services:
       - testing
       - development
       - infra
+      - local
 
   dynamodb-admin:
     image: aaronshaf/dynamodb-admin:latest
@@ -271,6 +305,7 @@ services:
       - development
       - infra
       - testing
+      - local
     networks:
       - ratel-network
 
@@ -289,8 +324,140 @@ services:
       - development
       - infra
       - testing
+      - local
     networks:
       - ratel-network
+
+
+  # ── Local stack (`make local`, docs/local-docker.md) ──────────────────────
+  # Everything built inside Docker: the host needs no Rust or Node. The API
+  # image is compiled with `server,bypass,local-dev` (verification code
+  # 000000) and the web image bundles the React app with VITE_BYPASS=true and
+  # proxies the API paths to local-api, standing in for the k3s ingress.
+  local-api:
+    build:
+      context: .
+      dockerfile: deploy/local/Dockerfile.api
+      # Compile-time keys (app/ratel reads them with option_env!), from the
+      # host env — e.g. `ratel_envs && make local`. Empty means disabled.
+      args:
+        FIREBASE_API_KEY: ${FIREBASE_API_KEY:-}
+        FIREBASE_AUTH_DOMAIN: ${FIREBASE_AUTH_DOMAIN:-}
+        FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+        FIREBASE_STORAGE_BUCKET: ${FIREBASE_STORAGE_BUCKET:-}
+        FIREBASE_MESSAGING_SENDER_ID: ${FIREBASE_MESSAGING_SENDER_ID:-}
+        FIREBASE_APP_ID: ${FIREBASE_APP_ID:-}
+        FIREBASE_MEASUREMENT_ID: ${FIREBASE_MEASUREMENT_ID:-}
+        PORTONE_STORE_ID: ${PORTONE_STORE_ID:-}
+        PORTONE_INICIS_CHANNEL_KEY: ${PORTONE_INICIS_CHANNEL_KEY:-}
+        PORTONE_KPN_CHANNEL_KEY: ${PORTONE_KPN_CHANNEL_KEY:-}
+        PORTONE_API_SECRET: ${PORTONE_API_SECRET:-}
+    image: ratel-local/api:latest
+    restart: unless-stopped
+    environment:
+      IP: "0.0.0.0"
+      PORT: "8080"
+      DATABASE_URL: "postgres://ratel:ratel@postgres:5432/ratel"
+      POSTGRES_MAX_CONNECTIONS: "10"
+      AWS_REGION: "ap-northeast-2"
+      AWS_DEFAULT_REGION: "ap-northeast-2"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      AWS_ACCOUNT_ID: "test"
+      DYNAMO_ENDPOINT: "http://localstack:4566"
+      DYNAMO_TABLE_PREFIX: "ratel-local"
+      RUST_LOG: ${RUST_LOG:-error}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      # No GET / on the API-only server; /api/auth/me answers 200 anonymously.
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:8080/api/auth/me || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack-init:
+        condition: service_completed_successfully
+      qdrant-init:
+        condition: service_completed_successfully
+    networks:
+      - ratel-network
+    profiles:
+      - local
+
+  # Loads the Playwright fixtures (test users hi+user1@…, teams, spaces) once
+  # the API has created the schema. Skips when they are already present, so
+  # re-running `make local` on a live stack is safe.
+  local-postgres-seed:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ratel
+    volumes:
+      - ./scripts:/scripts
+    command:
+      - sh
+      - -c
+      - |
+        if psql -h postgres -U ratel -d ratel -tAc "select 1 from users where email = 'hi+user1@biyard.co'" | grep -q 1; then
+          echo "postgres seed already loaded"
+        else
+          psql -h postgres -U ratel -d ratel -v ON_ERROR_STOP=1 -1 -f /scripts/postgres-seed.sql
+          echo "postgres seed loaded"
+        fi
+    depends_on:
+      postgres:
+        condition: service_healthy
+      local-api:
+        condition: service_healthy
+    networks:
+      - ratel-network
+    restart: "no"
+    profiles:
+      - local
+
+  local-web:
+    build:
+      context: .
+      dockerfile: deploy/local/Dockerfile.web
+      # Firebase / WalletConnect / PortOne keys from the host env. Either the
+      # VITE_ name or the plain name works, so `ratel_envs && make local` is
+      # enough. VITE_BYPASS=false exercises the real PortOne identity flow
+      # (the API then also needs PORTONE_API_SECRET).
+      args:
+        VITE_BYPASS: ${VITE_BYPASS:-true}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-${FIREBASE_API_KEY:-}}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-${FIREBASE_AUTH_DOMAIN:-}}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-${FIREBASE_PROJECT_ID:-}}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-${FIREBASE_STORAGE_BUCKET:-}}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-${FIREBASE_MESSAGING_SENDER_ID:-}}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-${FIREBASE_APP_ID:-}}
+        VITE_FIREBASE_MEASUREMENT_ID: ${VITE_FIREBASE_MEASUREMENT_ID:-${FIREBASE_MEASUREMENT_ID:-}}
+        VITE_WALLETCONNECT_PROJECT_ID: ${VITE_WALLETCONNECT_PROJECT_ID:-${WALLETCONNECT_PROJECT_ID:-}}
+        VITE_PORTONE_STORE_ID: ${VITE_PORTONE_STORE_ID:-${PORTONE_STORE_ID:-}}
+        VITE_PORTONE_INICIS_CHANNEL_KEY: ${VITE_PORTONE_INICIS_CHANNEL_KEY:-${PORTONE_INICIS_CHANNEL_KEY:-}}
+    image: ratel-local/web:latest
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      PROXY_API: "1"
+      API_ORIGIN: "http://local-api:8080"
+    ports:
+      - "4173:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      local-api:
+        condition: service_healthy
+    networks:
+      - ratel-network
+    profiles:
+      - local
 
 volumes:
   node_modules:

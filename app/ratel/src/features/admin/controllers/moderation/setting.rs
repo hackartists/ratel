@@ -6,6 +6,7 @@ use crate::features::admin::*;
 use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ModerationSettingResponse {
     pub report_threshold: i64,
     pub updated_at: i64,
@@ -21,6 +22,7 @@ impl From<ModerationSetting> for ModerationSettingResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateModerationSettingRequest {
     pub report_threshold: i64,
 }

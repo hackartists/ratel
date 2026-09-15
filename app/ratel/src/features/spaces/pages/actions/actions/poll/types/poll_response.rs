@@ -1,6 +1,7 @@
 use crate::features::spaces::pages::actions::actions::poll::*;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PollResponse {
     pub sk: EntityType,
     pub created_at: i64,

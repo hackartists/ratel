@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 // (server-only derive; wire representation is unchanged).
 #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum PanelAttribute {
     #[default]
     None,
@@ -16,6 +17,7 @@ pub enum PanelAttribute {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum PanelAttributeWithQuota {
     #[default]
     None,
@@ -49,6 +51,7 @@ impl From<PanelAttributeWithQuota> for PanelAttribute {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum CollectiveAttribute {
     #[default]
     None,

@@ -1,0 +1,141 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/spaces/pages/apps/apps/rewards/i18n.rs (`SpaceRewardTranslate`). Namespace "spaceReward".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  title: "Reward Settings",
+  viewer_title: "Available Rewards",
+  no_rewards: "No rewards available.",
+  no_polls: "No reward features available.",
+  no_polls_description: "Create a poll first to set up rewards.",
+  create_reward: "Add Reward",
+  edit_reward: "Edit Reward",
+  delete_reward: "Delete",
+  reward_behavior: "Reward Type",
+  select_reward_type: "Select reward type",
+  credits: "Credits",
+  credits_placeholder: "Enter credits",
+  credits_min: "Credits must be at least 1.",
+  description: "Description",
+  description_placeholder: "Enter description (optional)",
+  save: "Save",
+  cancel: "Cancel",
+  loading: "Saving...",
+  total_claims: "Total Claims",
+  total_points: "Total Points",
+  per_claim: "Per Claim",
+  earned: "Earned",
+  reward_label: "rewards",
+  claimed: "Claimed",
+  completed: "Completed",
+  no_limit: "No limit",
+  claims_unit: "claims",
+  points_unit: "points",
+  no_reward_configured: "No reward configured",
+  action_reward_count: "Reward",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  title: "보상 설정",
+  viewer_title: "획득 가능한 보상",
+  no_rewards: "보상이 없습니다.",
+  no_polls: "보상 기능이 없습니다.",
+  no_polls_description: "보상을 설정하려면 먼저 투표를 생성하세요.",
+  create_reward: "보상 추가",
+  edit_reward: "보상 수정",
+  delete_reward: "삭제",
+  reward_behavior: "보상 유형",
+  select_reward_type: "보상 유형 선택",
+  credits: "크레딧",
+  credits_placeholder: "크레딧 입력",
+  credits_min: "크레딧은 1 이상이어야 합니다.",
+  description: "설명",
+  description_placeholder: "설명 입력 (선택)",
+  save: "저장",
+  cancel: "취소",
+  loading: "저장 중...",
+  total_claims: "총 청구",
+  total_points: "총 포인트",
+  per_claim: "건당",
+  earned: "획득",
+  reward_label: "보상",
+  claimed: "수령 완료",
+  completed: "완료",
+  no_limit: "제한 없음",
+  claims_unit: "회",
+  points_unit: "포인트",
+  no_reward_configured: "보상이 설정되지 않았습니다",
+  action_reward_count: "보상",
+};
+
+export const i18n = { en, ko };
+
+export interface SpaceRewardI18n {
+  title: string;
+  viewerTitle: string;
+  noRewards: string;
+  noPolls: string;
+  noPollsDescription: string;
+  createReward: string;
+  editReward: string;
+  deleteReward: string;
+  rewardBehavior: string;
+  selectRewardType: string;
+  credits: string;
+  creditsPlaceholder: string;
+  creditsMin: string;
+  description: string;
+  descriptionPlaceholder: string;
+  save: string;
+  cancel: string;
+  loading: string;
+  totalClaims: string;
+  totalPoints: string;
+  perClaim: string;
+  earned: string;
+  rewardLabel: string;
+  claimed: string;
+  completed: string;
+  noLimit: string;
+  claimsUnit: string;
+  pointsUnit: string;
+  noRewardConfigured: string;
+  actionRewardCount: string;
+}
+
+export function useSpaceRewardI18n(): SpaceRewardI18n {
+  const { t } = useTranslation("spaceReward");
+  return {
+    title: t("title"),
+    viewerTitle: t("viewer_title"),
+    noRewards: t("no_rewards"),
+    noPolls: t("no_polls"),
+    noPollsDescription: t("no_polls_description"),
+    createReward: t("create_reward"),
+    editReward: t("edit_reward"),
+    deleteReward: t("delete_reward"),
+    rewardBehavior: t("reward_behavior"),
+    selectRewardType: t("select_reward_type"),
+    credits: t("credits"),
+    creditsPlaceholder: t("credits_placeholder"),
+    creditsMin: t("credits_min"),
+    description: t("description"),
+    descriptionPlaceholder: t("description_placeholder"),
+    save: t("save"),
+    cancel: t("cancel"),
+    loading: t("loading"),
+    totalClaims: t("total_claims"),
+    totalPoints: t("total_points"),
+    perClaim: t("per_claim"),
+    earned: t("earned"),
+    rewardLabel: t("reward_label"),
+    claimed: t("claimed"),
+    completed: t("completed"),
+    noLimit: t("no_limit"),
+    claimsUnit: t("claims_unit"),
+    pointsUnit: t("points_unit"),
+    noRewardConfigured: t("no_reward_configured"),
+    actionRewardCount: t("action_reward_count"),
+  };
+}

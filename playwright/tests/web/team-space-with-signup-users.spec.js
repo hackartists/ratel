@@ -16,6 +16,7 @@ import {
   fillPollQuestion,
   togglePrerequisite,
   commitAutosave,
+  waitForAppReady,
 } from "../utils";
 
 // This test covers the full space lifecycle with three users:
@@ -758,9 +759,7 @@ test.describe.serial("Space with actions created by a team", () => {
           // by the SPA router and preserve the stale component tree.
           await pg.reload();
           await pg.waitForLoadState("domcontentloaded");
-          await pg.waitForFunction(
-            () => document.querySelector("[data-dioxus-id]") !== null,
-          );
+          await waitForAppReady(pg);
           await pg.waitForTimeout(1500);
         }
         const discCard = pg.locator('[data-type="discuss"]').first();

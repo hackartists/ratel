@@ -59,6 +59,7 @@ use crate::features::arcade::wallet::{ArcadeWallet, DdbArcadeWallet};
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SettleRoundResponse {
     pub round_id: String,
     /// Per-user outcomes. Already settled rounds return the
@@ -68,6 +69,7 @@ pub struct SettleRoundResponse {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SettlementBreakdown {
     pub user_pk: UserPartition,
     pub stake: i64,

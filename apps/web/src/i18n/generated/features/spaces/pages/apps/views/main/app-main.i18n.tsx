@@ -1,0 +1,65 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/spaces/pages/apps/views/main/i18n.rs (`AppMainTranslate`). Namespace "appMain".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  all_apps: "All Apps",
+  installed_apps: "Installed Apps",
+  available_apps: "Available Apps",
+  app_description_default: "Install and manage this app in your space.",
+  install: "Install",
+  uninstall: "Uninstall",
+  default_apps: "Default",
+  setting: "Setting",
+  installing: "Installing...",
+  uninstalling: "Uninstalling...",
+  no_permission: "No permission",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  all_apps: "모든 앱",
+  installed_apps: "설치된 앱",
+  available_apps: "설치 가능한 앱",
+  app_description_default: "이 앱을 스페이스에 설치하고 관리할 수 있습니다.",
+  install: "설치",
+  uninstall: "삭제",
+  default_apps: "기본",
+  setting: "설정하기",
+  installing: "설치 중...",
+  uninstalling: "삭제 중...",
+  no_permission: "권한이 없습니다",
+};
+
+export const i18n = { en, ko };
+
+export interface AppMainI18n {
+  allApps: string;
+  installedApps: string;
+  availableApps: string;
+  appDescriptionDefault: string;
+  install: string;
+  uninstall: string;
+  defaultApps: string;
+  setting: string;
+  installing: string;
+  uninstalling: string;
+  noPermission: string;
+}
+
+export function useAppMainI18n(): AppMainI18n {
+  const { t } = useTranslation("appMain");
+  return {
+    allApps: t("all_apps"),
+    installedApps: t("installed_apps"),
+    availableApps: t("available_apps"),
+    appDescriptionDefault: t("app_description_default"),
+    install: t("install"),
+    uninstall: t("uninstall"),
+    defaultApps: t("default_apps"),
+    setting: t("setting"),
+    installing: t("installing"),
+    uninstalling: t("uninstalling"),
+    noPermission: t("no_permission"),
+  };
+}

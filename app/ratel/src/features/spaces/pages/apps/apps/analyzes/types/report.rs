@@ -22,6 +22,7 @@ use rmcp::schemars;
     derive(rmcp::schemars::JsonSchema, postgres::PostgresEnum)
 )]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum AnalyzeReportStatus {
     #[default]
     InProgress,
@@ -50,6 +51,7 @@ impl AnalyzeReportStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum AnalyzeFilterSource {
     #[default]
     Poll,
@@ -84,6 +86,7 @@ impl fmt::Display for AnalyzeFilterSource {
 /// logic against live response data without re-deriving anything.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct AnalyzeReportFilter {
     pub source: AnalyzeFilterSource,
     pub source_label: String,
@@ -100,6 +103,7 @@ pub struct AnalyzeReportFilter {
 /// `GET /api/spaces/{space_id}/apps/analyzes/reports`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct AnalyzeReport {
     pub id: String,
     pub name: String,
@@ -117,6 +121,7 @@ pub struct AnalyzeReport {
 /// records page can pass through without per-source decoding.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct AnalyzeRecordRow {
     pub source: AnalyzeFilterSource,
     pub filter_idx: u32,

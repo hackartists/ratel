@@ -1,6 +1,7 @@
 use crate::features::spaces::pages::report::*;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateReportRequest {
     #[serde(default)]
     pub title: Option<String>,
@@ -9,6 +10,7 @@ pub struct CreateReportRequest {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateReportResponse {
     pub id: String,
 }

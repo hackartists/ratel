@@ -6,7 +6,6 @@ use crate::common::models::auth::User;
 use crate::common::types::UserType;
 use crate::common::utils::password::hash_password;
 
-use crate::App;
 
 #[derive(Clone)]
 pub struct TestContext {
@@ -37,7 +36,7 @@ impl TestContext {
 
         let mcp_router = crate::common::mcp::mcp_router();
         let arcade_router = crate::features::arcade::server::router();
-        let dioxus_router = dioxus::server::router(App)
+        let dioxus_router = crate::common::api_router()
             .merge(mcp_router)
             .merge(arcade_router)
             .merge(crate::features::launchpad_partner::server::router());

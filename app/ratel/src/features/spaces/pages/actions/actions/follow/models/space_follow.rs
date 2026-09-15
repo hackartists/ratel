@@ -18,6 +18,7 @@ use uuid::Uuid;
 #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct FollowUserType(pub UserType);
 
 impl From<UserType> for FollowUserType {
@@ -37,6 +38,7 @@ impl From<UserType> for FollowUserType {
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
 #[cfg_attr(feature = "server", postgres(table = "space_follow_actions", unique(space_id, follow_id)))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SpaceFollowAction {
     #[serde(default)]
     pub id: uuid::Uuid,

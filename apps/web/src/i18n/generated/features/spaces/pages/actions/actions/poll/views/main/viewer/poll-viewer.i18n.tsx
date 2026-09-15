@@ -1,0 +1,33 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/spaces/pages/actions/actions/poll/views/main/viewer/i18n.rs (`PollViewerTranslate`). Namespace "pollViewer".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  title: "Poll",
+  no_access: "You do not have access to view this poll.",
+  btn_back: "Back",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  title: "투표",
+  no_access: "이 투표를 조회할 수 없습니다.",
+  btn_back: "뒤로",
+};
+
+export const i18n = { en, ko };
+
+export interface PollViewerI18n {
+  title: string;
+  noAccess: string;
+  btnBack: string;
+}
+
+export function usePollViewerI18n(): PollViewerI18n {
+  const { t } = useTranslation("pollViewer");
+  return {
+    title: t("title"),
+    noAccess: t("no_access"),
+    btnBack: t("btn_back"),
+  };
+}

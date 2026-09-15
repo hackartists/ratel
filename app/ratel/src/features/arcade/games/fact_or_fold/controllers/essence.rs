@@ -43,6 +43,7 @@ use crate::features::arcade::games::fact_or_fold::models::FactFoldRationale;
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RegisterEssenceRequest {
     /// v1: only `true` is supported (opt-in registration). `false`
     /// is rejected — there is no unregister flow yet.
@@ -51,6 +52,7 @@ pub struct RegisterEssenceRequest {
 
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RegisterEssenceResponse {
     pub registered: bool,
     pub rationale_text: String,

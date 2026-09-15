@@ -7,6 +7,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "string"))]
 pub struct SpacePanelAttributeEntityType(pub String);
 
 impl std::fmt::Display for SpacePanelAttributeEntityType {
@@ -48,6 +49,7 @@ impl From<SpacePanelAttributeEntityType> for EntityType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SpacePanelQuotaResponse {
     pub panel_id: SpacePanelAttributeEntityType,
     pub quotas: i64,

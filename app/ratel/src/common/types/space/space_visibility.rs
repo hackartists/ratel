@@ -5,6 +5,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr, Default, DynamoEnum, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "\"PRIVATE\" | \"PUBLIC\" | `TEAM#${string}`"))]
 pub enum SpaceVisibility {
     #[default]
     Private, // Private space does mean that it only allows invited members or team members to access.

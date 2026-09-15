@@ -1,6 +1,6 @@
 use crate::common::*;
 
-pub fn run(app: fn() -> Element) {
+pub fn run() {
     let cfg = crate::common::CommonConfig::default();
 
     crate::common::logger::init(cfg.log_level.into()).expect("logger failed to init");
@@ -13,16 +13,19 @@ pub fn run(app: fn() -> Element) {
     // (see `common::fullstack::tauri_web::server_fn::base_url`). So
     // there's no global server URL to set here.
 
-    #[cfg(not(feature = "server"))]
-    launch(app);
-
     #[cfg(feature = "server")]
-    serve(app);
+    serve();
 }
 
-#[cfg(not(feature = "server"))]
-fn launch(app: fn() -> Element) {
-    dioxus::launch(app);
+/// Axum router with every `#[get]`/`#[post]`/… server function registered.
+/// The UI is served by the React build (apps/web), so there is no page
+/// renderer or static-asset fallback here.
+#[cfg(feature = "server")]
+pub fn api_router() -> axum::Router {
+    use dioxus::server::{DioxusRouterExt, FullstackState};
+    axum::Router::<FullstackState>::new()
+        .register_server_functions()
+        .with_state(FullstackState::headless())
 }
 
 #[cfg(feature = "server")]
@@ -51,7 +54,7 @@ fn install_panic_hook() {
 }
 
 #[cfg(feature = "server")]
-fn serve(app: fn() -> Element) {
+fn serve() {
     install_panic_hook();
 
     let cfg = crate::common::CommonConfig::default();
@@ -188,7 +191,7 @@ fn serve(app: fn() -> Element) {
     let arcade_router = crate::features::arcade::server::router();
     let cross_posting_router = crate::features::cross_posting::server::router();
     let launchpad_partner_router = crate::features::launchpad_partner::server::router();
-    let dioxus_router = dioxus::server::router(app)
+    let dioxus_router = api_router()
         .merge(mcp_router)
         .merge(membership_router)
         .merge(arcade_router)
@@ -206,12 +209,6 @@ fn serve(app: fn() -> Element) {
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
         .layer(cors_layer)
         .layer(session_layer)
-        // OUTSIDE the session layer: an anonymous `/spaces/**` GET that hits the
-        // SSR shell cache is replayed from memory without a session lookup or a
-        // re-render. Logged-in (…_sid cookie) and non-page requests bypass it.
-        .layer(axum::middleware::from_fn(
-            crate::common::middlewares::ssr_cache::ssr_cache,
-        ))
         // Compress text responses here rather than at the proxy.
         //
         // dev sits behind the shared ingress-nginx, whose ConfigMap is empty,
@@ -231,10 +228,6 @@ fn serve(app: fn() -> Element) {
         // per request against +9%), and since browsers send `gzip, deflate, br,
         // zstd` with no q-values, tower-http breaks the tie by enum order — so
         // brotli would have been the path nearly every real request took.
-        //
-        // OUTSIDE ssr_cache on purpose: the cache then holds one plain copy and
-        // each response is encoded for its own Accept-Encoding, so a client
-        // that sent none is never handed a gzip body out of the cache.
         .layer(tower_http::compression::CompressionLayer::new())
         .layer(axum::middleware::from_fn(log_request));
 

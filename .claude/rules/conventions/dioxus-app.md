@@ -53,7 +53,7 @@ pub const MY_ASSET: Asset = asset!("/assets/filename.ext");
 
 ## Stylesheets
 
-- **All component CSS goes in `app/ratel/assets/main.css`** — loaded once globally from `app.rs`
+- **All component CSS goes in `apps/web/assets/main.css`** — loaded once globally from `app.rs`
 - **Never** write `document::Stylesheet { href: asset!("./style.css") }` in a component — per-component stylesheets unload on SPA route changes and cause flashes of unstyled content (FOUC)
 - **Never** create per-component `style.css` files under `src/`
 - External stylesheets (Google Fonts, etc.) are declared **only in `app.rs`**
@@ -63,7 +63,7 @@ pub const MY_ASSET: Asset = asset!("/assets/filename.ext");
   .my-component { ... }
   ```
 - Use unique, component-scoped class names — `main.css` is one global namespace
-- Full rules: `conventions/styling.md` § "All custom CSS lives in `app/ratel/assets/main.css`"
+- Full rules: `conventions/styling.md` § "All custom CSS lives in `apps/web/assets/main.css`"
 
 ## Views
 

@@ -10,6 +10,7 @@ use rmcp::schemars;
 /// those columns were dropped from the UI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct EssenceResponse {
     /// Deterministic id derived from the referenced entity's pk+sk. Stable
     /// across reruns so upsert semantics work without a GSI lookup.
@@ -45,6 +46,7 @@ pub struct EssenceResponse {
 /// percentages.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct EssenceStatsResponse {
     pub total_sources: i64,
     pub total_words: i64,

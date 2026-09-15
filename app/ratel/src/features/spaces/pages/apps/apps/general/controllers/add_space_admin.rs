@@ -2,6 +2,7 @@ use crate::common::models::space::SpaceAdmin;
 use crate::features::spaces::pages::apps::apps::general::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct AddSpaceAdminRequest {
     /// Either a username or an email address. The handler decides which
     /// lookup to perform based on the presence of `@`.

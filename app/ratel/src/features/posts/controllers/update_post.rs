@@ -18,6 +18,7 @@ use crate::features::posts::utils::validator::{validate_content, validate_title}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(untagged)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum UpdatePostRequest {
     Publish {
         title: String,

@@ -6,6 +6,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "PollRespondentAttrRespondentAttr"))]
 pub struct RespondentAttr {
     pub gender: Option<Gender>,
     pub age: Option<Age>,

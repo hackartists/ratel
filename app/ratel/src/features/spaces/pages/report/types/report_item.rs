@@ -13,6 +13,7 @@ use serde_with::{DeserializeFromStr, SerializeDisplay};
 // (labels default to snake_case: `draft` / `published`). The DynamoEnum /
 // SerializeDisplay impls stay for the DynamoDB-era sk form and the wire DTOs.
 #[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename_all = "SCREAMING_SNAKE_CASE"))]
 pub enum ReportStatus {
     #[default]
     Draft,
@@ -45,6 +46,7 @@ impl ReportFilter {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ReportListItem {
     pub id: String,
     pub status: ReportStatus,

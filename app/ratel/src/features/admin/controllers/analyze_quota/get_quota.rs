@@ -7,6 +7,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct AnalyzeQuotaResponse {
     /// Limit currently enforced for non-Enterprise members. When the
     /// underlying row hasn't been initialised yet, this echoes the

@@ -4,6 +4,7 @@ import {
   fill,
   goto,
   getEditor,
+  waitForAppReady,
   waitForHydrated,
   openHomeMenuItem,
 } from "../utils";
@@ -50,9 +51,7 @@ test.describe.serial("Post tag input (post-edit renewal)", () => {
     // renewed-menu refactor — open via `home-btn-menu` → `home-menu-compose`.
     await openHomeMenuItem(page, "home-menu-compose");
     await page.waitForURL(/\/posts\/.*\/edit/, { waitUntil: "load" });
-    await page.waitForFunction(
-      () => document.querySelector("[data-dioxus-id]") !== null,
-    );
+    await waitForAppReady(page);
     postEditUrl = new URL(page.url()).pathname;
 
     await fill(page, { placeholder: "Title your post…" }, postTitle);

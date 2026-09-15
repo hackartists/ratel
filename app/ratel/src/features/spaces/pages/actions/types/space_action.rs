@@ -2,6 +2,7 @@ use super::SpaceActionType;
 use crate::features::spaces::pages::actions::*;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SpaceActionSummary {
     pub action_id: String,
     pub action_type: SpaceActionType,
@@ -63,32 +64,3 @@ impl From<crate::features::spaces::pages::actions::models::SpaceAction> for Spac
     }
 }
 
-impl SpaceActionSummary {
-    pub fn get_url(&self, space_id: &SpacePartition) -> Route {
-        match self.action_type {
-            SpaceActionType::Poll => Route::PollActionPage {
-                space_id: space_id.clone(),
-                poll_id: self.action_id.clone().into(),
-            },
-            // Arena owns the discussion viewer. Legacy `Route::DiscussionActionPage`
-            // has been removed — callers outside the arena (e.g. the admin
-            // `/actions` list) redirect to the space index and let the user
-            // open the discussion from the quest dashboard.
-            SpaceActionType::TopicDiscussion => Route::SpaceIndexPage {
-                space_id: space_id.clone(),
-            },
-            SpaceActionType::Follow => Route::FollowActionPage {
-                space_id: space_id.clone(),
-                follow_id: self.action_id.clone().into(),
-            },
-            SpaceActionType::Quiz => Route::QuizActionPage {
-                space_id: space_id.clone(),
-                quiz_id: self.action_id.clone().into(),
-            },
-            SpaceActionType::Meet => Route::MeetActionPage {
-                space_id: space_id.clone(),
-                meet_id: self.action_id.clone().into(),
-            },
-        }
-    }
-}

@@ -12,6 +12,7 @@ use crate::features::auth::utils::uuid::sorted_uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ChangeAccountRequest {
     pub device_id: String,
     pub user_pk: Partition,
@@ -20,6 +21,7 @@ pub struct ChangeAccountRequest {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ChangeAccountResponse {
     #[serde(flatten)]
     pub user: User,

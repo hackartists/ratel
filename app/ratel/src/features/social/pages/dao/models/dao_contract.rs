@@ -26,35 +26,6 @@ impl std::fmt::Display for DaoWalletError {
     }
 }
 
-#[cfg(not(feature = "server"))]
-pub async fn create_dao(
-    admins: Vec<String>,
-    network: &str,
-    rpc_url: &str,
-    block_explorer_url: &str,
-) -> std::result::Result<CreateDaoResult, DaoWalletError> {
-    use crate::common::wasm_bindgen::JsValue;
-    use crate::common::wasm_bindgen_futures::JsFuture;
-    use crate::common::web_sys::js_sys::Array;
-
-    let admins_js = Array::new();
-    for admin in admins {
-        admins_js.push(&JsValue::from_str(&admin));
-    }
-
-    let promise = super::super::interop::create_dao(&admins_js, network, rpc_url, block_explorer_url)
-        .map_err(format_js_error)?;
-
-    let value = JsFuture::from(promise).await.map_err(format_js_error)?;
-    let result: CreateDaoResult =
-        crate::common::serde_wasm_bindgen::from_value(value).map_err(|e| DaoWalletError {
-            code: None,
-            message: format!("Invalid DAO response: {}", e),
-        })?;
-
-    Ok(result)
-}
-
 #[cfg(feature = "server")]
 pub async fn create_dao(
     _admins: Vec<String>,

@@ -7,6 +7,7 @@ use crate::features::auth::UserPhoneNumber;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum FindUserQueryType {
     Email,
     Username,

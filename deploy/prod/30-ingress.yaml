@@ -16,6 +16,14 @@
 #                           points. Cutover is then a pure DNS change.
 # Each host gets its own tls entry/secret so one zone's issuance hiccup
 # can't block the other's certificate.
+#
+# Path split (React frontend migration, docs/superpower/
+# 2026-09-14-react-frontend-migration.md § 5.1): the API prefixes go to
+# app-shell (now API-only — no UI); every other path falls through to the
+# `web` Service (React static build + index.html SPA fallback). All paths
+# use pathType Prefix, which matches whole segments, and ingress-nginx picks
+# the MOST SPECIFIC matching path per request, so listing the API prefixes
+# ahead of the catch-all "/" is enough — no priority annotation needed.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -33,21 +41,119 @@ spec:
     - host: ratel-prod.biyard.co
       http:
         paths:
-          - path: /
+          - path: /api
             pathType: Prefix
             backend:
               service:
                 name: app-shell
                 port:
                   name: http
-    - host: ratel.foundation
-      http:
-        paths:
-          - path: /
+          - path: /v3
             pathType: Prefix
             backend:
               service:
                 name: app-shell
+                port:
+                  name: http
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /hooks
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /launchpad/health
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /launchpad/points
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /admin/proxy
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  name: http
+    - host: ratel.foundation
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /v3
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /hooks
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /launchpad/health
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /launchpad/points
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /admin/proxy
+            pathType: Prefix
+            backend:
+              service:
+                name: app-shell
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
                 port:
                   name: http
   tls:

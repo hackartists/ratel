@@ -13,6 +13,7 @@ const ENTERPRISE_NAME: &str = "Enterprise";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum MembershipGrantTargetType {
     #[default]
     User,
@@ -21,6 +22,7 @@ pub enum MembershipGrantTargetType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct GrantEnterpriseMembershipRequest {
     pub username: String,
     pub target_type: MembershipGrantTargetType,
@@ -28,6 +30,7 @@ pub struct GrantEnterpriseMembershipRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct GrantEnterpriseMembershipResponse {
     pub username: String,
     pub target_type: MembershipGrantTargetType,

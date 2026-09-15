@@ -5,14 +5,19 @@ name: PR Testing
 # commented out below — they required GitHub-hosted runners (docker CLI /
 # Android SDK / emulator) that the self-hosted k8s runner pods don't provide,
 # and the org's free Actions minutes were exhausted. Only the self-hosted
-# jobs (contracts-test, docs-build, dx-check, build-image, e2e) run now.
-# Re-enable per the NOTE above each disabled block (native macOS runner, or
-# — for ratel-app-testing — rewrite its infra to kubectl like the e2e job).
+# jobs (contracts-test, docs-build, web-build, rust-check, build-image,
+# build-web-image, e2e) run now. Re-enable per the NOTE above each disabled
+# block (native macOS runner, or — for ratel-app-testing — rewrite its infra
+# to kubectl like the e2e job).
 #
 # Runs on every pull request against dev. Jobs:
 #   1. contracts-test    — smart contract tests (contracts/).
 #   2. docs-build        — Docusaurus site builds (docs/).
-#   3. dx-check          — Dioxus compile checks (web/ios/android/tauri-web).
+#   3. rust-check        — app-shell compile checks (server, tauri-web) +
+#                          gen-ts drift. Was `dx-check` (Dioxus web/ios/
+#                          android checks) before the React frontend
+#                          migration made app-shell API-only (docs/superpower/
+#                          2026-09-14-react-frontend-migration.md § 5.1).
 #   4. ratel-app         — x86 docker image artifact, RETAINED ONLY for the
 #                          tauri-android-smoke-test job (its emulator backend
 #                          must run on the ubuntu-latest host's docker). The
@@ -49,6 +54,12 @@ name: PR Testing
 #                          check once a run of green history backs it.
 #   8. tauri-android-*   — Android APK build + emulator smoke test (docker
 #                          compose backend from job 4).
+#   9. web-build         — SELF-HOSTED: React frontend (apps/web) typecheck
+#                          and build. The Tailwind/route parity checks
+#                          against the Dioxus app were removed once app-shell
+#                          went API-only (docs/superpower/
+#                          2026-09-14-react-frontend-migration.md § 5.1) —
+#                          there is no Dioxus build left to diff against.
 #
 # Caching on the self-hosted jobs is restore-only (actions/cache/restore,
 # never save) with ratel-cargo-* / ratel-target-* keys — same policy as
@@ -143,7 +154,52 @@ jobs:
           ENV: dev
         run: npm run build
 
-  dx-check:
+  # React frontend (apps/web) during the Dioxus → React migration
+  # (docs/superpower/2026-09-14-react-frontend-migration.md). Builds without
+  # Rust: the Tailwind input and legacy assets are read straight from
+  # app/ratel. The parity scripts fail the job when the React build drifts
+  # from the Dioxus app (missing Tailwind selectors, or a route/layout chain
+  # that differs from app/ratel/src/route.rs).
+  web-build:
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -C apps/web typecheck
+
+      # apps/web/shell-js (formerly app/ratel/js) writes
+      # ratel-app-shell.js / wallet-connect.js into apps/web/assets/, which
+      # the React build below bundles.
+      - name: Build shared JS assets
+        run: |
+          npm ci --prefix apps/web/shell-js
+          npm run build --prefix apps/web/shell-js
+
+      - name: Build
+        run: pnpm -C apps/web build
+
+  # rust-check: plain cargo compile checks for app-shell. Renamed from
+  # dx-check when the Dioxus UI build was dropped (app-shell is API-only
+  # after the React frontend migration — docs/superpower/
+  # 2026-09-14-react-frontend-migration.md § 5.1): no more dx/dioxus-cli, no
+  # wasm32-unknown-unknown target, no GTK/webkit desktop deps. The i18n
+  # drift check is gone too — `translate!`/`Translate` sources it extracted
+  # from are being deleted, and apps/web/src/i18n/generated is the source of
+  # truth now. gen-ts stays, since packages/ts-bridges is still generated
+  # from the Rust route macros.
+  rust-check:
     runs-on: self-hosted
 
     env:
@@ -159,9 +215,9 @@ jobs:
       # one filesystem, so the rename stays within a device. The cost is a
       # fresh toolchain download per run (~1 min); the cache above only holds
       # ~/.cargo/bin and target/, so nothing else changes. Rustup proxies in
-      # CARGO_HOME read this variable, so cargo/dx resolve the same toolchain.
+      # CARGO_HOME read this variable, so cargo resolves the same toolchain.
       #
-      # dx-check is the only self-hosted job that still calls
+      # rust-check is the only self-hosted job that still calls
       # setup-rust-toolchain — the others build with the preinstalled
       # toolchain, which is why none of them hit this.
       # (github.workspace, not runner.temp — the `runner` context is not
@@ -174,15 +230,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-
-      # app/ratel/build.rs unconditionally runs `npm install` + `npm run build`
-      # in app/ratel/js (vite bundles the JS assets the `asset!()` macros load),
-      # so `cargo check`/`dx check` need node present. Self-hosted runner pods
-      # don't ship node (see contracts-test) — install it, matching build-image.
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
 
       - name: Restore cache
         id: dx-check-cache
@@ -199,86 +246,57 @@ jobs:
         with:
           components: clippy, rustfmt
           toolchain: stable
-          target: wasm32-unknown-unknown
           cache: false
 
       - uses: cargo-bins/cargo-binstall@main
       - name: Install system dependencies
+        # build-essential + pkg-config + openssl headers for openssl-sys.
+        # No GTK/webkit/xdo/appindicator/rsvg/lld here — those existed only
+        # for the Dioxus desktop/wasm checks this job used to run.
         run: |
           SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO="sudo"
           if command -v apt-get >/dev/null 2>&1; then
             $SUDO apt-get update -qq
-            $SUDO apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
+            $SUDO apt-get install -y --no-install-recommends \
               build-essential \
               curl \
               wget \
               file \
-              libxdo-dev \
-              libssl-dev \
-              libayatana-appindicator3-dev \
-              librsvg2-dev \
-              lld
+              pkg-config \
+              libssl-dev
           fi
 
-      - name: Install Dioxus-cli (source build — binstall binaries need newer glibc)
-        run: |
-          # binstall's prebuilt dx targets a newer glibc than the self-hosted
-          # runner image ships (observed on `dx check --web`:
-          # `GLIBC_2.35 / GLIBC_2.39 not found`), so build from source.
-          # Pin to the project's dioxus version — a mismatched dx (binstall
-          # gives 0.7.10) makes `dx check` print "dx and dioxus versions are
-          # incompatible". `--locked` honors dioxus-cli's published Cargo.lock
-          # (fresh resolution picks git2 0.21 which breaks auth-git2 0.5.8's
-          # `Cred::credential_helper`). ~/.cargo/bin persists on the runner
-          # disk, so this compiles once; the version-aware check makes reruns a
-          # no-op while replacing a wrong-version or glibc-broken earlier binary.
-          WANT=0.7.9
-          if dx --version 2>/dev/null | grep -q "$WANT"; then
-            echo "dx $WANT already present: $(dx --version)"
-          else
-            cargo install dioxus-cli --version "$WANT" --locked --force
-          fi
-
-      - name: Building test
-        id: build
-        env:
-          RUSTFLAGS: "-D warnings"
-        run: |
-          dx check --web
-          # `dx check --ios` is a cargo-check for the iOS target with no Xcode
-          # link step, so it runs fine on this Linux runner (verified: "No
-          # issues found").
-          dx check --ios
-          # `dx check --android` needs the Android NDK, whose host toolchain
-          # Google ships only for x86_64 (`linux-x86_64` — there is no
-          # `linux-aarch64` NDK). This runner is arm64 Linux (Apple Silicon
-          # Lima VM), so the NDK clang can't execute here and the check dies
-          # with "Android not installed properly / set ANDROID_NDK_HOME". The
-          # android compile-check belongs on the native macOS self-hosted
-          # runner (darwin NDK runs via Rosetta); re-enable the line below there.
-          # dx check --android
-
-      # The `asset!("/assets/tailwind.css")` macro in app.rs checks the
-      # file exists at compile time. `dx check --web` above runs through
-      # the manganis asset resolver which auto-creates placeholders, but
-      # plain `cargo check` doesn't. Touch a placeholder so the macro
-      # passes — contents don't matter for compile-time checks.
-      - name: Ensure tailwind.css placeholder
-        run: touch assets/tailwind.css
-
-      - name: cargo check --features tauri-web
+      - name: cargo check --features server
         env:
           RUSTFLAGS: "-D warnings"
           DYNAMO_TABLE_PREFIX: ratel-dev
         run: |
-          cargo check --features tauri-web --no-default-features
+          cargo check --features server
 
-      - name: dx check --web --features tauri-web
+      - name: cargo check --no-default-features --features tauri-web
         env:
           RUSTFLAGS: "-D warnings"
           DYNAMO_TABLE_PREFIX: ratel-dev
         run: |
-          dx check --web --features tauri-web --no-default-features
+          cargo check --no-default-features --features tauri-web
+
+      # React migration (docs/superpower/2026-09-14-react-frontend-migration.md):
+      # the committed TypeScript API client (packages/ts-bridges) must match
+      # what the Rust sources generate. Regenerate and fail on any diff.
+      # `make gen-ts` renders the TS client with node (packages/ts-bridges/
+      # scripts/gen-handlers.mjs). The cargo checks above no longer need it.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: gen-ts drift check
+        env:
+          DYNAMO_TABLE_PREFIX: ratel-dev
+        run: |
+          make gen-ts
+          git diff --exit-code -- ../../packages/ts-bridges
+          test -z "$(git status --porcelain -- ../../packages/ts-bridges)"
 
       # DISABLED 2026-08-10 — `cargo check` on the ratel-tauri shell crate
       # targets the Linux DESKTOP build, which links the GTK/webkit stack
@@ -572,7 +590,9 @@ jobs:
         # bare `rustup toolchain install stable` tries to UPDATE it, which
         # can fail with EXDEV on these runners (.rustup/toolchains and
         # .rustup/tmp on different mounts). Install only when genuinely
-        # absent; always ensure the wasm target the dx client build needs.
+        # absent. No wasm target here — app-shell is API-only after the
+        # React frontend migration (docs/superpower/
+        # 2026-09-14-react-frontend-migration.md § 5.1).
         run: |
           if ! command -v rustup >/dev/null 2>&1; then
             if [ -x "$HOME/.cargo/bin/rustup" ]; then
@@ -584,14 +604,6 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           fi
           rustup toolchain list | grep -q '^stable' || rustup toolchain install stable --profile minimal
-          rustup target list --installed | grep -q '^wasm32-unknown-unknown$' || rustup target add wasm32-unknown-unknown
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          # no `cache:` input on purpose — restore-only cache policy (see
-          # file header): setup-node must not save a cache entry per run.
 
       - name: Restore cargo registry/index (restore-only)
         uses: actions/cache/restore@v5
@@ -615,11 +627,9 @@ jobs:
             ratel-target-${{ runner.os }}-
 
       - name: Install build deps (C toolchain, pkg-config, openssl headers)
-        # The web/server dx build needs a linker + pkg-config + openssl dev
+        # The server build needs a linker + pkg-config + openssl dev
         # headers. Idempotent + multi-distro (asset pattern); a no-op once
-        # the persistent runner image has them. No webkit/gtk here — those
-        # are desktop-target deps the ubuntu-latest jobs install; the
-        # web+server platforms don't link them.
+        # the persistent runner image has them.
         run: |
           set -eu
           if command -v cc >/dev/null 2>&1 && command -v pkg-config >/dev/null 2>&1 && [ -f /usr/include/openssl/ssl.h ]; then
@@ -639,26 +649,16 @@ jobs:
             echo "::warning::no known package manager; relying on preinstalled toolchain"
           fi
 
-      - name: Install Dioxus-cli (source build — binstall binaries need newer glibc)
-        run: |
-          # binstall's prebuilt dx targets a newer glibc than the runner image
-          # ships (observed: `GLIBC_2.39 not found`), so build from source with
-          # `--locked` (honors dioxus-cli's published Cargo.lock — fresh
-          # resolution picks git2 0.21 which breaks auth-git2 0.5.8).
-          # ~/.cargo/bin persists on the self-hosted runner disk, so the
-          # compile is a one-time cost; the version check makes reruns a no-op
-          # while still replacing a glibc-broken binary from an earlier run.
-          if dx --version >/dev/null 2>&1; then
-            echo "working dx already present: $(dx --version)"
-          else
-            cargo install dioxus-cli --locked --force
-          fi
-
-      - name: Build app-shell (native arm64 dx build)
+      - name: Build app-shell (native arm64 cargo build, API only)
+        # `make build-testing` is a plain `cargo build --release` (bypass +
+        # local-dev features; no dx/dioxus-cli, no wasm client) that leaves
+        # the binary at target/server-image/server — see the "Fixed
+        # contracts" section of docs/superpower/
+        # 2026-09-14-react-frontend-migration.md § 5.1.
         env:
-          # SAME compile-time env block as the ratel-app job — these bake
-          # into the binary. The k8s Service names in deploy/pr-preview
-          # mirror the compose hostnames, so the baked endpoints stay valid.
+          # SAME compile-time env block as before — these bake into the
+          # binary. The k8s Service names in deploy/pr-preview mirror the
+          # compose hostnames, so the baked endpoints stay valid.
           DYNAMO_TABLE_PREFIX: ratel-local
           ENV: local
           RUSTFLAGS: "-D warnings"
@@ -670,27 +670,67 @@ jobs:
           AWS_ACCOUNT_ID: test
           COMMIT: pr-${{ github.event.number }}
         run: |
-          npm i
-          rm -rf target/dx
-
           cd app/ratel
           make build-testing
 
       - name: Push app-shell image to the in-cluster registry (buildkit)
-        # Packages the dx output with app/ratel/Dockerfile via the in-cluster
-        # buildkitd and pushes registry.infra.svc.cluster.local:5000/
+        # Packages the release binary with app/ratel/Dockerfile via the
+        # in-cluster buildkitd and pushes registry.infra.svc.cluster.local:5000/
         # ratel-app-shell:pr-<num> — the tag the e2e job deploys.
         env:
           NAME: ratel-app-shell
-          CONTEXT: target/dx/app-shell/release/web
+          CONTEXT: target/server-image
           DOCKERFILE: app/ratel/Dockerfile
+          IMAGE_TAG: pr-${{ github.event.number }}
+        run: bash scripts/buildkit-image.sh
+
+  # ────────────────────────────────────────────────────────────────────────
+  # build-web-image: build the React static site and push it as
+  # ratel-web:pr-<num>. Split from build-image so this job's Node/pnpm setup
+  # never touches the Rust cargo caches build-image restores — see the
+  # "Fixed contracts" section of docs/superpower/
+  # 2026-09-14-react-frontend-migration.md § 5.1/5.2 for the build recipe.
+  # VITE_BYPASS=true because this preview's app-shell is built with the
+  # bypass feature (make build-testing above).
+  # ────────────────────────────────────────────────────────────────────────
+  build-web-image:
+    runs-on: self-hosted
+    timeout-minutes: 30
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build shared JS assets (apps/web/shell-js — formerly app/ratel/js)
+        run: |
+          npm ci --prefix apps/web/shell-js
+          npm run build --prefix apps/web/shell-js
+
+      - name: Build web (React static site)
+        env:
+          VITE_BYPASS: "true"
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm -C apps/web build
+
+      - name: Push web image to the in-cluster registry (buildkit)
+        env:
+          NAME: ratel-web
+          CONTEXT: apps/web
+          DOCKERFILE: apps/web/Dockerfile
           IMAGE_TAG: pr-${{ github.event.number }}
         run: bash scripts/buildkit-image.sh
 
   # ────────────────────────────────────────────────────────────────────────
   # e2e: PR-isolated Playwright run on the home k3s cluster — full rationale
   # in the file header. Deploy deploy/pr-preview/*.yaml (localstack +
-  # localstack-init + qdrant + qdrant-init + app-shell + Ingress) into
+  # localstack-init + qdrant + qdrant-init + app-shell + web + Ingress) into
   # namespace ratel-pr-<num>, wait for the stack, run the suite in a k8s pod
   # from the official Playwright image (kubectl cp in / exec / cp out — the
   # runner pods have no docker CLI and no browser OS deps), publish the HTML
@@ -710,7 +750,7 @@ jobs:
     timeout-minutes: 90
     continue-on-error: true # non-blocking introduction — see job comment above
     if: github.event_name == 'pull_request'
-    needs: [build-image]
+    needs: [build-image, build-web-image]
     env:
       # PR number threads through everything: the namespace, the ingress
       # host, the report webroot dir, and the image tag build-image pushed.
@@ -778,10 +818,17 @@ jobs:
         # Ordered waits so a failure names its culprit: init Jobs first
         # (table + seeds + qdrant collection), then rollouts (app-shell's
         # initContainer gates on the table, so its rollout implies the init
-        # chain), then prove the browser path with curl through the ingress.
-        # The PR host rides the ingress default certificate, hence -k;
-        # --resolve pins the public name to the controller's ClusterIP (no
-        # DNS round-trip, no hairpin dependency).
+        # chain — the generic `get deploy` loop also covers the new `web`
+        # Deployment), then prove BOTH backends through the ingress split
+        # (docs/superpower/2026-09-14-react-frontend-migration.md § 5.1):
+        # "/" now answers from `web`, not app-shell (API-only). The PR host
+        # rides the ingress default certificate, hence -k; --resolve pins the
+        # public name to the controller's ClusterIP (no DNS round-trip, no
+        # hairpin dependency). /launchpad/health only accepts POST with a
+        # signed body (see the readinessProbe comment on
+        # deploy/pr-preview/30-app-shell.yaml), so a plain GET is expected to
+        # answer 404/405 — anything other than a connection failure or a 5xx
+        # proves the ingress → app-shell route itself works.
         run: |
           set -euo pipefail
           kubectl -n "${NS}" wait --for=condition=complete job/localstack-init --timeout=420s
@@ -798,16 +845,29 @@ jobs:
           [ -n "$INGRESS_IP" ] || { echo "::error::ingress-nginx-controller service not found"; exit 1; }
           base="https://${HOST}"
           deadline=$(( $(date +%s) + 180 ))
-          echo "waiting for ${base}/ (ingress=${INGRESS_IP}) ..."
+          echo "waiting for ${base}/ (web, ingress=${INGRESS_IP}) ..."
           until curl -sfk --resolve "${HOST}:443:${INGRESS_IP}" -o /dev/null "${base}/"; do
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::stack did not answer within 180s after rollout"
+              echo "::error::web did not answer within 180s after rollout"
               kubectl -n "${NS}" get pods -o wide || true
               exit 1
             fi
             sleep 10
           done
-          echo "✓ ingress serves app-shell at ${base}/"
+          echo "✓ ingress serves web at ${base}/"
+
+          deadline=$(( $(date +%s) + 120 ))
+          echo "waiting for ${base}/launchpad/health (app-shell, ingress=${INGRESS_IP}) ..."
+          until code=$(curl -sk --resolve "${HOST}:443:${INGRESS_IP}" -o /dev/null -w '%{http_code}' "${base}/launchpad/health"); \
+                [ "$code" != "000" ] && [ "$code" -lt 500 ]; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::app-shell did not answer within 120s (last code: ${code:-000})"
+              kubectl -n "${NS}" get pods -o wide || true
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "✓ ingress serves app-shell at ${base}/launchpad/health (http ${code})"
 
       - name: Run Playwright (k8s pod — official image; runners have no browser deps)
         # The official Playwright image ships chromium + every OS dep for

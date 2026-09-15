@@ -3,6 +3,7 @@ use crate::features::ai_moderator::*;
 use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct AiModeratorConfigResponse {
     pub enabled: bool,
     pub reply_interval: i64,

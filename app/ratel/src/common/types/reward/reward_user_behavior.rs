@@ -12,6 +12,7 @@ However, after the change, the relationship is now 1:1, so this Enum is not need
 If the relationship needs to be changed back to 1:N in the future, please utilize the field below.
  */
 #[derive(Debug, Clone, DynamoEnum, SerializeDisplay, DeserializeFromStr, Eq, PartialEq, Default, Translate)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename_all = "SCREAMING_SNAKE_CASE"))]
 pub enum RewardUserBehavior {
     #[default]
     #[translate(en = "Poll Response", ko = "투표 응답")]

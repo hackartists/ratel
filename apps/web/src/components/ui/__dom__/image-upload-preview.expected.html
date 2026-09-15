@@ -1,0 +1,16 @@
+<!-- ImageUploadPreview { images: [PendingImage { local_url: "blob:one", remote_url: Some(..), uploading: false },
+                                  PendingImage { local_url: "blob:two", remote_url: None, uploading: true }] }
+     app/ratel/src/common/components/image_upload_preview/mod.rs: remove button only when not uploading,
+     spinner overlay only while uploading; "aria-busy" is a bool → "true"/"false". -->
+<div class="mt-2 grid grid-cols-4 gap-2">
+  <div class="group relative">
+    <img class="aspect-video w-full rounded-lg object-cover aria-busy:animate-pulse aria-busy:opacity-50" aria-busy="false" src="blob:one" alt="Pending image 0">
+    <button class="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full text-xs opacity-0 transition-opacity bg-destructive text-btn-primary-text group-hover:opacity-100" aria-label="Remove image">×</button>
+  </div>
+  <div class="group relative">
+    <img class="aspect-video w-full rounded-lg object-cover aria-busy:animate-pulse aria-busy:opacity-50" aria-busy="true" src="blob:two" alt="Pending image 1">
+    <div class="absolute inset-0 flex items-center justify-center">
+      <div class="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+    </div>
+  </div>
+</div>

@@ -1,6 +1,7 @@
 use crate::features::spaces::pages::actions::actions::quiz::*;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct QuizAnswerResponse {
     pub quiz_id: SpaceQuizEntityType,
     pub space_id: SpacePartition,

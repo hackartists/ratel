@@ -10,6 +10,7 @@ use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct MySpaceResponse {
     pub space_pk: Partition,
     pub post_pk: Partition,
