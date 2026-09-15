@@ -3,6 +3,7 @@
 // (interop/web/take_pg_return.js, interop/web/kyc_clear_history.js) as plain
 // async functions. Behaviour and storage keys are unchanged.
 
+import { isTauri, saveFile } from "@/lib/native";
 import { requestCredentialIdentityVerification } from "@/lib/portone-identity";
 
 interface KycWindow {
@@ -70,13 +71,33 @@ export async function clearKycHistory(): Promise<boolean> {
   }
 }
 
-interface CredentialsScriptWindow {
-  ratel?: { credentials?: { export_vc?: (json: string) => void } };
+const VC_FILE_NAME = "ratel-vc.json";
+const VC_MIME = "application/json";
+
+function copyVcFallback(json: string): void {
+  navigator.clipboard?.writeText(json).catch(() => {});
 }
 
-/** `window.ratel.credentials.export_vc` from the page's script.js (Rust wasm_bindgen extern). */
+/**
+ * Rust `export_vc_download`: saves the VC JSON as `ratel-vc.json`, copying it
+ * to the clipboard when the download can't start. The WebView in the mobile
+ * app ignores `<a download>`, so Tauri saves through the native file command.
+ */
 export function exportVcDownload(json: string): void {
-  const exportVc = (window as unknown as CredentialsScriptWindow).ratel?.credentials?.export_vc;
-  if (typeof exportVc !== "function") throw new Error("window.ratel.credentials.export_vc is not loaded");
-  exportVc(json);
+  if (isTauri()) {
+    saveFile(VC_FILE_NAME, VC_MIME, new TextEncoder().encode(json)).catch(() => copyVcFallback(json));
+    return;
+  }
+  try {
+    const url = URL.createObjectURL(new Blob([json], { type: VC_MIME }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = VC_FILE_NAME;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch {
+    copyVcFallback(json);
+  }
 }

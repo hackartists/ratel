@@ -93,12 +93,5 @@ export async function verifyIdentity(storeId: string, channelKey: string, prefix
   return signAttributesHandler({ type: "port_one", id: value });
 }
 
-/**
- * `export_vc_download` (wasm_bindgen extern into `views/script.js`): triggers
- * a browser download of the VC JSON via `window.ratel.credentials.export_vc`,
- * which the page's legacy script (loaded through `useLegacyScript`) defines.
- */
-export function exportVcDownload(json: string): void {
-  const ns = (window as unknown as { ratel?: { credentials?: { export_vc?: (j: string) => void } } }).ratel?.credentials;
-  ns?.export_vc?.(json);
-}
+/** `export_vc_download`: the same VC JSON download as `/credentials`. */
+export { exportVcDownload } from "@/pages/credentials/hooks/kyc";

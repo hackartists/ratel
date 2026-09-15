@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import type { ConnectionResponse, FeedPartition, Post, SocialPlatform, TeamItem, Visibility } from "@ratel/ts-bridges";
@@ -151,6 +151,14 @@ export function usePostEdit(postId: FeedPartition): UsePostEdit {
   const [visibility, setVisibilityState] = useState<Visibility>("PUBLIC");
   const [spaceEnabled, setSpaceEnabled] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // The page behind the mobile options drawer doesn't scroll while it is open.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [drawerOpen]);
   const [asDropdownOpen, setAsDropdownOpen] = useState(false);
   const [selectedTeamPk, setSelectedTeamPk] = useState<string | null>(null);
   const [status, setStatus] = useState<EditorStatus>("idle");

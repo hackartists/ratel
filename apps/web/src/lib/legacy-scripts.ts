@@ -5,8 +5,8 @@ import { useEffect } from "react";
 // `src/legacy-scripts/`, mirroring their old Dioxus paths, and that folder is
 // now their source of truth. A page loads one with `?url&no-inline`:
 //
-//   import essenceScript from "../legacy-scripts/features/essence/pages/sources/script.js?url&no-inline";
-//   useLegacyScript(essenceScript);
+//   import postDetailScript from "../legacy-scripts/features/posts/views/post_detail/script.js?url&no-inline";
+//   useLegacyScript(postDetailScript);
 //
 //   - `?url` makes Vite hand back a URL instead of bundling the file: in dev it
 //     is served from its source path (inside the pnpm workspace root, which
