@@ -1,5 +1,7 @@
 <a id="readme-top"></a>
 
+> **로컬 실행**: Docker만 있으면 `make local` 한 번으로 웹 · API · 인프라 · 테스트 데이터가 뜹니다 → http://localhost:4173 ([docs/local-docker.md](docs/local-docker.md))
+
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]

@@ -19,6 +19,24 @@ run: .build/evm-keys
 stop:
 	docker compose --profile development down --remove-orphans
 
+# Full local stack in Docker (web + API + infra + seed data); no Rust/Node on
+# the host. See docs/local-docker.md.
+.PHONY: local local-down local-logs local-status local-reset
+local:
+	bash scripts/local-stack.sh up
+
+local-down:
+	bash scripts/local-stack.sh down
+
+local-logs:
+	bash scripts/local-stack.sh logs
+
+local-status:
+	bash scripts/local-stack.sh status
+
+local-reset:
+	bash scripts/local-stack.sh reset
+
 serve:
 	cd packages/$(SERVICE) && make serve
 

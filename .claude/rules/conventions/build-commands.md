@@ -50,7 +50,9 @@ cd playwright && PLAYWRIGHT_BASE_URL=http://localhost:4173 npx playwright test <
 ## Local Dev (Docker)
 
 ```bash
-make run          # all services
+make local        # full stack in Docker: web :4173 + API :8080 + infra + seed (docs/local-docker.md)
+make local-down   # stop it
+make run          # all services (legacy development profile)
 AWS_REGION=ap-northeast-2 AWS_DEFAULT_REGION=ap-northeast-2 make infra        # infrastructure only (LocalStack, DynamoDB)
 make stop         # stop all
 
