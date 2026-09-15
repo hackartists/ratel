@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@ratel/ts-bridges": "workspace:*",
+    "@reown/appkit": "1.8.19",
     "@tanstack/react-query": "^5.62.0",
+    "@walletconnect/sign-client": "2.23.7",
     "ethers": "6.16.0",
     "firebase": "12.13.0",
     "i18next": "^24.2.0",

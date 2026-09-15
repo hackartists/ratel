@@ -19,6 +19,7 @@ import {
   walletOpenApp,
   walletSignMessage,
   warmUpGoogleSignIn,
+  warmUpWalletConnect,
 } from "./interop";
 import { SignupModal } from "./signup-modal";
 import { useAuthActions } from "./use-auth-actions";
@@ -65,9 +66,11 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   const [android] = React.useState(isAndroid);
 
   // Load the Firebase SDK as soon as the modal opens, so "Continue with Google"
-  // reaches the popup inside the click's user gesture.
+  // reaches the popup inside the click's user gesture; the wallet SDK likewise,
+  // so the first "Connect wallet" does not also wait for a download.
   React.useEffect(() => {
     warmUpGoogleSignIn();
+    warmUpWalletConnect();
   }, []);
 
   const errorText = (e: unknown) =>

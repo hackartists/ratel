@@ -11,18 +11,7 @@ import { refreshSessionHandler } from "@ratel/ts-bridges";
 import { ApiError } from "@ratel/ts-bridges/runtime";
 import { googleSignInNative, isTauri } from "@/lib/native";
 import { initFirebase as initFirebaseSdk, preloadFirebase, signIn as firebaseSignIn } from "./firebase";
-
-interface WalletConnectGlobal {
-  initialize(projectId: string, appName: string, appDescription: string, appUrl: string): void;
-  connect(): Promise<WalletConnectResult>;
-  signMessage(message: string): Promise<string>;
-  openWalletApp(): Promise<void>;
-}
-
-const globals = () =>
-  window as unknown as {
-    walletConnect?: WalletConnectGlobal;
-  };
+import * as wallet from "./wallet-connect";
 
 /** Rust `WalletConnectResult`. */
 export interface WalletConnectResult {
@@ -85,7 +74,7 @@ const FIREBASE_CONFIG = {
 export function walletInitialize(): void {
   const { projectId, appName, appDescription, appUrl } = WALLET_CONNECT_CONFIG;
   try {
-    globals().walletConnect?.initialize(projectId, appName, appDescription, appUrl);
+    wallet.initialize(projectId, appName, appDescription, appUrl);
   } catch (e) {
     console.error("Failed to initialize WalletConnect:", e);
   }
@@ -94,7 +83,7 @@ export function walletInitialize(): void {
 /** Rust `wallet_connect()`: connect via QR, keep the session alive. */
 export async function walletConnect(): Promise<WalletConnectResult> {
   try {
-    const result = await globals().walletConnect?.connect();
+    const result = await wallet.connect();
     if (result) return result;
   } catch {
     // wc_connect.js sends null.
@@ -105,7 +94,7 @@ export async function walletConnect(): Promise<WalletConnectResult> {
 /** Rust `wallet_sign_message()`: sign with the active session. */
 export async function walletSignMessage(message: string): Promise<string> {
   try {
-    const signature = await globals().walletConnect?.signMessage(message);
+    const signature = await wallet.signMessage(message);
     if (typeof signature === "string") return signature;
   } catch {
     // wc_sign_message.js sends null.
@@ -116,7 +105,7 @@ export async function walletSignMessage(message: string): Promise<string> {
 /** Rust `wallet_open_app()`: open the wallet for a pending sign request. */
 export async function walletOpenApp(): Promise<void> {
   try {
-    await globals().walletConnect?.openWalletApp();
+    await wallet.openWalletApp();
   } catch {
     throw new LocalAuthError("WalletConnectFailed");
   }
@@ -141,6 +130,11 @@ export async function initFirebase(): Promise<void> {
 export function warmUpGoogleSignIn(): void {
   if (isTauri()) return;
   preloadFirebase().catch((e) => console.error("Failed to load Firebase:", e));
+}
+
+/** Starts downloading the WalletConnect SDK so the first wallet click does not wait for it. */
+export function warmUpWalletConnect(): void {
+  wallet.preloadWalletConnect().catch((e) => console.error("Failed to load WalletConnect:", e));
 }
 
 /**
