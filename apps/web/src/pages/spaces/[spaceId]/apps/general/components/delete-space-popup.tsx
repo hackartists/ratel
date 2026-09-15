@@ -1,4 +1,4 @@
-import { useDeleteSpacePopupI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/general/views/home/delete-space-popup.i18n";
+import { useDeleteSpacePopupI18n } from "./i18n";
 
 // general/views/home/delete_space_popup.rs — the arena confirmation modal,
 // rendered inline inside `.space-general-arena` (not through the popup

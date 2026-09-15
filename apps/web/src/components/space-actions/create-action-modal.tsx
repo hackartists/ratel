@@ -10,7 +10,7 @@ import { SpaceCard } from "@/components/ui/space-card";
 import {
   useCreateActionModalI18n,
   type CreateActionModalI18n,
-} from "@/i18n/generated/features/spaces/pages/actions/components/create_action_modal/create-action-modal.i18n";
+} from "./create-action-modal.i18n";
 import { dataBool } from "@/lib/dom";
 import { useLayover } from "@/lib/layover";
 import { createSpaceAction } from "./use-create-space-action";

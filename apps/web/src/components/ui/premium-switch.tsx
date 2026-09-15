@@ -1,7 +1,7 @@
 import type * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { Lock1 } from "@/components/icons/security";
-import { usePremiumUnlockI18n } from "@/i18n/generated/common/components/premium_switch/premium-unlock.i18n";
+import { usePremiumUnlockI18n } from "./i18n";
 import { useUserContext, useUserMembership } from "@/lib/auth";
 import { Switch } from "./switch";
 

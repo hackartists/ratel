@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useActionEditFooterI18n } from "@/i18n/generated/features/spaces/pages/actions/components/action_edit_footer/action-edit-footer.i18n";
+import { useActionEditFooterI18n } from "./action-edit-footer.i18n";
 import { useToast } from "@/lib/toast";
 
 // app/ratel/src/features/spaces/pages/actions/components/action_edit_footer.

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { usePanelsI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/panels/panels.i18n";
+import { usePanelsI18n } from "./i18n";
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { AttributeGroupsSection } from "./components/attribute-groups";
 import { CollectivePanelSection } from "./components/collective-panel";

@@ -1,5 +1,5 @@
 import type { RewardHistoryItem } from "@ratel/ts-bridges";
-import { useRewardHistorySectionI18n } from "@/i18n/generated/features/social/pages/reward/user/components/reward-history-section.i18n";
+import { useRewardHistorySectionI18n } from "./reward-history-section.i18n";
 import { formatWithCommas, formatYyyyMmDd } from "../format";
 import { useRewardHistory } from "../hooks/use-reward-history";
 

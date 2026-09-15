@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { BetResponse, ChatMessagePayload, RoundParticipantSummary, RoundResponse } from "@ratel/ts-bridges";
 import { monogram } from "@/components/arcade/format";
-import { useFactFoldRoomI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/game_room/fact-fold-room.i18n";
+import { useFactFoldRoomI18n } from "@/pages/arcade/games/fact-or-fold/rounds/[roundId]/i18n";
 import { useUserContext } from "@/lib/auth";
 import { useFactFoldRound, useRound, useRoundBets, useRoundParticipants } from "../hooks/use-fact-fold-round";
 import { CHAT_TEXT_MAX_CHARS, FLIP_SLOT_LAST_MS } from "./round-format";

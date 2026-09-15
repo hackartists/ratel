@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button, ButtonStyle } from "@/components/ui/button";
 import { FileUploader } from "@/components/ui/file-uploader";
-import { useTeamCreationFormI18n } from "@/i18n/generated/common/components/team_creation_form/team-creation-form.i18n";
+import { useTeamCreationFormI18n } from "@/components/team-creation/team-creation-form.i18n";
 
 // app/ratel/src/common/components/team_creation_form/team_creation_form.rs
 // (`TeamCreationForm`, `TeamCreationPayload`).

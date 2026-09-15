@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import type { HotSpaceResponse, PostResponse } from "@ratel/ts-bridges";
-import { useHomeArenaI18n } from "@/i18n/generated/views/index/home-arena.i18n";
+import { useHomeArenaI18n } from "./i18n";
 import { dataBool } from "@/lib/dom";
 import { ArenaSpaceCard } from "./arena-space-card";
 import {

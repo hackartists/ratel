@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useDeleteFollowUser } from "@ratel/ts-bridges/hooks";
 import { Button, ButtonStyle } from "@/components/ui/button";
 import { SpaceCard } from "@/components/ui/space-card";
-import { useFollowUserListI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/follow/components/follow_user_list/follow-user-list.i18n";
+import { useFollowUserListI18n } from "./follow-user-list.i18n";
 import type { FollowUserItem } from "../hooks/use-follow-users";
 
 /** `UserType::Team`. */

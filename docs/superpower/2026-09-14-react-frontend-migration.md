@@ -189,7 +189,7 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
    - `translate!` 블록 148개 → `apps/web/src/i18n/generated/<Rust 디렉터리>/<name>.i18n.tsx`. 네임스페이스는 블록 이름(`PostDetailTranslate` → `postDetail`)이고, 겹치면 디렉터리로 한정합니다(4개).
    - `derive(Translate)` enum 54개 → `enums.i18n.tsx`의 `enum` 네임스페이스, `<Type>.<Variant>` 키, `useEnumI18n()`. `#[translate(from)]` 34개는 `delegates`에 감쌀 타입을 적습니다.
    - Rust에서 `str::replace("{n}", …)`로 채우던 `{n}`은 i18next `{{n}}`로 바꾸고, 훅은 해당 키를 `(values) => string`으로 노출합니다(`t(key, { replace: values })`).
-   - 생성물은 커밋하고 `--check`로 CI(`dx-check` 잡의 `i18n drift check`)가 재생성 diff 0을 강제합니다. 페이지를 옮기면 해당 모듈을 페이지 옆으로 옮겨 수작업 관리로 전환하고, Dioxus 제거 시 추출 도구도 제거합니다.
+   - 생성물은 커밋하고 `--check`로 CI(`dx-check` 잡의 `i18n drift check`)가 재생성 diff 0을 강제합니다. 페이지를 옮기면 해당 모듈을 페이지 옆으로 옮겨 수작업 관리로 전환하고, Dioxus 제거 시 추출 도구도 제거합니다. (이 "페이지 옆으로" 단계는 P7까지 누락됐고 2026-09-15에 일괄 정리했습니다 — §9.1 P7 참고.)
 2. RSX에서 문자열을 이어 붙이던 곳은 보간 함수로 바꿔야 해서 사람이 검토합니다.
 3. 언어 저장 키 `localStorage["language"]`와 쿠키 `language`를 그대로 씁니다 (기존 사용자 설정 유지, 서버 에러 메시지 언어와 일치). `src/i18n/index.ts`의 `initI18n`/`setLanguage`/`applyPersistedLanguage`가 asset과 같은 구조로 이를 처리합니다.
 4. 기본 언어·폴백은 현재 동작과 같게 둡니다: 저장값 → 브라우저 언어 → 영어. 사전 렌더 HTML은 영어이고 하이드레이션 후 전환합니다.
@@ -285,6 +285,7 @@ asset의 `ts-server-fn`은 라우트 매크로를 대체하고 본문 형식·�
 - **프론트 에셋 이동**: `app/ratel/assets`(main.css·테마·아이콘·애니메이션 등) → `apps/web/assets`, `app/ratel/js` → `apps/web/shell-js`(빌드 결과가 `apps/web/assets`로), `app/ratel/tailwind.css` → `apps/web/src/styles/tokens.css`, React가 쓰던 페이지 스크립트 15개 → `apps/web/src/legacy-scripts/`. `app/ratel/assets/design`(목업, local-dev `/designs`)은 서버에 남깁니다.
 - **Tailwind**: Rust 소스 스캔이 없어지면서 빠지는 클래스 409개를 `src/styles/safelist.css`(`@source inline`)로 고정해, 생성 CSS의 클래스 집합이 삭제 전과 같습니다(추가된 것은 미사용 `--shadow-*` 변수 3개).
 - i18n 번들(`src/i18n/generated`)은 이제 직접 편집하는 원본입니다(헤더 문구 변경). `parity:tailwind`·`parity:routes`·`component-dom-parity` 스크립트 삭제.
+- **i18n 위치 정리 (P7 이후, 2026-09-15)**: §7-1의 "페이지를 옮기면 모듈을 페이지 옆으로" 단계가 빠져 번들 149개가 `src/i18n/generated/<삭제된 Rust 경로>`에 남아 있던 것을 asset 컨벤션대로 옮겼습니다. 한 폴더에서만 쓰는 모듈은 그 폴더의 `i18n.tsx`(한 폴더에 여럿이면 `<name>.i18n.tsx`), 여러 곳에서 쓰는 모듈은 기능의 본 폴더(예: `pages/[username]/sub-teams/sub-team.i18n.tsx`)로, 앱 전역인 `enums.i18n.tsx`만 `src/i18n/`에 둡니다. 등록은 `src/i18n/modules.ts`(네임스페이스 이름 불변). 어디서도 쓰지 않던 번들 37개(React로 옮기며 다른 번들·문구로 대체된 Dioxus 컴포넌트의 것)는 삭제했습니다. 옮긴 112개는 머리 주석 2줄 외 내용이 원본과 같습니다.
 - **링크 미리보기(D1)**: `apps/web/server/serve.mjs`(의존성 없는 Node 서버)가 `/spaces/:id/**`는 `GET /api/spaces/:id`, `/posts/:id`는 `GET /api/posts/:id`를 익명으로 조회해 Dioxus `SeoMeta`와 같은 title·description·og/twitter 태그를 `index.html`에 넣습니다(1.5초 타임아웃, 60초 캐시, 실패 시 원본). 태그에 `data-rh`를 붙여 react-helmet-async가 중복 없이 교체합니다. `/healthz`, `PROXY_API=1`(로컬 검증용 API 프록시, SSE 스트리밍) 포함, 테스트 22개 통과.
 
 **P7 전환 — 검증 (로컬, 커밋 `c4eb4638d`·`4674e5f1f`)**

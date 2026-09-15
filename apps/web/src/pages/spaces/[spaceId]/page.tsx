@@ -5,7 +5,7 @@ import { ActionOverlayProvider, useActionOverlay } from "@/components/space/acti
 import { DiscussionArenaPage } from "@/components/space/discussion-arena/discussion-arena";
 import { SettingsPanel } from "@/components/space/settings-panel/settings-panel";
 import { isSpaceAdmin, SpaceStatus, useSpaceContext } from "@/components/space/space-context";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 import { useUserContext } from "@/lib/auth";
 import { useDismissOnOutsideSelector } from "@/lib/use-dismiss-on-outside-selector";
 import { ActionDashboard } from "./components/action-dashboard/action-dashboard";

@@ -1,7 +1,7 @@
 import type { ChangeEvent } from "react";
 import type { SubTeamFormFieldResponse } from "@ratel/ts-bridges";
 import { dataBool } from "@/lib/dom";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 
 // app/ratel/src/features/sub_team/pages/apply/component.rs (`FieldRow`) — one
 // application-form field, rendered per `field_type`. Linked fields (server

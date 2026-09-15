@@ -1,4 +1,4 @@
-import { useCredentialsI18n } from "@/i18n/generated/features/social/pages/credentials/views/credentials.i18n";
+import { useCredentialsI18n } from "@/pages/credentials/credentials.i18n";
 import { useCredentials } from "../hooks/use-credentials";
 import { formatDatetimeUtc } from "./format";
 

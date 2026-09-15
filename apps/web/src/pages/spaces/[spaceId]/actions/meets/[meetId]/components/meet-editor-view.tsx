@@ -7,7 +7,7 @@ import { ActionDeleteButton } from "@/components/space-actions/delete-action";
 import { PrerequisiteTile } from "@/components/space-actions/prerequisite-tile";
 import { Button } from "@/components/ui/button";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useMeetActionI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/meet/components/meet_page/meet-action.i18n";
+import { useMeetActionI18n } from "@/pages/spaces/[spaceId]/i18n";
 import { useToast } from "@/lib/toast";
 import { useMeet } from "../hooks/use-meet";
 

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { CreateSubjectRequest, RevealSource, Verdict } from "@ratel/ts-bridges";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useFactFoldAdminNewSubjectI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/admin/new_subject/fact-fold-admin-new-subject.i18n";
+import { useFactFoldAdminNewSubjectI18n } from "./i18n";
 import { useAdminLiteralsI18n } from "../../../admin-literals.i18n";
 import { charCount, displayError, utf8Length } from "../../../hooks/format";
 import { useAdminSubjects } from "../../hooks/use-admin-subjects";

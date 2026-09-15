@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { FileUploader } from "@/components/ui/file-uploader";
 import { TeamArenaTab, useTeamArena, useTeamArenaTab } from "@/components/social/team-arena-context";
 import { useTeamContext } from "@/components/social/use-team-context";
-import { useTeamSettingsI18n } from "@/i18n/generated/features/social/pages/setting/team/views/team-settings.i18n";
+import { useTeamSettingsI18n } from "@/pages/[username]/settings/i18n";
 import { useToast } from "@/lib/toast";
 import { useTeamBilling, useTeamSettings } from "../hooks/use-team-settings";
 import { digitsOnly, formatLocalDate, formatLocalDateTime, formatMembershipTierLabel } from "./format";

@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { Head } from "vite-react-ssg";
-import { useLaunchpadPartnerI18n } from "@/i18n/generated/features/launchpad_partner/launchpad-partner.i18n";
+import { useLaunchpadPartnerI18n } from "@/components/launchpad-partner/i18n";
 import { useUserContext } from "@/lib/auth";
 import { useLaunchpadReturn } from "./hooks/use-launchpad-return";
 

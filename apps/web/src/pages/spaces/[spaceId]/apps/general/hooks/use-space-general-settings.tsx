@@ -19,7 +19,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext } from "react";
 import { useNavigate } from "react-router-dom";
-import { useGeneralI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/general/general.i18n";
+import { useGeneralI18n } from "@/pages/spaces/[spaceId]/apps/general/i18n";
 import { useAction, type Action } from "@/lib/use-action";
 import { useToast } from "@/lib/toast";
 

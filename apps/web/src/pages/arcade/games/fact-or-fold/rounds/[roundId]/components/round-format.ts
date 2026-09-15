@@ -1,5 +1,5 @@
 import type { BetResponse, BetSide, RoundStatus } from "@ratel/ts-bridges";
-import type { FactFoldRoomI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/game_room/fact-fold-room.i18n";
+import type { FactFoldRoomI18n } from "@/pages/arcade/games/fact-or-fold/rounds/[roundId]/i18n";
 
 // Helpers shared by the game-room stage views (game_room/**/*.rs).
 

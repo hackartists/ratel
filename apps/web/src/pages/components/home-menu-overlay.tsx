@@ -1,4 +1,4 @@
-import { useHomeArenaI18n } from "@/i18n/generated/views/index/home-arena.i18n";
+import { useHomeArenaI18n } from "./i18n";
 import { dataBool } from "@/lib/dom";
 
 // app/ratel/src/views/index/component.rs:696-879 — the hamburger overlay: a

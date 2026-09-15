@@ -1,8 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { useDeleteSpaceAction } from "@ratel/ts-bridges/hooks";
 import { Button, ButtonStyle } from "@/components/ui/button";
-import { useDeleteActionButtonI18n } from "@/i18n/generated/features/spaces/pages/actions/components/delete_action_button/delete-action-button.i18n";
-import { useDeleteActionPopupI18n } from "@/i18n/generated/features/spaces/pages/actions/components/delete_action_popup/delete-action-popup.i18n";
+import { useDeleteActionButtonI18n } from "./delete-action-button.i18n";
+import { useDeleteActionPopupI18n } from "./delete-action-popup.i18n";
 import { usePopup } from "@/lib/popup";
 import { useToast } from "@/lib/toast";
 import { useSpaceContext } from "@/components/space/space-context";

@@ -2,7 +2,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import postEditScript from "../../../../legacy-scripts/features/posts/views/post_edit/script.js?url&no-inline";
 import { CrossPostSidebar } from "@/components/cross-posting/cross-post-sidebar";
 import { Editor } from "@/components/editor";
-import { usePostEditI18n } from "@/i18n/generated/features/posts/views/post_edit/post-edit.i18n";
+import { usePostEditI18n } from "./i18n";
 import { useAuth } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 import { useLegacyScript } from "@/lib/legacy-scripts";

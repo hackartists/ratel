@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useGeneralI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/general/general.i18n";
+import { useGeneralI18n } from "./i18n";
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { Administrators } from "./components/administrators";
 import { DeleteSpacePopup } from "./components/delete-space-popup";

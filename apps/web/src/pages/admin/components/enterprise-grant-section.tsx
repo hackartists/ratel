@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { MembershipGrantTargetType } from "@ratel/ts-bridges";
-import { useAdminRewardsI18n } from "@/i18n/generated/features/admin/views/main/admin-rewards.i18n";
+import { useAdminRewardsI18n } from "./i18n";
 import { displayError, formatWithCommas } from "../hooks/format";
 import { useEnterpriseMemberships } from "../hooks/use-admin-main";
 import { MoreElement } from "./more-element";

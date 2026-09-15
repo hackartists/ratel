@@ -4,7 +4,7 @@ import { MoreElement, useSentinelKey } from "@/components/team-member/more-eleme
 import { Button, ButtonShape, ButtonSize, ButtonStyle } from "@/components/ui/button";
 import { ScrollArea, ScrollDirection } from "@/components/ui/scroll-area";
 import { useWallContext } from "@/components/social/wall-context";
-import { useTeamSettingsI18n } from "@/i18n/generated/features/social/pages/setting/team/views/team-settings.i18n";
+import { useTeamSettingsI18n } from "@/pages/[username]/settings/i18n";
 import { PopupProvider, PopupZone, usePopup } from "@/lib/popup";
 import { MemberRow } from "./components/member-row";
 import { useManagementPage } from "./hooks/use-management-page";

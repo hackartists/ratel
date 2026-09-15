@@ -1,7 +1,7 @@
 import type * as React from "react";
 import type { InboxNotificationResponse, InboxPayload } from "@ratel/ts-bridges";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useNotificationsI18n, type NotificationsI18n } from "@/i18n/generated/features/notifications/notifications.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useNotificationsI18n, type NotificationsI18n } from "./i18n";
 
 // app/ratel/src/features/notifications/components/notification_panel/notification_item/component.rs
 // + InboxPayload::get_contents (features/notifications/types/payload_contents.rs).

@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import type { FeedPartition, SocialPlatform, SyndicationJobView } from "@ratel/ts-bridges";
-import { useSyndicationPanelI18n } from "@/i18n/generated/features/cross_posting/syndication-panel.i18n";
+import { useSyndicationPanelI18n } from "./syndication-panel.i18n";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
 import { PlatformLogo, displayName } from "./social-platform";

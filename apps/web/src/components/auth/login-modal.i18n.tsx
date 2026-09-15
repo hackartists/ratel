@@ -1,0 +1,91 @@
+// Ported from: app/ratel/src/features/auth/components/login_modal/mod.rs (`LoginModalTranslate`). Namespace "loginModal".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  new_user: "New user?",
+  create_account: "Create an account",
+  email_address: "Email address",
+  email_placeholder: "Enter your email address",
+  verification_code: "Verification code",
+  code_placeholder: "Enter the verification code",
+  continue_btn: "Continue",
+  loading: "Loading...",
+  or: "Or",
+  continue_with_google: "Continue With Google",
+  continue_with_wallet: "Continue With Wallet",
+  waiting_wallet_signature: "Approve signature in your wallet",
+  waiting_wallet_description: "A signature request has been sent to your wallet app.",
+  open_wallet: "Signin",
+  privacy_policy: "Privacy Policy",
+  terms_of_service: "Terms of Service",
+  child_safety: "Child Safety",
+  inapp_browser_warning: "Google sign-in is blocked inside this in-app browser. Please open this page in Chrome, Safari, or another full browser.",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  new_user: "새 사용자?",
+  create_account: "계정 만들기",
+  email_address: "이메일 주소",
+  email_placeholder: "이메일 주소를 입력하세요",
+  verification_code: "인증 코드",
+  code_placeholder: "인증 코드를 입력하세요",
+  continue_btn: "계속",
+  loading: "로딩 중...",
+  or: "또는",
+  continue_with_google: "Google로 계속하기",
+  continue_with_wallet: "지갑으로 계속하기",
+  waiting_wallet_signature: "지갑에서 서명을 승인해주세요",
+  waiting_wallet_description: "지갑 앱으로 서명 요청이 전송되었습니다.",
+  open_wallet: "로그인",
+  privacy_policy: "개인정보 처리방침",
+  terms_of_service: "서비스 이용약관",
+  child_safety: "아동 안전 기준",
+  inapp_browser_warning: "현재 앱의 인앱 브라우저에서는 Google 로그인이 차단되어 있습니다. 우측 상단 메뉴에서 '다른 브라우저로 열기'를 선택해 주세요.",
+};
+
+export const i18n = { en, ko };
+
+export interface LoginModalI18n {
+  newUser: string;
+  createAccount: string;
+  emailAddress: string;
+  emailPlaceholder: string;
+  verificationCode: string;
+  codePlaceholder: string;
+  continueBtn: string;
+  loading: string;
+  or: string;
+  continueWithGoogle: string;
+  continueWithWallet: string;
+  waitingWalletSignature: string;
+  waitingWalletDescription: string;
+  openWallet: string;
+  privacyPolicy: string;
+  termsOfService: string;
+  childSafety: string;
+  inappBrowserWarning: string;
+}
+
+export function useLoginModalI18n(): LoginModalI18n {
+  const { t } = useTranslation("loginModal");
+  return {
+    newUser: t("new_user"),
+    createAccount: t("create_account"),
+    emailAddress: t("email_address"),
+    emailPlaceholder: t("email_placeholder"),
+    verificationCode: t("verification_code"),
+    codePlaceholder: t("code_placeholder"),
+    continueBtn: t("continue_btn"),
+    loading: t("loading"),
+    or: t("or"),
+    continueWithGoogle: t("continue_with_google"),
+    continueWithWallet: t("continue_with_wallet"),
+    waitingWalletSignature: t("waiting_wallet_signature"),
+    waitingWalletDescription: t("waiting_wallet_description"),
+    openWallet: t("open_wallet"),
+    privacyPolicy: t("privacy_policy"),
+    termsOfService: t("terms_of_service"),
+    childSafety: t("child_safety"),
+    inappBrowserWarning: t("inapp_browser_warning"),
+  };
+}

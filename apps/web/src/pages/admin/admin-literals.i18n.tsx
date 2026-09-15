@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 
-// String literals of the admin area that the Dioxus app renders OUTSIDE its
-// `translate!` blocks (so packages/i18n-extract generates nothing for them):
+// String literals of the admin area that the Dioxus app rendered OUTSIDE its
+// `translate!` blocks (so the one-off i18n extraction produced nothing for them):
 // admin/layout.rs, admin/views/main/mod.rs, admin/models/reward_types.rs,
 // common/hooks/use_infinite_query.rs and the fact_or_fold admin pages. The
 // Rust app shows them verbatim in every language, so both tables hold the

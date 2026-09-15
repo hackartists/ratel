@@ -8,7 +8,7 @@ import { useDismissOnOutsideClick } from "@/lib/use-dismiss-on-outside-click";
 import {
   useUserDraftsI18n,
   type UserDraftsI18n,
-} from "@/i18n/generated/features/social/pages/draft/user/views/user-drafts.i18n";
+} from "./i18n";
 import draftsScript from "../../../../legacy-scripts/features/social/pages/draft/user/views/script.js?url&no-inline";
 import { formatCommas, timeAgo, toPlainText, wordCount } from "../hooks/draft-text";
 import { partitionId } from "../hooks/use-drafts-list";

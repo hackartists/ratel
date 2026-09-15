@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { useAnalyzeCreateContext } from "../hooks/use-analyze-create";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/create/footer_create/component.rs

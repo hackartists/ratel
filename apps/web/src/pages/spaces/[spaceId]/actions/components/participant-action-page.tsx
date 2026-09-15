@@ -1,6 +1,6 @@
 import { ActionCard } from "@/components/space-actions/action-card";
 import { useSpaceActionList } from "@/components/space-actions/use-space-action-list";
-import { useParticipantActionPageI18n } from "@/i18n/generated/features/spaces/pages/actions/views/main/participant_page/participant-action-page.i18n";
+import { useParticipantActionPageI18n } from "./participant-action-page.i18n";
 import { ActionsTitle } from "./actions-title";
 
 // app/ratel/src/features/spaces/pages/actions/views/main/participant_page.

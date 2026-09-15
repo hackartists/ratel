@@ -1,6 +1,6 @@
 import type { SpaceIncentive, SpaceIncentiveToken } from "@ratel/ts-bridges";
 import { useEffect, useRef, useState } from "react";
-import { useIncentivePoolI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/incentive_pool/incentive-pool.i18n";
+import { useIncentivePoolI18n } from "@/pages/spaces/[spaceId]/apps/incentive-pool/i18n";
 import { defaultUsdtTokenAddress, incentiveExplorerUrl, isValidUsdtInput } from "./format";
 import { loadIncentiveAndTokens, refreshTokens, registerIncentivePool } from "./incentive-pool-api";
 

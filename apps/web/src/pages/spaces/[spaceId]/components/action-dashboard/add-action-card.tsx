@@ -1,6 +1,6 @@
 // app/ratel/src/features/spaces/pages/index/action_dashboard/add_action_card/component.rs —
 // `AddActionCard`: the admin "new action" card at the end of the carousel.
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 
 export function AddActionCard({ onClick }: { onClick: () => void }) {
   const tr = useSpaceViewerI18n();

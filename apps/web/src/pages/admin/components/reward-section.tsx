@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { RewardCondition, RewardPeriod, RewardResponse, RewardUserBehavior } from "@ratel/ts-bridges";
-import { useAdminRewardsI18n } from "@/i18n/generated/features/admin/views/main/admin-rewards.i18n";
+import { useAdminRewardsI18n } from "./i18n";
 import { useAdminLiteralsI18n, type AdminLiteralsI18n } from "../admin-literals.i18n";
 import { formatWithCommas, parseI64 } from "../hooks/format";
 import { useRewards } from "../hooks/use-admin-main";

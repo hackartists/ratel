@@ -1,7 +1,7 @@
 import { useState, useTransition } from "react";
 import type { SubjectStatus } from "@ratel/ts-bridges";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useFactFoldAdminSubjectsI18n } from "@/i18n/generated/features/arcade/games/fact_or_fold/pages/admin/subjects/fact-fold-admin-subjects.i18n";
+import { useFactFoldAdminSubjectsI18n } from "./i18n";
 import { dataBool } from "@/lib/dom";
 import { useAdminLiteralsI18n } from "../../admin-literals.i18n";
 import { useAdminSubjects, useSubjectList } from "../hooks/use-admin-subjects";

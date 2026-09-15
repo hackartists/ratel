@@ -7,7 +7,7 @@ import type { SpaceActionSummary } from "@ratel/ts-bridges";
 import { EntityPrefix, subPartitionId } from "@/components/space/create-space-action";
 import { useSpaceContext } from "@/components/space/space-context";
 import { Button } from "@/components/ui/button";
-import { useMeetActionI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/meet/components/meet_page/meet-action.i18n";
+import { useMeetActionI18n } from "@/pages/spaces/[spaceId]/i18n";
 import { dataBool } from "@/lib/dom";
 
 type MeetPhase = "Draft" | "Live" | "Ended";

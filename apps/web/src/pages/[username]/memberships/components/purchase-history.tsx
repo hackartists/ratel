@@ -1,5 +1,5 @@
 import type { ListResponse } from "@ratel/ts-bridges";
-import { useMembershipPageI18n } from "@/i18n/generated/features/social/pages/membership/user/views/membership-page.i18n";
+import { useMembershipPageI18n } from "./membership-page.i18n";
 import type { PurchaseHistoryItem } from "../hooks/use-membership";
 import { formatDate } from "./format";
 

@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "@/components/icons/arrows";
-import { useMyFollowerHeaderI18n } from "@/i18n/generated/features/my_follower/components/my-follower-header.i18n";
+import { useMyFollowerHeaderI18n } from "./my-follower-header.i18n";
 
 // app/ratel/src/features/my_follower/components/header.rs (`MyFollowerHeader`).
 export function MyFollowerHeader() {

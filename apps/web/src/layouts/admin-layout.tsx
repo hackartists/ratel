@@ -1,5 +1,5 @@
 import { Navigate, Outlet, useNavigate } from "react-router-dom";
-import { useAdminLayoutI18n } from "@/i18n/generated/features/admin/admin-layout.i18n";
+import { useAdminLayoutI18n } from "./admin-layout.i18n";
 import { useAuth } from "@/lib/auth";
 import { useAdminLiteralsI18n } from "@/pages/admin/admin-literals.i18n";
 

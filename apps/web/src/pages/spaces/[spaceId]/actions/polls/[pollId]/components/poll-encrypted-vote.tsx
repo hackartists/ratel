@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getVoteVerificationMaterial } from "@ratel/ts-bridges";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
-import { usePollReadI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/views/main/poll-read.i18n";
+import { usePollReadI18n } from "./poll-read.i18n";
 import {
   buildStoredVoterKey,
   loadSessionVoteSecret,

@@ -5,8 +5,8 @@ import { Button, ButtonShape } from "@/components/ui/button";
 import { Input, InputType } from "@/components/ui/input";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
 import { WalletConnect } from "@/components/icons/wallet";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
-import { useLoginModalI18n } from "@/i18n/generated/features/auth/components/login_modal/login-modal.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
+import { useLoginModalI18n } from "./login-modal.i18n";
 import { isAndroid, isIos } from "@/lib/platform";
 import { usePopup } from "@/lib/popup";
 import {

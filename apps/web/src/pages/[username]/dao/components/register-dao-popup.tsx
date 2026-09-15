@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useTeamDaoI18n } from "@/i18n/generated/features/social/pages/dao/views/team-dao.i18n";
+import { useTeamDaoI18n } from "./i18n";
 import { fillCount, MIN_DAO_ADMINS, type EligibleAdminResponse } from "../hooks/use-team-dao";
 import { CheckIcon, XMarkIcon } from "./dao-icons";
 

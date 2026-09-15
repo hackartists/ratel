@@ -2,7 +2,7 @@ import * as React from "react";
 import { LineArrowLeft } from "@/components/icons/arrows";
 import { Settings2 } from "@/components/icons/settings";
 import { Button, ButtonShape, ButtonSize, ButtonStyle } from "@/components/ui/button";
-import { useSettingsSwitchButtonI18n } from "@/i18n/generated/features/spaces/pages/actions/components/settings_switch_button/settings-switch-button.i18n";
+import { useSettingsSwitchButtonI18n } from "./settings-switch-button.i18n";
 import { useSpace, useSpaceRole } from "@/components/space/space-context";
 
 // app/ratel/src/features/spaces/pages/actions/components/settings_switch_button.

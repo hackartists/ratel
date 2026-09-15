@@ -1,4 +1,4 @@
-import { useTeamSettingsI18n } from "@/i18n/generated/features/social/pages/setting/team/views/team-settings.i18n";
+import { useTeamSettingsI18n } from "@/pages/[username]/settings/i18n";
 
 // app/ratel/src/features/social/pages/setting/team/views/viewer_page.rs — shown
 // to non-admins of the team subscription page.

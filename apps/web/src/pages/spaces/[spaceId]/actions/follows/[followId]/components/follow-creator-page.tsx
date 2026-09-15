@@ -5,7 +5,7 @@ import { getFollow } from "@ratel/ts-bridges";
 import { ActionEditFooter, ActionEditSaveBusProvider } from "@/components/space-actions/action-edit-footer";
 import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
 import { useSpace } from "@/components/space/space-context";
-import { useFollowCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/follow/views/main/creator/follow-creator.i18n";
+import { useFollowCreatorI18n } from "./follow-creator.i18n";
 import { FollowConfigCard } from "./follow-config-card";
 import { FollowTargetsCard } from "./follow-targets-card";
 

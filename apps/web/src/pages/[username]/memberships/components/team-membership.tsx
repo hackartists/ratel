@@ -1,4 +1,4 @@
-import { useTeamMembershipI18n } from "@/i18n/generated/features/social/pages/membership/team/views/team-membership.i18n";
+import { useTeamMembershipI18n } from "./team-membership.i18n";
 import { useTeamMembership } from "../hooks/use-membership";
 import { formatExpiry, formatF64NoDecimals, formatMembershipTierLabel, formatTeamDate, I64_MAX } from "./format";
 

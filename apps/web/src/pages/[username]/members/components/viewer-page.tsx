@@ -1,4 +1,4 @@
-import { useViewerPageI18n } from "@/i18n/generated/features/social/pages/member/views/viewer-page.i18n";
+import { useViewerPageI18n } from "./i18n";
 
 // app/ratel/src/features/social/pages/member/views/viewer_page.rs (`ViewerPage`) —
 // shown when the member permission can't be loaded.

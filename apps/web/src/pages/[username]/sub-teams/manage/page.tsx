@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { Check } from "@/components/icons/lucide";
 import { useWallContext } from "@/components/social/wall-context";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useSubTeamI18n, type SubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n, type SubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { dataBool } from "@/lib/dom";
 import { BroadcastTab } from "./components/broadcast-tab";
 import { DocsTab } from "./components/docs-tab";

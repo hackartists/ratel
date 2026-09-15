@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useMyAiI18n } from "@/i18n/generated/features/me/pages/my_ai/my-ai.i18n";
+import { useMyAiI18n } from "./i18n";
 import { dataBool } from "@/lib/dom";
 import { CapPill } from "./components/cap-pill";
 import { GuidePanel, GuideTabButton, type GuideTab } from "./components/guide-panel";

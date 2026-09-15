@@ -3,7 +3,7 @@ import { ActionRewardSetting } from "@/components/space-actions/action-reward-se
 import { ActionStatusControl } from "@/components/space-actions/action-status-control";
 import { ActionDeleteButton } from "@/components/space-actions/delete-action";
 import { PrerequisiteTile } from "@/components/space-actions/prerequisite-tile";
-import { useQuizCreatorI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/quiz/views/main/creator/quiz-creator.i18n";
+import { useQuizCreatorI18n } from "./quiz-creator.i18n";
 import { useQuiz } from "../hooks/use-quiz";
 
 // quiz/views/main/creator/config_card/component.rs (`ConfigCard`).

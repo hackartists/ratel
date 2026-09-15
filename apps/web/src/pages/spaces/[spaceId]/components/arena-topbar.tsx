@@ -5,7 +5,7 @@ import { NotificationBell } from "@/components/notifications/notification-bell";
 import { isSpaceAdmin, SpacePublishState, SpaceStatus, useSpaceContext } from "@/components/space/space-context";
 import { SpaceEndModal, SpaceStartModal } from "@/components/space/space-status-modals";
 import { SpaceVisibilityModal } from "@/components/space/space-visibility-modal";
-import { useSpaceViewerI18n } from "@/i18n/generated/features/spaces/pages/index/space-viewer.i18n";
+import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
 import { usePopup } from "@/lib/popup";

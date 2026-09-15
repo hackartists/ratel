@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { ChangeMembershipRequest, MembershipTier as ApiMembershipTier } from "@ratel/ts-bridges";
 import { useChangeMembership, useIdentify } from "@ratel/ts-bridges/hooks";
 import { useLoginModal } from "@/components/auth";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/language";
 import { openUrl } from "@/lib/native";

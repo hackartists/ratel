@@ -1,8 +1,8 @@
 // i18next setup for the React app, following the biyard/asset console
-// convention: every bundle is a co-located `*.i18n.tsx` module exporting
-// `i18n = { en, ko }` plus a typed `use<Name>I18n()` hook, registered here as
-// a namespace. The bundles in `./generated` were extracted from the retired
-// Dioxus `translate!` blocks and are now edited directly.
+// convention: every bundle lives next to the code that uses it (`i18n.tsx`, or
+// `<name>.i18n.tsx` when a directory holds several) and exports
+// `i18n = { en, ko }` plus a typed `use<Name>I18n()` hook. `./modules` lists
+// them by namespace; only app-wide bundles (`enums.i18n.tsx`) live here.
 //
 // Language rules mirror packages/dioxus-translate so existing users keep their
 // setting and server error messages stay in the same language
@@ -13,7 +13,7 @@
 //     `language` cookie the server reads (Rust `Language::switch`).
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-import { modules } from "./generated";
+import { modules } from "./modules";
 
 export const SUPPORTED_LANGUAGES = ["en", "ko"] as const;
 export type AppLanguage = (typeof SUPPORTED_LANGUAGES)[number];

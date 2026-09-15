@@ -1,4 +1,4 @@
-import { usePanelsI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/panels/panels.i18n";
+import { usePanelsI18n } from "@/pages/spaces/[spaceId]/apps/panels/i18n";
 import { dataBool } from "@/lib/dom";
 import { isSelectedOption } from "../hooks/panel-logic";
 import { useSpacePanels } from "../hooks/use-space-panels";

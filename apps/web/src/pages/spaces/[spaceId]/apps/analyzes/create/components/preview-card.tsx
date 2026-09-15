@@ -1,5 +1,5 @@
 import { RecordsTable } from "@/components/analyzes/records-table";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { typeLabel, useAnalyzeCreateContext } from "../hooks/use-analyze-create";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/create/preview_card/component.rs

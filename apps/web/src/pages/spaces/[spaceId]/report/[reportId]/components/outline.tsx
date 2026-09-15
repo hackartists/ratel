@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { ChartType } from "@ratel/ts-bridges";
 import { dataBool } from "@/lib/dom";
-import { useReportDetailI18n } from "@/i18n/generated/features/spaces/pages/report/views/detail/report-detail.i18n";
+import { useReportDetailI18n } from "@/pages/spaces/[spaceId]/report/[reportId]/i18n";
 import { chartTypeOptionsFor, chartTypeToken, scrollToOutlineEntry, type OutlineEntry, type OutlineKind } from "./chart-figure-html";
 import { useReportDetailContext } from "../hooks/use-report-detail";
 

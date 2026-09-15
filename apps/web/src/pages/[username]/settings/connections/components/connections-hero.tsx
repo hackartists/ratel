@@ -1,4 +1,4 @@
-import { useConnectionsPageI18n } from "@/i18n/generated/features/cross_posting/connections-page.i18n";
+import { useConnectionsPageI18n } from "@/pages/[username]/settings/connections/i18n";
 import { BlueskyGlyph, LinkedinGlyph, ThreadsGlyph } from "./platform-icons";
 
 // Hero section of views/connections_page/component.rs (headline, stats, orbit).

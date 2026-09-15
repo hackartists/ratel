@@ -1,4 +1,4 @@
-import { useTeamDaoI18n } from "@/i18n/generated/features/social/pages/dao/views/team-dao.i18n";
+import { useTeamDaoI18n } from "./i18n";
 import { MIN_DAO_ADMINS, useDaoAdmin, type TeamDao } from "../hooks/use-team-dao";
 import { DaoInfoCard } from "./dao-info-card";
 import { DaoRegistrationCard } from "./dao-registration-card";

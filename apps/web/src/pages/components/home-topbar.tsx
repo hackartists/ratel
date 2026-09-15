@@ -4,7 +4,7 @@ import type { TeamItem } from "@ratel/ts-bridges";
 import { useLoginModal, LOGIN_MODAL_TITLE } from "@/components/auth";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { ArenaTeamCreationPopup } from "@/components/team-creation/arena-team-creation-popup";
-import { useHomeArenaI18n } from "@/i18n/generated/views/index/home-arena.i18n";
+import { useHomeArenaI18n } from "./i18n";
 import { dataBool } from "@/lib/dom";
 import { usePopup } from "@/lib/popup";
 import { useDismissOnOutsideClick } from "@/lib/use-dismiss-on-outside-click";

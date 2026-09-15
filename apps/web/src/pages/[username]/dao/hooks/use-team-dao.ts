@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { getTeamDaoHandler } from "@ratel/ts-bridges";
 import type { EligibleAdminResponse, TeamDao, TeamDaoTeamResponse, TeamRole } from "@ratel/ts-bridges";
 import { useUpdateTeam } from "@ratel/ts-bridges/hooks";
-import { useEnumI18n } from "@/i18n/generated/enums.i18n";
+import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useToast } from "@/lib/toast";
 import {
   afterCopyDelay,

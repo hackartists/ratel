@@ -3,7 +3,7 @@ import { useAddFollowUsers, useCheckFollowUsers } from "@ratel/ts-bridges/hooks"
 import { Button, ButtonSize, ButtonStyle } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SpaceCard } from "@/components/ui/space-card";
-import { useFollowUserInviteI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/follow/components/follow_user_invite/follow-user-invite.i18n";
+import { useFollowUserInviteI18n } from "./follow-user-invite.i18n";
 
 // follow/components/follow_user_invite — Enter checks the typed usernames /
 // emails and stages the existing ones as chips; Add submits staged + typed

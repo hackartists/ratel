@@ -3,7 +3,7 @@ import { useState } from "react";
 import { getMcpSecretHandler } from "@ratel/ts-bridges";
 import { useRegenerateMcpSecret } from "@ratel/ts-bridges/hooks";
 import { ApiError } from "@ratel/ts-bridges/runtime";
-import { useMyAiI18n } from "@/i18n/generated/features/me/pages/my_ai/my-ai.i18n";
+import { useMyAiI18n } from "@/pages/my-ai/i18n";
 import { errorMessage as translatedError } from "@/lib/server-error";
 import { useOrigin } from "@/lib/origin";
 

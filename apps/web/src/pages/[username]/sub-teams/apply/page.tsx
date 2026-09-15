@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { ApplyContextDocument } from "@ratel/ts-bridges";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, FileText, ListChecks, Send, Users } from "@/components/icons/lucide";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { useSubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { dataBool } from "@/lib/dom";
 import { useFindTeam } from "@ratel/ts-bridges/hooks";
 import { DocAgreementModal } from "./components/doc-agreement-modal";

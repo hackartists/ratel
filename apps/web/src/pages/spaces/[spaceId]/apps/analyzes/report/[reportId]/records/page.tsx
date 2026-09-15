@@ -6,7 +6,7 @@ import type { AnalyzeRecordRow } from "@ratel/ts-bridges";
 import { useInfiniteList } from "@ratel/ts-bridges/hooks";
 import { RecordsTable } from "@/components/analyzes/records-table";
 import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
-import { useSpaceAnalyzesAppI18n } from "@/i18n/generated/features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { dataBool } from "@/lib/dom";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/records/component.rs

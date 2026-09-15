@@ -4,7 +4,7 @@ import { Check } from "@/components/icons/validations";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
 import { Input, InputVariant } from "@/components/ui/input";
 import { TextArea } from "@/components/ui/textarea";
-import { useQuestionViewerI18n } from "@/i18n/generated/features/spaces/pages/actions/actions/poll/components/question-viewer.i18n";
+import { useQuestionViewerI18n } from "./question-viewer.i18n";
 
 // app/ratel/src/features/spaces/pages/actions/actions/poll/components/question_viewer —
 // shared by the poll and quiz response flows. Renders one question per call;

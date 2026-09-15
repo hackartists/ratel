@@ -1,5 +1,5 @@
 import type { UiMembershipTier } from "@/components/membership/membership-tier";
-import { useTeamSubscriptionI18n } from "@/i18n/generated/features/social/pages/setting/team/views/subscription_page/team-subscription.i18n";
+import { useTeamSubscriptionI18n } from "@/pages/[username]/settings/subscription/i18n";
 
 // `TierCard` / `EnterpriseCard` of app/ratel/src/features/social/pages/setting/team/views/subscription_page/mod.rs.
 

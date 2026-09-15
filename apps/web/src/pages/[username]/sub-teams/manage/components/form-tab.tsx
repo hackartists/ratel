@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import type { SubTeamFormFieldResponse, SubTeamFormFieldType, TeamProfileLink } from "@ratel/ts-bridges";
-import { useSubTeamI18n, type SubTeamI18n } from "@/i18n/generated/features/sub_team/sub-team.i18n";
+import { useSubTeamI18n, type SubTeamI18n } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { dataBool } from "@/lib/dom";
 import { useDismissOnOutsideClick } from "@/lib/use-dismiss-on-outside-click";
 import { useDomProp, useNativeChange } from "../hooks/use-dom-value";

@@ -1,0 +1,111 @@
+// Ported from: app/ratel/src/features/spaces/pages/actions/components/action_settings_modal/i18n.rs (`ActionSettingsModalTranslate`). Namespace "actionSettingsModal".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  title: "Action Settings",
+  select_action: "Select action",
+  date: "Date",
+  rewards: "Rewards",
+  action_point_reward: "Action Point Reward",
+  boost_multiplier_settings: "Boost Multiplier Settings",
+  credit_usage: "Credit Usage",
+  remaining_credits: "Remaining Credits",
+  point_boost: "Point & Boost",
+  point_boost_line_one: "Points are fixed base values.",
+  point_boost_line_two: "Boost increases rewards by consuming credits.",
+  point_boost_line_three: "The boost multiplier can be changed in",
+  membership: "Membership.",
+  boost_unit: "Boost",
+  credit_unit_singular: "Credit",
+  credit_unit_plural: "Credits",
+  no_rewards_configured: "No rewards configured for the selected actions yet.",
+  apply: "Apply",
+  applying: "Applying...",
+  untitled: "Untitled",
+  no_available_actions: "No actions",
+  select_dates_error: "Select both start and end dates.",
+  applied_success: "Action settings applied.",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  title: "액션 설정",
+  select_action: "액션 선택",
+  date: "날짜",
+  rewards: "리워드",
+  action_point_reward: "액션 포인트 보상",
+  boost_multiplier_settings: "부스트 배수 설정",
+  credit_usage: "크레딧 사용량",
+  remaining_credits: "남은 크레딧",
+  point_boost: "포인트 & 부스트",
+  point_boost_line_one: "포인트는 고정된 기본값입니다.",
+  point_boost_line_two: "부스트는 크레딧을 사용해 리워드를 증가시킵니다.",
+  point_boost_line_three: "부스트 배수는 다음에서 변경할 수 있습니다",
+  membership: "멤버십.",
+  boost_unit: "부스트",
+  credit_unit_singular: "크레딧",
+  credit_unit_plural: "크레딧",
+  no_rewards_configured: "선택한 액션에 설정된 리워드가 아직 없습니다.",
+  apply: "적용",
+  applying: "적용 중...",
+  untitled: "제목 없음",
+  no_available_actions: "액션 없음",
+  select_dates_error: "시작일과 종료일을 모두 선택해 주세요.",
+  applied_success: "액션 설정이 적용되었습니다.",
+};
+
+export const i18n = { en, ko };
+
+export interface ActionSettingsModalI18n {
+  title: string;
+  selectAction: string;
+  date: string;
+  rewards: string;
+  actionPointReward: string;
+  boostMultiplierSettings: string;
+  creditUsage: string;
+  remainingCredits: string;
+  pointBoost: string;
+  pointBoostLineOne: string;
+  pointBoostLineTwo: string;
+  pointBoostLineThree: string;
+  membership: string;
+  boostUnit: string;
+  creditUnitSingular: string;
+  creditUnitPlural: string;
+  noRewardsConfigured: string;
+  apply: string;
+  applying: string;
+  untitled: string;
+  noAvailableActions: string;
+  selectDatesError: string;
+  appliedSuccess: string;
+}
+
+export function useActionSettingsModalI18n(): ActionSettingsModalI18n {
+  const { t } = useTranslation("actionSettingsModal");
+  return {
+    title: t("title"),
+    selectAction: t("select_action"),
+    date: t("date"),
+    rewards: t("rewards"),
+    actionPointReward: t("action_point_reward"),
+    boostMultiplierSettings: t("boost_multiplier_settings"),
+    creditUsage: t("credit_usage"),
+    remainingCredits: t("remaining_credits"),
+    pointBoost: t("point_boost"),
+    pointBoostLineOne: t("point_boost_line_one"),
+    pointBoostLineTwo: t("point_boost_line_two"),
+    pointBoostLineThree: t("point_boost_line_three"),
+    membership: t("membership"),
+    boostUnit: t("boost_unit"),
+    creditUnitSingular: t("credit_unit_singular"),
+    creditUnitPlural: t("credit_unit_plural"),
+    noRewardsConfigured: t("no_rewards_configured"),
+    apply: t("apply"),
+    applying: t("applying"),
+    untitled: t("untitled"),
+    noAvailableActions: t("no_available_actions"),
+    selectDatesError: t("select_dates_error"),
+    appliedSuccess: t("applied_success"),
+  };
+}
