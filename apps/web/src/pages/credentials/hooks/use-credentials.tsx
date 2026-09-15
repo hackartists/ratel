@@ -25,7 +25,7 @@ export interface UseCredentials {
   runKyc: () => Promise<void>;
   /** `sign_attributes_handler(SignAttributesRequest::Code { code })`. Throws on failure. */
   submitCode: (code: string) => Promise<CredentialResponse>;
-  /** Rust `export_vc`: downloads the VC JSON through the page script. */
+  /** Rust `export_vc`: downloads the VC JSON as `ratel-vc.json`. */
   exportVc: () => void;
 }
 

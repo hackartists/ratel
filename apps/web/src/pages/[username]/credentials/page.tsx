@@ -5,7 +5,6 @@ import { getCredentialsHandler, getDidSummaryHandler, signAttributesHandler } fr
 import { useCredentialsI18n } from "@/pages/credentials/credentials.i18n";
 import { useUserContext } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
-import { useLegacyScript } from "@/lib/legacy-scripts";
 import { AttrsGrid } from "./components/attrs-grid";
 import { HeroCard } from "./components/hero-card";
 import { MethodsSection } from "./components/methods-section";
@@ -13,10 +12,6 @@ import { ProofCard, PrivacyNotice } from "./components/proof-and-privacy";
 import { StatsStrip } from "./components/stats-strip";
 import { buildVcDocument } from "./format";
 import { clearKycHistory, exportVcDownload, takePgReturnId } from "./interop";
-
-// Loaded unmodified — copy-to-clipboard on the DID chip and the
-// `window.ratel.credentials.export_vc` download helper (§3.4.2).
-import credentialsScript from "../../../legacy-scripts/features/social/pages/credentials/views/script.js?url&no-inline";
 
 // app/ratel/src/features/social/pages/credentials/views/mod.rs (`Home`): the
 // `/:username/credentials` route (same page for a user's own wall — the
@@ -30,8 +25,6 @@ export function Component() {
   const toast = useToast();
   const user = useUserContext().user;
   const queryClient = useQueryClient();
-
-  useLegacyScript(credentialsScript);
 
   const summaryKey = ["getDidSummary"] as const;
   const credentialKey = ["getCredentials"] as const;

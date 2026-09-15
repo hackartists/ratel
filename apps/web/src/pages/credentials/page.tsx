@@ -1,7 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import { useCredentialsI18n } from "./credentials.i18n";
-import { useLegacyScript } from "@/lib/legacy-scripts";
-import credentialsScript from "../../legacy-scripts/features/social/pages/credentials/views/script.js?url&no-inline";
 import { AttrsGrid } from "./components/attrs-grid";
 import { HeroCard } from "./components/hero-card";
 import { MethodsSection } from "./components/methods-section";
@@ -12,10 +10,8 @@ import { CredentialsProvider, useCredentialsProvider } from "./hooks/use-credent
 
 // `CredentialsHome` (app/ratel/src/route.rs, `/credentials`) →
 // app/ratel/src/features/social/pages/credentials/views/mod.rs (`Home`).
-// Loads the page's unmodified script.js (DID copy button, `export_vc`).
 export function Component() {
   const tr = useCredentialsI18n();
-  useLegacyScript(credentialsScript);
   const controller = useCredentialsProvider();
   const { summary, exportVc } = controller;
   const navigate = useNavigate();

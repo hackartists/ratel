@@ -1,11 +1,9 @@
 import { useNavigate, useParams } from "react-router-dom";
-import postEditScript from "../../../../legacy-scripts/features/posts/views/post_edit/script.js?url&no-inline";
 import { CrossPostSidebar } from "@/components/cross-posting/cross-post-sidebar";
 import { Editor } from "@/components/editor";
 import { usePostEditI18n } from "./i18n";
 import { useAuth } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
-import { useLegacyScript } from "@/lib/legacy-scripts";
 import { usePopup } from "@/lib/popup";
 import { DiscardDraftConfirm } from "./components/discard-draft-confirm";
 import { PostingAs } from "./components/posting-as";
@@ -20,7 +18,6 @@ export function Component() {
   const nav = useNavigate();
   const popup = usePopup();
   const auth = useAuth();
-  useLegacyScript(postEditScript);
 
   const edit = usePostEdit(postId);
 

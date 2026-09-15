@@ -1,8 +1,9 @@
+import { useEffect, useRef } from "react";
 import { useEssenceSourcesI18n } from "@/pages/essence/i18n";
 import { useEssenceSources, type EssenceSort } from "../hooks/use-essence-sources";
 
 // app/ratel/src/features/essence/pages/sources/controls/component.rs — search
-// input (⌘K / Ctrl+K focus lives in the page's legacy script.js) and sort.
+// input (⌘K / Ctrl+K focuses and selects it) and sort.
 
 function sortValue(s: EssenceSort): string {
   switch (s) {
@@ -30,6 +31,20 @@ export function EssenceControls() {
   const tr = useEssenceSourcesI18n();
   const { searchQuery, setSearchQuery, sortOrder, setSort } = useEssenceSources();
   const kbdLabel = isMac() ? "⌘ K" : "Ctrl K";
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const cmd = isMac() ? e.metaKey : e.ctrlKey;
+      const input = searchRef.current;
+      if (!cmd || e.key.toLowerCase() !== "k" || !input) return;
+      e.preventDefault();
+      input.focus();
+      input.select();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <section className="essence-controls">
@@ -39,6 +54,7 @@ export function EssenceControls() {
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
         <input
+          ref={searchRef}
           type="text"
           placeholder={tr.searchPlaceholder}
           data-essence-search-input="true"

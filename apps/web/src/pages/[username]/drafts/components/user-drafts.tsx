@@ -3,17 +3,14 @@ import { useNavigate } from "react-router-dom";
 import type { PostResponse } from "@ratel/ts-bridges";
 import { InfiniteMore } from "@/components/ui/infinite-more";
 import { dataBool } from "@/lib/dom";
-import { useLegacyScript } from "@/lib/legacy-scripts";
 import { useDismissOnOutsideClick } from "@/lib/use-dismiss-on-outside-click";
 import {
   useUserDraftsI18n,
   type UserDraftsI18n,
 } from "./i18n";
-import draftsScript from "../../../../legacy-scripts/features/social/pages/draft/user/views/script.js?url&no-inline";
 import { formatCommas, timeAgo, toPlainText, wordCount } from "../hooks/draft-text";
 import { partitionId } from "../hooks/use-drafts-list";
 import { useUserDrafts } from "../hooks/use-user-drafts";
-import { isVirtuallyStopped, stopVirtual } from "./virtual-stop";
 
 // app/ratel/src/features/social/pages/draft/user/views/mod.rs (`Home`): the
 // drafts arena — topbar, stats, filter chips, sort menu, bucketed draft cards.
@@ -35,7 +32,6 @@ function bucketOf(updatedAt: number): Bucket {
 const hasSpace = (p: PostResponse) => p.space_pk !== null;
 
 export function UserDrafts() {
-  useLegacyScript(draftsScript);
   const tr = useUserDraftsI18n();
   const navigate = useNavigate();
   const { drafts, deleted, createPost, deleteDraft } = useUserDrafts();
@@ -47,6 +43,16 @@ export function UserDrafts() {
   const sortRef = React.useRef<HTMLDivElement>(null);
   useDismissOnOutsideClick(sortRef, sortOpen, setSortOpen);
   const [menuOpenId, setMenuOpenId] = React.useState<string | null>(null);
+  // A click that lands outside every draft card closes the open card menu.
+  React.useEffect(() => {
+    if (menuOpenId === null) return;
+    const onClick = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.closest(".draft-card")) return;
+      setMenuOpenId(null);
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [menuOpenId]);
 
   const items = drafts.items.filter((post) => !deleted.has(post.pk));
 
@@ -376,10 +382,7 @@ function DraftCard({ post, menuOpenId, setMenuOpenId, deleteDraft, openEditor, t
     <div
       className={isWriting ? "draft-card draft-card--writing" : "draft-card"}
       data-menu-open={dataBool(menuOpen)}
-      onClick={(e) => {
-        if (isVirtuallyStopped(e)) return;
-        openEditor(pk);
-      }}
+      onClick={() => openEditor(pk)}
     >
       <div className="draft-card__dot">
         <span />
@@ -451,7 +454,7 @@ function DraftCard({ post, menuOpenId, setMenuOpenId, deleteDraft, openEditor, t
         <button
           className="draft-card__resume"
           onClick={(e) => {
-            stopVirtual(e);
+            e.stopPropagation();
             openEditor(pk);
           }}
         >
@@ -471,7 +474,7 @@ function DraftCard({ post, menuOpenId, setMenuOpenId, deleteDraft, openEditor, t
           className="draft-card__more"
           aria-label={tr.moreOptions}
           onClick={(e) => {
-            stopVirtual(e);
+            e.stopPropagation();
             setMenuOpenId(menuOpenId === pk ? null : pk);
           }}
         >
@@ -489,11 +492,11 @@ function DraftCard({ post, menuOpenId, setMenuOpenId, deleteDraft, openEditor, t
           </svg>
         </button>
       </div>
-      <div className="draft-menu" onClick={(e) => stopVirtual(e)}>
+      <div className="draft-menu" onClick={(e) => e.stopPropagation()}>
         <button
           className="draft-menu__item"
           onClick={(e) => {
-            stopVirtual(e);
+            e.stopPropagation();
             setMenuOpenId(null);
             openEditor(pk);
           }}
@@ -514,7 +517,7 @@ function DraftCard({ post, menuOpenId, setMenuOpenId, deleteDraft, openEditor, t
         <button
           className="draft-menu__item draft-menu__item--danger"
           onClick={(e) => {
-            stopVirtual(e);
+            e.stopPropagation();
             setMenuOpenId(null);
             void deleteDraft(pk);
           }}
