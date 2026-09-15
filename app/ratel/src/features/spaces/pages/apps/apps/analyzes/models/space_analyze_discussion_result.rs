@@ -22,6 +22,7 @@ use postgres::PostgresEntity;
     feature = "server",
     derive(postgres::PostgresJson)
 )]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TopicRows(pub Vec<TopicRow>);
 impl std::ops::Deref for TopicRows {
     type Target = Vec<TopicRow>;
@@ -36,6 +37,7 @@ impl std::ops::Deref for TopicRows {
     feature = "server",
     derive(postgres::PostgresJson)
 )]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TermScores(pub Vec<TermScore>);
 impl std::ops::Deref for TermScores {
     type Target = Vec<TermScore>;
@@ -50,6 +52,7 @@ impl std::ops::Deref for TermScores {
     feature = "server",
     derive(postgres::PostgresJson)
 )]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct NetworkNodes(pub Vec<NetworkNode>);
 impl std::ops::Deref for NetworkNodes {
     type Target = Vec<NetworkNode>;
@@ -64,6 +67,7 @@ impl std::ops::Deref for NetworkNodes {
     feature = "server",
     derive(postgres::PostgresJson)
 )]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct NetworkEdges(pub Vec<NetworkEdge>);
 impl std::ops::Deref for NetworkEdges {
     type Target = Vec<NetworkEdge>;
@@ -221,6 +225,7 @@ impl SpaceAnalyzeDiscussionResult {
 /// the same array the old `Vec<_>` fields produced.
 // No `JsonSchema`: the jsonb wrapper types it embeds do not implement it.
 #[derive(Serialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SpaceAnalyzeDiscussionResult"))]
 pub struct SpaceAnalyzeDiscussionResultWire {
     /// The space partition, parsed back from `space_pk`.
     pub pk: Partition,
@@ -311,5 +316,47 @@ mod shipped_client_compat_tests {
         json.as_object_mut().unwrap().remove("pk");
         let err = serde_json::from_value::<ShippedKeys>(json).expect_err("must fail");
         assert!(err.to_string().contains("missing field `pk`"), "got: {err}");
+    }
+}
+
+// TypeScript binding (`make gen-ts` only). `SpaceAnalyzeDiscussionResult` serializes through
+// `SpaceAnalyzeDiscussionResultWire`, which is exported under this name; delegate every method so
+// references, declarations and the output file all come from the wire struct.
+#[cfg(feature = "ts-bridge")]
+impl ts_rs::TS for SpaceAnalyzeDiscussionResult {
+    type WithoutGenerics = Self;
+
+    fn ident() -> String {
+        <SpaceAnalyzeDiscussionResultWire as ts_rs::TS>::ident()
+    }
+    fn decl() -> String {
+        <SpaceAnalyzeDiscussionResultWire as ts_rs::TS>::decl()
+    }
+    fn decl_concrete() -> String {
+        <SpaceAnalyzeDiscussionResultWire as ts_rs::TS>::decl_concrete()
+    }
+    fn name() -> String {
+        <SpaceAnalyzeDiscussionResultWire as ts_rs::TS>::name()
+    }
+    fn inline() -> String {
+        <SpaceAnalyzeDiscussionResultWire as ts_rs::TS>::inline()
+    }
+    fn inline_flattened() -> String {
+        <SpaceAnalyzeDiscussionResultWire as ts_rs::TS>::inline_flattened()
+    }
+    fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <SpaceAnalyzeDiscussionResultWire as ts_rs::TS>::visit_dependencies(v)
+    }
+    fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <SpaceAnalyzeDiscussionResultWire as ts_rs::TS>::visit_generics(v)
+    }
+    fn output_path() -> Option<&'static std::path::Path> {
+        <SpaceAnalyzeDiscussionResultWire as ts_rs::TS>::output_path()
     }
 }

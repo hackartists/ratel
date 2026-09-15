@@ -1,0 +1,29 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/spaces/pages/actions/views/main/viewer_page/i18n.rs (`ViewerActionPageTranslate`). Namespace "viewerActionPage".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  title: "Actions",
+  title_tooltip: "You must complete all prerequisite actions before the space starts to become a participant.",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  title: "Actions",
+  title_tooltip: "스페이스 시작 전 사전 항목들을 모두 완수해야 참여자로 전환됩니다.",
+};
+
+export const i18n = { en, ko };
+
+export interface ViewerActionPageI18n {
+  title: string;
+  titleTooltip: string;
+}
+
+export function useViewerActionPageI18n(): ViewerActionPageI18n {
+  const { t } = useTranslation("viewerActionPage");
+  return {
+    title: t("title"),
+    titleTooltip: t("title_tooltip"),
+  };
+}

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum VerifiableAttribute {
     #[default]
     None,
@@ -16,6 +17,7 @@ pub enum VerifiableAttribute {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct VerifiableAttributeWithQuota {
     #[serde(flatten)]
     pub attribute: VerifiableAttribute,
@@ -24,6 +26,7 @@ pub struct VerifiableAttributeWithQuota {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, EnumProp)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum AgeGeneration {
     #[default]
     Teen,

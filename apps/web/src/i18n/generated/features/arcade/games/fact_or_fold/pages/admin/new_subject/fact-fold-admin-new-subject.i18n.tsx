@@ -1,0 +1,181 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/arcade/games/fact_or_fold/pages/admin/new_subject/i18n.rs (`FactFoldAdminNewSubjectTranslate`). Namespace "factFoldAdminNewSubject".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  page_title: "New subject",
+  section_truth_title: "01 · Truth + difficulty",
+  section_truth_sub: "Operator-only — hidden from players until settlement.",
+  verdict_label: "Verdict",
+  verdict_hint: "Pick what the round will reveal as truth at settlement.",
+  difficulty_label: "Difficulty (1–5)",
+  section_text_title: "02 · Subject text",
+  section_text_sub: "What players read in stage 1.",
+  headline_text: "Subject",
+  headline_text_placeholder: "e.g. \"Bank of Korea cuts rate 0.5% on June 4\"",
+  body_excerpt: "Body excerpt (up to 500 chars)",
+  body_excerpt_placeholder: "Quote the article body — players will skim this in 30 seconds.",
+  section_meta_title: "03 · Source + tags",
+  section_meta_sub: "Surfaced alongside the subject.",
+  source_label: "Source label",
+  source_label_placeholder: "e.g. \"Korea Times · 5/13\"",
+  category_tags: "Category tags (comma-separated)",
+  category_tags_placeholder: "e.g. economy, monetary-policy",
+  section_insider_title: "04 · Insider",
+  section_insider_sub: "v1 — single TRUTH-KNOWER per round (D1 fixed).",
+  insider_statement: "Truth statement (delivered privately)",
+  insider_statement_placeholder: "1 sentence the insider sees at round start. Used as their persuasion lever.",
+  insider_hint: "v1 captures only the truth statement — no \"possibly false\" lying-insider field (mafia mode v2 deferred).",
+  section_reveal_title: "05 · Settlement reveal",
+  section_reveal_sub: "Shown to all players when the round ends.",
+  reveal_summary: "Truth summary",
+  reveal_summary_placeholder: "2–3 sentences explaining why the verdict is what it is.",
+  reveal_sources: "Verification sources (0–5)",
+  reveal_source_label_placeholder: "Label",
+  reveal_source_add: "Add source",
+  section_publish_title: "06 · Publish",
+  section_publish_sub: "Save as draft, or schedule a publish time.",
+  schedule_label: "Scheduled publish at (local time)",
+  schedule_hint: "Leave empty to save as Draft.",
+  expires_label: "Active until (local time)",
+  expires_hint: "After this time the subject auto-retires from matchmaking. Leave empty to keep it open indefinitely.",
+  expires_invalid: "Active-until time must be after the scheduled publish time.",
+  fields_incomplete: "Fill required fields above to enable Save / Schedule.",
+  save_draft: "Save draft",
+  schedule_publish: "Schedule publish",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  page_title: "신규 대상",
+  section_truth_title: "01 · 정답 + 난이도",
+  section_truth_sub: "운영자 전용 — 정산 전까지 참가자에게 비공개.",
+  verdict_label: "정답",
+  verdict_hint: "정산 시 진실로 공개될 정답을 선택.",
+  difficulty_label: "난이도 (1–5)",
+  section_text_title: "02 · 대상 텍스트",
+  section_text_sub: "참가자가 단계 1에서 읽는 내용.",
+  headline_text: "대상",
+  headline_text_placeholder: "예: \"한국은행, 6월 4일 0.5%p 인하\"",
+  body_excerpt: "본문 발췌 (최대 500자)",
+  body_excerpt_placeholder: "기사 본문 발췌 — 참가자가 30초 안에 훑어봅니다.",
+  section_meta_title: "03 · 출처 + 태그",
+  section_meta_sub: "대상과 함께 표시됨.",
+  source_label: "출처 라벨",
+  source_label_placeholder: "예: \"한국경제 · 5/13\"",
+  category_tags: "카테고리 태그 (쉼표로 구분)",
+  category_tags_placeholder: "예: 경제, 통화정책",
+  section_insider_title: "04 · 인사이더",
+  section_insider_sub: "v1 — 라운드당 진실 인사이더 1명 (D1 고정).",
+  insider_statement: "진실 진술 (비공개 전달)",
+  insider_statement_placeholder: "라운드 시작 시 인사이더에게 표시되는 한 문장. 설득 근거로 사용.",
+  insider_hint: "v1은 진실 진술만 수집 — \"거짓 가능\" 인사이더 필드 없음 (마피아 모드는 v2).",
+  section_reveal_title: "05 · 정산 공개",
+  section_reveal_sub: "라운드 종료 시 모든 참가자에게 표시.",
+  reveal_summary: "진실 요약",
+  reveal_summary_placeholder: "정답이 그러한 이유를 2–3문장으로 설명.",
+  reveal_sources: "검증 출처 (0–5개)",
+  reveal_source_label_placeholder: "라벨",
+  reveal_source_add: "출처 추가",
+  section_publish_title: "06 · 발행",
+  section_publish_sub: "초안으로 저장하거나 발행 시각 예약.",
+  schedule_label: "발행 예약 시각 (로컬 시간)",
+  schedule_hint: "비워두면 초안으로 저장됩니다.",
+  expires_label: "활성 종료 시각 (로컬 시간)",
+  expires_hint: "이 시각이 지나면 매칭에서 자동으로 제외돼요. 비워두면 만료 없이 계속 활성화됩니다.",
+  expires_invalid: "활성 종료 시각은 발행 예약 시각 이후여야 합니다.",
+  fields_incomplete: "위 필수 항목을 채우면 저장 / 예약이 활성화됩니다.",
+  save_draft: "초안 저장",
+  schedule_publish: "예약 발행",
+};
+
+export const i18n = { en, ko };
+
+export interface FactFoldAdminNewSubjectI18n {
+  pageTitle: string;
+  sectionTruthTitle: string;
+  sectionTruthSub: string;
+  verdictLabel: string;
+  verdictHint: string;
+  difficultyLabel: string;
+  sectionTextTitle: string;
+  sectionTextSub: string;
+  headlineText: string;
+  headlineTextPlaceholder: string;
+  bodyExcerpt: string;
+  bodyExcerptPlaceholder: string;
+  sectionMetaTitle: string;
+  sectionMetaSub: string;
+  sourceLabel: string;
+  sourceLabelPlaceholder: string;
+  categoryTags: string;
+  categoryTagsPlaceholder: string;
+  sectionInsiderTitle: string;
+  sectionInsiderSub: string;
+  insiderStatement: string;
+  insiderStatementPlaceholder: string;
+  insiderHint: string;
+  sectionRevealTitle: string;
+  sectionRevealSub: string;
+  revealSummary: string;
+  revealSummaryPlaceholder: string;
+  revealSources: string;
+  revealSourceLabelPlaceholder: string;
+  revealSourceAdd: string;
+  sectionPublishTitle: string;
+  sectionPublishSub: string;
+  scheduleLabel: string;
+  scheduleHint: string;
+  expiresLabel: string;
+  expiresHint: string;
+  expiresInvalid: string;
+  fieldsIncomplete: string;
+  saveDraft: string;
+  schedulePublish: string;
+}
+
+export function useFactFoldAdminNewSubjectI18n(): FactFoldAdminNewSubjectI18n {
+  const { t } = useTranslation("factFoldAdminNewSubject");
+  return {
+    pageTitle: t("page_title"),
+    sectionTruthTitle: t("section_truth_title"),
+    sectionTruthSub: t("section_truth_sub"),
+    verdictLabel: t("verdict_label"),
+    verdictHint: t("verdict_hint"),
+    difficultyLabel: t("difficulty_label"),
+    sectionTextTitle: t("section_text_title"),
+    sectionTextSub: t("section_text_sub"),
+    headlineText: t("headline_text"),
+    headlineTextPlaceholder: t("headline_text_placeholder"),
+    bodyExcerpt: t("body_excerpt"),
+    bodyExcerptPlaceholder: t("body_excerpt_placeholder"),
+    sectionMetaTitle: t("section_meta_title"),
+    sectionMetaSub: t("section_meta_sub"),
+    sourceLabel: t("source_label"),
+    sourceLabelPlaceholder: t("source_label_placeholder"),
+    categoryTags: t("category_tags"),
+    categoryTagsPlaceholder: t("category_tags_placeholder"),
+    sectionInsiderTitle: t("section_insider_title"),
+    sectionInsiderSub: t("section_insider_sub"),
+    insiderStatement: t("insider_statement"),
+    insiderStatementPlaceholder: t("insider_statement_placeholder"),
+    insiderHint: t("insider_hint"),
+    sectionRevealTitle: t("section_reveal_title"),
+    sectionRevealSub: t("section_reveal_sub"),
+    revealSummary: t("reveal_summary"),
+    revealSummaryPlaceholder: t("reveal_summary_placeholder"),
+    revealSources: t("reveal_sources"),
+    revealSourceLabelPlaceholder: t("reveal_source_label_placeholder"),
+    revealSourceAdd: t("reveal_source_add"),
+    sectionPublishTitle: t("section_publish_title"),
+    sectionPublishSub: t("section_publish_sub"),
+    scheduleLabel: t("schedule_label"),
+    scheduleHint: t("schedule_hint"),
+    expiresLabel: t("expires_label"),
+    expiresHint: t("expires_hint"),
+    expiresInvalid: t("expires_invalid"),
+    fieldsIncomplete: t("fields_incomplete"),
+    saveDraft: t("save_draft"),
+    schedulePublish: t("schedule_publish"),
+  };
+}

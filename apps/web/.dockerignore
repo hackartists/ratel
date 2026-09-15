@@ -1,0 +1,9 @@
+# Only the build output the Dockerfile actually COPYs is sent to
+# buildkit/docker as build context — everything else (source, node_modules,
+# shell-js, configs) is excluded so the image build stays fast and the
+# runtime image never picks up dev-only files.
+*
+!dist
+!dist/**
+!server
+!server/**

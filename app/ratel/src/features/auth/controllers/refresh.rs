@@ -18,6 +18,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RefreshSessionRequest {
     pub refresh_token: String,
     pub device_id: String,
@@ -25,6 +26,7 @@ pub struct RefreshSessionRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RefreshSessionResponse {
     #[serde(flatten)]
     pub user: User,

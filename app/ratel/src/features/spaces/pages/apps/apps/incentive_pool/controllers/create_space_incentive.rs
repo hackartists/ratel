@@ -5,6 +5,7 @@ use crate::features::spaces::pages::apps::types::SpaceAppError;
 use crate::common::SpaceUserRole;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateSpaceIncentiveRequest {
     pub contract_address: String,
     pub deploy_block: i64,

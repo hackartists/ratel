@@ -10,6 +10,7 @@ use crate::features::posts::models::Team;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct FollowStatusResponse {
     pub target_pk: Partition,
     pub target_display_name: String,

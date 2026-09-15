@@ -1,11 +1,13 @@
 use crate::features::spaces::pages::report::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateAnalyzeHtmlRequest {
     pub html_contents: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateAnalyzeResponse {
     pub html_contents: Option<String>,
 }

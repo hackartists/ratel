@@ -1,12 +1,12 @@
 ---
-globs: ["app/ratel/**/*.rs", "app/ratel/tailwind.css", "app/ratel/assets/tailwind-colors.css"]
+globs: ["app/ratel/**/*.rs", "apps/web/src/styles/tokens.css", "apps/web/assets/tailwind-colors.css"]
 ---
 
 # Styling Conventions
 
-## Rule: All custom CSS lives in `app/ratel/assets/main.css`
+## Rule: All custom CSS lives in `apps/web/assets/main.css`
 
-There is exactly **one** stylesheet for component CSS in the app: `app/ratel/assets/main.css`. It is loaded once globally from `app.rs` and is the only place new component styles may go.
+There is exactly **one** stylesheet for component CSS in the app: `apps/web/assets/main.css`. It is loaded once globally from `app.rs` and is the only place new component styles may go.
 
 ### Why
 - Per-component `style.css` files loaded via `document::Stylesheet { href: asset!("./style.css") }` unload during route/component transitions, causing **flashes of unstyled content (FOUC)** on SPA navigation.
@@ -15,7 +15,7 @@ There is exactly **one** stylesheet for component CSS in the app: `app/ratel/ass
 
 ### How to apply
 
-1. **Append new styles to `app/ratel/assets/main.css`** under a section marker showing the source path:
+1. **Append new styles to `apps/web/assets/main.css`** under a section marker showing the source path:
 
    ```css
    /* === src/features/<module>/pages/<page>/<component> === */
@@ -99,8 +99,8 @@ Define CSS variables in `tailwind.css` with the space toggle pattern, never use 
 - Dark/light via `data-theme` attribute on `<html>` — no conditional rendering needed in Rust
 - Custom TailwindCSS v4 variant: `light:` prefix for light-mode-only styles
 - All semantic token classes automatically respond to theme switching
-- Token definitions: `app/ratel/tailwind.css` + `app/ratel/assets/tailwind-colors.css`
-- Component theme: `app/ratel/assets/dx-components-theme.css`
+- Token definitions: `apps/web/src/styles/tokens.css` + `apps/web/assets/tailwind-colors.css`
+- Component theme: `apps/web/assets/dx-components-theme.css`
 
 ### Space Toggle Pattern (for sections inside `main.css`)
 

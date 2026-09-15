@@ -1,0 +1,3 @@
+# Handler manifests written by the route macros during `make gen-ts`;
+# scripts turn them into src/handlers.
+.gen/

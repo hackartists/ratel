@@ -30,6 +30,7 @@ pub enum UserMetadata {
 
 #[derive(Default, Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "AuthUserMetadataUserResponse"))]
 pub struct UserResponse {
     pub pk: String,
     pub email: String,
@@ -66,6 +67,7 @@ impl From<User> for UserResponse {
 
 #[derive(Default, Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UserDetailResponse {
     #[serde(flatten)]
     pub user: UserResponse,

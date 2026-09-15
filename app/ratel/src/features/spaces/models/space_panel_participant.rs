@@ -1,4 +1,3 @@
-use crate::features::auth::models::user::User;
 use crate::features::spaces::*;
 use postgres::PostgresEntity;
 use serde::{Deserialize, Serialize};

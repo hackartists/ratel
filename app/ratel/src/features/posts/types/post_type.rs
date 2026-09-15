@@ -8,6 +8,7 @@ use rmcp::schemars;
 // Postgres migration: stored as a JSONB scalar (serde repr number 1/2/3).
 #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[repr(u8)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "number"))]
 pub enum PostType {
     #[default]
     Post = 1,

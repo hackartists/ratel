@@ -1,6 +1,7 @@
 use crate::common::*;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, DynamoEnum, Eq, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum RewardCondition {
     #[default]
     None,

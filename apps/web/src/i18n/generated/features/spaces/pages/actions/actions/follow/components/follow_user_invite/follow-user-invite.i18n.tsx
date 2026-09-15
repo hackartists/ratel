@@ -1,0 +1,41 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/spaces/pages/actions/actions/follow/components/follow_user_invite/i18n.rs (`FollowUserInviteTranslate`). Namespace "followUserInvite".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  title: "Users to follow",
+  identifier_label: "Email or Username",
+  identifier_placeholder: "user@example.com or username",
+  add: "Add",
+  adding: "Adding...",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  title: "팔로우할 유저",
+  identifier_label: "이메일 또는 유저네임",
+  identifier_placeholder: "user@example.com 또는 username",
+  add: "Add",
+  adding: "Adding...",
+};
+
+export const i18n = { en, ko };
+
+export interface FollowUserInviteI18n {
+  title: string;
+  identifierLabel: string;
+  identifierPlaceholder: string;
+  add: string;
+  adding: string;
+}
+
+export function useFollowUserInviteI18n(): FollowUserInviteI18n {
+  const { t } = useTranslation("followUserInvite");
+  return {
+    title: t("title"),
+    identifierLabel: t("identifier_label"),
+    identifierPlaceholder: t("identifier_placeholder"),
+    add: t("add"),
+    adding: t("adding"),
+  };
+}

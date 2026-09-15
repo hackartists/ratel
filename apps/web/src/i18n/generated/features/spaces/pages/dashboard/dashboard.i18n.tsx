@@ -1,0 +1,113 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/spaces/pages/dashboard/i18n.rs (`DashboardTranslate`). Namespace "dashboard".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  not_available_rewards: "There are no rewards available.",
+  not_available_participants: "There are no participants available.",
+  participation_action: "Participation's Action",
+  total_participants: "Total Participants",
+  incentive_pool: "Incentive Pool",
+  points_available: "Total Points Available",
+  ranking: "Ranking",
+  rank: "Rank",
+  participant: "Participant",
+  point: "Point",
+  score: "Score",
+  total_winners: "Total Winners",
+  rank_rate: "Rank Rate",
+  completed: "Completed",
+  setup_now: "Setup Now",
+  space_views: "Space Views",
+  total_likes: "Total Likes",
+  total_comments: "Total Comments",
+  total_actions: "Total Actions",
+  poll_completion: "Poll Completion",
+  discussion_completion: "Discussion Completion",
+  quiz_completion: "Quiz Completion",
+  follow_completion: "Follow Completion",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  not_available_rewards: "이용가능한 리워드가 없습니다.",
+  not_available_participants: "참여자가 없습니다.",
+  participation_action: "참여 액션",
+  total_participants: "총 참여자",
+  incentive_pool: "인센티브 풀",
+  points_available: "사용 가능 포인트",
+  ranking: "랭킹",
+  rank: "순위",
+  participant: "참여자",
+  point: "포인트",
+  score: "점수",
+  total_winners: "총 수상자",
+  rank_rate: "순위 비율",
+  completed: "완료",
+  setup_now: "지금 설정",
+  space_views: "스페이스 뷰",
+  total_likes: "총 좋아요",
+  total_comments: "총 댓글",
+  total_actions: "총 액션",
+  poll_completion: "투표 완료",
+  discussion_completion: "토론 완료",
+  quiz_completion: "퀴즈 완료",
+  follow_completion: "팔로우 완료",
+};
+
+export const i18n = { en, ko };
+
+export interface DashboardI18n {
+  notAvailableRewards: string;
+  notAvailableParticipants: string;
+  participationAction: string;
+  totalParticipants: string;
+  incentivePool: string;
+  pointsAvailable: string;
+  ranking: string;
+  rank: string;
+  participant: string;
+  point: string;
+  score: string;
+  totalWinners: string;
+  rankRate: string;
+  completed: string;
+  setupNow: string;
+  spaceViews: string;
+  totalLikes: string;
+  totalComments: string;
+  totalActions: string;
+  pollCompletion: string;
+  discussionCompletion: string;
+  quizCompletion: string;
+  followCompletion: string;
+}
+
+export function useDashboardI18n(): DashboardI18n {
+  const { t } = useTranslation("dashboard");
+  return {
+    notAvailableRewards: t("not_available_rewards"),
+    notAvailableParticipants: t("not_available_participants"),
+    participationAction: t("participation_action"),
+    totalParticipants: t("total_participants"),
+    incentivePool: t("incentive_pool"),
+    pointsAvailable: t("points_available"),
+    ranking: t("ranking"),
+    rank: t("rank"),
+    participant: t("participant"),
+    point: t("point"),
+    score: t("score"),
+    totalWinners: t("total_winners"),
+    rankRate: t("rank_rate"),
+    completed: t("completed"),
+    setupNow: t("setup_now"),
+    spaceViews: t("space_views"),
+    totalLikes: t("total_likes"),
+    totalComments: t("total_comments"),
+    totalActions: t("total_actions"),
+    pollCompletion: t("poll_completion"),
+    discussionCompletion: t("discussion_completion"),
+    quizCompletion: t("quiz_completion"),
+    followCompletion: t("follow_completion"),
+  };
+}

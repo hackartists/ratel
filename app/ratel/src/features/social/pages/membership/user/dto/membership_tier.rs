@@ -6,6 +6,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, SerializeDisplay, DeserializeFromStr, Default, DynamoEnum)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SocialMembershipTier", type = "\"FREE\" | \"PRO\" | \"MAX\" | \"VIP\" | `ENTERPRISE#${string}`"))]
 pub enum MembershipTier {
     #[default]
     Free,

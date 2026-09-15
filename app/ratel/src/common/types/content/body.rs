@@ -9,6 +9,7 @@ use super::ContentDocument;
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(tag = "content_type", content = "data", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum ContentBody {
     StructuredContent(ContentDocument),
     HtmlContent(String),

@@ -9,6 +9,7 @@ use std::collections::HashSet;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ListAccountsQueryParams {
     pub device_id: String,
     pub bookmark: Option<String>,
@@ -16,6 +17,7 @@ pub struct ListAccountsQueryParams {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct AccountItem {
     pub user_pk: Partition,
     pub display_name: String,
@@ -28,6 +30,7 @@ pub struct AccountItem {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ListAccountsResponse {
     pub items: Vec<AccountItem>,
     pub bookmark: Option<String>,

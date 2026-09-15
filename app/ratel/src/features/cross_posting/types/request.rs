@@ -2,6 +2,7 @@ use crate::common::*;
 
 /// Body for `POST /api/cross-posting/connections/bluesky`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ConnectBlueskyRequest {
     /// Bluesky handle, e.g. `user.bsky.social`. May also be the user's DID.
     pub handle: String,
@@ -13,6 +14,7 @@ pub struct ConnectBlueskyRequest {
 
 /// Body for `PATCH /api/cross-posting/connections/{platform}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ToggleAutoPostRequest {
     pub auto_post_enabled: bool,
 }
@@ -23,6 +25,7 @@ pub struct ToggleAutoPostRequest {
 /// typically the post-edit page they came from. Omit (or send `null`)
 /// to use the default `/{username}/settings/connections` destination.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct LinkedInOauthInitRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub return_to: Option<String>,

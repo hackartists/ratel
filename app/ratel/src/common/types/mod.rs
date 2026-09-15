@@ -49,4 +49,6 @@ pub mod inbox_kind;
 pub use inbox_kind::*;
 
 mod windowed_rank_key;
+mod file_upload_error;
 pub use windowed_rank_key::*;
+pub use file_upload_error::*;

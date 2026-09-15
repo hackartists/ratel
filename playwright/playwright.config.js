@@ -132,6 +132,24 @@ export default defineConfig({
       },
     },
 
+    // React — the apps/web shell during the Dioxus → React migration
+    // (docs/superpower/2026-09-14-react-frontend-migration.md §8). Opt in with
+    // `REACT_APP=1` against a running `apps/web` build; without it the
+    // project matches nothing, like Tauri above.
+    {
+      name: "React",
+      testMatch: process.env.REACT_APP
+        ? ["tests/react/*.spec.js"]
+        : ["tests/react/__never_match__.spec.js"],
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: {
+          width: 1440,
+          height: 950,
+        },
+      },
+    },
+
     // Docs — recordings used as visual aids in the docs site.
     // Specs under tests/docs/ produce .webm videos consumed by
     // tests/docs/make-media.sh and embedded into docs/static/media/.

@@ -2,17 +2,9 @@
 pub mod config;
 pub mod controllers;
 pub mod dto;
-pub mod hooks;
-pub mod layout;
-#[cfg(not(feature = "server"))]
-pub mod interop;
-#[cfg(not(feature = "server"))]
-pub mod web;
 
 #[cfg(feature = "server")]
 pub mod server;
-mod views;
-pub use views::*;
 
 use crate::common::*;
 

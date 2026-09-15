@@ -1,0 +1,57 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/components/profile_dropdown/mod.rs (`ProfileDropdownTranslate`). Namespace "profileDropdown".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  teams: "Teams",
+  create_team: "Create Team",
+  logout: "Log Out",
+  delete_account: "Delete Account",
+  delete_account_title: "Delete account",
+  delete_account_warning: "Your account and profile will be permanently deleted and cannot be recovered. You won't be able to restore your account information, and signing in again will create a new, empty account.",
+  cancel: "Cancel",
+  confirm_delete: "Delete Account",
+  delete_failed: "Failed to delete your account. Please try again.",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  teams: "팀",
+  create_team: "팀 생성",
+  logout: "로그아웃",
+  delete_account: "회원 탈퇴",
+  delete_account_title: "회원 탈퇴",
+  delete_account_warning: "계정과 프로필이 영구적으로 삭제되며 복구할 수 없습니다. 회원 정보는 다시 복구되지 않으며, 같은 정보로 다시 가입하면 새로운 빈 계정이 생성됩니다.",
+  cancel: "취소",
+  confirm_delete: "탈퇴하기",
+  delete_failed: "회원 탈퇴에 실패했습니다. 다시 시도해 주세요.",
+};
+
+export const i18n = { en, ko };
+
+export interface ProfileDropdownI18n {
+  teams: string;
+  createTeam: string;
+  logout: string;
+  deleteAccount: string;
+  deleteAccountTitle: string;
+  deleteAccountWarning: string;
+  cancel: string;
+  confirmDelete: string;
+  deleteFailed: string;
+}
+
+export function useProfileDropdownI18n(): ProfileDropdownI18n {
+  const { t } = useTranslation("profileDropdown");
+  return {
+    teams: t("teams"),
+    createTeam: t("create_team"),
+    logout: t("logout"),
+    deleteAccount: t("delete_account"),
+    deleteAccountTitle: t("delete_account_title"),
+    deleteAccountWarning: t("delete_account_warning"),
+    cancel: t("cancel"),
+    confirmDelete: t("confirm_delete"),
+    deleteFailed: t("delete_failed"),
+  };
+}

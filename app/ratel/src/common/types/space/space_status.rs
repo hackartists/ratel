@@ -6,6 +6,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Default, DynamoEnum, Eq, PartialEq, Translate)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum SpaceStatus {
     #[default]
     #[translate(en = "Designing", ko = "설계중")]

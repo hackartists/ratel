@@ -66,7 +66,10 @@ ALTER TABLE public.arcade_settings ENABLE TRIGGER ALL;
 
 ALTER TABLE public.arcade_wallet_balances DISABLE TRIGGER ALL;
 
-
+-- Playwright fixture: hi+user1 starts with 1000 chips so the arcade lobby
+-- join flow (tests/web/arcade-home-lobby-join.spec.js, buy-in 100) can run
+-- on a fresh database. Chips are otherwise only minted by RP conversion.
+INSERT INTO public.arcade_wallet_balances (id, user_id, created_at, updated_at, chip_balance) VALUES ('0192f000-0000-7000-8000-00000000c001', '8bc31706-d73c-5928-b6df-60e8d2eca4a0', 1764227900000, 1764227900000, 1000);
 
 ALTER TABLE public.arcade_wallet_balances ENABLE TRIGGER ALL;
 

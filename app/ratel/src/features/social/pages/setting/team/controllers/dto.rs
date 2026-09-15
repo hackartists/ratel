@@ -5,6 +5,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SocialSettingTeamResponse"))]
 pub struct TeamResponse {
     pub id: TeamPartition,
     pub created_at: i64,
@@ -50,6 +51,7 @@ impl From<(crate::features::posts::models::Team, i64)> for TeamResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateTeamRequest {
     pub nickname: Option<String>,
     pub description: Option<String>,
@@ -60,6 +62,7 @@ pub struct UpdateTeamRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct DeleteTeamResponse {
     pub message: String,
     pub deleted_count: usize,

@@ -10,6 +10,7 @@ use rmcp::schemars;
 /// Body for registering (or refreshing) a device's push token.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RegisterDeviceRequest {
     /// Stable per-install device id (the row key — re-register overwrites).
     pub device_id: String,

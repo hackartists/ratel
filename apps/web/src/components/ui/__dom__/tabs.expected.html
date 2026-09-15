@@ -1,0 +1,14 @@
+<!-- Tabs { default_value: "overview", horizontal: true,
+       TabList { TabTrigger { value: "overview", index: 0, "Overview" } TabTrigger { value: "settings", index: 1, "Settings" } }
+       TabContent { value: "overview", index: 0, "Overview body" } TabContent { value: "settings", index: 1, "Settings body" } }
+     app/ratel/src/common/components/tabs: class is `props.class + " tabs"` and
+     `class.unwrap_or_default() + " tabs-content tabs-content-themed"` (leading space kept).
+     Triggers get aria-controls from the content ids once the TabContent effects run; `hidden` only on inactive panels. -->
+<div data-orientation="horizontal" data-disabled="false" class=" tabs" data-variant="default">
+  <div role="tablist" class="tabs-list">
+    <button role="tab" class="tabs-trigger" tabindex="0" type="button" aria-selected="true" aria-controls="dxc-c0" data-state="active" data-disabled="false">Overview</button>
+    <button role="tab" class="tabs-trigger" tabindex="-1" type="button" aria-selected="false" aria-controls="dxc-c1" data-state="inactive" data-disabled="false">Settings</button>
+  </div>
+  <div role="tabpanel" id="dxc-c0" class=" tabs-content tabs-content-themed" tabindex="0" data-state="active">Overview body</div>
+  <div role="tabpanel" id="dxc-c1" class=" tabs-content tabs-content-themed" tabindex="0" data-state="inactive" hidden>Settings body</div>
+</div>

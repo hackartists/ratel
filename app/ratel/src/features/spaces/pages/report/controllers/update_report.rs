@@ -4,6 +4,7 @@ use crate::features::spaces::pages::report::*;
 use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateReportRequest {
     #[serde(default)]
     pub title: Option<String>,
@@ -18,6 +19,7 @@ pub struct UpdateReportRequest {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateReportResponse {
     pub id: String,
     pub updated_at: i64,

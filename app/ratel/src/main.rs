@@ -1,9 +1,6 @@
+// API server. The web UI is the React app in apps/web; client builds of this
+// crate (`tauri-web`) only exist to generate the TypeScript API client.
 fn main() {
-    // Print Rust panic location + message to the WebView console instead of
-    // bubbling up as opaque `RuntimeError: unreachable`. Must run before any
-    // code that might panic during init.
-    #[cfg(any(feature = "web", feature = "mobile", feature = "tauri-web"))]
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-
-    app_shell::common::run(app_shell::App);
+    #[cfg(feature = "server")]
+    app_shell::common::run();
 }

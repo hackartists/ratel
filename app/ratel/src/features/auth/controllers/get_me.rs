@@ -9,6 +9,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct GetMeResponse {
     pub user: Option<User>,
     pub membership: Option<UserMembershipResponse>,

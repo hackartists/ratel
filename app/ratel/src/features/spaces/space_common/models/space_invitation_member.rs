@@ -24,6 +24,7 @@ use super::SpaceEmailVerification;
 )]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[repr(u8)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "number"))]
 pub enum InvitationStatus {
     #[default]
     Pending = 1,

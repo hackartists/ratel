@@ -10,6 +10,7 @@ use rmcp::schemars;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "type")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum SignAttributesRequest {
     PortOne { id: String },
     Code { code: String },

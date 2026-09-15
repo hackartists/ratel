@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 /// per-source color tokens in CSS and the tab grouping in the picker.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum ActionSource {
     Poll,
     Quiz,
@@ -43,6 +44,7 @@ impl ActionSource {
 /// poll/quiz/follow already use via `options`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct DiscussionData {
     #[serde(default)]
     pub topics: Vec<TopicRow>,
@@ -61,6 +63,7 @@ pub struct DiscussionData {
 /// the user picks an item.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct AnalyzeItem {
     pub id: String,
     pub title: String,
@@ -93,6 +96,7 @@ pub struct AnalyzeItem {
 /// One bar / pie slice / table row inside a chart payload.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ChartOption {
     pub label: String,
     pub count: u32,
@@ -102,6 +106,7 @@ pub struct ChartOption {
 /// source-tinted chip under the analyze label in the picker dropdown.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CrossFilterChip {
     pub source: ActionSource,
     pub label: String,
@@ -110,6 +115,7 @@ pub struct CrossFilterChip {
 /// A saved analyze that the report can pull aggregates from.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct Analyze {
     pub id: String,
     pub name: String,
@@ -165,6 +171,7 @@ pub enum OutlineKind {
 /// the LDA/TfIdf/Network trio is reserved for discussion text analysis.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum ChartType {
     /// Bar chart — response distribution for poll/quiz/follow.
     Bar,
@@ -281,6 +288,7 @@ impl ChartType {
 /// and contenteditable affordance.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum ReportBlock {
     H1 {
         id: String,

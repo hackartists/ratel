@@ -1,0 +1,17 @@
+# Build context for deploy/local/Dockerfile.api: only the Rust workspace.
+# (BuildKit picks this file up because it sits next to the Dockerfile with
+# the `.dockerignore` suffix.)
+*
+!Cargo.toml
+!Cargo.lock
+!app/ratel
+!app/ratel-tauri/src-tauri
+!packages
+!roadmap
+
+**/target
+**/node_modules
+**/.DS_Store
+app/ratel/test-build-target
+app/ratel-tauri/src-tauri/gen
+packages/ts-bridges

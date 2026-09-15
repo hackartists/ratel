@@ -13,6 +13,7 @@ use rmcp::schemars;
 /// follow, just a flat list of targets.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct AnalyzeFollowItem {
     pub user_pk: Partition,
     pub display_name: String,

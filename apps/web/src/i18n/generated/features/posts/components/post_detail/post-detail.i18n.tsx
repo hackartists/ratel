@@ -1,0 +1,101 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/posts/components/post_detail/i18n.rs (`PostDetailTranslate`). Namespace "postDetail".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  edit: "Edit",
+  create_space: "Create a Space",
+  delete: "Delete",
+  reply: "reply",
+  replies: "replies",
+  comments_title: "Comments",
+  share_your_thoughts: "Share your thoughts...",
+  comment_button: "Comment",
+  reply_button: "Reply",
+  back: "Back",
+  cancel: "Cancel",
+  write_comment: "Write a Comment",
+  publish: "Publish",
+  publishing: "Publishing...",
+  contents_hint: "Type The Contents.",
+  success_create_comment: "Success to Create Comment",
+  failed_create_comment: "Failed to Create Comment. Please try again.",
+  success_delete_post: "Success to Delete Post",
+  failed_delete_post: "Failed to Delete Post. Please try again.",
+  load_more: "Load more",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  edit: "편집하기",
+  create_space: "스페이스 생성",
+  delete: "삭제하기",
+  reply: "응답",
+  replies: "응답",
+  comments_title: "댓글",
+  share_your_thoughts: "당신의 생각을 공유해주세요...",
+  comment_button: "댓글",
+  reply_button: "답글",
+  back: "뒤로",
+  cancel: "취소",
+  write_comment: "댓글 작성",
+  publish: "게시",
+  publishing: "게시 중...",
+  contents_hint: "여기에 설명을 입력해주세요.",
+  success_create_comment: "댓글을 성공적으로 게시했습니다.",
+  failed_create_comment: "댓글 게시에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+  success_delete_post: "게시물을 성공적으로 삭제했습니다.",
+  failed_delete_post: "게시물 삭제에 실패했습니다. 잠시 후 다시 시도해주세요.",
+  load_more: "더보기",
+};
+
+export const i18n = { en, ko };
+
+export interface PostDetailI18n {
+  edit: string;
+  createSpace: string;
+  delete: string;
+  reply: string;
+  replies: string;
+  commentsTitle: string;
+  shareYourThoughts: string;
+  commentButton: string;
+  replyButton: string;
+  back: string;
+  cancel: string;
+  writeComment: string;
+  publish: string;
+  publishing: string;
+  contentsHint: string;
+  successCreateComment: string;
+  failedCreateComment: string;
+  successDeletePost: string;
+  failedDeletePost: string;
+  loadMore: string;
+}
+
+export function usePostDetailI18n(): PostDetailI18n {
+  const { t } = useTranslation("postDetail");
+  return {
+    edit: t("edit"),
+    createSpace: t("create_space"),
+    delete: t("delete"),
+    reply: t("reply"),
+    replies: t("replies"),
+    commentsTitle: t("comments_title"),
+    shareYourThoughts: t("share_your_thoughts"),
+    commentButton: t("comment_button"),
+    replyButton: t("reply_button"),
+    back: t("back"),
+    cancel: t("cancel"),
+    writeComment: t("write_comment"),
+    publish: t("publish"),
+    publishing: t("publishing"),
+    contentsHint: t("contents_hint"),
+    successCreateComment: t("success_create_comment"),
+    failedCreateComment: t("failed_create_comment"),
+    successDeletePost: t("success_delete_post"),
+    failedDeletePost: t("failed_delete_post"),
+    loadMore: t("load_more"),
+  };
+}

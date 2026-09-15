@@ -7,6 +7,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PostResponse {
     pub pk: FeedPartition,
 
@@ -53,18 +54,6 @@ pub struct PostResponse {
 }
 
 impl PostResponse {
-    pub fn url(&self) -> Route {
-        if let Some(space_pk) = &self.space_pk {
-            Route::SpaceIndexPage {
-                space_id: space_pk.clone().into(),
-            }
-        } else {
-            Route::PostDetail {
-                post_id: self.pk.clone().into(),
-            }
-        }
-    }
-
     pub fn has_space(&self) -> bool {
         self.space_pk.is_some()
     }

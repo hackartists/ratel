@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum DashboardIcon {
     #[default]
     Action,
@@ -29,6 +30,7 @@ impl DashboardIcon {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum DashboardComponentData {
     StatCard(StatCardData),
     StatSummary(StatSummaryData),
@@ -41,6 +43,7 @@ pub enum DashboardComponentData {
 // ─── Stat Summary ─────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct StatSummaryData {
     pub icon: DashboardIcon,
     pub participants: i64,
@@ -52,6 +55,7 @@ pub struct StatSummaryData {
 // ─── Stat Card ────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct StatCardData {
     pub icon: DashboardIcon,
     pub value: String,
@@ -69,6 +73,7 @@ pub struct StatCardData {
 // ─── Progress List ──────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct ProgressListData {
     pub icon: DashboardIcon,
     pub poll_count: i64,
@@ -86,6 +91,7 @@ fn default_color() -> String {
 // ─── Tab Chart ──────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TabChartData {
     pub icon: DashboardIcon,
     pub participants: i64,
@@ -93,12 +99,14 @@ pub struct TabChartData {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TabChartTab {
     pub label: String,
     pub categories: Vec<TabChartCategory>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TabChartCategory {
     pub name: String,
     pub value: f64,
@@ -111,6 +119,7 @@ pub struct TabChartCategory {
 // ─── Info Card ────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct InfoCardData {
     pub icon: DashboardIcon,
     pub total_points: i64,
@@ -118,6 +127,7 @@ pub struct InfoCardData {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct InfoCardItem {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -128,6 +138,7 @@ pub struct InfoCardItem {
 // ─── Ranking Table ──────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RankingTableData {
     pub entries: Vec<RankingEntry>,
     #[serde(default = "default_page_size")]
@@ -139,6 +150,7 @@ fn default_page_size() -> usize {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RankingEntry {
     pub rank: u32,
     pub name: String,

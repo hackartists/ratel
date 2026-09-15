@@ -88,6 +88,7 @@ impl From<GetSpaceResponse> for Space {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SpacesSpaceFile"))]
 pub struct File {
     #[serde(default)]
     pub id: String,
@@ -98,6 +99,7 @@ pub struct File {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SpacesSpaceFileExtension"))]
 pub enum FileExtension {
     #[default]
     #[serde(alias = "jpg", alias = "jpeg", alias = "JPEG")]

@@ -4,6 +4,7 @@ use crate::common::models::space::SpaceParticipantColumn;
 use crate::common::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SpaceMemberResponse {
     pub user_id: UserPartition,
     pub display_name: String,

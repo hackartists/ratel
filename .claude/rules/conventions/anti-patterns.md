@@ -379,7 +379,7 @@ pub fn MyPage() -> Element {
     }
 }
 
-// GOOD — append the rules to app/ratel/assets/main.css and let app.rs
+// GOOD — append the rules to apps/web/assets/main.css and let app.rs
 // load it once globally; component RSX has no document::Stylesheet at all.
 #[component]
 pub fn MyComponent() -> Element {
@@ -391,7 +391,7 @@ pub fn MyComponent() -> Element {
 ```
 
 ```css
-/* app/ratel/assets/main.css */
+/* apps/web/assets/main.css */
 /* === src/features/<module>/pages/<page>/<component> === */
 .my-component {
   --comp-bg: var(--dark, #0c0c1a) var(--light, #ffffff);
@@ -404,7 +404,7 @@ Why this is an anti-pattern:
 - The single global `main.css` loaded from `app.rs` stays in `<head>` for the entire session — no remount, no re-fetch, no FOUC.
 - External stylesheets (Google Fonts, Tiptap themes, etc.) follow the same rule: declare them **once in `app.rs`**, not per-page.
 - Allowed exceptions: `app.rs` itself (loads `main.css`, `dx-components-theme.css`, `tailwind.css`, Google Fonts, favicon), and `seo_meta/mod.rs` (`rel: "canonical"`).
-- See `conventions/styling.md` § "All custom CSS lives in `app/ratel/assets/main.css`" for full rules.
+- See `conventions/styling.md` § "All custom CSS lives in `apps/web/assets/main.css`" for full rules.
 
 ### Missing `defer` on Script
 

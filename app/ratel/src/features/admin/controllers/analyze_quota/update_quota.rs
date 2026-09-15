@@ -8,6 +8,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UpdateAnalyzeQuotaRequest {
     /// New limit for non-Enterprise members, applied space-wide.
     /// Must be `>= 0`. Setting to `0` effectively blocks every

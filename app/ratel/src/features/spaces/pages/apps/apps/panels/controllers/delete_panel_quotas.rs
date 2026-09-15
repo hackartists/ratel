@@ -2,11 +2,13 @@ use crate::features::spaces::pages::apps::apps::panels::*;
 use crate::features::spaces::pages::apps::types::SpaceAppError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct DeletePanelKey {
     pub panel_id: SpacePanelAttributeEntityType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct DeletePanelQuotaRequest {
     pub keys: Vec<DeletePanelKey>,
 }

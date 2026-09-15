@@ -89,8 +89,8 @@ Input {
 ## Design Tokens
 
 - **IMPORTANT**: Never hardcode hex colors — always use semantic token classes
-- Token definitions: `app/ratel/tailwind.css` + `app/ratel/assets/tailwind-colors.css`
-- Component theme: `app/ratel/assets/dx-components-theme.css`
+- Token definitions: `apps/web/src/styles/tokens.css` + `apps/web/assets/tailwind-colors.css`
+- Component theme: `apps/web/assets/dx-components-theme.css`
 
 ### Semantic Color Classes
 

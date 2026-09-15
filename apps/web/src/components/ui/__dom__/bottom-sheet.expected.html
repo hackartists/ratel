@@ -1,0 +1,15 @@
+<!-- BottomSheet { open: true, on_close, class: "gap-3", BottomSheetHeader { title: "Settings", show_close: true, on_close } }
+     app/ratel/src/common/components/bottom_sheet/mod.rs: backdrop and panel are siblings; Row renders
+     "flex flex-row {main} {cross} {class}"; lucide_dioxus::X has class, size 24, fill none, stroke currentColor. -->
+<div class="bottom-sheet-backdrop"></div>
+<div class="bottom-sheet-panel gap-3">
+  <div class="flex flex-row justify-between items-center w-full">
+    <span class="text-base font-semibold text-foreground">Settings</span>
+    <button class="p-1 rounded-md cursor-pointer hover:bg-card-bg transition-colors">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-foreground-muted" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 6 6 18"></path>
+        <path d="m6 6 12 12"></path>
+      </svg>
+    </button>
+  </div>
+</div>

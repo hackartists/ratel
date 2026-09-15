@@ -7,6 +7,7 @@ use std::collections::HashSet;
 #[cfg(feature = "server")]
 use ethers::types::Address;
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RefreshSpaceIncentiveTokensResponse {
     pub updated: i64,
     pub last_block: i64,

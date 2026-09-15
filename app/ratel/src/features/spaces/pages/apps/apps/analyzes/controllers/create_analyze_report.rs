@@ -9,6 +9,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateAnalyzeReportRequest {
     pub name: String,
     pub filters: Vec<AnalyzeReportFilter>,
@@ -16,6 +17,7 @@ pub struct CreateAnalyzeReportRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateAnalyzeReportResponse {
     pub report_id: String,
 }

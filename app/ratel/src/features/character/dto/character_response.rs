@@ -10,6 +10,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CharacterResponse {
     pub total_xp: i64,
     pub level: i32,
@@ -27,6 +28,7 @@ pub struct CharacterResponse {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CharacterSkillResponse {
     pub skill_id: SkillId,
     pub level: i32,
@@ -42,6 +44,7 @@ pub struct CharacterSkillResponse {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PublicCharacterResponse {
     /// Only level is exposed publicly (per spec Q5).
     pub level: i32,

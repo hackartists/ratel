@@ -4,6 +4,7 @@ use crate::features::spaces::pages::actions::actions::poll::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case", tag = "answer_type")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum PollResultSummary {
     SingleChoice {
         total_count: i64,
@@ -40,6 +41,7 @@ pub enum PollResultSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct PollResultResponse {
     pub created_at: i64,
     pub summaries: Vec<PollResultSummary>,

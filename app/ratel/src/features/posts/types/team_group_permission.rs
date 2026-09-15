@@ -6,6 +6,7 @@ use rmcp::schemars;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema_repr))]
 #[repr(u8)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "number"))]
 pub enum TeamGroupPermission {
     #[default]
     PostRead = 0,

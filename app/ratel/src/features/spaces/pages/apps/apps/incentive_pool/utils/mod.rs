@@ -1,5 +1,4 @@
 pub(crate) mod format;
-pub(crate) mod service;
 
 #[cfg(feature = "server")]
 mod evm_token;

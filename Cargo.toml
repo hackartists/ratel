@@ -3,10 +3,10 @@ members = [
   "app/ratel",
   "app/ratel-tauri/src-tauri",
   "packages/*",
-  "design-system-preview",
 ]
 resolver = "2"
-exclude = ["benchmark/*", "deps", "packages/template"]
+# packages/ts-bridges is the React app's TypeScript API package, not a crate.
+exclude = ["benchmark/*", "deps", "packages/template", "packages/ts-bridges"]
 
 [workspace.package]
 authors = ["Biyard"]

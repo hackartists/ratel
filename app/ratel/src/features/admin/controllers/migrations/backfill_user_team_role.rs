@@ -9,6 +9,7 @@ use crate::features::posts::types::TeamGroupPermissions;
 use crate::features::social::pages::member::dto::TeamRole;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct BackfillUserTeamRoleResponse {
     pub scanned: usize,
     pub updated: usize,

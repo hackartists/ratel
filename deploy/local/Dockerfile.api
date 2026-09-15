@@ -1,0 +1,91 @@
+# syntax=docker/dockerfile:1.7
+#
+# Local-development image of the Ratel API server (app/ratel, API only),
+# built and run by `make local` (docker-compose profile `local`, see
+# docs/local-docker.md). Needs nothing on the host but Docker.
+#
+# Not the production image: CI builds that from app/ratel/Dockerfile
+# (`make build` → target/server-image). This one compiles inside Linux so it
+# also works on macOS hosts, and bakes the local compose endpoints in.
+#
+# Build context is the repository root, trimmed to the Rust workspace by
+# deploy/local/Dockerfile.api.dockerignore.
+
+FROM rust:1-bookworm AS build
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends cmake pkg-config libssl-dev clang \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+# Compile-time configuration read by app/ratel through env!/option_env!
+# (the list lives in app/ratel/build.rs). Host names are the compose service
+# names on `ratel-network`.
+ENV ENV=local \
+    DYNAMO_TABLE_PREFIX=ratel-local \
+    DYNAMODB_ENDPOINT=http://localstack:4566 \
+    AWS_ACCESS_KEY_ID=test \
+    AWS_SECRET_ACCESS_KEY=test \
+    AWS_REGION=ap-northeast-2 \
+    ACCOUNT_ID=test \
+    QDRANT_URL=http://qdrant:6334 \
+    QDRANT_PREFIX=ratel-local \
+    RUST_LOG=info
+
+# Optional third-party keys (Firebase, PortOne), passed by docker-compose from
+# the host env. Build args are visible to RUN only (not kept in the runtime
+# image); empty ones are unset before cargo so app/ratel's option_env!
+# fallbacks behave as if the key were not provided.
+ARG FIREBASE_API_KEY=
+ARG FIREBASE_AUTH_DOMAIN=
+ARG FIREBASE_PROJECT_ID=
+ARG FIREBASE_STORAGE_BUCKET=
+ARG FIREBASE_MESSAGING_SENDER_ID=
+ARG FIREBASE_APP_ID=
+ARG FIREBASE_MEASUREMENT_ID=
+ARG PORTONE_STORE_ID=
+ARG PORTONE_INICIS_CHANNEL_KEY=
+ARG PORTONE_KPN_CHANNEL_KEY=
+ARG PORTONE_API_SECRET=
+
+# `server,bypass,local-dev` = the PR-preview feature set: verification code
+# 000000 is accepted, and /designs + /roadmap are served. Built from the
+# workspace root, so app/ratel/.cargo's size-optimised LTO release profile
+# (CI only) does not apply and rebuilds stay incremental.
+ARG FEATURES=server,bypass,local-dev
+ARG CARGO_PROFILE=release
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/build/target \
+    for key in FIREBASE_API_KEY FIREBASE_AUTH_DOMAIN FIREBASE_PROJECT_ID FIREBASE_STORAGE_BUCKET FIREBASE_MESSAGING_SENDER_ID FIREBASE_APP_ID FIREBASE_MEASUREMENT_ID PORTONE_STORE_ID PORTONE_INICIS_CHANNEL_KEY PORTONE_KPN_CHANNEL_KEY PORTONE_API_SECRET; do \
+        eval "[ -n \"\${$key}\" ]" || unset "$key"; \
+    done \
+    && cargo build --profile "${CARGO_PROFILE}" -p app-shell --bin app-shell \
+        --no-default-features --features "${FEATURES}" \
+    && out_dir="$([ "${CARGO_PROFILE}" = "dev" ] && echo debug || echo "${CARGO_PROFILE}")" \
+    && mkdir -p /out \
+    && cp "target/${out_dir}/app-shell" /out/app-shell
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=build /out/app-shell /app/app-shell
+
+# The local-dev feature mounts /designs and /roadmap from paths resolved
+# against the compile-time manifest dir (/build/app/ratel).
+COPY --from=build /build/app/ratel/assets/design /build/app/ratel/assets/design
+COPY --from=build /build/roadmap /build/roadmap
+
+ENV IP=0.0.0.0 \
+    PORT=8080
+
+EXPOSE 8080
+
+CMD ["/app/app-shell"]

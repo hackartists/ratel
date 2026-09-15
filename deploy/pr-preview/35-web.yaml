@@ -1,0 +1,81 @@
+# web — serves the React static build for the PR preview.
+# Image: built by pr-workflow's build-web-image job (pnpm -C apps/web build
+# with VITE_BYPASS=true — this preview's app-shell runs with the bypass
+# feature) and packaged with apps/web/Dockerfile, pushed to the in-cluster
+# registry as ratel-web:pr-<num>. The :pr-<num> tag is reused on every push
+# to the PR, so imagePullPolicy is Always (mirrors deploy/pr-preview/
+# 30-app-shell.yaml) — a rerun must pick up the freshly pushed image.
+#
+# Ingress (deploy/pr-preview/40-ingress.yaml) sends every path EXCEPT the API
+# prefixes (/api, /v3, /mcp, /hooks, /launchpad/health, /launchpad/points,
+# /admin/proxy, /designs, /roadmap — the last two only exist on this preview's
+# app-shell, which is built with the local-dev feature) here.
+#
+# API_ORIGIN points at the in-namespace app-shell Service so the small Node
+# server (apps/web/server/serve.mjs) can fetch space/post metadata for
+# link-preview meta injection. PROXY_API is intentionally NOT set — this
+# preview's ingress already splits API paths to app-shell directly.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: ratel-pr-${PR_NUM}
+  labels:
+    app: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      nodeSelector:
+        biyard.io/node-class: main
+      containers:
+        - name: web
+          image: registry.infra.svc.cluster.local:5000/ratel-web:pr-${PR_NUM}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: PORT
+              value: "3000"
+            - name: API_ORIGIN
+              value: http://app-shell:8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: ratel-pr-${PR_NUM}
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

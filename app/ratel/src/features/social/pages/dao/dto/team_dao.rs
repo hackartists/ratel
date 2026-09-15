@@ -6,6 +6,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TeamDaoTeamResponse {
     pub team_pk: TeamPartition,
     pub username: String,
@@ -15,6 +16,7 @@ pub struct TeamDaoTeamResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TeamDao {
     pub team: TeamDaoTeamResponse,
     pub permissions: i64,

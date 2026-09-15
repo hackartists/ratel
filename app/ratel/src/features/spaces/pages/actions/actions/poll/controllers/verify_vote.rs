@@ -2,6 +2,7 @@ use crate::common::models::space::SpaceUser;
 use crate::features::spaces::pages::actions::actions::poll::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct VerifyVoteResponse {
     pub voter_tag: String,
     pub ciphertext_hash: String,

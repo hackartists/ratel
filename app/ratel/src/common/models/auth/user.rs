@@ -136,6 +136,7 @@ impl User {
 /// cannot drift.
 #[derive(serde::Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "User"))]
 pub struct UserWire {
     /// `Partition::User(id)` — renders as `USER#{id}`.
     pub pk: Partition,
@@ -160,6 +161,50 @@ pub struct UserWire {
     pub points: i64,
     pub interstitial_seen: bool,
     pub deleted_at: Option<i64>,
+}
+
+// TypeScript binding (`make gen-ts` only). `User` serializes through
+// `UserWire`, so its TS shape is the wire struct (exported as `User`). A
+// manual impl instead of `#[ts(as = "UserWire")]` because the auth responses
+// embed the user with `#[serde(flatten)]`, which ts-rs rejects together with
+// `as`; delegating keeps flattening working.
+#[cfg(feature = "ts-bridge")]
+impl ts_rs::TS for User {
+    type WithoutGenerics = Self;
+
+    fn ident() -> String {
+        <UserWire as ts_rs::TS>::ident()
+    }
+    fn decl() -> String {
+        <UserWire as ts_rs::TS>::decl()
+    }
+    fn decl_concrete() -> String {
+        <UserWire as ts_rs::TS>::decl_concrete()
+    }
+    fn name() -> String {
+        <UserWire as ts_rs::TS>::name()
+    }
+    fn inline() -> String {
+        <UserWire as ts_rs::TS>::inline()
+    }
+    fn inline_flattened() -> String {
+        <UserWire as ts_rs::TS>::inline_flattened()
+    }
+    fn visit_dependencies(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <UserWire as ts_rs::TS>::visit_dependencies(v)
+    }
+    fn visit_generics(v: &mut impl ts_rs::TypeVisitor)
+    where
+        Self: 'static,
+    {
+        <UserWire as ts_rs::TS>::visit_generics(v)
+    }
+    fn output_path() -> Option<&'static std::path::Path> {
+        <UserWire as ts_rs::TS>::output_path()
+    }
 }
 
 impl From<User> for UserWire {

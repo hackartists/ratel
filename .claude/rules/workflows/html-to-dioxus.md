@@ -22,7 +22,7 @@ Workflow for converting existing HTML/CSS/JS into Dioxus RSX components. Use whe
 
 - Identify the page-level component and potential sub-components
 - Extract a sub-component when a section is self-contained (panel, modal, card) and > ~50 lines of RSX
-- Map HTML sections to the file structure (no per-component `style.css` — all CSS goes in central `app/ratel/assets/main.css`):
+- Map HTML sections to the file structure (no per-component `style.css` — all CSS goes in central `apps/web/assets/main.css`):
 
 ```
 app/ratel/src/features/<module>/pages/<page>/
@@ -36,15 +36,15 @@ app/ratel/src/features/<module>/pages/<page>/
 │   └── component.rs
 ```
 
-- **References**: conventions/html-first-components.md, conventions/feature-module-structure.md, conventions/styling.md (§ "All custom CSS lives in `app/ratel/assets/main.css`")
+- **References**: conventions/html-first-components.md, conventions/feature-module-structure.md, conventions/styling.md (§ "All custom CSS lives in `apps/web/assets/main.css`")
 
 ## Step 3: Separate HTML, CSS, JS
 
-Split the HTML file into three concerns. CSS goes into the central `app/ratel/assets/main.css`; JS optionally goes alongside the component:
+Split the HTML file into three concerns. CSS goes into the central `apps/web/assets/main.css`; JS optionally goes alongside the component:
 
-### CSS (append to `app/ratel/assets/main.css`)
+### CSS (append to `apps/web/assets/main.css`)
 - Extract all styles from `<style>` blocks and inline styles
-- Append to `app/ratel/assets/main.css` under a section marker showing the source path:
+- Append to `apps/web/assets/main.css` under a section marker showing the source path:
   ```css
   /* === src/features/<module>/pages/<page>/<component> === */
   .my-component { ... }
@@ -128,7 +128,7 @@ dx translate -f <path>/page.html
 
 ## Step 7: Load Assets in Component
 
-CSS is loaded globally from `app.rs` via `app/ratel/assets/main.css` — **no `document::Stylesheet` in components**. Only optional per-component scripts are loaded here:
+CSS is loaded globally from `app.rs` via `apps/web/assets/main.css` — **no `document::Stylesheet` in components**. Only optional per-component scripts are loaded here:
 
 ```rust
 rsx! {
@@ -186,7 +186,7 @@ cd app/ratel && DYNAMO_TABLE_PREFIX=ratel-dev RUSTFLAGS='-D warnings' cargo chec
 ## Checklist
 
 - [ ] Original HTML preserved as `page.html` reference
-- [ ] CSS appended to `app/ratel/assets/main.css` under `/* === <source path> === */` marker, with space toggle for dark/light
+- [ ] CSS appended to `apps/web/assets/main.css` under `/* === <source path> === */` marker, with space toggle for dark/light
 - [ ] No per-component `style.css` files exist under `src/`
 - [ ] No `document::Stylesheet { href: asset!("./style.css") }` in any component
 - [ ] JS (if any) extracted to `script.js` with MutationObserver pattern

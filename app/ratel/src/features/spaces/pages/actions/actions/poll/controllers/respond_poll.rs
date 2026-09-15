@@ -7,6 +7,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RespondPollRequest {
     pub answers: Vec<Answer>,
     /// When set, the server uses this client-side ABE ciphertext for the
@@ -21,6 +22,7 @@ pub struct RespondPollRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct RespondPollResponse {}
 
 #[cfg(feature = "server")]

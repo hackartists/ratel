@@ -32,6 +32,7 @@ pub const ENTERPRISE_MAX_CREDITS_PER_SPACE: i64 = 1_000;
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEnum))]
 #[cfg_attr(feature = "server", postgres(text))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", type = "\"FREE\" | \"PRO\" | \"MAX\" | \"VIP\" | `ENTERPRISE#${string}`"))]
 pub enum MembershipTier {
     #[default]
     Free,
@@ -326,6 +327,7 @@ pub async fn ensure_user_membership_monthly_refill(
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct MembershipResponse {
     pub id: MembershipPartition,
     pub tier: MembershipTier,
@@ -341,6 +343,7 @@ pub struct MembershipResponse {
 
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UserMembershipResponse {
     pub tier: MembershipPartition,
     pub expired_at: i64,
@@ -551,6 +554,7 @@ pub async fn ensure_team_membership_monthly_refill(
 
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct TeamMembershipResponse {
     pub tier: MembershipPartition,
     pub expired_at: i64,

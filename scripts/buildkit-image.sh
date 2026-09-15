@@ -4,14 +4,23 @@ set -euo pipefail
 # Build a Dockerfile with the in-cluster buildkitd and push the image to the
 # in-cluster registry — the runner-pod replacement for the docker-CLI
 # `make docker` path (that target remains for the local/ECR route). Adapted
-# from asset's scripts/buildkit-image.sh; ratel difference: the app image's
-# build CONTEXT is not the repo root but the dx build output directory
-# (target/dx/app-shell/release/web), so the context is parameterized.
+# from asset's scripts/buildkit-image.sh; ratel difference: the image's
+# build CONTEXT is not the repo root but a prebuilt output directory produced
+# by an earlier step (the app-shell binary directory for the API server, or
+# the React `dist`/`server` output for the web image), so the context is
+# parameterized.
 #
-# Usage (PR preview image):
+# Usage (PR preview app-shell image):
 #   NAME=ratel-app-shell \
-#   CONTEXT=target/dx/app-shell/release/web \
+#   CONTEXT=target/server-image \
 #   DOCKERFILE=app/ratel/Dockerfile \
+#   IMAGE_TAG=pr-<num> \
+#     bash scripts/buildkit-image.sh
+#
+# Usage (PR preview web image):
+#   NAME=ratel-web \
+#   CONTEXT=apps/web \
+#   DOCKERFILE=apps/web/Dockerfile \
 #   IMAGE_TAG=pr-<num> \
 #     bash scripts/buildkit-image.sh
 #
@@ -20,8 +29,9 @@ set -euo pipefail
 #   DOCKERFILE     Dockerfile path relative to the repo root (required)
 #   IMAGE_TAG      image tag (required — PR previews use pr-<num>)
 #   CONTEXT        build context directory (default `.` — repo root). The
-#                  ratel app image packages the prebuilt dx output, so the
-#                  build-image job passes target/dx/app-shell/release/web.
+#                  ratel images package a prebuilt output, so callers pass
+#                  target/server-image (app-shell) or apps/web (web) — see
+#                  the usage examples above.
 #   BUILDKIT_HOST  buildkitd address — preset in the runner pods
 #                  (tcp://buildkitd.infra.svc.cluster.local:1234)
 #   PUSH_REGISTRY  push target (default registry.infra.svc.cluster.local:5000
@@ -33,7 +43,7 @@ set -euo pipefail
 #                  --opt build-arg (the icp image pins its two source
 #                  branches this way)
 #   PLATFORM       default linux/arm64 (both cluster nodes are arm64; the
-#                  runner's native cargo/dx build already produced arm64
+#                  runner's native cargo build already produced arm64
 #                  binaries, so no cross-compile happens here — this is just
 #                  the image manifest platform).
 
@@ -46,7 +56,7 @@ PLATFORM="${PLATFORM:-linux/arm64}"
 : "${BUILDKIT_HOST:?BUILDKIT_HOST is not set — run inside a runner pod or export it}"
 
 test -d "${CONTEXT}" || {
-  echo "::error::build context '${CONTEXT}' does not exist — did the dx build run?"
+  echo "::error::build context '${CONTEXT}' does not exist — did the preceding build step run?"
   exit 1
 }
 test -f "${DOCKERFILE}" || {

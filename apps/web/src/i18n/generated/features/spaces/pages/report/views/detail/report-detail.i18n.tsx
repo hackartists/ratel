@@ -1,0 +1,365 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/spaces/pages/report/views/detail/i18n.rs (`ReportDetailTranslate`). Namespace "reportDetail".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  back_aria: "Back",
+  breadcrumb_root: "Reports",
+  breadcrumb_separator: "/",
+  autosave_just_now: "Auto-saved · just now",
+  autosave_unsaved: "Unsaved changes",
+  autosave_saving: "Saving…",
+  share_btn: "Share",
+  export_btn: "Export",
+  pdf_download_btn: "PDF Download",
+  pdf_download_failed: "Couldn't export the PDF on this device.",
+  publish_btn: "Publish",
+  publish_modal_title: "Publish report",
+  publish_modal_body: "Publishing makes the report's PDF visible to all space members. They will be able to download it from the space settings sidebar.",
+  publish_modal_confirm: "Publish",
+  publish_modal_cancel: "Cancel",
+  publishing_label: "Publishing…",
+  banner_eyebrow: "Document Editor",
+  banner_title: "Build your action report",
+  banner_text: "Draft narrative, then use Insert Data to pull aggregates from any analyze you've built.",
+  title_placeholder: "Enter a title…",
+  subtitle_placeholder: "Subtitle (optional)",
+  body_placeholder: "Tell the story — toolbar handles formatting, Insert Data pulls in aggregates.",
+  insert_data: "Insert data",
+  fmt_block_paragraph: "Paragraph",
+  fmt_block_h1: "Heading 1",
+  fmt_block_h2: "Heading 2",
+  fmt_block_h3: "Heading 3",
+  fmt_image: "Insert image",
+  fmt_youtube: "Embed YouTube",
+  fmt_table: "Insert table",
+  fmt_prompt_image: "Image URL",
+  fmt_prompt_youtube: "YouTube URL",
+  fmt_prompt_table: "Table size (rows x cols)",
+  fmt_prompt_link: "URL",
+  fmt_youtube_invalid: "Could not parse the YouTube URL.",
+  fmt_table_range: "Rows 1-20, columns 1-10.",
+  outline_heading: "Outline",
+  outline_empty: "No headings yet — add an H1/H2/H3 and it'll appear here.",
+  meta_heading: "Meta",
+  meta_author: "Author",
+  meta_created: "Created",
+  meta_edited: "Edited",
+  picker_eyebrow: "/data — pick an aggregate",
+  picker_title: "Pick an analyze item to chart it",
+  picker_close_aria: "Close picker",
+  picker_analyze_label: "Analyze",
+  picker_respondents_unit: "respondents",
+  picker_items_unit: "items",
+  picker_tab_poll: "Poll",
+  picker_tab_quiz: "Quiz",
+  picker_tab_discussion: "Discussion",
+  picker_tab_follow: "Follow",
+  picker_empty: "No items in this analyze for the selected source.",
+  slash_heading_command: "COMMAND",
+  slash_heading_analyze: "ANALYZE",
+  slash_heading_data_source: "DATA SOURCE",
+  slash_heading_items: "ITEMS",
+  slash_pop_hint: "↑↓ Move · ↵ Select · esc Close",
+  slash_pop_empty: "No matches",
+  slash_command_meta: "Insert a chart from analyze data",
+  slash_respondents_fmt: "{{n}} respondents",
+  slash_items_count_fmt: "{{n}} items",
+  outline_swap_eyebrow: "Chart type",
+  outline_swap_close_aria: "Close",
+  outline_swap_hint: "Selecting a type immediately replaces the chart in the body.",
+  chart_type_bar_label: "Bar chart",
+  chart_type_bar_desc: "Response distribution as bars",
+  chart_type_pie_label: "Pie chart",
+  chart_type_pie_desc: "Proportions as a pie",
+  chart_type_table_label: "Table",
+  chart_type_table_desc: "Raw aggregate table",
+  chart_type_lda_label: "LDA Topics",
+  chart_type_lda_desc: "Top keywords per topic",
+  chart_type_tfidf_label: "TF-IDF",
+  chart_type_tfidf_desc: "Word importance ranking",
+  chart_type_network_label: "Network",
+  chart_type_network_desc: "Co-occurrence word network",
+  chart_type_textlist_label: "Open-ended answers",
+  chart_type_textlist_desc: "Answer list",
+  time_just_now: "just now",
+  time_minutes_fmt: "{{n}}m ago",
+  time_hours_fmt: "{{n}}h ago",
+  time_days_fmt: "{{n}}d ago",
+  time_weeks_fmt: "{{n}}w ago",
+  time_months_fmt: "{{n}}mo ago",
+  time_years_fmt: "{{n}}y ago",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  back_aria: "뒤로",
+  breadcrumb_root: "보고서",
+  breadcrumb_separator: "/",
+  autosave_just_now: "자동 저장됨 · 방금",
+  autosave_unsaved: "저장 안됨",
+  autosave_saving: "저장 중…",
+  share_btn: "공유",
+  export_btn: "내보내기",
+  pdf_download_btn: "PDF 다운로드",
+  pdf_download_failed: "이 기기에서 PDF를 내보내지 못했습니다.",
+  publish_btn: "발행",
+  publish_modal_title: "보고서 게시",
+  publish_modal_body: "게시하는 순간 보고서 PDF가 모든 스페이스 멤버에게 공개되며, 사이드바에서 다운로드할 수 있습니다.",
+  publish_modal_confirm: "게시",
+  publish_modal_cancel: "취소",
+  publishing_label: "게시 중…",
+  banner_eyebrow: "문서 편집기",
+  banner_title: "액션 보고서를 작성하세요",
+  banner_text: "본문을 작성한 뒤 Insert Data로 분석에서 만든 집계를 불러와 차트를 삽입하세요.",
+  title_placeholder: "제목을 입력하세요…",
+  subtitle_placeholder: "부제 (선택)",
+  body_placeholder: "본문을 작성하세요 — 툴바로 서식을 적용하고 Insert Data로 데이터를 삽입할 수 있어요.",
+  insert_data: "데이터 삽입",
+  fmt_block_paragraph: "본문",
+  fmt_block_h1: "제목 1",
+  fmt_block_h2: "제목 2",
+  fmt_block_h3: "제목 3",
+  fmt_image: "이미지 삽입",
+  fmt_youtube: "YouTube 삽입",
+  fmt_table: "표 삽입",
+  fmt_prompt_image: "이미지 URL",
+  fmt_prompt_youtube: "YouTube URL",
+  fmt_prompt_table: "표 크기 (행 x 열)",
+  fmt_prompt_link: "URL",
+  fmt_youtube_invalid: "YouTube URL을 인식할 수 없습니다.",
+  fmt_table_range: "행은 1~20, 열은 1~10 범위로 입력해 주세요.",
+  outline_heading: "목차",
+  outline_empty: "아직 헤딩이 없어요 — H1/H2/H3을 추가하면 여기에 나타납니다.",
+  meta_heading: "메타",
+  meta_author: "작성자",
+  meta_created: "만든 날짜",
+  meta_edited: "수정",
+  picker_eyebrow: "/data — 집계 선택",
+  picker_title: "차트로 만들 분석 항목을 골라주세요",
+  picker_close_aria: "피커 닫기",
+  picker_analyze_label: "분석",
+  picker_respondents_unit: "응답자",
+  picker_items_unit: "항목",
+  picker_tab_poll: "Poll",
+  picker_tab_quiz: "Quiz",
+  picker_tab_discussion: "Discussion",
+  picker_tab_follow: "Follow",
+  picker_empty: "이 분석에는 선택한 소스의 항목이 없습니다.",
+  slash_heading_command: "명령",
+  slash_heading_analyze: "분석",
+  slash_heading_data_source: "데이터 소스",
+  slash_heading_items: "항목",
+  slash_pop_hint: "↑↓ 이동 · ↵ 선택 · esc 닫기",
+  slash_pop_empty: "일치하는 항목 없음",
+  slash_command_meta: "analyze 데이터로 차트 삽입",
+  slash_respondents_fmt: "응답자 {{n}}명",
+  slash_items_count_fmt: "{{n}}개",
+  outline_swap_eyebrow: "차트 종류 변경",
+  outline_swap_close_aria: "닫기",
+  outline_swap_hint: "선택 즉시 본문 차트가 교체됩니다",
+  chart_type_bar_label: "막대 차트",
+  chart_type_bar_desc: "응답 분포를 막대 그래프로",
+  chart_type_pie_label: "파이 차트",
+  chart_type_pie_desc: "비율을 원형으로",
+  chart_type_table_label: "표",
+  chart_type_table_desc: "원본 집계 표 형식",
+  chart_type_lda_label: "LDA Topics",
+  chart_type_lda_desc: "토픽별 상위 키워드",
+  chart_type_tfidf_label: "TF-IDF",
+  chart_type_tfidf_desc: "단어 중요도 순위표",
+  chart_type_network_label: "Network",
+  chart_type_network_desc: "공출현 단어 네트워크",
+  chart_type_textlist_label: "주관식 응답",
+  chart_type_textlist_desc: "응답 목록",
+  time_just_now: "방금",
+  time_minutes_fmt: "{{n}}분 전",
+  time_hours_fmt: "{{n}}시간 전",
+  time_days_fmt: "{{n}}일 전",
+  time_weeks_fmt: "{{n}}주 전",
+  time_months_fmt: "{{n}}개월 전",
+  time_years_fmt: "{{n}}년 전",
+};
+
+export const i18n = { en, ko };
+
+export interface ReportDetailI18n {
+  backAria: string;
+  breadcrumbRoot: string;
+  breadcrumbSeparator: string;
+  autosaveJustNow: string;
+  autosaveUnsaved: string;
+  autosaveSaving: string;
+  shareBtn: string;
+  exportBtn: string;
+  pdfDownloadBtn: string;
+  pdfDownloadFailed: string;
+  publishBtn: string;
+  publishModalTitle: string;
+  publishModalBody: string;
+  publishModalConfirm: string;
+  publishModalCancel: string;
+  publishingLabel: string;
+  bannerEyebrow: string;
+  bannerTitle: string;
+  bannerText: string;
+  titlePlaceholder: string;
+  subtitlePlaceholder: string;
+  bodyPlaceholder: string;
+  insertData: string;
+  fmtBlockParagraph: string;
+  fmtBlockH1: string;
+  fmtBlockH2: string;
+  fmtBlockH3: string;
+  fmtImage: string;
+  fmtYoutube: string;
+  fmtTable: string;
+  fmtPromptImage: string;
+  fmtPromptYoutube: string;
+  fmtPromptTable: string;
+  fmtPromptLink: string;
+  fmtYoutubeInvalid: string;
+  fmtTableRange: string;
+  outlineHeading: string;
+  outlineEmpty: string;
+  metaHeading: string;
+  metaAuthor: string;
+  metaCreated: string;
+  metaEdited: string;
+  pickerEyebrow: string;
+  pickerTitle: string;
+  pickerCloseAria: string;
+  pickerAnalyzeLabel: string;
+  pickerRespondentsUnit: string;
+  pickerItemsUnit: string;
+  pickerTabPoll: string;
+  pickerTabQuiz: string;
+  pickerTabDiscussion: string;
+  pickerTabFollow: string;
+  pickerEmpty: string;
+  slashHeadingCommand: string;
+  slashHeadingAnalyze: string;
+  slashHeadingDataSource: string;
+  slashHeadingItems: string;
+  slashPopHint: string;
+  slashPopEmpty: string;
+  slashCommandMeta: string;
+  slashRespondentsFmt: (values: { n: string | number }) => string;
+  slashItemsCountFmt: (values: { n: string | number }) => string;
+  outlineSwapEyebrow: string;
+  outlineSwapCloseAria: string;
+  outlineSwapHint: string;
+  chartTypeBarLabel: string;
+  chartTypeBarDesc: string;
+  chartTypePieLabel: string;
+  chartTypePieDesc: string;
+  chartTypeTableLabel: string;
+  chartTypeTableDesc: string;
+  chartTypeLdaLabel: string;
+  chartTypeLdaDesc: string;
+  chartTypeTfidfLabel: string;
+  chartTypeTfidfDesc: string;
+  chartTypeNetworkLabel: string;
+  chartTypeNetworkDesc: string;
+  chartTypeTextlistLabel: string;
+  chartTypeTextlistDesc: string;
+  timeJustNow: string;
+  timeMinutesFmt: (values: { n: string | number }) => string;
+  timeHoursFmt: (values: { n: string | number }) => string;
+  timeDaysFmt: (values: { n: string | number }) => string;
+  timeWeeksFmt: (values: { n: string | number }) => string;
+  timeMonthsFmt: (values: { n: string | number }) => string;
+  timeYearsFmt: (values: { n: string | number }) => string;
+}
+
+export function useReportDetailI18n(): ReportDetailI18n {
+  const { t } = useTranslation("reportDetail");
+  return {
+    backAria: t("back_aria"),
+    breadcrumbRoot: t("breadcrumb_root"),
+    breadcrumbSeparator: t("breadcrumb_separator"),
+    autosaveJustNow: t("autosave_just_now"),
+    autosaveUnsaved: t("autosave_unsaved"),
+    autosaveSaving: t("autosave_saving"),
+    shareBtn: t("share_btn"),
+    exportBtn: t("export_btn"),
+    pdfDownloadBtn: t("pdf_download_btn"),
+    pdfDownloadFailed: t("pdf_download_failed"),
+    publishBtn: t("publish_btn"),
+    publishModalTitle: t("publish_modal_title"),
+    publishModalBody: t("publish_modal_body"),
+    publishModalConfirm: t("publish_modal_confirm"),
+    publishModalCancel: t("publish_modal_cancel"),
+    publishingLabel: t("publishing_label"),
+    bannerEyebrow: t("banner_eyebrow"),
+    bannerTitle: t("banner_title"),
+    bannerText: t("banner_text"),
+    titlePlaceholder: t("title_placeholder"),
+    subtitlePlaceholder: t("subtitle_placeholder"),
+    bodyPlaceholder: t("body_placeholder"),
+    insertData: t("insert_data"),
+    fmtBlockParagraph: t("fmt_block_paragraph"),
+    fmtBlockH1: t("fmt_block_h1"),
+    fmtBlockH2: t("fmt_block_h2"),
+    fmtBlockH3: t("fmt_block_h3"),
+    fmtImage: t("fmt_image"),
+    fmtYoutube: t("fmt_youtube"),
+    fmtTable: t("fmt_table"),
+    fmtPromptImage: t("fmt_prompt_image"),
+    fmtPromptYoutube: t("fmt_prompt_youtube"),
+    fmtPromptTable: t("fmt_prompt_table"),
+    fmtPromptLink: t("fmt_prompt_link"),
+    fmtYoutubeInvalid: t("fmt_youtube_invalid"),
+    fmtTableRange: t("fmt_table_range"),
+    outlineHeading: t("outline_heading"),
+    outlineEmpty: t("outline_empty"),
+    metaHeading: t("meta_heading"),
+    metaAuthor: t("meta_author"),
+    metaCreated: t("meta_created"),
+    metaEdited: t("meta_edited"),
+    pickerEyebrow: t("picker_eyebrow"),
+    pickerTitle: t("picker_title"),
+    pickerCloseAria: t("picker_close_aria"),
+    pickerAnalyzeLabel: t("picker_analyze_label"),
+    pickerRespondentsUnit: t("picker_respondents_unit"),
+    pickerItemsUnit: t("picker_items_unit"),
+    pickerTabPoll: t("picker_tab_poll"),
+    pickerTabQuiz: t("picker_tab_quiz"),
+    pickerTabDiscussion: t("picker_tab_discussion"),
+    pickerTabFollow: t("picker_tab_follow"),
+    pickerEmpty: t("picker_empty"),
+    slashHeadingCommand: t("slash_heading_command"),
+    slashHeadingAnalyze: t("slash_heading_analyze"),
+    slashHeadingDataSource: t("slash_heading_data_source"),
+    slashHeadingItems: t("slash_heading_items"),
+    slashPopHint: t("slash_pop_hint"),
+    slashPopEmpty: t("slash_pop_empty"),
+    slashCommandMeta: t("slash_command_meta"),
+    slashRespondentsFmt: (values) => t("slash_respondents_fmt", { replace: values }),
+    slashItemsCountFmt: (values) => t("slash_items_count_fmt", { replace: values }),
+    outlineSwapEyebrow: t("outline_swap_eyebrow"),
+    outlineSwapCloseAria: t("outline_swap_close_aria"),
+    outlineSwapHint: t("outline_swap_hint"),
+    chartTypeBarLabel: t("chart_type_bar_label"),
+    chartTypeBarDesc: t("chart_type_bar_desc"),
+    chartTypePieLabel: t("chart_type_pie_label"),
+    chartTypePieDesc: t("chart_type_pie_desc"),
+    chartTypeTableLabel: t("chart_type_table_label"),
+    chartTypeTableDesc: t("chart_type_table_desc"),
+    chartTypeLdaLabel: t("chart_type_lda_label"),
+    chartTypeLdaDesc: t("chart_type_lda_desc"),
+    chartTypeTfidfLabel: t("chart_type_tfidf_label"),
+    chartTypeTfidfDesc: t("chart_type_tfidf_desc"),
+    chartTypeNetworkLabel: t("chart_type_network_label"),
+    chartTypeNetworkDesc: t("chart_type_network_desc"),
+    chartTypeTextlistLabel: t("chart_type_textlist_label"),
+    chartTypeTextlistDesc: t("chart_type_textlist_desc"),
+    timeJustNow: t("time_just_now"),
+    timeMinutesFmt: (values) => t("time_minutes_fmt", { replace: values }),
+    timeHoursFmt: (values) => t("time_hours_fmt", { replace: values }),
+    timeDaysFmt: (values) => t("time_days_fmt", { replace: values }),
+    timeWeeksFmt: (values) => t("time_weeks_fmt", { replace: values }),
+    timeMonthsFmt: (values) => t("time_months_fmt", { replace: values }),
+    timeYearsFmt: (values) => t("time_years_fmt", { replace: values }),
+  };
+}

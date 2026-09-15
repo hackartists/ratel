@@ -3,6 +3,7 @@ use crate::features::social::*;
 use postgres::PostgresEntity;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateTeamRequest {
     pub username: String,
     pub nickname: String,
@@ -11,6 +12,7 @@ pub struct CreateTeamRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct CreateTeamResponse {
     pub team_pk: String,
     /// Epoch-ms of the new team's creation. Returned so the client can

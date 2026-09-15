@@ -7,6 +7,7 @@ use super::list_materials::MaterialResponse;
 const MAX_MATERIALS: i64 = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UploadMaterialRequest {
     pub file_name: String,
     pub file_url: String,

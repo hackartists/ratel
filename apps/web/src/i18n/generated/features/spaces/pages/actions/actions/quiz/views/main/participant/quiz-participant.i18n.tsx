@@ -1,0 +1,77 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Ported from: app/ratel/src/features/spaces/pages/actions/actions/quiz/views/main/participant/i18n.rs (`QuizParticipantTranslate`). Namespace "quizParticipant".
+import { useTranslation } from "react-i18next";
+
+const en = {
+  btn_submit: "Submit",
+  btn_update: "Update",
+  btn_back: "Back",
+  quiz_ended: "This quiz has ended.",
+  quiz_not_started: "This quiz has not started yet.",
+  submit_success: "Response submitted successfully.",
+  submit_error: "Failed to submit response.",
+  retries_label: "Retries",
+  survey_time_label: "Survey Time",
+  remaining_submissions: "Remaining submissions",
+  score_label: "Score",
+  no_questions: "No questions yet.",
+  status_pass: "PASS",
+  status_failed: "FAILED",
+};
+
+const ko: Record<keyof typeof en, string> = {
+  btn_submit: "제출",
+  btn_update: "수정",
+  btn_back: "뒤로",
+  quiz_ended: "이 퀴즈가 종료되었습니다.",
+  quiz_not_started: "이 퀴즈는 아직 시작되지 않았습니다.",
+  submit_success: "응답이 성공적으로 제출되었습니다.",
+  submit_error: "응답 제출에 실패했습니다.",
+  retries_label: "재시도",
+  survey_time_label: "설문 시간",
+  remaining_submissions: "남은 제출 횟수",
+  score_label: "점수",
+  no_questions: "아직 질문이 없습니다.",
+  status_pass: "PASS",
+  status_failed: "FAILED",
+};
+
+export const i18n = { en, ko };
+
+export interface QuizParticipantI18n {
+  btnSubmit: string;
+  btnUpdate: string;
+  btnBack: string;
+  quizEnded: string;
+  quizNotStarted: string;
+  submitSuccess: string;
+  submitError: string;
+  retriesLabel: string;
+  surveyTimeLabel: string;
+  remainingSubmissions: string;
+  scoreLabel: string;
+  noQuestions: string;
+  statusPass: string;
+  statusFailed: string;
+}
+
+export function useQuizParticipantI18n(): QuizParticipantI18n {
+  const { t } = useTranslation("quizParticipant");
+  return {
+    btnSubmit: t("btn_submit"),
+    btnUpdate: t("btn_update"),
+    btnBack: t("btn_back"),
+    quizEnded: t("quiz_ended"),
+    quizNotStarted: t("quiz_not_started"),
+    submitSuccess: t("submit_success"),
+    submitError: t("submit_error"),
+    retriesLabel: t("retries_label"),
+    surveyTimeLabel: t("survey_time_label"),
+    remainingSubmissions: t("remaining_submissions"),
+    scoreLabel: t("score_label"),
+    noQuestions: t("no_questions"),
+    statusPass: t("status_pass"),
+    statusFailed: t("status_failed"),
+  };
+}

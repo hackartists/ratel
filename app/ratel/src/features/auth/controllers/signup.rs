@@ -19,6 +19,7 @@ use validator::Validate;
     feature = "server",
     derive(rmcp::schemars::JsonSchema, Validate)
 )]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SignupRequest {
     #[serde(flatten)]
     pub signup_type: SignupType,
@@ -38,6 +39,7 @@ pub struct SignupRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(untagged)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum SignupType {
     // Backward-compat: password signup used by already-shipped mobile apps
     // (the Android build in App Store review). Declared BEFORE `Email` so an
@@ -73,6 +75,7 @@ pub enum SignupType {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct SignupResponse {
     #[serde(flatten)]
     pub user: User,

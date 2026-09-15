@@ -30,6 +30,7 @@ impl fmt::Display for Attribute {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "age_type", content = "value")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum Age {
     Specific(u8),
     Range {
@@ -53,6 +54,7 @@ impl fmt::Display for Age {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub enum Gender {
     #[default]
     Male,

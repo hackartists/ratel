@@ -20,6 +20,7 @@ pub struct RegisterResponse {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "ServerAdminRoutesListResponse"))]
 pub struct ListResponse {
     pub endpoints: std::collections::HashMap<String, String>,
 }

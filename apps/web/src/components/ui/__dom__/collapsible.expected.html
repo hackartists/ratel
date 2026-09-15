@@ -1,0 +1,18 @@
+<!-- Collapsible { default_open: true, class: "w-full",
+       CollapsibleTrigger { class: "px-2", "Recent activity" }
+       CollapsibleContent { id: "activity-panel", p { "Fixed a bug" } } }
+     Root: merge_attributes([data-open, data-disabled], [caller class, pushed "collapsible"]) → "w-full collapsible".
+     Trigger: merge_attributes([class "collapsible-trigger"], [caller class]) → "collapsible-trigger px-2";
+     `disabled: false` is a boolean attribute and is omitted; aria-controls follows the content id (use_id_or). -->
+<div data-open="true" data-disabled="false" class="w-full collapsible">
+  <button type="button" data-open="true" data-disabled="false" aria-controls="activity-panel" aria-expanded="true" class="collapsible-trigger px-2">
+    Recent activity
+    <svg class="collapsible-expand-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="6 15 12 21 18 15"></polyline>
+      <polyline points="6 9 12 3 18 9"></polyline>
+    </svg>
+  </button>
+  <div id="activity-panel" data-open="true" data-disabled="false" class="collapsible-content">
+    <p>Fixed a bug</p>
+  </div>
+</div>

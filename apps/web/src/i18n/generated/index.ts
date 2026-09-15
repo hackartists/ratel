@@ -1,0 +1,304 @@
+// Translations for the React app. Originally extracted from the retired Dioxus
+// `translate!` blocks (packages/i18n-extract); now the source of truth — edit here.
+// Namespace → bundle, consumed by src/i18n/index.ts.
+import { i18n as m0 } from "./features/spaces/pages/actions/components/action_card/action-card.i18n";
+import { i18n as m1 } from "./features/spaces/pages/actions/components/action_dependency_selector/action-dependency-selector.i18n";
+import { i18n as m2 } from "./features/spaces/pages/actions/components/action_edit_footer/action-edit-footer.i18n";
+import { i18n as m3 } from "./features/spaces/pages/actions/components/action_edit_topbar/action-edit-topbar.i18n";
+import { i18n as m4 } from "./features/spaces/pages/index/action_pages/poll/action-poll.i18n";
+import { i18n as m5 } from "./features/spaces/pages/actions/components/action_settings_modal/action-settings-modal.i18n";
+import { i18n as m6 } from "./features/spaces/pages/actions/components/action_status_control/action-status-control.i18n";
+import { i18n as m7 } from "./features/activity/activity.i18n";
+import { i18n as m8 } from "./features/admin/admin-layout.i18n";
+import { i18n as m9 } from "./features/admin/views/main/admin-rewards.i18n";
+import { i18n as m10 } from "./features/ai_moderator/components/ai-moderator-setting.i18n";
+import { i18n as m11 } from "./features/spaces/pages/apps/views/main/app-main.i18n";
+import { i18n as m12 } from "./features/arcade/arcade-exchange-modal.i18n";
+import { i18n as m13 } from "./features/arcade/arcade-home.i18n";
+import { i18n as m14 } from "./features/arcade/arcade-layout.i18n";
+import { i18n as m15 } from "./features/spaces/pages/actions/components/action_reward_setting/arena-reward.i18n";
+import { i18n as m16 } from "./features/cross_posting/bluesky-connect-modal.i18n";
+import { i18n as m17 } from "./features/character/pages/character_page/character-page.i18n";
+import { i18n as m18 } from "./features/spaces/pages/actions/actions/poll/components/choice-editor.i18n";
+import { i18n as m19 } from "./features/social/pages/credentials/components/code-input-modal.i18n";
+import { i18n as m20 } from "./features/cross_posting/compose-sidebar.i18n";
+import { i18n as m21 } from "./features/cross_posting/connections-page.i18n";
+import { i18n as m22 } from "./features/spaces/pages/actions/components/create_action_modal/create-action-modal.i18n";
+import { i18n as m23 } from "./features/posts/components/create_post_button/create-post-button.i18n";
+import { i18n as m24 } from "./features/spaces/pages/actions/actions/poll/views/main/creator/creator.i18n";
+import { i18n as m25 } from "./features/spaces/pages/actions/views/main/creator_page/creator-action-page.i18n";
+import { i18n as m26 } from "./features/social/pages/credentials/views/credentials.i18n";
+import { i18n as m27 } from "./features/spaces/pages/dashboard/dashboard.i18n";
+import { i18n as m28 } from "./features/spaces/pages/actions/components/delete_action_button/delete-action-button.i18n";
+import { i18n as m29 } from "./features/spaces/pages/actions/components/delete_action_popup/delete-action-popup.i18n";
+import { i18n as m30 } from "./features/spaces/pages/apps/apps/general/views/home/delete-space-popup.i18n";
+import { i18n as m31 } from "./features/spaces/pages/index/action_pages/discussion/discussion-arena.i18n";
+import { i18n as m32 } from "./features/spaces/pages/actions/actions/discussion/views/editor/discussion-editor.i18n";
+import { i18n as m33 } from "./features/timeline/components/draft-timeline.i18n";
+import { i18n as m34 } from "./common/components/editor/editor.i18n";
+import { i18n as m35 } from "./enums.i18n";
+import { i18n as m36 } from "./components/error-page.i18n";
+import { i18n as m37 } from "./features/essence/pages/sources/essence-sources.i18n";
+import { i18n as m38 } from "./features/arcade/games/fact_or_fold/pages/admin/fact-fold-admin-layout.i18n";
+import { i18n as m39 } from "./features/arcade/games/fact_or_fold/pages/admin/new_subject/fact-fold-admin-new-subject.i18n";
+import { i18n as m40 } from "./features/arcade/games/fact_or_fold/pages/admin/reports/fact-fold-admin-reports.i18n";
+import { i18n as m41 } from "./features/arcade/games/fact_or_fold/pages/admin/schedule/fact-fold-admin-schedule.i18n";
+import { i18n as m42 } from "./features/arcade/games/fact_or_fold/pages/admin/settings/fact-fold-admin-settings.i18n";
+import { i18n as m43 } from "./features/arcade/games/fact_or_fold/pages/admin/stats/fact-fold-admin-stats.i18n";
+import { i18n as m44 } from "./features/arcade/games/fact_or_fold/pages/admin/subjects/fact-fold-admin-subjects.i18n";
+import { i18n as m45 } from "./features/arcade/games/fact_or_fold/pages/matching/fact-fold-matching.i18n";
+import { i18n as m46 } from "./features/arcade/games/fact_or_fold/pages/game_room/fact-fold-room.i18n";
+import { i18n as m47 } from "./features/arcade/games/fact_or_fold/fact-or-fold.i18n";
+import { i18n as m48 } from "./features/spaces/pages/actions/actions/follow/views/main/creator/follow-creator.i18n";
+import { i18n as m49 } from "./features/spaces/pages/actions/actions/follow/components/follow_viewer_card/follow-full-card.i18n";
+import { i18n as m50 } from "./features/my_follower/components/follow-list.i18n";
+import { i18n as m51 } from "./features/spaces/pages/actions/actions/follow/components/follow_viewer_card/follow-small-card.i18n";
+import { i18n as m52 } from "./features/my_follower/components/follow-tabs.i18n";
+import { i18n as m53 } from "./features/spaces/pages/actions/actions/follow/components/follow_user_invite/follow-user-invite.i18n";
+import { i18n as m54 } from "./features/spaces/pages/actions/actions/follow/components/follow_user_list/follow-user-list.i18n";
+import { i18n as m55 } from "./features/spaces/pages/actions/actions/follow/views/main/viewer/follow-viewer.i18n";
+import { i18n as m56 } from "./features/spaces/pages/actions/actions/follow/components/follow_viewer_card/follow-viewer-cards.i18n";
+import { i18n as m57 } from "./features/spaces/pages/apps/apps/general/general.i18n";
+import { i18n as m58 } from "./features/social/pages/home/views/home.i18n";
+import { i18n as m59 } from "./views/index/home-arena.i18n";
+import { i18n as m60 } from "./features/spaces/pages/apps/apps/incentive_pool/incentive-pool.i18n";
+import { i18n as m61 } from "./features/social/pages/member/views/invite-member.i18n";
+import { i18n as m62 } from "./features/launchpad_partner/launchpad-partner.i18n";
+import { i18n as m63 } from "./views/legal-close.i18n";
+import { i18n as m64 } from "./features/character/components/level_chip/level-chip.i18n";
+import { i18n as m65 } from "./features/spaces/pages/index/action_dashboard/locked_dependencies_popup/locked-dependencies-popup.i18n";
+import { i18n as m66 } from "./features/auth/components/login_modal/login-modal.i18n";
+import { i18n as m67 } from "./features/ai_moderator/components/material-list.i18n";
+import { i18n as m68 } from "./features/spaces/pages/actions/actions/meet/components/meet_page/meet-action.i18n";
+import { i18n as m69 } from "./features/social/pages/member/views/member-row.i18n";
+import { i18n as m70 } from "./features/social/pages/membership/user/views/membership-page.i18n";
+import { i18n as m71 } from "./features/membership/components/membership_plan/membership-plan.i18n";
+import { i18n as m72 } from "./features/membership/components/membership_purchase_modal/membership-purchase.i18n";
+import { i18n as m73 } from "./features/membership/components/membership_receipt_modal/membership-receipt.i18n";
+import { i18n as m74 } from "./features/spaces/space_common/components/space_nav/mobile-more-panel.i18n";
+import { i18n as m75 } from "./features/me/pages/my_ai/my-ai.i18n";
+import { i18n as m76 } from "./features/my_follower/views/home/my-follower.i18n";
+import { i18n as m77 } from "./features/my_follower/components/my-follower-header.i18n";
+import { i18n as m78 } from "./features/notifications/notifications.i18n";
+import { i18n as m79 } from "./features/cross_posting/onboarding-page.i18n";
+import { i18n as m80 } from "./features/spaces/pages/overview/views/overview.i18n";
+import { i18n as m81 } from "./features/spaces/pages/apps/apps/panels/panels.i18n";
+import { i18n as m82 } from "./features/spaces/pages/actions/views/main/participant_page/participant-action-page.i18n";
+import { i18n as m83 } from "./features/spaces/space_common/components/space_nav/participation-card.i18n";
+import { i18n as m84 } from "./features/spaces/space_common/components/space_nav/participation-credential-section.i18n";
+import { i18n as m85 } from "./features/spaces/space_common/components/space_nav/participation-requirements-layover.i18n";
+import { i18n as m86 } from "./features/spaces/space_common/components/space_nav/participation-step-bar.i18n";
+import { i18n as m87 } from "./features/spaces/space_common/components/space_nav/participation-verification-section.i18n";
+import { i18n as m88 } from "./features/spaces/pages/actions/actions/poll/views/main/creator/poll-creator.i18n";
+import { i18n as m89 } from "./features/spaces/pages/actions/actions/poll/views/main/participant/poll-participant.i18n";
+import { i18n as m90 } from "./features/spaces/pages/actions/actions/poll/views/main/poll-read.i18n";
+import { i18n as m91 } from "./features/spaces/pages/actions/actions/poll/views/main/viewer/poll-viewer.i18n";
+import { i18n as m92 } from "./features/posts/components/post_detail/post-detail.i18n";
+import { i18n as m93 } from "./features/posts/views/post_detail/post-detail-syndicated.i18n";
+import { i18n as m94 } from "./features/posts/views/post_edit/post-edit.i18n";
+import { i18n as m95 } from "./features/posts/components/visibility_modal/posts-visibility-modal-visibility-modal.i18n";
+import { i18n as m96 } from "./common/components/premium_switch/premium-unlock.i18n";
+import { i18n as m97 } from "./features/spaces/space_common/components/space_nav/prerequisite-actions-layover.i18n";
+import { i18n as m98 } from "./features/spaces/pages/actions/components/prerequisite_tile/prerequisite-tile.i18n";
+import { i18n as m99 } from "./components/profile_dropdown/profile-dropdown.i18n";
+import { i18n as m100 } from "./features/spaces/pages/actions/actions/poll/components/question-viewer.i18n";
+import { i18n as m101 } from "./features/spaces/pages/index/action_pages/quiz/quiz-arena.i18n";
+import { i18n as m102 } from "./features/spaces/pages/actions/actions/quiz/views/main/creator/quiz-creator.i18n";
+import { i18n as m103 } from "./features/spaces/pages/actions/actions/quiz/views/main/participant/quiz-participant.i18n";
+import { i18n as m104 } from "./features/spaces/pages/actions/actions/quiz/views/main/quiz-read.i18n";
+import { i18n as m105 } from "./features/spaces/pages/actions/actions/quiz/views/main/viewer/quiz-viewer.i18n";
+import { i18n as m106 } from "./components/arena_topbar/ratel-arena-topbar.i18n";
+import { i18n as m107 } from "./features/spaces/pages/report/views/report.i18n";
+import { i18n as m108 } from "./features/spaces/pages/report/views/detail/report-detail.i18n";
+import { i18n as m109 } from "./features/spaces/pages/report/views/report-list.i18n";
+import { i18n as m110 } from "./features/character/components/reward_breakdown_chip/reward-breakdown-chip.i18n";
+import { i18n as m111 } from "./features/social/pages/reward/user/components/reward-history-section.i18n";
+import { i18n as m112 } from "./features/social/pages/reward/user/views/rewards-page.i18n";
+import { i18n as m113 } from "./features/spaces/pages/actions/components/settings_switch_button/settings-switch-button.i18n";
+import { i18n as m114 } from "./features/auth/components/sign_up_modal/signup-modal.i18n";
+import { i18n as m115 } from "./features/social/social.i18n";
+import { i18n as m116 } from "./features/spaces/pages/apps/apps/analyzes/space-analyzes-app.i18n";
+import { i18n as m117 } from "./features/spaces/pages/apps/types/space-app-type.i18n";
+import { i18n as m118 } from "./features/spaces/space_common/components/space_visibility_modal/space-common-space-visibility-modal-visibility-modal.i18n";
+import { i18n as m119 } from "./features/spaces/space_common/components/space_end_modal/space-end-modal.i18n";
+import { i18n as m120 } from "./features/spaces/pages/apps/apps/file/space-file.i18n";
+import { i18n as m121 } from "./features/spaces/space_common/components/space_nav/space-nav-participation-attributes-section-participation-attributes-section.i18n";
+import { i18n as m122 } from "./features/spaces/space_common/components/space_nav/space-nav-participation-consent-section-participation-attributes-section.i18n";
+import { i18n as m123 } from "./features/spaces/pages/apps/apps/rewards/space-reward.i18n";
+import { i18n as m124 } from "./features/spaces/space_common/components/space_start_modal/space-start-modal.i18n";
+import { i18n as m125 } from "./features/spaces/space_common/components/space_top/space-top-translates.i18n";
+import { i18n as m126 } from "./features/spaces/space_common/components/space_nav/space-user-login.i18n";
+import { i18n as m127 } from "./features/spaces/pages/index/space-viewer.i18n";
+import { i18n as m128 } from "./features/sub_team/sub-team.i18n";
+import { i18n as m129 } from "./features/spaces/pages/actions/actions/poll/components/survey-editor.i18n";
+import { i18n as m130 } from "./features/cross_posting/syndication-panel.i18n";
+import { i18n as m131 } from "./features/social/pages/team_arena/team-arena.i18n";
+import { i18n as m132 } from "./common/components/team_creation_form/team-creation-form.i18n";
+import { i18n as m133 } from "./features/social/pages/dao/views/team-dao.i18n";
+import { i18n as m134 } from "./features/social/pages/draft/team/views/team-draft.i18n";
+import { i18n as m135 } from "./features/social/pages/member/views/team-member.i18n";
+import { i18n as m136 } from "./features/social/pages/membership/team/views/team-membership.i18n";
+import { i18n as m137 } from "./features/social/team-menu.i18n";
+import { i18n as m138 } from "./features/social/pages/reward/team/views/team-rewards.i18n";
+import { i18n as m139 } from "./common/components/team_selector/team-selector.i18n";
+import { i18n as m140 } from "./features/social/pages/setting/team/views/team-settings.i18n";
+import { i18n as m141 } from "./features/social/pages/setting/team/views/subscription_page/team-subscription.i18n";
+import { i18n as m142 } from "./features/social/pages/draft/user/views/user-drafts.i18n";
+import { i18n as m143 } from "./features/social/user_views/home/user-home.i18n";
+import { i18n as m144 } from "./features/social/pages/reward/user/views/user-rewards.i18n";
+import { i18n as m145 } from "./features/social/pages/setting/user/views/user-settings.i18n";
+import { i18n as m146 } from "./features/social/pages/credentials/components/verification-method-modal.i18n";
+import { i18n as m147 } from "./features/spaces/pages/actions/views/main/viewer_page/viewer-action-page.i18n";
+import { i18n as m148 } from "./features/social/pages/member/views/viewer-page.i18n";
+
+export const modules = {
+  actionCard: m0,
+  actionDependencySelector: m1,
+  actionEditFooter: m2,
+  actionEditTopbar: m3,
+  actionPoll: m4,
+  actionSettingsModal: m5,
+  actionStatusControl: m6,
+  activity: m7,
+  adminLayout: m8,
+  adminRewards: m9,
+  aiModeratorSetting: m10,
+  appMain: m11,
+  arcadeExchangeModal: m12,
+  arcadeHome: m13,
+  arcadeLayout: m14,
+  arenaReward: m15,
+  blueskyConnectModal: m16,
+  characterPage: m17,
+  choiceEditor: m18,
+  codeInputModal: m19,
+  composeSidebar: m20,
+  connectionsPage: m21,
+  createActionModal: m22,
+  createPostButton: m23,
+  creator: m24,
+  creatorActionPage: m25,
+  credentials: m26,
+  dashboard: m27,
+  deleteActionButton: m28,
+  deleteActionPopup: m29,
+  deleteSpacePopup: m30,
+  discussionArena: m31,
+  discussionEditor: m32,
+  draftTimeline: m33,
+  editor: m34,
+  enum: m35,
+  errorPage: m36,
+  essenceSources: m37,
+  factFoldAdminLayout: m38,
+  factFoldAdminNewSubject: m39,
+  factFoldAdminReports: m40,
+  factFoldAdminSchedule: m41,
+  factFoldAdminSettings: m42,
+  factFoldAdminStats: m43,
+  factFoldAdminSubjects: m44,
+  factFoldMatching: m45,
+  factFoldRoom: m46,
+  factOrFold: m47,
+  followCreator: m48,
+  followFullCard: m49,
+  followList: m50,
+  followSmallCard: m51,
+  followTabs: m52,
+  followUserInvite: m53,
+  followUserList: m54,
+  followViewer: m55,
+  followViewerCards: m56,
+  general: m57,
+  home: m58,
+  homeArena: m59,
+  incentivePool: m60,
+  inviteMember: m61,
+  launchpadPartner: m62,
+  legalClose: m63,
+  levelChip: m64,
+  lockedDependenciesPopup: m65,
+  loginModal: m66,
+  materialList: m67,
+  meetAction: m68,
+  memberRow: m69,
+  membershipPage: m70,
+  membershipPlan: m71,
+  membershipPurchase: m72,
+  membershipReceipt: m73,
+  mobileMorePanel: m74,
+  myAi: m75,
+  myFollower: m76,
+  myFollowerHeader: m77,
+  notifications: m78,
+  onboardingPage: m79,
+  overview: m80,
+  panels: m81,
+  participantActionPage: m82,
+  participationCard: m83,
+  participationCredentialSection: m84,
+  participationRequirementsLayover: m85,
+  participationStepBar: m86,
+  participationVerificationSection: m87,
+  pollCreator: m88,
+  pollParticipant: m89,
+  pollRead: m90,
+  pollViewer: m91,
+  postDetail: m92,
+  postDetailSyndicated: m93,
+  postEdit: m94,
+  postsVisibilityModalVisibilityModal: m95,
+  premiumUnlock: m96,
+  prerequisiteActionsLayover: m97,
+  prerequisiteTile: m98,
+  profileDropdown: m99,
+  questionViewer: m100,
+  quizArena: m101,
+  quizCreator: m102,
+  quizParticipant: m103,
+  quizRead: m104,
+  quizViewer: m105,
+  ratelArenaTopbar: m106,
+  report: m107,
+  reportDetail: m108,
+  reportList: m109,
+  rewardBreakdownChip: m110,
+  rewardHistorySection: m111,
+  rewardsPage: m112,
+  settingsSwitchButton: m113,
+  signupModal: m114,
+  social: m115,
+  spaceAnalyzesApp: m116,
+  spaceAppType: m117,
+  spaceCommonSpaceVisibilityModalVisibilityModal: m118,
+  spaceEndModal: m119,
+  spaceFile: m120,
+  spaceNavParticipationAttributesSectionParticipationAttributesSection: m121,
+  spaceNavParticipationConsentSectionParticipationAttributesSection: m122,
+  spaceReward: m123,
+  spaceStartModal: m124,
+  spaceTopTranslates: m125,
+  spaceUserLogin: m126,
+  spaceViewer: m127,
+  subTeam: m128,
+  surveyEditor: m129,
+  syndicationPanel: m130,
+  teamArena: m131,
+  teamCreationForm: m132,
+  teamDao: m133,
+  teamDraft: m134,
+  teamMember: m135,
+  teamMembership: m136,
+  teamMenu: m137,
+  teamRewards: m138,
+  teamSelector: m139,
+  teamSettings: m140,
+  teamSubscription: m141,
+  userDrafts: m142,
+  userHome: m143,
+  userRewards: m144,
+  userSettings: m145,
+  verificationMethodModal: m146,
+  viewerActionPage: m147,
+  viewerPage: m148,
+};

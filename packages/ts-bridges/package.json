@@ -1,0 +1,31 @@
+{
+  "name": "@ratel/ts-bridges",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./runtime": "./src/runtime/client.ts",
+    "./hooks": "./src/hooks/index.ts"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "gen": "node scripts/gen-handlers.mjs",
+    "gen:check": "node scripts/gen-handlers.mjs --check",
+    "scaffold:hooks": "node scripts/scaffold-hooks.mjs"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "react": "^18.0.0"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.62.0",
+    "@types/react": "^18.3.18",
+    "react": "18.3.1",
+    "typescript": "~5.6.3"
+  }
+}

@@ -9,6 +9,29 @@ use crate::common::*;
 #[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr, Default, PartialEq, Eq)]
 pub struct CompositePartition<T = Partition, S = Partition>(pub T, pub S);
 
+// TypeScript binding (`make gen-ts` only): serialized through `Display` as
+// `"{T}##{S}"`, so it is a plain string whatever the parameters are.
+#[cfg(feature = "ts-bridge")]
+impl<T, S> ts_rs::TS for CompositePartition<T, S> {
+    type WithoutGenerics = CompositePartition<(), ()>;
+
+    fn name() -> String {
+        "string".to_owned()
+    }
+    fn inline() -> String {
+        "string".to_owned()
+    }
+    fn inline_flattened() -> String {
+        panic!("CompositePartition is a string and cannot be flattened")
+    }
+    fn decl() -> String {
+        panic!("CompositePartition is a string and has no declaration")
+    }
+    fn decl_concrete() -> String {
+        panic!("CompositePartition is a string and has no declaration")
+    }
+}
+
 impl CompositePartition {
     pub fn user_payment_pk(user_pk: Partition) -> Self {
         CompositePartition(user_pk, Partition::Payment)

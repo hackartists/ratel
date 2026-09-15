@@ -5,6 +5,7 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
 pub struct UserProfileResponse {
     pub username: String,
     pub display_name: String,
@@ -14,6 +15,7 @@ pub struct UserProfileResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
+#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SocialSettingUserDetailResponse"))]
 pub struct UserDetailResponse {
     pub user: UserProfileResponse,
     pub email: String,
