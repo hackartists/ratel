@@ -179,14 +179,6 @@ jobs:
       - name: Typecheck
         run: pnpm -C apps/web typecheck
 
-      # apps/web/shell-js (formerly app/ratel/js) writes
-      # ratel-app-shell.js / wallet-connect.js into apps/web/assets/, which
-      # the React build below bundles.
-      - name: Build shared JS assets
-        run: |
-          npm ci --prefix apps/web/shell-js
-          npm run build --prefix apps/web/shell-js
-
       - name: Build
         run: pnpm -C apps/web build
 
@@ -705,11 +697,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Build shared JS assets (apps/web/shell-js — formerly app/ratel/js)
-        run: |
-          npm ci --prefix apps/web/shell-js
-          npm run build --prefix apps/web/shell-js
 
       - name: Build web (React static site)
         env:

@@ -61,6 +61,23 @@ Browser checks Claude runs on the local stack (headless Chromium):
 
 Needs a person (listed for the user at the end): completing Google sign-in with a real account, connecting and signing with a real wallet, finishing a real PortOne identity verification, deploying a real incentive pool / DAO contract with a funded wallet.
 
+## Outcome (2026-09-15)
+
+All six steps landed as separate commits; `apps/web/shell-js` and every build step that ran it are gone.
+
+| Step | Result |
+|---|---|
+| 1. Analyze Excel | SheetJS in its own chunk, fetched on export. Same poll exported from the previous and the new build: 9,301 bytes, identical content hash. The d3 chart helpers had no caller and were dropped. |
+| 2. PortOne | `@/lib/portone-identity`; both wrappers keep their own return contract. Old vs new on a fake `window.PortOne`: identical payload, storage and result in 16 cases. "Start KYC" calls PortOne once. |
+| 3. Team DAO / incentive pool | Modules next to their pages, fixing the never-registered global names. Old vs new on a fake EIP-1193 wallet: identical request sequence and result in 23 cases, through gas estimation. Incentive pool artifact still missing (above). |
+| 4. Google | Firebase preloaded when the login modal opens; the popup opens on the Firebase auth domain with no download after the click, as before. |
+| 5. Wallet | WalletConnect/AppKit preloaded with the modal; with no project id locally, both builds create `<w3m-modal>` and get the same relay 403/400. |
+| 6. Delete shell-js | Removed from `index.html`, CI (pr/dev/prod), the Tauri `web-build`, `deploy/local/Dockerfile.web`, ignore files and docs. |
+
+First load of `/` (cache disabled, median of 3, local stack): JavaScript transferred 1,094 KB → 285 KB, app ready 547 ms → 463 ms. Playwright `React` project: 77 passed / 37 skipped, unchanged. `docker compose --profile local build local-web` and the Tauri `make web-build` succeed.
+
+Still for a person to confirm: a real Google sign-in, a real wallet connection and signature (needs `WALLETCONNECT_PROJECT_ID`), a real PortOne verification, and the Android/iOS apps (Excel export uses the native `save_file` path there).
+
 ## Risks
 
 - Popup blocking (mitigated by preloading, verified by the popup check above).

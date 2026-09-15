@@ -23,10 +23,6 @@ COPY packages/ts-bridges/package.json packages/ts-bridges/package.json
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
-COPY apps/web/shell-js/package.json apps/web/shell-js/package-lock.json apps/web/shell-js/
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefix apps/web/shell-js
-
 COPY apps/web apps/web
 COPY packages/ts-bridges packages/ts-bridges
 
@@ -56,8 +52,7 @@ ENV VITE_BYPASS=${VITE_BYPASS} \
     VITE_PORTONE_STORE_ID=${VITE_PORTONE_STORE_ID} \
     VITE_PORTONE_INICIS_CHANNEL_KEY=${VITE_PORTONE_INICIS_CHANNEL_KEY}
 
-RUN npm run build --prefix apps/web/shell-js \
-    && pnpm -C apps/web build
+RUN pnpm -C apps/web build
 
 FROM node:22-alpine
 

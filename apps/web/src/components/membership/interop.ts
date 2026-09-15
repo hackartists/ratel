@@ -1,8 +1,6 @@
-// app/ratel/src/features/membership/interop (+ web/*.js drivers) and the
-// `enterprise_contact` helper of the team subscription page. The PortOne call
-// goes to `window.ratel.membership.requestIdentityVerification`, defined by
-// the unmodified apps/web/shell-js/src/ratel-app-shell/membership/index.js that the
-// app shell loads globally.
+// The membership interop (and its `web/*.js` drivers) of the former Dioxus app
+// and the `enterprise_contact` helper of the team subscription page. PortOne
+// identity verification goes through `@/lib/portone-identity`.
 
 import { requestMembershipIdentityVerification } from "@/lib/portone-identity";
 

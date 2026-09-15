@@ -91,7 +91,3 @@ GoogleService-Info.plist
 # Ephemeral Linux build dirs + logs created for the Postgres-migration image builds
 /target-fresh/
 /target-*-build.log
-
-# apps/web/shell-js is built with `npm ci` in CI, the Tauri Makefile and
-# deploy/local/Dockerfile.web, which needs its lockfile.
-!apps/web/shell-js/package-lock.json

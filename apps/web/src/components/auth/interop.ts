@@ -1,12 +1,10 @@
-// app/ratel/src/features/auth/interop (wallet_connect.rs, google_auth.rs) and
-// services (device_id.rs, restore_session.rs) as plain async functions.
+// The auth interop (wallet connect, Google sign-in) and services (device id,
+// session restore) of the former Dioxus app, as plain async functions.
 //
-// Wallet connect and Firebase live in the global `wallet-connect.js` and
-// `ratel-app-shell.js` scripts (loaded by index.html). The Rust drivers in
-// interop/web/*.js call `window.walletConnect.*` and
-// `window.ratel.invoke(method, args)`; these functions do the same, and — like
-// the drivers' `try { … } catch { dioxus.send(null) }` — turn a JS failure
-// into `null`.
+// Wallet connect lives in `./wallet-connect` and Firebase in `./firebase`, both
+// loaded on demand (the login modal preloads them). Like the old Rust drivers'
+// `try { … } catch { dioxus.send(null) }`, a JS failure becomes a
+// `LocalAuthError` the modal shows.
 import { refreshSessionHandler } from "@ratel/ts-bridges";
 import { ApiError } from "@ratel/ts-bridges/runtime";
 import { googleSignInNative, isTauri } from "@/lib/native";

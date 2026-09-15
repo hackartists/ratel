@@ -270,15 +270,6 @@ jobs:
           # Second push is a cache hit in buildkitd — just retags.
           IMAGE_TAG=dev bash scripts/buildkit-image.sh
 
-      - name: Build shared JS assets (apps/web/shell-js — formerly app/ratel/js)
-        # This package moved out of app/ratel/js when the Dioxus UI build was
-        # dropped from app-shell (docs/superpower/2026-09-14-react-frontend-
-        # migration.md § 5.1). It writes ratel-app-shell.js / wallet-connect.js
-        # into apps/web/assets/, which the React build below bundles.
-        run: |
-          npm ci --prefix apps/web/shell-js
-          npm run build --prefix apps/web/shell-js
-
       - name: Build web (React static site)
         env:
           # VITE_* build-time env for the React bundle — mapped from the SAME
