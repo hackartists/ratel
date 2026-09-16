@@ -42,22 +42,25 @@ export function CodeModal({ onSubmit, onSuccess }: CodeModalProps) {
 
   return (
     <div className="p-6 w-full max-w-md">
-      <h2 className="mb-4 text-xl font-bold text-modal-label-text">{tr.modalCodeTitle}</h2>
+      <h2 className="mb-4 text-xl font-bold text-text-primary">{tr.modalCodeTitle}</h2>
       <div className="mb-4">
         <input
           type="text"
           value={codeValue}
           onChange={(e) => setCodeValue(e.target.value)}
           placeholder={tr.modalCodePlaceholder}
-          className="py-2 px-3 w-full rounded border border-gray-300 dark:bg-gray-700 dark:border-gray-600 text-neutral-500"
+          className="py-2 px-3 w-full rounded-md border outline-none bg-input-box-bg border-input-box-border text-text-primary placeholder:text-foreground-muted focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
         />
       </div>
       <div className="flex gap-2 justify-end">
-        <button className="hover:text-white text-neutral-500" onClick={() => popup.close()}>
+        <button
+          className="py-2 px-4 rounded-md transition-colors text-foreground-muted hover:text-text-primary hover:bg-hover"
+          onClick={() => popup.close()}
+        >
           {tr.modalCancel}
         </button>
         <button
-          className="py-2 px-4 rounded-md bg-enable-button-bg text-enable-button-white-text"
+          className="py-2 px-4 rounded-md transition-opacity bg-btn-primary-bg text-btn-primary-text hover:opacity-90 disabled:opacity-50"
           disabled={submitting}
           onClick={() => void submit()}
         >
