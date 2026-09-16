@@ -35,7 +35,7 @@ on:
 
 jobs:
   configure:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     # Shared with `Dev deploy` so two helm operations never race on the same
     # release.
     concurrency:

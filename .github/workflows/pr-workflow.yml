@@ -23,7 +23,7 @@ env:
 
 jobs:
   contracts-test:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
 
     defaults:
       run:
@@ -48,7 +48,7 @@ jobs:
           make test
 
   docs-build:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
 
     defaults:
       run:
@@ -79,7 +79,7 @@ jobs:
   # from the Dioxus app (missing Tailwind selectors, or a route/layout chain
   # that differs from app/ratel/src/route.rs).
   web-build:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
 
     steps:
       - uses: actions/checkout@v6
@@ -110,7 +110,7 @@ jobs:
   # apps/web/src) are edited directly. gen-ts stays, since
   # packages/ts-bridges is still generated from the Rust route macros.
   rust-check:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
 
     env:
       # rustup swaps components by staging them in $RUSTUP_HOME/tmp and
@@ -227,9 +227,20 @@ jobs:
   # # PR-only: the image tag needs github.event.number.
   # # ────────────────────────────────────────────────────────────────────────
   build-image:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 90
     if: github.event_name == 'pull_request'
+
+    env:
+      # Same EXDEV guard rust-check documents: the runner image ships a
+      # toolchain whose directory sits on a different mount from
+      # $RUSTUP_HOME/tmp, so any rustup write that finishes with rename(2)
+      # dies with "Invalid cross-device link (os error 18)". This job hit it
+      # when `command -v rustup` missed the preinstalled proxies and the
+      # rustup-init fallback tried to UPDATE that toolchain instead. A
+      # workspace RUSTUP_HOME puts toolchains/ and tmp/ on one filesystem;
+      # the cost is a toolchain download per run (~1 min).
+      RUSTUP_HOME: ${{ github.workspace }}/.rustup-build-image
 
     steps:
       - uses: actions/checkout@v6
@@ -343,7 +354,7 @@ jobs:
   # bypass feature (make build-testing above).
   # ────────────────────────────────────────────────────────────────────────
   build-web-image:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 30
     if: github.event_name == 'pull_request'
 
@@ -390,7 +401,7 @@ jobs:
   # pull_request-only — PR_NUM comes from github.event.number.
   # ────────────────────────────────────────────────────────────────────────
   e2e:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 90
     continue-on-error: true # non-blocking introduction — see job comment above
     if: github.event_name == 'pull_request'

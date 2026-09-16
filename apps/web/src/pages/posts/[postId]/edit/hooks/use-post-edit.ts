@@ -319,6 +319,7 @@ export function usePostEdit(postId: FeedPartition): UsePostEdit {
         },
         {
           onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ["getPost", postId] });
             createSpaceMutation.mutate(
               { post_id: postId },
               {
@@ -354,7 +355,13 @@ export function usePostEdit(postId: FeedPartition): UsePostEdit {
         },
       },
       {
-        onSuccess: () => nav(`/posts/${postId}`, { replace: true }),
+        onSuccess: () => {
+          // The detail page reads `["getPost", postId]`, which still holds the
+          // pre-publish draft; without this the title and body showed up only
+          // after a reload.
+          void queryClient.invalidateQueries({ queryKey: ["getPost", postId] });
+          nav(`/posts/${postId}`, { replace: true });
+        },
         onError: () => setStatus("unsaved"),
       },
     );

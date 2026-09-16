@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { MembershipGrantTargetType } from "@ratel/ts-bridges";
 import { useAdminRewardsI18n } from "./i18n";
 import { displayError, formatWithCommas } from "../hooks/format";
@@ -36,6 +36,14 @@ export function EnterpriseGrantSection() {
   };
 
   const memberships = list.items;
+
+  // The list pages user grants first and team grants second, so with no user
+  // grants the first page comes back empty and every team sits on the next
+  // one. Pull it in instead of waiting for the 1px scroll sentinel, which the
+  // reader never reaches while the table shows nothing.
+  useEffect(() => {
+    if (memberships.length === 0 && list.hasMore && !list.isFetching) void list.fetchNextPage();
+  }, [memberships.length, list.hasMore, list.isFetching, list.fetchNextPage]);
 
   return (
     <section className="admin-arena__section">
@@ -90,7 +98,7 @@ export function EnterpriseGrantSection() {
             first page can be empty while `hasMore` still points at the team
             phase. Keep loading instead of showing "none granted". */}
         {memberships.length === 0 ? (
-          list.isFetchingNextPage || list.hasMore ? (
+          list.isFetching || list.hasMore ? (
             <div className="admin-arena__table-empty">{tr.loading}</div>
           ) : (
             <div className="admin-arena__table-empty">{tr.enterpriseGrantedEmpty}</div>
@@ -121,11 +129,15 @@ export function EnterpriseGrantSection() {
         )}
 
         {list.hasMore && (
+          // `isFetching`, not `isFetchingNextPage`: granting refreshes the
+          // first page, which drops the loaded team page. Only a fetch the
+          // sentinel can see makes it re-arm and load the team phase again —
+          // otherwise a team granted while no user grants exist never appears.
           <MoreElement
             hasMore={list.hasMore}
-            isLoading={list.isFetchingNextPage}
+            isLoading={list.isFetching}
             onNext={() => {
-              if (!list.isFetchingNextPage) void list.fetchNextPage();
+              if (!list.isFetching) void list.fetchNextPage();
             }}
           />
         )}

@@ -4,6 +4,11 @@ import * as React from "react";
 // `shrink-0` keeps the fixed-size control from collapsing next to long labels.
 const CONTAINER_DISABLED =
   "relative inline-flex items-center shrink-0 w-11 h-6 rounded-full transition-colors bg-switch-track opacity-40 cursor-not-allowed";
+// A disabled switch keeps its colour, dimmed — Rust greyed it out whatever its
+// state, so a locked-but-on control (a reward that can no longer be changed
+// once the action is running) read as off.
+const CONTAINER_DISABLED_ACTIVE =
+  "relative inline-flex items-center shrink-0 w-11 h-6 rounded-full transition-colors bg-primary opacity-40 cursor-not-allowed";
 const CONTAINER_ACTIVE =
   "relative inline-flex items-center shrink-0 w-11 h-6 rounded-full transition-colors bg-primary cursor-pointer";
 const CONTAINER_INACTIVE =
@@ -21,7 +26,13 @@ export interface SwitchProps {
 }
 
 export function Switch({ active, onToggle, label = "", disabled = false }: SwitchProps) {
-  const containerClass = disabled ? CONTAINER_DISABLED : active ? CONTAINER_ACTIVE : CONTAINER_INACTIVE;
+  const containerClass = disabled
+    ? active
+      ? CONTAINER_DISABLED_ACTIVE
+      : CONTAINER_DISABLED
+    : active
+      ? CONTAINER_ACTIVE
+      : CONTAINER_INACTIVE;
   return (
     <button
       type="button"
@@ -32,7 +43,7 @@ export function Switch({ active, onToggle, label = "", disabled = false }: Switc
       disabled={disabled}
       onClick={onToggle}
     >
-      <span className={active && !disabled ? KNOB_ON : KNOB_OFF} />
+      <span className={active ? KNOB_ON : KNOB_OFF} />
     </button>
   );
 }
