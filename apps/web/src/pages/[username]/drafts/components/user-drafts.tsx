@@ -16,16 +16,25 @@ import { useUserDrafts } from "../hooks/use-user-drafts";
 // drafts arena — topbar, stats, filter chips, sort menu, bucketed draft cards.
 
 const DAY_MS = 86_400_000;
-const WEEK_MS = DAY_MS * 7;
 
 type Bucket = "today" | "week" | "older";
 type Filter = "all" | "today" | "week" | "older" | "space";
 type SortMode = "recent" | "oldest" | "title" | "words";
 
+/** Midnight of the day `ms` falls on, in the reader's timezone. */
+function startOfDay(ms: number): number {
+  const date = new Date(ms);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+// Buckets follow the calendar, not a rolling window: a draft saved 21 hours
+// ago is yesterday's, which the old `now - updatedAt < 24h` test filed under
+// "today". "This week" is the six days before today.
 function bucketOf(updatedAt: number): Bucket {
-  const diff = Date.now() - updatedAt;
-  if (diff < DAY_MS) return "today";
-  if (diff < WEEK_MS) return "week";
+  const today = startOfDay(Date.now());
+  if (updatedAt >= today) return "today";
+  if (updatedAt >= today - 6 * DAY_MS) return "week";
   return "older";
 }
 

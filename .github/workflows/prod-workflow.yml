@@ -78,7 +78,7 @@ jobs:
   # the cache steps restore the ratel-cargo-*/ratel-target-* caches the dev
   # branch keeps warm (and save main's own copies).
   build-images:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 120
     env:
       # ── Compile-time env — replicated from the old prod lambda build ──
@@ -344,7 +344,7 @@ jobs:
   # ── Deploy (envsubst deploy/prod/*.yaml → k3s namespace `ratel-prod`) ───
   deploy:
     needs: [build-images]
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 45
     # One prod deploy at a time; a newer push queues behind (not cancels) the
     # in-flight one so a half-rolled namespace is never abandoned. Job-level
@@ -534,7 +534,7 @@ jobs:
   # ── Smoke test — confirm the PUBLIC URL responds ────────────────────────
   smoke-test:
     needs: deploy
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 15
     env:
       HOST: ratel-prod.biyard.co

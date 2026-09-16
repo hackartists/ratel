@@ -160,24 +160,14 @@ export function RewardSection() {
   };
 
   return (
-    <section className="admin-arena__section">
+    <>
+      <section className="admin-arena__section">
       <div className="admin-arena__section-actions">
         <span className="admin-arena__section-actions-title">{tr.title}</span>
         <button className="admin-arena__btn" type="button" onClick={openCreateForm}>
           {tr.addReward}
         </button>
       </div>
-
-      {showForm && (
-        <RewardFormModal
-          isEditing={editing !== null}
-          isSubmitting={isSubmitting}
-          form={form}
-          setForm={setForm}
-          onClose={closeForm}
-          onSubmit={() => void onSubmit()}
-        />
-      )}
 
       <div className="admin-arena__table-wrap">
         <div className="admin-arena__table-head">{tr.tabRules}</div>
@@ -216,7 +206,23 @@ export function RewardSection() {
           </table>
         )}
       </div>
-    </section>
+      </section>
+
+      {/* Outside the section on purpose: `.admin-arena__section` sets
+          `backdrop-filter`, which makes it the containing block for fixed
+          children, so the overlay covered only the section instead of the
+          viewport. The `.admin-arena` ancestor still supplies its tokens. */}
+      {showForm && (
+        <RewardFormModal
+          isEditing={editing !== null}
+          isSubmitting={isSubmitting}
+          form={form}
+          setForm={setForm}
+          onClose={closeForm}
+          onSubmit={() => void onSubmit()}
+        />
+      )}
+    </>
   );
 }
 
