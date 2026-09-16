@@ -261,8 +261,21 @@ export function OverviewPanel({
                       ? "file-item__icon--img"
                       : "file-item__icon--doc";
                 const key = file.url ?? file.name;
+                // Read-only rows open the file (a new tab, like FileCard
+                // elsewhere); while editing the row stays a plain box so the
+                // remove button can't navigate away.
+                const RowTag = !editing && file.url !== null ? "a" : "div";
+                const rowProps =
+                  RowTag === "a"
+                    ? {
+                        href: file.url ?? undefined,
+                        target: "_blank",
+                        rel: "noreferrer noopener",
+                        download: file.name,
+                      }
+                    : {};
                 return (
-                  <div className="file-item" key={key}>
+                  <RowTag className="file-item" key={key} {...rowProps}>
                     <div className={`file-item__icon ${kindCls}`}>
                       <svg
                         fill="none"
@@ -302,7 +315,7 @@ export function OverviewPanel({
                         </button>
                       </div>
                     )}
-                  </div>
+                  </RowTag>
                 );
               })}
             </div>

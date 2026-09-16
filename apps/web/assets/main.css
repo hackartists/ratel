@@ -29584,6 +29584,8 @@ body.comments-panel-resizing {
   transition: all 0.2s ease;
 }
 .file-item:hover { border-color: rgba(252,179,0,0.2); }
+/* The read-only row is a link to the file. */
+a.file-item { text-decoration: none; color: inherit; cursor: pointer; }
 .file-item__icon {
   width: 36px;
   height: 36px;
