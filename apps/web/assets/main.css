@@ -15067,6 +15067,9 @@ html[data-theme="light"] .team-arena .team-arena__bg-scanline,
    permanently, so it must be qualified with `[data-open="true"]`. */
 .team-arena:has(.tm-modal-overlay) .arena-topbar,
 .team-arena:has(.td-modal-overlay) .arena-topbar,
+/* Team settings' own dialogs (delete team, leave team) — the same fix: their
+   overlay is inside the content layer, so the topbar has to step down. */
+.team-arena:has(.ts-modal-overlay) .arena-topbar,
 .team-arena:has(.ta-settings-panel__backdrop[data-open="true"]) .arena-topbar {
   z-index: 5;
   pointer-events: none;
