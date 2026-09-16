@@ -41,7 +41,10 @@ export function CodeModal({ onSubmit, onSuccess }: CodeModalProps) {
   };
 
   return (
-    <div className="p-6 w-full max-w-md">
+    // The popup box shrinks to its content (min 300px) and already pads by
+    // 25px, so the modal sets its own width instead of `w-full` and adds no
+    // padding of its own.
+    <div className="w-[360px] max-mobile:w-full">
       <h2 className="mb-4 text-xl font-bold text-text-primary">{tr.modalCodeTitle}</h2>
       <div className="mb-4">
         <input
