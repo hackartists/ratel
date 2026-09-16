@@ -1,28 +1,34 @@
 name: Mobile release
 
-# Ships the mobile apps: Android AAB → Play internal track, iOS .ipa →
+# Ships the mobile apps: Android AAB -> Play internal track, iOS .ipa ->
 # TestFlight. Both build from `main`, whichever branch the button is pressed
 # from, so a store build always matches what prod serves.
 #
-# MANUAL, and separate from prod-workflow.yml, for two independent reasons.
+# Both jobs run on the organization's self-hosted macOS runner (`[self-hosted,
+# macOS]`), so a release costs no GitHub-hosted minutes. That runner is the
+# only one that can build either app:
 #
-# 1. Neither can run on our self-hosted runners. iOS needs Xcode, which is
-#    macOS-only. Android needs the NDK, and Google ships its toolchains for
-#    linux-x86_64 only — there is no linux-aarch64 build — so on our arm64
-#    nodes the NDK clang dies with `exit status: 126` before compiling
-#    anything. (Emulating x86_64 would mean registering binfmt_misc on the
-#    host — privileged and cluster-wide, and it is unregistered today — and
-#    would then run that clang 5-10x slower for every C dependency.) So both
-#    need GitHub-hosted runners, which bill minutes.
+# - iOS needs Xcode, which is macOS-only.
+# - Android needs the NDK, and Google ships its toolchains for linux-x86_64
+#   only — there is no linux-aarch64 build — so on the arm64 Linux runners the
+#   NDK clang dies with `exit status: 126` before compiling anything. The
+#   macOS toolchain runs fine.
 #
-# 2. Even if they were free, a store build per server deploy buys nothing:
-#    review takes days. At ~15 prod deploys a month, iOS alone (macOS bills at
-#    10x, ~35 min a build) would be ~5,250 billed minutes against a
-#    3,000-minute allowance — which is exactly how CI got blocked on
-#    2026-08-10. On demand it is ~350.
+# One runner takes one job at a time, so Android and iOS build in sequence
+# unless more macOS runners are registered.
 #
-# The free `guard` job holds the typed confirmation, so a mistyped input never
-# starts a billed runner.
+# The machine is shared and long-lived rather than a throwaway VM, which is why
+# this file: picks the newest installed Xcode 26+ through DEVELOPER_DIR instead
+# of switching Xcode with sudo; installs rustup / tauri-cli / xcodegen only when
+# they are missing; skips actions/cache; adds the signing keychain to the search
+# list only when the identity is not already there; and deletes every secret it
+# writes when the job ends.
+#
+# It stays MANUAL rather than running on every prod deploy: store review takes
+# days, so a build per deploy buys nothing.
+#
+# The free `guard` job (on a Linux runner, so it never occupies the Mac) holds
+# the typed confirmation.
 #
 # Build numbers come from `date +%s` (app/ratel-tauri/Makefile), so repeated
 # runs never collide on Play or App Store Connect. Bump the marketing version
@@ -42,10 +48,16 @@ on:
         type: string
         required: true
 
+# One release at a time: the jobs share the runner's keychain and profile
+# folder, and a second run would fight the first over them.
+concurrency:
+  group: mobile-release
+  cancel-in-progress: false
+
 jobs:
   # Free gate in front of the billed jobs.
   guard:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     steps:
       - name: Require typed confirmation
         run: |
@@ -58,7 +70,7 @@ jobs:
   android-release:
     if: inputs.platform == 'both' || inputs.platform == 'android'
     needs: guard
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 90
     # crates.io downloads intermittently fail in CI with curl "[55] Failed
     # sending data to the peer (Broken pipe)" during `cargo metadata`/build —
@@ -85,21 +97,18 @@ jobs:
           submodules: recursive
           ssh-key: ${{ secrets.PULL_KEY_REPO_V2 }}
 
-      - name: Restore cache
-        uses: actions/cache/restore@v5
-        with:
-          key: android-release-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            android-release-${{ runner.os }}-rust-
-          path: |
-            ~/.cargo/bin
-            target
+      - name: Use the Mac's Homebrew and cargo tools
+        run: |
+          for dir in /opt/homebrew/bin "$HOME/.cargo/bin"; do
+            if [ -d "$dir" ]; then echo "$dir" >> "$GITHUB_PATH"; fi
+          done
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown,aarch64-linux-android
-          cache: false
+      - name: Rust toolchain + targets
+        run: |
+          command -v rustup >/dev/null || \
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustup" target add wasm32-unknown-unknown aarch64-linux-android
 
       - uses: actions/setup-node@v4
         with:
@@ -114,15 +123,9 @@ jobs:
         with:
           packages: "platforms;android-34 build-tools;34.0.0 ndk;29.0.14206865"
 
-      - uses: cargo-bins/cargo-binstall@main
-
       - name: Install tauri-cli
-        # dioxus-cli is no longer needed — app/ratel-tauri/Makefile's
-        # `web-build` target bundles the React build (apps/web) instead of
-        # the old Dioxus `dx-build` (docs/superpower/
-        # 2026-09-14-react-frontend-migration.md § 6).
         run: |
-          cargo binstall -y --locked --version "^2.0.0" tauri-cli
+          command -v cargo-tauri >/dev/null || cargo install --locked tauri-cli --version "^2.0.0"
 
       - name: Enable corepack + install pnpm workspace deps
         # `make release-aab` → `web-build` runs `pnpm -C apps/web build`,
@@ -237,14 +240,13 @@ jobs:
           # The two states are mutually exclusive, so this only ever needs
           # setting again if the app returns to an incomplete listing.
 
-      - name: Save cache
+
+      - name: Remove signing files from the workspace
         if: always()
-        uses: actions/cache/save@v5
-        with:
-          key: android-release-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          path: |
-            ~/.cargo/bin
-            target
+        working-directory: app/ratel-tauri
+        run: |
+          rm -f src-tauri/gen/android/upload-keystore.jks src-tauri/gen/android/keystore.properties \
+            google-services.json src-tauri/gen/android/app/google-services.json
 
   # # ── iOS → TestFlight ────────────────────────────────────────────────
   # iOS release lives in .github/workflows/mobile-ios-release.yml — Xcode is
@@ -254,7 +256,7 @@ jobs:
   ios-release:
     if: inputs.platform == 'both' || inputs.platform == 'ios'
     needs: guard
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
@@ -267,35 +269,58 @@ jobs:
           submodules: recursive
           ssh-key: ${{ secrets.PULL_KEY_REPO_V2 }}
 
-      # Apple now requires the iOS 26 SDK (Xcode 26+) for App Store uploads.
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
+      - name: Use the Mac's Homebrew and cargo tools
+        run: |
+          for dir in /opt/homebrew/bin "$HOME/.cargo/bin"; do
+            if [ -d "$dir" ]; then echo "$dir" >> "$GITHUB_PATH"; fi
+          done
 
-      - name: Show Xcode / SDK
-        run: xcodebuild -version && xcodebuild -showsdks | grep -i ios
+      # Apple requires the iOS 26 SDK (Xcode 26+) for App Store uploads.
+      # `setup-xcode` switches Xcode with sudo, which a self-hosted runner does
+      # not have, so pick the newest installed Xcode 26+ instead.
+      - name: Select Xcode 26+
+        run: |
+          best=""
+          best_key=0
+          for app in /Applications/Xcode*.app; do
+            [ -d "$app" ] || continue
+            version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" 2>/dev/null || true)
+            key=$(echo "$version" | awk -F. '$1 ~ /^[0-9]+$/ { printf "%d", $1 * 10000 + $2 * 100 + $3 }')
+            if [ -n "$key" ] && [ "$key" -ge 260000 ] && [ "$key" -gt "$best_key" ]; then
+              best="$app"
+              best_key="$key"
+            fi
+          done
+          if [ -z "$best" ]; then
+            echo "::error::Xcode 26 or later is required (App Store uploads need the iOS 26 SDK). Install it into /Applications on the runner."
+            exit 1
+          fi
+          developer_dir="$best/Contents/Developer"
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          # `cargo tauri ios build` (cargo-mobile2) runs xcodebuild with an
+          # explicit environment of HOME, PATH and a few others, which drops
+          # DEVELOPER_DIR, so the /usr/bin shims fall back to `xcode-select -p`.
+          # Wrappers first on PATH pin the choice through that.
+          wrappers="$RUNNER_TEMP/xcode-bin"
+          mkdir -p "$wrappers"
+          for tool in xcodebuild xcrun; do
+            printf '#!/bin/sh\nDEVELOPER_DIR="%s" exec /usr/bin/%s "$@"\n' "$developer_dir" "$tool" > "$wrappers/$tool"
+            chmod +x "$wrappers/$tool"
+          done
+          echo "$wrappers" >> "$GITHUB_PATH"
+          env -i HOME="$HOME" PATH="$wrappers:/usr/bin:/bin" xcodebuild -version
+          env -i HOME="$HOME" PATH="$wrappers:/usr/bin:/bin" xcodebuild -showsdks | grep -i ios
 
-      - name: Restore cache
-        uses: actions/cache/restore@v5
-        with:
-          key: ios-release-${{ runner.os }}-rust-ios18-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ios-release-${{ runner.os }}-rust-ios18-
-          path: |
-            ~/.cargo/bin
-            target
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown,aarch64-apple-ios
-          cache: false
+      - name: Rust toolchain + targets
+        run: |
+          command -v rustup >/dev/null || \
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustup" target add wasm32-unknown-unknown aarch64-apple-ios
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - uses: cargo-bins/cargo-binstall@main
 
       - name: Install tauri-cli + xcodegen
         # dioxus-cli (and the dx-launch openssl@3 dylib workaround this step
@@ -311,7 +336,7 @@ jobs:
         run: |
           # `command -v … ||` skips reinstall when the cache restored the
           # binary into ~/.cargo/bin.
-          command -v cargo-tauri >/dev/null || cargo binstall -y --locked --version "^2.0.0" tauri-cli
+          command -v cargo-tauri >/dev/null || cargo install --locked tauri-cli --version "^2.0.0"
           # `make gen-xcodeproj` regenerates the pbxproj from project.yml.
           command -v xcodegen >/dev/null || brew install xcodegen
 
@@ -332,27 +357,50 @@ jobs:
           CERT_PATH="$RUNNER_TEMP/dist_cert.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
           PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          PROFILE_PATH="$PROFILES_DIR/ci-appstore.mobileprovision"
 
           echo "$IOS_DIST_CERT_BASE64" | base64 --decode > "$CERT_PATH"
-
-          # Throwaway keychain, added to the search list so xcodebuild sees the cert.
           security create-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security import "$CERT_PATH" -P "$IOS_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple: -k "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -k "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          rm -f "$CERT_PATH"
+
+          # A runner that already holds this identity in its login keychain
+          # would see it twice on the search list, and codesign rejects an
+          # ambiguous identity. Add the CI keychain only when it is missing.
+          identity=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk '$2 ~ /^[0-9A-F]{40}$/ { print $2; exit }')
+          if [ -n "$identity" ] && security find-identity -v -p codesigning login.keychain-db | grep -q "$identity"; then
+            echo "The distribution identity is already in the login keychain; signing with that copy."
+          else
+            security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"$//' > "$RUNNER_TEMP/keychains.before"
+            keychains=()
+            while IFS= read -r keychain; do keychains+=("$keychain"); done < "$RUNNER_TEMP/keychains.before"
+            security list-keychains -d user -s "$KEYCHAIN_PATH" "${keychains[@]}"
+            echo "RESTORE_KEYCHAINS=$RUNNER_TEMP/keychains.before" >> "$GITHUB_ENV"
+          fi
 
           mkdir -p "$PROFILES_DIR"
-          echo "$IOS_PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILES_DIR/ci-appstore.mobileprovision"
+          if [ ! -e "$PROFILE_PATH" ]; then
+            echo "$IOS_PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+            echo "REMOVE_PROFILE=$PROFILE_PATH" >> "$GITHUB_ENV"
+          fi
 
       - name: Write App Store Connect API key
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
         run: |
-          mkdir -p "$HOME/.appstoreconnect/private_keys"
-          echo "$ASC_API_KEY_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          mkdir -p "$(dirname "$KEY_PATH")"
+          if [ -e "$KEY_PATH" ]; then
+            echo "The App Store Connect key is already on this runner; leaving it in place."
+          else
+            echo "$ASC_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+            echo "REMOVE_ASC_KEY=$KEY_PATH" >> "$GITHUB_ENV"
+          fi
 
       # GoogleService-Info.plist is gitignored (Firebase client config), absent
       # on a clean checkout. `make testflight` → `gsi-copy` bundles it for
@@ -402,11 +450,17 @@ jobs:
             ASC_KEY_ID=${{ secrets.ASC_KEY_ID }} \
             ASC_ISSUER_ID=${{ secrets.ASC_ISSUER_ID }}
 
-      - name: Save cache
+      - name: Remove signing material from this runner
         if: always()
-        uses: actions/cache/save@v5
-        with:
-          key: ios-release-${{ runner.os }}-rust-ios18-${{ hashFiles('**/Cargo.lock') }}
-          path: |
-            ~/.cargo/bin
-            target
+        run: |
+          if [ -n "${RESTORE_KEYCHAINS:-}" ] && [ -f "$RESTORE_KEYCHAINS" ]; then
+            keychains=()
+            while IFS= read -r keychain; do keychains+=("$keychain"); done < "$RESTORE_KEYCHAINS"
+            security list-keychains -d user -s "${keychains[@]}"
+          fi
+          if [ -n "${SIGNING_KEYCHAIN:-}" ] && [ -e "$SIGNING_KEYCHAIN" ]; then
+            security delete-keychain "$SIGNING_KEYCHAIN" || true
+          fi
+          if [ -n "${REMOVE_PROFILE:-}" ]; then rm -f "$REMOVE_PROFILE"; fi
+          if [ -n "${REMOVE_ASC_KEY:-}" ]; then rm -f "$REMOVE_ASC_KEY"; fi
+          rm -f app/ratel-tauri/GoogleService-Info.plist app/ratel-tauri/src-tauri/gen/apple/GoogleService-Info.plist

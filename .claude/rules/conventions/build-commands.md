@@ -44,6 +44,12 @@ PROXY_API=1 API_ORIGIN=http://localhost:8080 PORT=4173 node apps/web/server/serv
 # Build + install + launch on an Android emulator / iOS Simulator (scripts/mobile-run.sh)
 ratel_envs && make android                                    # API: https://dev.ratel.foundation
 MOBILE_API_ENDPOINT=http://localhost:8080 make ios            # API: `make local`
+
+# Store release (Play internal track + TestFlight) on this Mac instead of
+# GitHub-hosted runners (.github/workflows/mobile-release-local.yml; iOS needs Xcode 26+)
+scripts/mobile-release-runner.sh up                           # register repo runners labelled ratel-mac
+gh workflow run mobile-release-local.yml --repo biyard/ratel -f platform=both -f confirm=RELEASE
+scripts/mobile-release-runner.sh down                         # unregister and delete them
 ```
 
 ## Playwright E2E Tests
