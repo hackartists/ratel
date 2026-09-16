@@ -231,6 +231,17 @@ jobs:
     timeout-minutes: 90
     if: github.event_name == 'pull_request'
 
+    env:
+      # Same EXDEV guard rust-check documents: the runner image ships a
+      # toolchain whose directory sits on a different mount from
+      # $RUSTUP_HOME/tmp, so any rustup write that finishes with rename(2)
+      # dies with "Invalid cross-device link (os error 18)". This job hit it
+      # when `command -v rustup` missed the preinstalled proxies and the
+      # rustup-init fallback tried to UPDATE that toolchain instead. A
+      # workspace RUSTUP_HOME puts toolchains/ and tmp/ on one filesystem;
+      # the cost is a toolchain download per run (~1 min).
+      RUSTUP_HOME: ${{ github.workspace }}/.rustup-build-image
+
     steps:
       - uses: actions/checkout@v6
 
