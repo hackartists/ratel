@@ -210,11 +210,44 @@
       }
     }
 
+    // The `<code>` ancestor of a node, stopping at the editor root.
+    function inlineCodeAncestor(node) {
+      while (node && node !== editor) {
+        if (node.nodeType === 1 && node.tagName === "CODE") return node;
+        node = node.parentNode;
+      }
+      return null;
+    }
+
+    // Toggle, not just wrap: a second click on a selection that already sits
+    // inside `<code>` unwraps it. Wrapping again only nested another element,
+    // which left no way to take inline code off.
     function wrapInlineCode() {
       var sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
       var range = sel.getRangeAt(0);
       if (range.collapsed) return;
+
+      var existing = inlineCodeAncestor(range.commonAncestorContainer);
+      if (existing) {
+        var parent = existing.parentNode;
+        if (!parent) return;
+        var first = existing.firstChild;
+        var last = existing.lastChild;
+        while (existing.firstChild) parent.insertBefore(existing.firstChild, existing);
+        parent.removeChild(existing);
+        if (first && last) {
+          var restored = document.createRange();
+          restored.setStartBefore(first);
+          restored.setEndAfter(last);
+          sel.removeAllRanges();
+          sel.addRange(restored);
+        }
+        parent.normalize();
+        scheduleUpdate();
+        return;
+      }
+
       var code = document.createElement("code");
       code.appendChild(range.extractContents());
       range.insertNode(code);
