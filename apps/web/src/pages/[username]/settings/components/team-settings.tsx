@@ -480,9 +480,10 @@ function TsSubscriptionCard({ username }: { username: string }) {
                   className="ts-field__input"
                   type="text"
                   placeholder="YYMMDD"
-                  maxLength={10}
+                  inputMode="numeric"
+                  maxLength={6}
                   value={birthOrBiz}
-                  onChange={(e) => setBirthOrBiz(e.target.value)}
+                  onChange={(e) => setBirthOrBiz(digitsOnly(e.target.value))}
                 />
               </div>
               <div className="ts-field">
