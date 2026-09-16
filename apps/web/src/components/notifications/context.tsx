@@ -134,9 +134,39 @@ function useProvideInbox(spaceId: SpacePartition | null, unreadCount: UnreadCoun
     setUnreadOnly,
     unreadCount,
     handleItemClick: async (item) => {
+      // Show the row as read and drop the badge by one before the server
+      // answers: Rust left both to the next 60s poll, so a tapped
+      // notification stayed unread on screen and the badge disagreed with
+      // the list. Rolled back if the call fails.
+      const wasUnread = !item.is_read;
+      const previousPages = queryClient.getQueryData<
+        InfiniteData<BookmarkPage<InboxNotificationResponse>, string | undefined>
+      >(queryKey);
+      const previousCount = unreadCount.count;
+      if (wasUnread) {
+        queryClient.setQueryData<InfiniteData<BookmarkPage<InboxNotificationResponse>, string | undefined>>(
+          queryKey,
+          (data) =>
+            data && {
+              ...data,
+              pages: data.pages.map((page) => ({
+                ...page,
+                // The unread-only list drops the row instead of restyling it.
+                items: unreadOnly
+                  ? page.items.filter((entry) => entry.id !== item.id)
+                  : page.items.map((entry) => (entry.id === item.id ? { ...entry, is_read: true } : entry)),
+              })),
+            },
+        );
+        unreadCount.set(Math.max(previousCount - 1, 0));
+      }
       try {
         await markRead.mutateAsync(item.id);
       } catch (e) {
+        if (wasUnread) {
+          if (previousPages) queryClient.setQueryData(queryKey, previousPages);
+          unreadCount.set(previousCount);
+        }
         setError(asApiError(e));
         return;
       }

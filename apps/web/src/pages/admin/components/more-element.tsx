@@ -19,6 +19,9 @@ export function MoreElement({ hasMore, isLoading, onNext }: MoreElementProps) {
 
   if (!hasMore) return null;
   if (isLoading) return <div className="">{lit.text("loading_more")}</div>;
+  // The observer disconnects itself after firing, so a fresh one is armed only
+  // when this remounts — which is why `isLoading` must cover every fetch that
+  // can add a page, not just `fetchNextPage`.
   return <Sentinel id={`infinite-scroll-sentinel-${key}`} onVisible={onNext} />;
 }
 

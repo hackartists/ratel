@@ -85,6 +85,18 @@ targets:
         # token refreshes; alert pushes work without it, but FCM recommends it.
         UIBackgroundModes:
           - remote-notification
+        # iOS 26+ traps at launch (EXC_BREAKPOINT in
+        # __UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption) for any
+        # app linked against the iOS 26+ SDK that does not adopt the UIScene life
+        # cycle. tao >= 0.35 (tauri >= 2.11) ships a UISceneDelegate
+        # (TaoSceneDelegate), but only installs it — via
+        # application:configurationForConnectingSceneSession:options: — when
+        # this flag is true (tao/src/platform_impl/ios/view.rs,
+        # `if multiple_scenes_enabled()`). With false, or with an older tao,
+        # UIKit sees no scene adoption and the app traps on launch.
+        # xcodegen OWNS Info.plist: set this here, not in ratel-tauri_iOS/Info.plist.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
     entitlements:
       path: ratel-tauri_iOS/ratel-tauri_iOS.entitlements
       # xcodegen OWNS this file (regenerates it from these properties on every

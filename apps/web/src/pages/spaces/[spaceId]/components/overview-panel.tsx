@@ -246,7 +246,10 @@ export function OverviewPanel({
             </div>
           </div>
         </div>
-        {isAdmin && (
+        {/* Everyone sees the attachments; only an admin gets the pencil, the
+            remove buttons and the upload zone (all gated on `editing`). The
+            section stays hidden for a reader when there is nothing to read. */}
+        {(isAdmin || files.length > 0) && (
           <div className="overview-section overview-section--files">
             <div className="overview-section__label">
               {tr.files}
@@ -261,8 +264,21 @@ export function OverviewPanel({
                       ? "file-item__icon--img"
                       : "file-item__icon--doc";
                 const key = file.url ?? file.name;
+                // Read-only rows open the file (a new tab, like FileCard
+                // elsewhere); while editing the row stays a plain box so the
+                // remove button can't navigate away.
+                const RowTag = !editing && file.url !== null ? "a" : "div";
+                const rowProps =
+                  RowTag === "a"
+                    ? {
+                        href: file.url ?? undefined,
+                        target: "_blank",
+                        rel: "noreferrer noopener",
+                        download: file.name,
+                      }
+                    : {};
                 return (
-                  <div className="file-item" key={key}>
+                  <RowTag className="file-item" key={key} {...rowProps}>
                     <div className={`file-item__icon ${kindCls}`}>
                       <svg
                         fill="none"
@@ -302,7 +318,7 @@ export function OverviewPanel({
                         </button>
                       </div>
                     )}
-                  </div>
+                  </RowTag>
                 );
               })}
             </div>

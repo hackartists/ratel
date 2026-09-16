@@ -40,7 +40,7 @@ jobs:
   sweep:
     # Self-hosted: needs in-cluster kubectl credentials and the pr-webroot PVC
     # mounted at /root/nginx — same pool as e2e and cleanup.
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 30
     env:
       DRY_RUN: "${{ inputs.dry_run && 'true' || 'false' }}"

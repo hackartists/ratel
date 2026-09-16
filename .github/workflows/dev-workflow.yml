@@ -82,7 +82,7 @@ jobs:
   # This job (the `dev` branch) SAVES the ratel-cargo-* / ratel-target-*
   # caches that pr-workflow's self-hosted jobs restore read-only.
   build-images:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 120
     env:
       # ── Compile-time env — replicated from the old lambda build job. ──
@@ -343,7 +343,7 @@ jobs:
   # ── Deploy (envsubst deploy/dev/*.yaml → k3s namespace `ratel-dev`) ─────
   deploy:
     needs: [build-images]
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 45
     # One dev deploy at a time; a newer push queues behind (not cancels) the
     # in-flight one so a half-rolled namespace is never abandoned. Job-level
@@ -616,7 +616,7 @@ jobs:
   # ── Smoke test — confirm the PUBLIC URL responds ────────────────────────
   smoke-test:
     needs: deploy
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     timeout-minutes: 15
     env:
       HOST: ratel-dev.biyard.co
@@ -642,7 +642,7 @@ jobs:
           echo "✓ https://${HOST} is live"
 
   create-release-pr:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux]
     if: github.ref == 'refs/heads/dev'
     needs: [deploy]
     steps:
