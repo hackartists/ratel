@@ -246,7 +246,10 @@ export function OverviewPanel({
             </div>
           </div>
         </div>
-        {isAdmin && (
+        {/* Everyone sees the attachments; only an admin gets the pencil, the
+            remove buttons and the upload zone (all gated on `editing`). The
+            section stays hidden for a reader when there is nothing to read. */}
+        {(isAdmin || files.length > 0) && (
           <div className="overview-section overview-section--files">
             <div className="overview-section__label">
               {tr.files}
