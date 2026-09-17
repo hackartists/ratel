@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -78,6 +79,9 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
             isMinifyEnabled = true
+            // Drop resources nothing references once R8 has removed dead code
+            // (Play Console "R8 optimization" recommendation). Requires minify.
+            isShrinkResources = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
@@ -85,11 +89,28 @@ android {
             )
         }
     }
-    kotlinOptions {
-        jvmTarget = "1.8"
+    // Java and Kotlin must target the same JVM (AGP 9 defaults Java to 11, Kotlin
+    // follows the JDK). 1.8 matches the tauri / tauri-plugin Android modules.
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
     buildFeatures {
         buildConfig = true
+    }
+    // AGP 9.4's lint (K2 UAST only; android.lint.useK2Uast was removed) crashes
+    // analysing this Kotlin build script (KotlinIllegalArgumentException in
+    // LLResolutionFacade.findCompiledFirSymbol via UastGradleVisitor), which
+    // fails every release build at lintVitalAnalyze. Skip the release-time vital
+    // pass; `./gradlew lint` can still be run on demand.
+    lint {
+        checkReleaseBuilds = false
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_1_8)
     }
 }
 
