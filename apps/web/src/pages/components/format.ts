@@ -1,7 +1,6 @@
 // Formatting helpers of app/ratel/src/views/index/component.rs (lines 893-1022, 1180-1186).
 // Strings the Rust file hardcodes outside `translate!` stay English constants here.
 import type { HotSpaceHeat, HotSpaceResponse } from "@ratel/ts-bridges";
-import { currentEnvironment, Environment } from "@/lib/environment";
 
 /** component.rs:121 */
 export const BRAND_LOGO = "https://metadata.ratel.foundation/logos/logo-symbol.png";
@@ -106,11 +105,8 @@ export function formatPostDate(timestampMs: number): string {
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}. ${d.getUTCFullYear()}`;
 }
 
-/** component.rs:1016-1022 — Arcade is pre-release: only local and dev builds show it. */
-export function isArcadeVisibleEnv(): boolean {
-  const env = currentEnvironment();
-  return env === Environment.Local || env === Environment.Dev;
-}
+/** component.rs:1016-1022 — moved to lib/environment.ts so non-home entry points share it. */
+export { isArcadeVisibleEnv } from "@/lib/environment";
 
 /** `FeedPartition` from a `Partition` string (`FEED#<id>` → `<id>`), as `resp.post_pk.into()`. */
 export function partitionId(pk: string): string {
