@@ -286,6 +286,10 @@ jobs:
           VITE_WALLETCONNECT_PROJECT_ID: ${{ secrets.WALLETCONNECT_PROJECT_ID }}
           VITE_PORTONE_STORE_ID: ${{ secrets.PORTONE_STORE_ID }}
           VITE_PORTONE_INICIS_CHANNEL_KEY: ${{ secrets.PROD_PORTONE_INICIS_CHANNEL_KEY }}
+          # Rust's `option_env!("ENV")` equivalent for the React bundle. Without it
+          # the bundle reads Environment::Local and pre-release surfaces gated on
+          # the environment (the Arcade entry) would show up in production.
+          VITE_ENV: production
         run: |
           corepack enable
           pnpm install --frozen-lockfile

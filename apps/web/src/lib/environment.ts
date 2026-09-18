@@ -27,6 +27,16 @@ export function parseEnvironment(value: string): Environment {
   }
 }
 
+/**
+ * Arcade is pre-release: only local and dev builds expose it (entry buttons and
+ * the /arcade routes). Needs `VITE_ENV` at build time — without it every build
+ * reads Local and the Arcade shows up everywhere (the dev/prod workflows set it).
+ */
+export function isArcadeVisibleEnv(): boolean {
+  const env = currentEnvironment();
+  return env === Environment.Local || env === Environment.Dev;
+}
+
 /** Rust `Environment::default()`. */
 export function currentEnvironment(): Environment {
   const raw: unknown = import.meta.env.VITE_ENV;
