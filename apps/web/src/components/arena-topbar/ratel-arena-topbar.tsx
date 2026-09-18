@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { LOGIN_MODAL_TITLE, useLoginModal } from "@/components/auth";
 import { useRatelArenaTopbarI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
+import { isArcadeVisibleEnv } from "@/lib/environment";
 
 // app/ratel/src/components/arena_topbar/component.rs — the shared arena topbar
 // (Home Arena keeps its own inline one). Kept under components/ like the Rust
@@ -156,22 +157,24 @@ export function RatelArenaTopbar({ active }: { active?: RatelArenaTopbarSection 
           </svg>
           <span className="hud-btn__label">{t.essence}</span>
         </button>
-        <button
-          className="hud-btn"
-          aria-label={t.arcade}
-          data-testid="home-btn-arcade"
-          onClick={requireUser(() => navigate("/arcade/home"))}
-        >
-          <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <circle cx="8" cy="8" r="1" />
-            <circle cx="16" cy="8" r="1" />
-            <circle cx="12" cy="12" r="1" />
-            <circle cx="8" cy="16" r="1" />
-            <circle cx="16" cy="16" r="1" />
-          </svg>
-          <span className="hud-btn__label">{t.arcade}</span>
-        </button>
+        {isArcadeVisibleEnv() && (
+          <button
+            className="hud-btn"
+            aria-label={t.arcade}
+            data-testid="home-btn-arcade"
+            onClick={requireUser(() => navigate("/arcade/home"))}
+          >
+            <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8" cy="8" r="1" />
+              <circle cx="16" cy="8" r="1" />
+              <circle cx="12" cy="12" r="1" />
+              <circle cx="8" cy="16" r="1" />
+              <circle cx="16" cy="16" r="1" />
+            </svg>
+            <span className="hud-btn__label">{t.arcade}</span>
+          </button>
+        )}
         <button
           className="hud-btn"
           aria-label={t.connections}

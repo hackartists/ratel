@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, Outlet, useLocation, useMatch, useNavigate } from "react-router-dom";
+import { Link, Navigate, Outlet, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { ChipBalance } from "@/components/arcade/chip-balance";
 import { ArcadeExchangeModal } from "@/components/arcade/exchange-modal";
 import {
@@ -12,6 +12,7 @@ import { monogram } from "@/components/arcade/format";
 import { useArcadeLayoutI18n } from "@/components/arcade/arcade-layout.i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
+import { isArcadeVisibleEnv } from "@/lib/environment";
 
 // app/ratel/src/features/arcade/layout.rs (`ArcadeLayout`) — the top bar, the
 // mobile drawer and the RP → chip exchange modal around every /arcade page.
@@ -22,6 +23,10 @@ import { dataBool } from "@/lib/dom";
 const USER_TYPE_SYSTEM_ADMIN = 98;
 
 export function Component() {
+  // Hiding the entry buttons is not enough: /arcade/** is still typeable.
+  // Every arcade route renders under this layout, so gate them all here.
+  const arcadeVisible = isArcadeVisibleEnv();
+
   const tr = useArcadeLayoutI18n();
   const { user } = useUserContext();
   const isAdmin = user?.user_type === USER_TYPE_SYSTEM_ADMIN;
@@ -46,6 +51,9 @@ export function Component() {
     setMenuOpen(false);
     setModalOpen((open) => !open);
   };
+  // After every hook, so the hook order stays identical between builds.
+  if (!arcadeVisible) return <Navigate to="/" replace />;
+
   const closeMenu = () => setMenuOpen(false);
   const goAdminNew = () => {
     setMenuOpen(false);
