@@ -82,7 +82,7 @@ jobs:
   # This job (the `dev` branch) SAVES the ratel-cargo-* / ratel-target-*
   # caches that pr-workflow's self-hosted jobs restore read-only.
   build-images:
-    runs-on: [self-hosted, Linux]
+    runs-on: [self-hosted, Linux, ARM64]
     timeout-minutes: 120
     env:
       # ── Compile-time env — replicated from the old lambda build job. ──

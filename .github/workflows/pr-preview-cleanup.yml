@@ -40,7 +40,7 @@ jobs:
   cleanup:
     # Same self-hosted pool as e2e: the runner pods carry in-cluster
     # kubectl credentials and mount the pr-webroot PVC at /root/nginx.
-    runs-on: [self-hosted, Linux]
+    runs-on: [self-hosted, Linux, ARM64]
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
