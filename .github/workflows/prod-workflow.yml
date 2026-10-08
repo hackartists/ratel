@@ -243,6 +243,13 @@ jobs:
           # Second push is a cache hit in buildkitd — just retags.
           IMAGE_TAG=prod bash scripts/buildkit-image.sh
 
+      - name: Setup Node
+        # amd64 migration: same missing-corepack fix as dev-workflow.yml —
+        # see that file's comment for the full rationale (run 37756874504).
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Build web (React static site)
         env:
           # VITE_* build-time env for the React bundle — mapped from the SAME

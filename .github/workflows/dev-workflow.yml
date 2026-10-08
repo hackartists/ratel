@@ -250,6 +250,15 @@ jobs:
           # Second push is a cache hit in buildkitd — just retags.
           IMAGE_TAG=dev bash scripts/buildkit-image.sh
 
+      - name: Setup Node
+        # amd64 migration: this runner pool (unlike the old arm64 pool) has
+        # no system-wide Node/corepack install, so `corepack enable` below
+        # failed with "command not found" (run 37756874504). Matches the
+        # setup-node step already used by pr-workflow.yml's build-web-image.
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Build web (React static site)
         env:
           # VITE_* build-time env for the React bundle — mapped from the SAME
