@@ -40,6 +40,15 @@ export interface AuthActions {
   verifyEmailCode(email: string, code: string): Promise<VerifyCodeResponse>;
   /** `login_handler(LoginRequest::Email)`, then remembers the refresh token and signs in. */
   loginWithEmail(email: string, code: string): Promise<void>;
+  /** `send_code_handler(SendCodeRequest::SMS)`. */
+  sendPhoneCode(phone: string): Promise<void>;
+  /**
+   * `login_handler(LoginRequest::Phone)`, then remembers the refresh token and
+   * signs in. Unlike email, a phone number with no account is auto-created
+   * server-side (`login_with_phone`) — there is no separate phone signup step
+   * and no `UserNotFound` branch to handle here.
+   */
+  loginWithPhone(phone: string, code: string): Promise<void>;
   /** `login_handler(LoginRequest::OAuth { provider: Google })`, then signs in. */
   loginWithGoogle(accessToken: string): Promise<void>;
   /** `wallet_check_handler`. */
@@ -83,6 +92,14 @@ export function useAuthActions(): AuthActions {
     verifyEmailCode: (email, code) => verifyCode.mutateAsync({ email, code }),
     loginWithEmail: async (email, code) => {
       const resp = await login.mutateAsync({ email, code, device_id: loginDeviceId() });
+      rememberRefreshToken(resp.refresh_token);
+      signIn(resp);
+    },
+    sendPhoneCode: async (phone) => {
+      await sendCode.mutateAsync({ phone });
+    },
+    loginWithPhone: async (phone, code) => {
+      const resp = await login.mutateAsync({ phone, code, device_id: loginDeviceId() });
       rememberRefreshToken(resp.refresh_token);
       signIn(resp);
     },
