@@ -129,16 +129,41 @@ test.describe.serial("Poll privacy-consent question", () => {
     expect(question.terms_body_html).toContain(termsBodyText);
 
     await publishAction(page);
+
+    // Open the space to the public and start it (Open → Ongoing) so a
+    // second account can join as a genuine Participant. The Creator's own
+    // view always resolves to the designer page (isSpaceAdmin(role) short-
+    // circuits PollCreatorPage regardless of currentRole), so there is no
+    // in-page toggle that gets a Creator into the participant response UI —
+    // a different account is required to exercise it.
+    const publishRes = await page.request.patch(`/api/spaces/${spaceId}`, {
+      data: { req: { publish: true, visibility: "PUBLIC" } },
+    });
+    expect(publishRes.ok(), `publish space: ${await publishRes.text()}`).toBeTruthy();
+    const startRes = await page.request.patch(`/api/spaces/${spaceId}`, {
+      data: { req: { start: true } },
+    });
+    expect(startRes.ok(), `start space: ${await startRes.text()}`).toBeTruthy();
   });
 
   test("Participant: sees terms, submit disabled until agreement + verified phone", async ({
-    page,
+    browser,
   }) => {
+    // A fresh context authenticated as a DIFFERENT account (admin.json) —
+    // relative to spaceId's creator (user.json) this account is a genuine
+    // Participant once it calls /participate on the now-public, Ongoing space.
+    const context = await browser.newContext({ storageState: "admin.json" });
+    const page = await context.newPage();
+
+    const participateRes = await page.request.post(`/api/spaces/${spaceId}/participate`, {
+      data: { req: {} },
+    });
+    expect(
+      participateRes.ok() || participateRes.status() === 409,
+      `participate: ${await participateRes.text()}`,
+    ).toBeTruthy();
+
     await goto(page, `/spaces/${spaceId}/actions/polls/${pollId}`);
-    // Creator + locked action (published in the previous test) renders the
-    // participant-style response view by default — "action-settings-switch"
-    // (when present) toggles the OPPOSITE direction, back into the designer
-    // config view, so it must stay unclicked here.
 
     const question = page.getByTestId("poll-question-privacy-consent");
     await expect(question).toBeVisible();
