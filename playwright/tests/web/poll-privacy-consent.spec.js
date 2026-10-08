@@ -156,7 +156,7 @@ test.describe.serial("Poll privacy-consent question", () => {
     const page = await context.newPage();
 
     const participateRes = await page.request.post(`/api/spaces/${spaceId}/participate`, {
-      data: { req: {} },
+      data: { body: { informed_agreed: true } },
     });
     expect(
       participateRes.ok() || participateRes.status() === 409,
