@@ -405,6 +405,15 @@ jobs:
           if [ "$(pg "SELECT 1 FROM pg_roles WHERE rolname = '${DB_ROLE}'")" != "1" ]; then
             pg "CREATE ROLE ${DB_ROLE} LOGIN PASSWORD '${DB_PASSWORD}'"
             echo "created role ${DB_ROLE}"
+          else
+            # The role may already exist from dev/prod with a DIFFERENT
+            # password (e.g. created before this PR-preview path existed, or
+            # rotated independently) — force it to the password every
+            # workload in this file expects, so app-shell's DATABASE_URL
+            # never hits "password authentication failed" on an otherwise
+            # pre-existing role.
+            pg "ALTER ROLE ${DB_ROLE} LOGIN PASSWORD '${DB_PASSWORD}'"
+            echo "role ${DB_ROLE} already existed — password reset to the expected value"
           fi
           if [ "$(pg "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'")" != "1" ]; then
             pg "CREATE DATABASE ${DB_NAME} OWNER ${DB_ROLE}"

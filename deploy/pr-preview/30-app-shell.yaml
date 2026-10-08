@@ -94,7 +94,7 @@ spec:
             # and migrates the inventory schema on startup (common/run.rs).
             # Shared infra postgres — dedicated per-PR database.
             - name: DATABASE_URL
-              value: postgres://ratel:***@postgres.infra.svc.cluster.local:5432/ratel_pr_${PR_NUM}
+              value: postgres://ratel:ratel@postgres.infra.svc.cluster.local:5432/ratel_pr_${PR_NUM}
             # Per-instance sqlx POOL max (client side), NOT postgres server
             # max_connections. Small (10) to mirror production sizing
             # (replicas × pool ≤ server max_connections) and to keep the pool a
