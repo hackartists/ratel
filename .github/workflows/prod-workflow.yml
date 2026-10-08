@@ -78,7 +78,7 @@ jobs:
   # the cache steps restore the ratel-cargo-*/ratel-target-* caches the dev
   # branch keeps warm (and save main's own copies).
   build-images:
-    runs-on: [self-hosted, Linux]
+    runs-on: [self-hosted, Linux, ARM64]
     timeout-minutes: 120
     env:
       # ── Compile-time env — replicated from the old prod lambda build ──
