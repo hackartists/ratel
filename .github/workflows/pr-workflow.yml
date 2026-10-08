@@ -245,6 +245,13 @@ jobs:
           NAME: ratel-app-shell
           DOCKERFILE: app/ratel/Dockerfile
           IMAGE_TAG: pr-${{ github.event.number }}
+          # Fixed test values (not real secrets) — the SECRETS= list below
+          # looks these up by name via shell indirection, so they must be
+          # ordinary env vars here (not inlined into the SECRETS string:
+          # see scripts/buildkit-image.sh's header comment for why).
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          ACCOUNT_ID: test
           BUILD_ARGS: >-
             ENV=local
             DYNAMO_TABLE_PREFIX=ratel-local
@@ -253,9 +260,9 @@ jobs:
             RUST_LOG=error
             FEATURES=server,bypass,design-preview
           SECRETS: >-
-            AWS_ACCESS_KEY_ID=test
-            AWS_SECRET_ACCESS_KEY=test
-            ACCOUNT_ID=test
+            AWS_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY
+            ACCOUNT_ID
         run: bash scripts/buildkit-image.sh
 
   # ────────────────────────────────────────────────────────────────────────
@@ -317,6 +324,10 @@ jobs:
           NAME: ratel-events
           DOCKERFILE: deploy/dev/Dockerfile.events
           IMAGE_TAG: pr-${{ github.event.number }}
+          # See build-image's identical comment above.
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          ACCOUNT_ID: test
           BUILD_ARGS: >-
             ENV=local
             DYNAMO_TABLE_PREFIX=ratel-pr-${{ github.event.number }}
@@ -324,9 +335,9 @@ jobs:
             AWS_REGION=ap-northeast-2
             RUST_LOG=info
           SECRETS: >-
-            AWS_ACCESS_KEY_ID=test
-            AWS_SECRET_ACCESS_KEY=test
-            ACCOUNT_ID=test
+            AWS_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY
+            ACCOUNT_ID
         run: bash scripts/buildkit-image.sh
 
   # ────────────────────────────────────────────────────────────────────────
