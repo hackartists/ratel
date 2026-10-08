@@ -3,6 +3,8 @@ pub mod dependency;
 #[cfg(feature = "server")]
 pub mod notify_action_ongoing;
 #[cfg(feature = "server")]
+pub mod required_attributes;
+#[cfg(feature = "server")]
 pub mod vote_crypto;
 
 #[cfg(feature = "server")]

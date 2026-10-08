@@ -1,4 +1,5 @@
 import { ActionDependencySelector } from "@/components/space-actions/action-dependency-selector";
+import { ActionRequiredAttributeSelector } from "@/components/space-actions/action-required-attribute-selector";
 import { ActionRewardSetting } from "@/components/space-actions/action-reward-setting";
 import { ActionStatusControl } from "@/components/space-actions/action-status-control";
 import { ActionDeleteButton } from "@/components/space-actions/delete-action";
@@ -31,6 +32,17 @@ export function DiscussionConfigCard() {
             <span className="section__label">{tr.sectionDependenciesLabel}</span>
           </div>
           <ActionDependencySelector spaceId={spaceId} actionId={discussionId} initialDependsOn={action.depends_on} />
+        </section>
+
+        <section className="section" data-testid="section-required-attributes">
+          <div className="section__head">
+            <span className="section__label">{tr.sectionRequiredAttributesLabel}</span>
+          </div>
+          <ActionRequiredAttributeSelector
+            spaceId={spaceId}
+            actionId={discussionId}
+            initialRequiredAttributes={action.required_attributes}
+          />
         </section>
 
         <section className="section" data-testid="section-participation">

@@ -17,4 +17,4 @@ This is the product index. Each checkbox maps to **exactly one spec file** in `r
 
 ## Shipped
 
-_None yet._
+- [x] [Discussion Required Attributes (gate participation on poll single-choice answers)](docs/superpower/2026-10-08-discussion-required-attributes.md)

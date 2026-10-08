@@ -3,7 +3,11 @@ use crate::features::spaces::pages::actions::actions::discussion::*;
 use crate::features::spaces::pages::actions::models::SpaceAction;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct ReplyCommentRequest {
     pub content: String,
     #[serde(default)]
@@ -31,12 +35,20 @@ pub async fn reply_comment(
     )
     .await?;
 
+    let req_attrs_met = crate::features::spaces::pages::actions::services::required_attributes::required_attributes_met(
+        &space,
+        &space_action,
+        &member.pk,
+    )
+    .await?;
+
     if !crate::features::spaces::pages::actions::can_execute_space_action(
         role,
         space_action.prerequisite,
         space.status,
         space_action.status.as_ref(),
         deps_met,
+        req_attrs_met,
         space.join_anytime,
     ) {
         return Err(SpaceActionDiscussionError::NotAvailableInCurrentStatus.into());
@@ -86,10 +98,11 @@ pub async fn reply_comment(
     let space_pk: Partition = space_id.clone().into();
 
     // Essence indexing happens via the DynamoDB Stream pipeline.
-    let _ = crate::features::spaces::space_common::models::aggregate::DashboardAggregate::inc_comments(
-        &space_pk, 1,
-    )
-    .await;
+    let _ =
+        crate::features::spaces::space_common::models::aggregate::DashboardAggregate::inc_comments(
+            &space_pk, 1,
+        )
+        .await;
 
     // Reward payout + XP recording run on EventBridge via SPACE_POST_COMMENT#
     // INSERT → handle_discussion_xp. Only the first reply per user per

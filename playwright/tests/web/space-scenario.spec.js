@@ -11,6 +11,7 @@ import {
   getEditor,
   waitPopup,
   addPollQuestion,
+  addRequiredAttribute,
   fillPollQuestion,
   togglePrerequisite,
   commitAutosave,
@@ -571,5 +572,210 @@ test.describe.serial("Space governance scenario", () => {
     browser,
   }) => {
     await signUpAndParticipate(browser, participant3, spaceUrl);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Discussion Required Attributes — gates participation on a Poll's
+// single-choice answer matching an allow-list, independent of (AND with)
+// Dependency Actions. `can_execute_space_action` runs for the Creator role
+// too, so this whole scenario is driven by the Creator alone — no extra
+// signups needed.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe.serial("Discussion Required Attributes gate", () => {
+  let spaceUrl;
+  let spaceId;
+  let pollId;
+  let discussionId;
+  let depActionId;
+
+  const postTitle = "Required Attributes E2E Space";
+  const postContents =
+    "Space for testing the Required Attributes gate on a discussion action. " +
+    "A poll question restricts who may participate in the discussion.";
+
+  test("Setup: create team + post + space", async ({ page }) => {
+    const teamUsername = `e2e_ra_${Date.now()}`;
+    await createTeamFromHome(page, {
+      username: teamUsername,
+      nickname: "Required Attributes Team",
+      description: "Required Attributes e2e test",
+    });
+    const postId = await createTeamPostFromHome(
+      page,
+      teamUsername,
+      postTitle,
+      postContents,
+    );
+    const spaceRes = await page.request.post("/api/spaces/create", {
+      data: { req: { post_id: postId } },
+    });
+    expect(spaceRes.ok(), `create space: ${await spaceRes.text()}`).toBeTruthy();
+    spaceId = (await spaceRes.json()).space_id;
+    spaceUrl = `/spaces/${spaceId}`;
+  });
+
+  test("Setup: create a gating Poll with a single-choice question", async ({
+    page,
+  }) => {
+    await createAction(page, spaceUrl, "poll", /\/actions\/polls\//);
+    await fill(
+      page,
+      { placeholder: "Enter poll title..." },
+      "Required Attributes: Gating Poll",
+    );
+    await commitAutosave(page);
+
+    await addPollQuestion(page, "single");
+    await fillPollQuestion(page, 0, {
+      title: "Which track are you in?",
+      options: ["Engineering", "Design"],
+    });
+
+    const m = page.url().match(/\/actions\/polls\/([^/?#]+)/);
+    expect(m, "poll id should be parseable from editor URL").not.toBeNull();
+    pollId = m[1];
+
+    // Allow re-submission so the next tests can walk through a disallowed
+    // answer and then an allowed answer on the same poll/user.
+    const editableRes = await page.request.post(
+      `/api/spaces/${spaceId}/polls/${pollId}`,
+      { data: { req: { response_editable: true } } },
+    );
+    expect(
+      editableRes.ok(),
+      `set response_editable: ${await editableRes.text()}`,
+    ).toBeTruthy();
+  });
+
+  test("Setup: create a Dependency action to combine AND with Required Attributes", async ({
+    page,
+  }) => {
+    await createAction(page, spaceUrl, "follow", /\/actions\/follows\//);
+    const m = page.url().match(/\/actions\/follows\/([^/?#]+)/);
+    expect(m, "follow id should be parseable from editor URL").not.toBeNull();
+    depActionId = m[1];
+    // A Follow action's status defaults to Designing with no prerequisite —
+    // leaving it incomplete is enough to exercise the dependency half of
+    // the AND once wired onto the discussion below.
+  });
+
+  test("Setup: create the gated Discussion and configure both gates", async ({
+    page,
+  }) => {
+    await createAction(
+      page,
+      spaceUrl,
+      "discuss",
+      /\/actions\/discussions\/[^/]+\/edit/,
+    );
+    const m = page.url().match(/\/actions\/discussions\/([^/]+)\/edit/);
+    expect(m, "discussion id should be parseable from editor URL").not.toBeNull();
+    discussionId = m[1];
+
+    await fill(
+      page,
+      { placeholder: "Enter discussion title..." },
+      "Required Attributes: Gated Discussion",
+    );
+    const editor = await getEditor(page);
+    await editor.fill("Only Engineering-track respondents may post here.");
+    await commitAutosave(page);
+
+    await expect(page.getByTestId("section-required-attributes")).toBeVisible();
+    await addRequiredAttribute(page, {
+      pollTitle: "Required Attributes: Gating Poll",
+      questionTitle: "Which track are you in?",
+      allowedValues: ["Engineering"],
+    });
+    await expect(page.getByTestId("chip-required-attribute-0")).toBeVisible();
+  });
+
+  test("Blocked: unanswered poll prevents Discussion participation", async ({
+    page,
+  }) => {
+    const res = await page.request.post(
+      `/api/spaces/${spaceId}/discussions/${discussionId}/comments`,
+      { data: { req: { content: "should be blocked", images: [] } } },
+    );
+    expect(res.ok(), "comment must be rejected while poll is unanswered").toBeFalsy();
+  });
+
+  test("Blocked: answering the poll with a disallowed option still blocks", async ({
+    page,
+  }) => {
+    const respondRes = await page.request.post(
+      `/api/spaces/${spaceId}/polls/${pollId}/respond`,
+      { data: { req: { answers: [{ answer_type: "single_choice", answer: 1, other: null }] } } },
+    );
+    expect(respondRes.ok(), `poll respond: ${await respondRes.text()}`).toBeTruthy();
+
+    const res = await page.request.post(
+      `/api/spaces/${spaceId}/discussions/${discussionId}/comments`,
+      { data: { req: { content: "should still be blocked", images: [] } } },
+    );
+    expect(
+      res.ok(),
+      "comment must be rejected when the poll answer is not in the allow-list",
+    ).toBeFalsy();
+  });
+
+  test("Unlocked: answering with an allowed option satisfies Required Attributes (no dependency configured yet)", async ({
+    page,
+  }) => {
+    const respondRes = await page.request.post(
+      `/api/spaces/${spaceId}/polls/${pollId}/respond`,
+      { data: { req: { answers: [{ answer_type: "single_choice", answer: 0, other: null }] } } },
+    );
+    expect(respondRes.ok(), `poll respond: ${await respondRes.text()}`).toBeTruthy();
+
+    // Required Attributes alone is now satisfied and no Dependency Actions
+    // are configured on the discussion yet, so participation succeeds.
+    const res = await page.request.post(
+      `/api/spaces/${spaceId}/discussions/${discussionId}/comments`,
+      { data: { req: { content: "unlocked by required attributes alone", images: [] } } },
+    );
+    expect(
+      res.ok(),
+      `comment should succeed once Required Attributes is satisfied: ${await res.text()}`,
+    ).toBeTruthy();
+  });
+
+  test("AND case: wiring an incomplete Dependency Action back on blocks again even though Required Attributes is satisfied", async ({
+    page,
+  }) => {
+    const updateRes = await page.request.post(
+      `/api/spaces/${spaceId}/actions/${discussionId}`,
+      { data: { req: { depends_on: [depActionId] } } },
+    );
+    expect(updateRes.ok(), `set dependency: ${await updateRes.text()}`).toBeTruthy();
+
+    const res = await page.request.post(
+      `/api/spaces/${spaceId}/discussions/${discussionId}/comments`,
+      { data: { req: { content: "blocked by dependency", images: [] } } },
+    );
+    expect(
+      res.ok(),
+      "comment must be blocked while the dependency action is incomplete, even though Required Attributes is satisfied",
+    ).toBeFalsy();
+  });
+
+  test("Fully unlocked: clearing the Dependency Action restores access (Required Attributes + Dependency Actions both AND-satisfied)", async ({
+    page,
+  }) => {
+    const updateRes = await page.request.post(
+      `/api/spaces/${spaceId}/actions/${discussionId}`,
+      { data: { req: { depends_on: [] } } },
+    );
+    expect(updateRes.ok(), `clear dependency: ${await updateRes.text()}`).toBeTruthy();
+
+    const res = await page.request.post(
+      `/api/spaces/${spaceId}/discussions/${discussionId}/comments`,
+      { data: { req: { content: "now allowed through", images: [] } } },
+    );
+    expect(
+      res.ok(),
+      `comment must succeed once both gates are satisfied: ${await res.text()}`,
+    ).toBeTruthy();
   });
 });

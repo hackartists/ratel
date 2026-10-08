@@ -2,7 +2,11 @@ use super::SpaceActionType;
 use crate::features::spaces::pages::actions::*;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct SpaceActionSummary {
     pub action_id: String,
     pub action_type: SpaceActionType,
@@ -32,6 +36,12 @@ pub struct SpaceActionSummary {
     pub depends_on: Vec<String>,
     #[serde(default = "default_deps_met")]
     pub dependencies_met: bool,
+
+    #[serde(default)]
+    pub required_attributes:
+        Vec<crate::features::spaces::pages::actions::models::RequiredAttributeRule>,
+    #[serde(default = "default_deps_met")]
+    pub required_attributes_met: bool,
 }
 
 fn default_deps_met() -> bool {
@@ -60,7 +70,8 @@ impl From<crate::features::spaces::pages::actions::models::SpaceAction> for Spac
             status: action.status,
             depends_on: action.depends_on.0,
             dependencies_met: true,
+            required_attributes: action.required_attributes.0,
+            required_attributes_met: true,
         }
     }
 }
-
