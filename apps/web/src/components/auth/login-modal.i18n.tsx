@@ -20,6 +20,10 @@ const en = {
   terms_of_service: "Terms of Service",
   child_safety: "Child Safety",
   inapp_browser_warning: "Google sign-in is blocked inside this in-app browser. Please open this page in Chrome, Safari, or another full browser.",
+  use_phone_instead: "Use phone number instead",
+  use_email_instead: "Use email instead",
+  phone_number: "Phone number",
+  phone_placeholder: "Enter your phone number",
 };
 
 const ko: Record<keyof typeof en, string> = {
@@ -41,6 +45,10 @@ const ko: Record<keyof typeof en, string> = {
   terms_of_service: "서비스 이용약관",
   child_safety: "아동 안전 기준",
   inapp_browser_warning: "현재 앱의 인앱 브라우저에서는 Google 로그인이 차단되어 있습니다. 우측 상단 메뉴에서 '다른 브라우저로 열기'를 선택해 주세요.",
+  use_phone_instead: "휴대폰 번호로 로그인",
+  use_email_instead: "이메일로 로그인",
+  phone_number: "휴대폰 번호",
+  phone_placeholder: "휴대폰 번호를 입력하세요",
 };
 
 export const i18n = { en, ko };
@@ -64,6 +72,10 @@ export interface LoginModalI18n {
   termsOfService: string;
   childSafety: string;
   inappBrowserWarning: string;
+  usePhoneInstead: string;
+  useEmailInstead: string;
+  phoneNumber: string;
+  phonePlaceholder: string;
 }
 
 export function useLoginModalI18n(): LoginModalI18n {
@@ -87,5 +99,9 @@ export function useLoginModalI18n(): LoginModalI18n {
     termsOfService: t("terms_of_service"),
     childSafety: t("child_safety"),
     inappBrowserWarning: t("inapp_browser_warning"),
+    usePhoneInstead: t("use_phone_instead"),
+    useEmailInstead: t("use_email_instead"),
+    phoneNumber: t("phone_number"),
+    phonePlaceholder: t("phone_placeholder"),
   };
 }

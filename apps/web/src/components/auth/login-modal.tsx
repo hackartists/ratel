@@ -58,6 +58,10 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   const [email, setEmail] = React.useState("");
   const [code, setCode] = React.useState("");
   const [showCode, setShowCode] = React.useState(false);
+  const [loginMethod, setLoginMethod] = React.useState<"email" | "phone">("email");
+  const [phone, setPhone] = React.useState("");
+  const [phoneCode, setPhoneCode] = React.useState("");
+  const [showPhoneCode, setShowPhoneCode] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [walletStep, setWalletStep] = React.useState<WalletStep>("None");
@@ -118,6 +122,37 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
       setLoading(false);
       if (isUserNotFound(e)) openSignup({ initialEmail: email, initialEmailCode: code });
       else setErrorMessage(errorText(e));
+    }
+  };
+
+  // Phone login: enter phone → send code → enter code → submit. Unlike email,
+  // a successful `loginWithPhone` handles both brand-new and returning users
+  // (the account is auto-created server-side), so there is no
+  // `UserNotFound`-to-signup branch here.
+  const submitPhoneLogin = async () => {
+    setErrorMessage(null);
+
+    if (!showPhoneCode) {
+      setLoading(true);
+      try {
+        await actions.sendPhoneCode(phone);
+        setLoading(false);
+        setShowPhoneCode(true);
+      } catch (e) {
+        setLoading(false);
+        setErrorMessage(errorText(e));
+      }
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await actions.loginWithPhone(phone, phoneCode);
+      setLoading(false);
+      finishLogin();
+    } catch (e) {
+      setLoading(false);
+      setErrorMessage(errorText(e));
     }
   };
 
@@ -251,55 +286,129 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
       <div className="flex flex-col gap-4 w-full">
         {errorMessage !== null && <div className="text-sm text-red-500">{errorMessage}</div>}
 
-        <div className="flex flex-col gap-2.5 w-full">
-          <label htmlFor="email" className="text-sm">
-            {tr.emailAddress}
-          </label>
-          <div className="relative w-full">
-            <Input
-              id="email"
-              name="username"
-              autoComplete="email"
-              data-slot="input"
-              data-testid="email-input"
-              disabled={loading}
-              placeholder={tr.emailPlaceholder}
-              type={InputType.Email}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onConfirm={() => void submitEmailLogin()}
-            />
-          </div>
-        </div>
-        <div aria-hidden={showCode ? "false" : "true"} className="flex flex-col gap-2.5 w-full aria-hidden:hidden">
-          <label htmlFor="code" className="text-sm">
-            {tr.verificationCode}
-          </label>
-          <div className="relative w-full">
-            <Input
-              id="code"
-              name="one-time-code"
-              autoComplete="one-time-code"
-              data-slot="input"
-              data-testid="code-input"
-              disabled={loading}
-              placeholder={tr.codePlaceholder}
-              type={InputType.Text}
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              onConfirm={() => void submitEmailLogin()}
-            />
-          </div>
-        </div>
-        <div className="flex flex-row gap-2.5 justify-end items-center w-full text-sm">
+        {loginMethod === "email" ? (
+          <>
+            <div className="flex flex-col gap-2.5 w-full">
+              <label htmlFor="email" className="text-sm">
+                {tr.emailAddress}
+              </label>
+              <div className="relative w-full">
+                <Input
+                  id="email"
+                  name="username"
+                  autoComplete="email"
+                  data-slot="input"
+                  data-testid="email-input"
+                  disabled={loading}
+                  placeholder={tr.emailPlaceholder}
+                  type={InputType.Email}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onConfirm={() => void submitEmailLogin()}
+                />
+              </div>
+            </div>
+            <div aria-hidden={showCode ? "false" : "true"} className="flex flex-col gap-2.5 w-full aria-hidden:hidden">
+              <label htmlFor="code" className="text-sm">
+                {tr.verificationCode}
+              </label>
+              <div className="relative w-full">
+                <Input
+                  id="code"
+                  name="one-time-code"
+                  autoComplete="one-time-code"
+                  data-slot="input"
+                  data-testid="code-input"
+                  disabled={loading}
+                  placeholder={tr.codePlaceholder}
+                  type={InputType.Text}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  onConfirm={() => void submitEmailLogin()}
+                />
+              </div>
+            </div>
+            <div className="flex flex-row gap-2.5 justify-end items-center w-full text-sm">
+              <button
+                className={CONTINUE_BUTTON_CLASS}
+                data-slot="button"
+                data-testid="continue-button"
+                disabled={loading}
+                onClick={() => void submitEmailLogin()}
+              >
+                {loading ? tr.loading : tr.continueBtn}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-2.5 w-full">
+              <label htmlFor="phone" className="text-sm">
+                {tr.phoneNumber}
+              </label>
+              <div className="relative w-full">
+                <Input
+                  id="phone"
+                  name="tel"
+                  autoComplete="tel"
+                  data-slot="input"
+                  data-testid="phone-input"
+                  disabled={loading}
+                  placeholder={tr.phonePlaceholder}
+                  type={InputType.Text}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  onConfirm={() => void submitPhoneLogin()}
+                />
+              </div>
+            </div>
+            <div
+              aria-hidden={showPhoneCode ? "false" : "true"}
+              className="flex flex-col gap-2.5 w-full aria-hidden:hidden"
+            >
+              <label htmlFor="phone-code" className="text-sm">
+                {tr.verificationCode}
+              </label>
+              <div className="relative w-full">
+                <Input
+                  id="phone-code"
+                  name="one-time-code"
+                  autoComplete="one-time-code"
+                  data-slot="input"
+                  data-testid="phone-code-input"
+                  disabled={loading}
+                  placeholder={tr.codePlaceholder}
+                  type={InputType.Text}
+                  value={phoneCode}
+                  onChange={(e) => setPhoneCode(e.target.value)}
+                  onConfirm={() => void submitPhoneLogin()}
+                />
+              </div>
+            </div>
+            <div className="flex flex-row gap-2.5 justify-end items-center w-full text-sm">
+              <button
+                className={CONTINUE_BUTTON_CLASS}
+                data-slot="button"
+                data-testid="phone-continue-button"
+                disabled={loading}
+                onClick={() => void submitPhoneLogin()}
+              >
+                {loading ? tr.loading : tr.continueBtn}
+              </button>
+            </div>
+          </>
+        )}
+        <div className="flex flex-row justify-center items-center w-full">
           <button
-            className={CONTINUE_BUTTON_CLASS}
-            data-slot="button"
-            data-testid="continue-button"
+            className={FOOTER_LINK_CLASS}
+            data-testid="toggle-login-method"
             disabled={loading}
-            onClick={() => void submitEmailLogin()}
+            onClick={() => {
+              setErrorMessage(null);
+              setLoginMethod(loginMethod === "email" ? "phone" : "email");
+            }}
           >
-            {loading ? tr.loading : tr.continueBtn}
+            {loginMethod === "email" ? tr.usePhoneInstead : tr.useEmailInstead}
           </button>
         </div>
       </div>
