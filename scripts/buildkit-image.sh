@@ -52,13 +52,25 @@ set -euo pipefail
 #                  --opt build-arg. For NON-SECRET compile-time env only
 #                  (ENV, DOMAIN, FEATURES, DYNAMO_TABLE_PREFIX, ...) — these
 #                  land in the image's build history in plaintext.
-#   SECRETS        optional, space-separated KEY=VALUE pairs forwarded as
-#                  buildkit `--secret id=KEY,src=<tmpfile>`. Each value is
-#                  written to a 0600 tempfile under a private tempdir (never
-#                  passed as a CLI arg or build-arg, so it never lands in
-#                  process listings, the image's build history, or its
-#                  layers) and the Dockerfile reads it with
-#                  `RUN --mount=type=secret,id=KEY ...`. The tempdir is
+#   SECRETS        optional, space-separated list of SHELL VARIABLE NAMES
+#                  (not KEY=VALUE pairs) whose current value should be
+#                  forwarded as buildkit `--secret id=NAME,src=<tmpfile>`.
+#                  Each named variable must already be set in this script's
+#                  environment (the workflow's job-level `env:` block sets
+#                  them from `${{ secrets.* }}`). Looking the value up via
+#                  `${!name}` — instead of parsing it out of a single
+#                  "NAME=value" string — is what lets a value contain
+#                  whitespace or embedded newlines (e.g. ICP_IDENTITY_PEM, a
+#                  multi-line PEM key) without word-splitting corrupting it;
+#                  a KEY=VALUE-pairs string cannot survive that case because
+#                  `for kv in ${SECRETS}` splits on every space AND newline
+#                  in $IFS, fragmenting a multi-line value into bogus tokens
+#                  (see git history for the dev-workflow run this broke).
+#                  Each value is written to a 0600 tempfile under a private
+#                  tempdir (never passed as a CLI arg or build-arg, so it
+#                  never lands in process listings, the image's build
+#                  history, or its layers) and the Dockerfile reads it with
+#                  `RUN --mount=type=secret,id=NAME ...`. The tempdir is
 #                  removed on exit whether the build succeeds or fails.
 #   PLATFORM       default linux/amd64,linux/arm64 — both the main (arm64)
 #                  and the amd64 node are schedulable, so every image is
@@ -95,11 +107,14 @@ for kv in ${BUILD_ARGS:-}; do
   build_arg_opts+=(--opt "build-arg:${kv}")
 done
 
-# SECRETS: space-separated KEY=VALUE pairs. Each value is written to its own
+# SECRETS: space-separated list of variable NAMES (see the header comment
+# above for why this is names-to-look-up rather than inline KEY=VALUE
+# pairs — the latter breaks on any value containing whitespace/newlines,
+# e.g. a PEM key). Each named variable's CURRENT value is written to its own
 # file under a 0700 tempdir (never embedded in a buildctl CLI arg) and
-# forwarded as --secret id=KEY,src=<path>; the Dockerfile mounts it with
-# `RUN --mount=type=secret,id=KEY,target=/run/secrets/KEY` and reads the file
-# inside the RUN step, so the value never touches a build-arg, an image
+# forwarded as --secret id=NAME,src=<path>; the Dockerfile mounts it with
+# `RUN --mount=type=secret,id=NAME,target=/run/secrets/NAME` and reads the
+# file inside the RUN step, so the value never touches a build-arg, an image
 # layer, or the image's build history.
 secret_opts=()
 secrets_dir=""
@@ -111,12 +126,10 @@ trap cleanup EXIT
 if [ -n "${SECRETS:-}" ]; then
   secrets_dir="$(mktemp -d)"
   chmod 700 "${secrets_dir}"
-  for kv in ${SECRETS}; do
-    key="${kv%%=*}"
-    value="${kv#*=}"
+  for key in ${SECRETS}; do
     path="${secrets_dir}/${key}"
     umask 077
-    printf '%s' "${value}" > "${path}"
+    printf '%s' "${!key:-}" > "${path}"
     secret_opts+=(--secret "id=${key},src=${path}")
   done
 fi

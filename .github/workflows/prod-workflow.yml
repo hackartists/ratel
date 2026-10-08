@@ -203,40 +203,40 @@ jobs:
             RUST_LOG=${{ env.RUST_LOG }}
             FEATURES=server
           SECRETS: >-
-            AWS_ACCESS_KEY_ID=${{ env.AWS_ACCESS_KEY_ID }}
-            AWS_SECRET_ACCESS_KEY=${{ env.AWS_SECRET_ACCESS_KEY }}
-            ACCOUNT_ID=${{ env.ACCOUNT_ID }}
-            PORTONE_STORE_ID=${{ env.PORTONE_STORE_ID }}
-            PORTONE_INICIS_CHANNEL_KEY=${{ env.PORTONE_INICIS_CHANNEL_KEY }}
-            PORTONE_KPN_CHANNEL_KEY=${{ env.PORTONE_KPN_CHANNEL_KEY }}
-            PORTONE_API_SECRET=${{ env.PORTONE_API_SECRET }}
-            FIREBASE_API_KEY=${{ env.FIREBASE_API_KEY }}
-            FIREBASE_AUTH_DOMAIN=${{ env.FIREBASE_AUTH_DOMAIN }}
-            FIREBASE_PROJECT_ID=${{ env.FIREBASE_PROJECT_ID }}
-            FIREBASE_STORAGE_BUCKET=${{ env.FIREBASE_STORAGE_BUCKET }}
-            FIREBASE_MESSAGING_SENDER_ID=${{ env.FIREBASE_MESSAGING_SENDER_ID }}
-            FIREBASE_APP_ID=${{ env.FIREBASE_APP_ID }}
-            FIREBASE_MEASUREMENT_ID=${{ env.FIREBASE_MEASUREMENT_ID }}
-            ICP_IDENTITY_PEM=${{ env.ICP_IDENTITY_PEM }}
-            VOTER_TAG_SECRET=${{ env.VOTER_TAG_SECRET }}
-            ATTR_VOTING_AUTHORITY_JSON=${{ env.ATTR_VOTING_AUTHORITY_JSON }}
-            QDRANT_API_KEY=${{ env.QDRANT_API_KEY }}
-            LINKEDIN_CLIENT_ID=${{ env.LINKEDIN_CLIENT_ID }}
-            LINKEDIN_CLIENT_SECRET=${{ env.LINKEDIN_CLIENT_SECRET }}
-            LAUNCHPAD_BASE_URL=${{ env.LAUNCHPAD_BASE_URL }}
-            LAUNCHPAD_PROJECT_ID=${{ env.LAUNCHPAD_PROJECT_ID }}
-            LAUNCHPAD_PARTNER_SECRET=${{ env.LAUNCHPAD_PARTNER_SECRET }}
-            CROSS_POSTING_DATA_KEY=${{ env.CROSS_POSTING_DATA_KEY }}
-            CROSS_POSTING_DATA_KEY_PREVIOUS=${{ env.CROSS_POSTING_DATA_KEY_PREVIOUS }}
-            TELEGRAM_TOKEN=${{ env.TELEGRAM_TOKEN }}
-            BBS_BLS_X=${{ env.BBS_BLS_X }}
-            BBS_BLS_Y=${{ env.BBS_BLS_Y }}
-            BBS_BLS_D=${{ env.BBS_BLS_D }}
-            BBS_BLS_CRV=${{ env.BBS_BLS_CRV }}
-            P256_X=${{ env.P256_X }}
-            P256_Y=${{ env.P256_Y }}
-            P256_D=${{ env.P256_D }}
-            P256_CRV=${{ env.P256_CRV }}
+            AWS_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY
+            ACCOUNT_ID
+            PORTONE_STORE_ID
+            PORTONE_INICIS_CHANNEL_KEY
+            PORTONE_KPN_CHANNEL_KEY
+            PORTONE_API_SECRET
+            FIREBASE_API_KEY
+            FIREBASE_AUTH_DOMAIN
+            FIREBASE_PROJECT_ID
+            FIREBASE_STORAGE_BUCKET
+            FIREBASE_MESSAGING_SENDER_ID
+            FIREBASE_APP_ID
+            FIREBASE_MEASUREMENT_ID
+            ICP_IDENTITY_PEM
+            VOTER_TAG_SECRET
+            ATTR_VOTING_AUTHORITY_JSON
+            QDRANT_API_KEY
+            LINKEDIN_CLIENT_ID
+            LINKEDIN_CLIENT_SECRET
+            LAUNCHPAD_BASE_URL
+            LAUNCHPAD_PROJECT_ID
+            LAUNCHPAD_PARTNER_SECRET
+            CROSS_POSTING_DATA_KEY
+            CROSS_POSTING_DATA_KEY_PREVIOUS
+            TELEGRAM_TOKEN
+            BBS_BLS_X
+            BBS_BLS_Y
+            BBS_BLS_D
+            BBS_BLS_CRV
+            P256_X
+            P256_Y
+            P256_D
+            P256_CRV
         run: |
           set -euo pipefail
           IMAGE_TAG="${SHA_TAG}" bash scripts/buildkit-image.sh
@@ -297,9 +297,9 @@ jobs:
             AWS_REGION=${{ env.AWS_REGION }}
             RUST_LOG=${{ env.RUST_LOG }}
           SECRETS: >-
-            AWS_ACCESS_KEY_ID=${{ env.AWS_ACCESS_KEY_ID }}
-            AWS_SECRET_ACCESS_KEY=${{ env.AWS_SECRET_ACCESS_KEY }}
-            ACCOUNT_ID=${{ env.ACCOUNT_ID }}
+            AWS_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY
+            ACCOUNT_ID
         run: |
           set -euo pipefail
           IMAGE_TAG="${SHA_TAG}" bash scripts/buildkit-image.sh
