@@ -356,14 +356,15 @@ jobs:
   # pull_request-only — PR_NUM comes from github.event.number.
   # ────────────────────────────────────────────────────────────────────────
   e2e:
-    # amd64 (multi-arch migration): the e2e runner only drives kubectl/curl
-    # against the cluster — no CPU-arch-sensitive work happens here — so it
-    # moves to the same amd64 runner pool as every build job, freeing the
-    # two arm64 runners entirely (see the workflow-wide rationale in
-    # dev-workflow.yml). The Playwright pod itself still runs on the arm64
-    # `main` node (nodeSelector below, unchanged) since that's where the
-    # pod runs, not this job.
-    runs-on: [self-hosted, linux, amd64]
+    # arm64: this job needs the pr-webroot PVC mounted at /root/nginx to
+    # publish the Playwright report (see "Publish the Playwright report"
+    # below) — only the arm64 runner StatefulSet (`runner`) has that mount;
+    # `runner-amd64` does not. Moving this job to amd64 broke the report
+    # publish step with "/root/nginx (pr-webroot mount) is missing on this
+    # runner" even though the Playwright run itself succeeded. Mounting
+    # pr-webroot on runner-amd64 too is a cluster-infra change outside this
+    # PR's scope, so this job stays on arm64 for now.
+    runs-on: [self-hosted, linux, arm64]
     timeout-minutes: 90
     continue-on-error: true # non-blocking introduction — see job comment above
     if: github.event_name == 'pull_request'

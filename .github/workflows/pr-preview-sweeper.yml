@@ -38,13 +38,14 @@ permissions:
 
 jobs:
   sweep:
-    # amd64 (multi-arch migration): this job only runs kubectl/curl against
-    # the cluster — no CPU-arch-sensitive work — so it moves off the
-    # 2-runner arm64 pool onto the 9-runner amd64 pool every build job now
-    # uses (see dev-workflow.yml's workflow-wide rationale). Still needs
-    # in-cluster kubectl credentials and the pr-webroot PVC mounted at
-    # /root/nginx — present on every self-hosted runner regardless of arch.
-    runs-on: [self-hosted, linux, amd64]
+    # arm64: this job reads/removes report dirs under the pr-webroot PVC
+    # mounted at /root/nginx — only the arm64 runner StatefulSet (`runner`)
+    # has that mount; `runner-amd64` does not (confirmed while debugging the
+    # e2e job's amd64 move, which hit the identical missing-mount failure).
+    # Needs in-cluster kubectl credentials too, present on every self-hosted
+    # runner regardless of arch, so the webroot mount is what pins this job
+    # to arm64, not the kubectl access.
+    runs-on: [self-hosted, linux, arm64]
     timeout-minutes: 30
     env:
       DRY_RUN: "${{ inputs.dry_run && 'true' || 'false' }}"

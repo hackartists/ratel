@@ -45,9 +45,10 @@ on:
 
 jobs:
   cleanup:
-    # Same self-hosted pool as e2e: the runner pods carry in-cluster
-    # kubectl credentials and mount the pr-webroot PVC at /root/nginx.
-    runs-on: [self-hosted, linux, amd64]
+    # arm64: same pool as e2e/sweep — the arm64 runner StatefulSet (`runner`)
+    # mounts the pr-webroot PVC at /root/nginx (this job rm -rf's the report
+    # dir below); `runner-amd64` does not have that mount.
+    runs-on: [self-hosted, linux, arm64]
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
