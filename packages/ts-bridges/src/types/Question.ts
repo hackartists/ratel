@@ -3,6 +3,7 @@ import type { CheckboxQuestion } from "./CheckboxQuestion";
 import type { ChoiceQuestion } from "./ChoiceQuestion";
 import type { DropdownQuestion } from "./DropdownQuestion";
 import type { LinearScaleQuestion } from "./LinearScaleQuestion";
+import type { PrivacyConsentQuestion } from "./PrivacyConsentQuestion";
 import type { SubjectiveQuestion } from "./SubjectiveQuestion";
 
-export type Question = { "answer_type": "single_choice" } & ChoiceQuestion | { "answer_type": "multiple_choice" } & ChoiceQuestion | { "answer_type": "short_answer" } & SubjectiveQuestion | { "answer_type": "subjective" } & SubjectiveQuestion | { "answer_type": "checkbox" } & CheckboxQuestion | { "answer_type": "dropdown" } & DropdownQuestion | { "answer_type": "linear_scale" } & LinearScaleQuestion;
+export type Question = { "answer_type": "single_choice" } & ChoiceQuestion | { "answer_type": "multiple_choice" } & ChoiceQuestion | { "answer_type": "short_answer" } & SubjectiveQuestion | { "answer_type": "subjective" } & SubjectiveQuestion | { "answer_type": "checkbox" } & CheckboxQuestion | { "answer_type": "dropdown" } & DropdownQuestion | { "answer_type": "linear_scale" } & LinearScaleQuestion | { "answer_type": "privacy_consent" } & PrivacyConsentQuestion;

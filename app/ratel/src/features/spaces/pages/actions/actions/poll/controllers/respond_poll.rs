@@ -206,6 +206,35 @@ pub async fn respond_poll(
         return Err(SpacePollError::AnswerMismatch.into());
     }
 
+    // Privacy-consent answers carry an unverified client "verified" claim —
+    // never trust it. Re-verify phone+code against the stored
+    // PhoneVerification record, then strip the code before persisting.
+    let mut answers = req.answers.clone();
+    for answer in answers.iter_mut() {
+        if let Answer::PrivacyConsent {
+            agreed,
+            phone,
+            code,
+        } = answer
+        {
+            if *agreed {
+                let phone_number = phone
+                    .as_deref()
+                    .ok_or(SpacePollError::PhoneVerificationFailed)?;
+                let submitted_code = code
+                    .as_deref()
+                    .ok_or(SpacePollError::PhoneVerificationFailed)?;
+                crate::features::auth::controllers::verify_phone_code(phone_number, submitted_code)
+                    .await
+                    .map_err(|e| {
+                        crate::error!("privacy-consent phone verification failed: {e}");
+                        SpacePollError::PhoneVerificationFailed
+                    })?;
+            }
+            *code = None;
+        }
+    }
+
     let existing = SpacePollUserAnswer::find_one(&space_pk, &poll_sk_entity, &member.pk).await?;
 
     if existing.is_some() && !poll.response_editable {
@@ -236,12 +265,8 @@ pub async fn respond_poll(
                         poll_sk: poll_sk_entity.to_string(),
                         submitted_at_ms: now,
                     };
-                    let envelope = crypto.encrypt(
-                        &poll_sk_entity,
-                        &member.pk,
-                        &req.answers,
-                        Some(&metadata),
-                    )?;
+                    let envelope =
+                        crypto.encrypt(&poll_sk_entity, &member.pk, &answers, Some(&metadata))?;
                     (envelope.ciphertext_json, envelope.voter_tag)
                 }
             };
@@ -249,8 +274,7 @@ pub async fn respond_poll(
         use sha2::Digest;
         let ciphertext_hash = hex::encode(sha2::Sha256::digest(ciphertext_json.as_bytes()));
 
-        let selections: Vec<ratel_canister::types::QuestionSelection> = req
-            .answers
+        let selections: Vec<ratel_canister::types::QuestionSelection> = answers
             .iter()
             .enumerate()
             .flat_map(|(q_idx, answer)| {
@@ -277,7 +301,7 @@ pub async fn respond_poll(
     // Postgres record (was DynamoDB)
     if let Some(mut existing_answer) = existing {
         let now = crate::common::utils::time::get_now_timestamp_millis();
-        existing_answer.answers = PollUserAnswers(req.answers);
+        existing_answer.answers = PollUserAnswers(answers);
         existing_answer.created_at = now;
         existing_answer.save().await?;
     } else {
@@ -285,7 +309,7 @@ pub async fn respond_poll(
         let answer_record = SpacePollUserAnswer::new(
             space_pk.clone(),
             poll_sk_entity.clone(),
-            req.answers,
+            answers,
             respondent,
             member.clone(),
         );

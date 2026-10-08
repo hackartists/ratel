@@ -2,10 +2,10 @@ use crate::features::spaces::pages::actions::actions::poll::*;
 
 use super::Question;
 
-use std::collections::HashMap;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
@@ -43,6 +43,13 @@ pub enum SpacePollSummary {
     LinearScale {
         total_count: i64,
         answers: HashMap<i32, i64>,
+    },
+    PrivacyConsent {
+        total_count: i64,
+        /// Count of agreed-and-verified responses only (answers that failed
+        /// server verification are never persisted, so this always equals
+        /// `total_count` once summarized).
+        agreed_count: i64,
     },
 }
 
@@ -158,6 +165,17 @@ impl SpacePollSummary {
                     }
                 }
             }
+            SpacePollSummary::PrivacyConsent {
+                total_count,
+                agreed_count,
+            } => {
+                if let Answer::PrivacyConsent { agreed, phone, .. } = answer {
+                    *total_count += 1;
+                    if agreed && phone.is_some() {
+                        *agreed_count += 1;
+                    }
+                }
+            }
         }
     }
 }
@@ -194,6 +212,10 @@ impl From<Question> for SpacePollSummary {
             Question::LinearScale(_) => SpacePollSummary::LinearScale {
                 total_count: 0,
                 answers: HashMap::new(),
+            },
+            Question::PrivacyConsent(_) => SpacePollSummary::PrivacyConsent {
+                total_count: 0,
+                agreed_count: 0,
             },
         }
     }

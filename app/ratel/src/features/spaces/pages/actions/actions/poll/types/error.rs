@@ -36,10 +36,7 @@ pub enum SpacePollError {
     InvalidTimeRange,
 
     #[error("invalid question format")]
-    #[translate(
-        en = "Invalid question format",
-        ko = "유효하지 않은 질문 형식입니다."
-    )]
+    #[translate(en = "Invalid question format", ko = "유효하지 않은 질문 형식입니다.")]
     InvalidQuestionFormat,
 
     #[error("vote verification failed")]
@@ -57,6 +54,13 @@ pub enum SpacePollError {
     #[error("decryption failed")]
     #[translate(en = "Decryption failed", ko = "복호화에 실패했습니다.")]
     DecryptionFailed,
+
+    #[error("phone verification failed")]
+    #[translate(
+        en = "Phone verification failed. Please check the code and try again.",
+        ko = "휴대폰 인증에 실패했습니다. 코드를 확인 후 다시 시도해주세요."
+    )]
+    PhoneVerificationFailed,
 }
 
 #[cfg(feature = "server")]
@@ -69,7 +73,8 @@ impl SpacePollError {
             | SpacePollError::EditNotAllowed
             | SpacePollError::QuestionsEmpty
             | SpacePollError::InvalidTimeRange
-            | SpacePollError::InvalidQuestionFormat => StatusCode::BAD_REQUEST,
+            | SpacePollError::InvalidQuestionFormat
+            | SpacePollError::PhoneVerificationFailed => StatusCode::BAD_REQUEST,
 
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
