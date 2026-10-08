@@ -35,11 +35,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 ARG TARGETPLATFORM
 # gcc/g++/libc6-dev: xx-cargo's cross linker driver.
+# libssl-dev: openssl-sys (pulled in transitively) needs the TARGET arch's
+# OpenSSL headers/libs to cross-compile — without this pkg-config can't find
+# them for aarch64-unknown-linux-gnu and the build fails (see biyard/dataroom
+# services/dataroom/Dockerfile, which installs libcurl4-openssl-dev for the
+# same reason).
 # zlib1g-dev: rdkafka's `cmake-build` feature links librdkafka dynamically
 # against zlib (see deploy/dev/Dockerfile.events's base-image comment — the
 # only non-glibc dynamic dep the resulting binaries carry).
 RUN xx-apt-get update && xx-apt-get install -y --no-install-recommends \
-      gcc g++ libc6-dev zlib1g-dev \
+      gcc g++ libc6-dev libssl-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
