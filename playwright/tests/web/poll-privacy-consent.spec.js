@@ -93,11 +93,15 @@ test.describe.serial("Poll privacy-consent question", () => {
     await termsTitleInput.press("Tab");
     await page.waitForLoadState("load");
 
-    const termsEditor = page
-      .getByTestId("poll-question-0-privacy-consent")
-      .locator("[contenteditable]");
+    const privacyConsentBody = page.getByTestId("poll-question-0-privacy-consent");
+    const editorRoot = privacyConsentBody.locator('.ratel-editor[data-bound="true"]');
+    await expect(editorRoot).toBeAttached({ timeout: 10000 });
+    const termsEditor = editorRoot.locator(".re-content");
     await expect(termsEditor).toBeVisible();
-    await termsEditor.fill(termsBodyText);
+    await termsEditor.click();
+    await page.keyboard.type(termsBodyText);
+    // Past the editor script's 120ms change-debounce before committing.
+    await page.waitForTimeout(400);
     await page.keyboard.press("Tab");
     await page.waitForLoadState("load");
 
