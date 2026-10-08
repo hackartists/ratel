@@ -102,6 +102,20 @@ test.describe.serial("Poll privacy-consent question", () => {
     await page.waitForLoadState("load");
 
     // Re-fetch the poll to confirm the question persisted with the terms.
+    // The editor's change is reported async (debounced + a network PATCH),
+    // so poll instead of asserting on a single immediate GET.
+    await expect
+      .poll(
+        async () => {
+          const getRes = await page.request.get(`/api/spaces/${spaceId}/polls/${pollId}`);
+          if (!getRes.ok()) return null;
+          const poll = await getRes.json();
+          return poll.questions[0]?.terms_body_html ?? null;
+        },
+        { timeout: 15000 },
+      )
+      .toContain(termsBodyText);
+
     const getRes = await page.request.get(`/api/spaces/${spaceId}/polls/${pollId}`);
     expect(getRes.ok(), `get poll: ${await getRes.text()}`).toBeTruthy();
     const poll = await getRes.json();
