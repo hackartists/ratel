@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: [self-hosted, Linux]
+    runs-on: [self-hosted, Linux, ARM64]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4

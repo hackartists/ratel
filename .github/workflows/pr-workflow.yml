@@ -227,7 +227,7 @@ jobs:
   # # PR-only: the image tag needs github.event.number.
   # # ────────────────────────────────────────────────────────────────────────
   build-image:
-    runs-on: [self-hosted, Linux]
+    runs-on: [self-hosted, Linux, ARM64]
     timeout-minutes: 90
     if: github.event_name == 'pull_request'
 
@@ -354,7 +354,7 @@ jobs:
   # bypass feature (make build-testing above).
   # ────────────────────────────────────────────────────────────────────────
   build-web-image:
-    runs-on: [self-hosted, Linux]
+    runs-on: [self-hosted, Linux, ARM64]
     timeout-minutes: 30
     if: github.event_name == 'pull_request'
 
@@ -401,7 +401,7 @@ jobs:
   # pull_request-only — PR_NUM comes from github.event.number.
   # ────────────────────────────────────────────────────────────────────────
   e2e:
-    runs-on: [self-hosted, Linux]
+    runs-on: [self-hosted, Linux, ARM64]
     timeout-minutes: 90
     continue-on-error: true # non-blocking introduction — see job comment above
     if: github.event_name == 'pull_request'
