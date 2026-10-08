@@ -96,6 +96,15 @@ export function PollContentCard() {
   const lastSavedTitle = useRef(poll.title);
   const [titleStatus, setTitleStatus] = useState<SaveStatus>("Idle");
   const [questions, setQuestions] = useState<Question[]>(poll.questions);
+  // Blur handlers are created inside the per-question JSX below and can fire
+  // before React commits a same-tick setQuestions update (e.g. fill() then
+  // immediately press("Tab") in tests, or a fast real keyboard blur) — a
+  // handler closing over the `questions` render variable would then save a
+  // stale snapshot and clobber whatever the just-applied onChange wrote.
+  // Route every blur-triggered save through this ref instead so it always
+  // reads the latest committed state.
+  const questionsRef = useRef(questions);
+  questionsRef.current = questions;
 
   const saveTitle = (current: string) => {
     if (current === lastSavedTitle.current) return;
@@ -285,7 +294,7 @@ export function PollContentCard() {
                   return next;
                 });
               }}
-              onBlurSave={() => saveQuestions(questions)}
+              onBlurSave={() => saveQuestions(questionsRef.current)}
             />
           ))}
 
