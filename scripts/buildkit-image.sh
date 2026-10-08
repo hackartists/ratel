@@ -105,6 +105,7 @@ secret_opts=()
 secrets_dir=""
 cleanup() {
   [ -n "${secrets_dir}" ] && rm -rf "${secrets_dir}"
+  return 0
 }
 trap cleanup EXIT
 if [ -n "${SECRETS:-}" ]; then
