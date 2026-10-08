@@ -165,6 +165,15 @@ test.describe.serial("Poll privacy-consent question", () => {
 
     await goto(page, `/spaces/${spaceId}/actions/polls/${pollId}`);
 
+    // Participant role renders PollResponseView variant="read", which opens
+    // on an overview step (poll-read-overview) before the question-by-
+    // question flow; click through to reach the actual question.
+    const nextBtn = page.getByTestId("poll-read-next");
+    if (await nextBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await nextBtn.click();
+      await page.waitForLoadState("load");
+    }
+
     const question = page.getByTestId("poll-question-privacy-consent");
     await expect(question).toBeVisible();
     await expect(page.getByTestId("pc-terms-title")).toHaveText(termsTitle);
