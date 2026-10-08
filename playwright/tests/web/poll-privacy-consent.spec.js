@@ -135,20 +135,17 @@ test.describe.serial("Poll privacy-consent question", () => {
     page,
   }) => {
     await goto(page, `/spaces/${spaceId}/actions/polls/${pollId}`);
-
-    // Creator still owns the action; flip to the participant/response view.
-    const switchBtn = page.getByTestId("action-settings-switch");
-    if (await switchBtn.isVisible().catch(() => false)) {
-      await switchBtn.click();
-      await page.waitForLoadState("load");
-    }
+    // Creator + locked action (published in the previous test) renders the
+    // participant-style response view by default — "action-settings-switch"
+    // (when present) toggles the OPPOSITE direction, back into the designer
+    // config view, so it must stay unclicked here.
 
     const question = page.getByTestId("poll-question-privacy-consent");
     await expect(question).toBeVisible();
     await expect(page.getByTestId("pc-terms-title")).toHaveText(termsTitle);
     await expect(page.getByTestId("pc-terms")).toContainText(termsBodyText);
 
-    const submitBtn = page.getByTestId(/poll-(read|confirm)?-?submit$/).first();
+    const submitBtn = page.getByRole("button", { name: /^(Submit|제출)$/ });
 
     // Phone section should start disabled (agreement not yet checked).
     await expect(page.getByTestId("pc-phone-section")).toHaveAttribute("data-disabled", "true");
