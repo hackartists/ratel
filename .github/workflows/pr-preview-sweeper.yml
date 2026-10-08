@@ -38,9 +38,13 @@ permissions:
 
 jobs:
   sweep:
-    # Self-hosted: needs in-cluster kubectl credentials and the pr-webroot PVC
-    # mounted at /root/nginx — same pool as e2e and cleanup.
-    runs-on: [self-hosted, Linux, ARM64]
+    # amd64 (multi-arch migration): this job only runs kubectl/curl against
+    # the cluster — no CPU-arch-sensitive work — so it moves off the
+    # 2-runner arm64 pool onto the 9-runner amd64 pool every build job now
+    # uses (see dev-workflow.yml's workflow-wide rationale). Still needs
+    # in-cluster kubectl credentials and the pr-webroot PVC mounted at
+    # /root/nginx — present on every self-hosted runner regardless of arch.
+    runs-on: [self-hosted, linux, amd64]
     timeout-minutes: 30
     env:
       DRY_RUN: "${{ inputs.dry_run && 'true' || 'false' }}"
