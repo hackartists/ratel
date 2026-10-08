@@ -356,7 +356,14 @@ jobs:
   # pull_request-only — PR_NUM comes from github.event.number.
   # ────────────────────────────────────────────────────────────────────────
   e2e:
-    runs-on: [self-hosted, linux, arm64]
+    # amd64 (multi-arch migration): the e2e runner only drives kubectl/curl
+    # against the cluster — no CPU-arch-sensitive work happens here — so it
+    # moves to the same amd64 runner pool as every build job, freeing the
+    # two arm64 runners entirely (see the workflow-wide rationale in
+    # dev-workflow.yml). The Playwright pod itself still runs on the arm64
+    # `main` node (nodeSelector below, unchanged) since that's where the
+    # pod runs, not this job.
+    runs-on: [self-hosted, linux, amd64]
     timeout-minutes: 90
     continue-on-error: true # non-blocking introduction — see job comment above
     if: github.event_name == 'pull_request'
