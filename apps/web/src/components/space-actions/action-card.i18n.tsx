@@ -19,6 +19,7 @@ const en = {
   deleted_successfully: "Action deleted successfully.",
   locked: "Locked",
   dependencies_not_met: "Complete the required actions first to unlock.",
+  required_attributes_not_met: "Answer the required poll question to unlock.",
 };
 
 const ko: Record<keyof typeof en, string> = {
@@ -39,6 +40,7 @@ const ko: Record<keyof typeof en, string> = {
   deleted_successfully: "액션이 삭제되었습니다.",
   locked: "잠김",
   dependencies_not_met: "선행 액션을 먼저 완료해야 참여할 수 있습니다.",
+  required_attributes_not_met: "필수 투표 문항에 응답해야 참여할 수 있습니다.",
 };
 
 export const i18n = { en, ko };
@@ -61,6 +63,7 @@ export interface ActionCardI18n {
   deletedSuccessfully: string;
   locked: string;
   dependenciesNotMet: string;
+  requiredAttributesNotMet: string;
 }
 
 export function useActionCardI18n(): ActionCardI18n {
@@ -83,5 +86,6 @@ export function useActionCardI18n(): ActionCardI18n {
     deletedSuccessfully: t("deleted_successfully"),
     locked: t("locked"),
     dependenciesNotMet: t("dependencies_not_met"),
+    requiredAttributesNotMet: t("required_attributes_not_met"),
   };
 }

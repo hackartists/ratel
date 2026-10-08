@@ -17,6 +17,7 @@ const en = {
   section_schedule_label: "Schedule",
   section_participation_label: "Participation & Rewards",
   section_dependencies_label: "Dependency Actions",
+  section_required_attributes_label: "Required Attributes",
   section_status_label: "Status",
   section_moderation_label: "Moderation",
   section_danger_label: "Danger zone",
@@ -53,6 +54,7 @@ const ko: Record<keyof typeof en, string> = {
   section_schedule_label: "일정",
   section_participation_label: "참여 및 보상",
   section_dependencies_label: "선행 액션",
+  section_required_attributes_label: "필수 속성",
   section_status_label: "상태",
   section_moderation_label: "조정",
   section_danger_label: "위험 영역",
@@ -91,6 +93,7 @@ export interface DiscussionEditorI18n {
   sectionScheduleLabel: string;
   sectionParticipationLabel: string;
   sectionDependenciesLabel: string;
+  sectionRequiredAttributesLabel: string;
   sectionStatusLabel: string;
   sectionModerationLabel: string;
   sectionDangerLabel: string;
@@ -129,6 +132,7 @@ export function useDiscussionEditorI18n(): DiscussionEditorI18n {
     sectionScheduleLabel: t("section_schedule_label"),
     sectionParticipationLabel: t("section_participation_label"),
     sectionDependenciesLabel: t("section_dependencies_label"),
+    sectionRequiredAttributesLabel: t("section_required_attributes_label"),
     sectionStatusLabel: t("section_status_label"),
     sectionModerationLabel: t("section_moderation_label"),
     sectionDangerLabel: t("section_danger_label"),

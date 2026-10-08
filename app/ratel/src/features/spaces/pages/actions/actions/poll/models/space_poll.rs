@@ -1,6 +1,6 @@
-use crate::features::spaces::pages::actions::actions::poll::*;
 #[cfg(feature = "server")]
 use crate::common::utils::time::get_now_timestamp_millis;
+use crate::features::spaces::pages::actions::actions::poll::*;
 #[cfg(feature = "server")]
 use postgres::PostgresEntity;
 #[cfg(feature = "server")]
@@ -254,6 +254,8 @@ impl From<(SpacePoll, bool)>
             status: None,
             depends_on: Vec::new(),
             dependencies_met: true,
+            required_attributes: Vec::new(),
+            required_attributes_met: true,
         }
     }
 }

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   addPollQuestion,
+  addRequiredAttribute,
   click,
   commitAutosave,
   createAction as createActionShared,
@@ -174,6 +175,99 @@ test.describe.serial("Arena action editor", () => {
       "Share your feedback on the arena migration, ergonomics, and pain points.",
     );
     await commitAutosave(page);
+  });
+
+  test("Discussion: Required Attributes section shows single-choice candidates only", async ({
+    page,
+  }) => {
+    // A poll with one Single Choice and one Multiple Choice question — set
+    // directly via the update endpoint (bypassing the type-picker UI, which
+    // is not deterministic across multiple questions) so the Required
+    // Attributes selector must only ever offer the single_choice question
+    // as a candidate.
+    await createAction(page, "poll", /\/actions\/polls\//);
+    await fill(
+      page,
+      { placeholder: "Enter poll title..." },
+      "Arena Poll: Required Attribute Source",
+    );
+    await commitAutosave(page);
+
+    const pollUrlMatch = page.url().match(/\/actions\/polls\/([^/?#]+)/);
+    expect(pollUrlMatch, "poll id should be parseable from editor URL").not.toBeNull();
+    const pollId = pollUrlMatch[1];
+    const spaceUrlMatch = page.url().match(/\/spaces\/([^/]+)\//);
+    expect(spaceUrlMatch, "space id should be parseable from editor URL").not.toBeNull();
+    const spaceId = spaceUrlMatch[1];
+
+    const updateRes = await page.request.post(
+      `/api/spaces/${spaceId}/polls/${pollId}`,
+      {
+        data: {
+          req: {
+            questions: [
+              {
+                answer_type: "single_choice",
+                title: "Which track are you in?",
+                description: null,
+                image_url: null,
+                options: ["Engineering", "Design"],
+                is_required: null,
+                allow_other: null,
+              },
+              {
+                answer_type: "multiple_choice",
+                title: "Which tools do you use?",
+                description: null,
+                image_url: null,
+                options: ["Figma", "VSCode"],
+                is_required: null,
+                allow_other: null,
+              },
+            ],
+          },
+        },
+      },
+    );
+    expect(updateRes.ok(), `set poll questions: ${await updateRes.text()}`).toBeTruthy();
+
+    await createAction(
+      page,
+      "discuss",
+      /\/actions\/discussions\/[^/]+\/edit/,
+    );
+    await fill(
+      page,
+      { placeholder: "Enter discussion title..." },
+      "Arena Discussion: Gated",
+    );
+    const editor = await getEditor(page);
+    await editor.fill("Only engineering-track respondents should see this.");
+    await commitAutosave(page);
+
+    await expect(page.getByTestId("section-required-attributes")).toBeVisible();
+
+    await click(page, { testId: "btn-add-required-attribute" });
+    await expect(
+      page.getByText("Arena Poll: Required Attribute Source · Which track are you in?"),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Arena Poll: Required Attribute Source · Which tools do you use?"),
+    ).toHaveCount(0);
+
+    // Close the popover before proceeding (click elsewhere).
+    await page.keyboard.press("Escape");
+
+    await addRequiredAttribute(page, {
+      pollTitle: "Arena Poll: Required Attribute Source",
+      questionTitle: "Which track are you in?",
+      allowedValues: ["Engineering"],
+    });
+
+    await expect(page.getByTestId("chip-required-attribute-0")).toBeVisible();
+    await expect(page.getByTestId("chip-required-attribute-0")).toContainText(
+      "Which track are you in? = Engineering",
+    );
   });
 
   test("Follow: create, edit title in TargetsCard", async ({ page }) => {

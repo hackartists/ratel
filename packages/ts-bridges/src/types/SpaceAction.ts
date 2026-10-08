@@ -2,6 +2,7 @@
 import type { EntityType } from "./EntityType";
 import type { Partition } from "./Partition";
 import type { SpaceActionDependsOn } from "./SpaceActionDependsOn";
+import type { SpaceActionRequiredAttributes } from "./SpaceActionRequiredAttributes";
 import type { SpaceActionStatus } from "./SpaceActionStatus";
 import type { SpaceActionType } from "./SpaceActionType";
 
@@ -17,4 +18,4 @@ sk: EntityType,
 /**
  * `Partition::Space(space_id)` — the old separate column.
  */
-space_pk: Partition, id: string, space_id: string, action_id: string, created_at: number, updated_at: number, title: string, description: string, space_action_type: SpaceActionType, prerequisite: boolean, credits: number, total_points: number, activity_score: number, additional_score: number, status: SpaceActionStatus | null, depends_on: SpaceActionDependsOn, };
+space_pk: Partition, id: string, space_id: string, action_id: string, created_at: number, updated_at: number, title: string, description: string, space_action_type: SpaceActionType, prerequisite: boolean, credits: number, total_points: number, activity_score: number, additional_score: number, status: SpaceActionStatus | null, depends_on: SpaceActionDependsOn, required_attributes: SpaceActionRequiredAttributes, };

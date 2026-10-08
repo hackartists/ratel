@@ -7,6 +7,7 @@ import { i18n as actionDependencySelector } from "@/components/space-actions/act
 import { i18n as actionEditFooter } from "@/components/space-actions/action-edit-footer.i18n";
 import { i18n as actionEditTopbar } from "@/components/space-actions/action-edit-topbar.i18n";
 import { i18n as actionPoll } from "@/pages/spaces/[spaceId]/components/poll-viewer/i18n";
+import { i18n as actionRequiredAttributeSelector } from "@/components/space-actions/action-required-attribute-selector.i18n";
 import { i18n as actionSettingsModal } from "@/components/space-actions/action-settings-modal.i18n";
 import { i18n as actionStatusControl } from "@/components/space-actions/action-status-control.i18n";
 import { i18n as adminLayout } from "@/layouts/admin-layout.i18n";
@@ -121,6 +122,7 @@ export const modules = {
   actionEditFooter,
   actionEditTopbar,
   actionPoll,
+  actionRequiredAttributeSelector,
   actionSettingsModal,
   actionStatusControl,
   adminLayout,

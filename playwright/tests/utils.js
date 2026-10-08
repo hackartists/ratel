@@ -659,3 +659,28 @@ export async function setActionSchedule(page, { startedAt, endedAt }) {
   // consistently.
   await page.reload({ waitUntil: "load" });
 }
+
+/**
+ * Add a Required Attribute rule on an action ConfigCard (Discussion for
+ * now). Opens the `btn-add-required-attribute` popover, picks the
+ * `pollTitle · questionTitle` candidate (text match), selects each of
+ * `allowedValues` from the value picker, then confirms. Requires at least
+ * one Poll action with a single_choice question to already exist in the
+ * space.
+ */
+export async function addRequiredAttribute(
+  page,
+  { pollTitle, questionTitle, allowedValues },
+) {
+  await click(page, { testId: "btn-add-required-attribute" });
+  const candidateText = `${pollTitle} · ${questionTitle}`;
+  await click(page, { text: candidateText });
+
+  const picker = page.getByTestId("required-attribute-value-picker");
+  await expect(picker).toBeVisible();
+  for (const value of allowedValues) {
+    await click(page, { testId: `required-attribute-value-${value}` });
+  }
+  await click(page, { testId: "btn-confirm-required-attribute" });
+  await page.waitForLoadState("load");
+}

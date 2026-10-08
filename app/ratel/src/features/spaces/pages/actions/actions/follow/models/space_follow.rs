@@ -1,6 +1,6 @@
-use crate::features::spaces::pages::actions::actions::follow::*;
 #[cfg(feature = "server")]
 use crate::common::utils::time::get_now_timestamp_millis;
+use crate::features::spaces::pages::actions::actions::follow::*;
 #[cfg(feature = "server")]
 use postgres::PostgresEntity;
 #[cfg(feature = "server")]
@@ -18,7 +18,11 @@ use uuid::Uuid;
 #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(transparent)]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct FollowUserType(pub UserType);
 
 impl From<UserType> for FollowUserType {
@@ -37,8 +41,15 @@ impl From<UserType> for FollowUserType {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
-#[cfg_attr(feature = "server", postgres(table = "space_follow_actions", unique(space_id, follow_id)))]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "server",
+    postgres(table = "space_follow_actions", unique(space_id, follow_id))
+)]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct SpaceFollowAction {
     #[serde(default)]
     pub id: uuid::Uuid,
@@ -88,6 +99,8 @@ impl From<SpaceFollowAction>
             status: None,
             depends_on: Vec::new(),
             dependencies_met: true,
+            required_attributes: Vec::new(),
+            required_attributes_met: true,
         }
     }
 }
