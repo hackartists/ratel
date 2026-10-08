@@ -32,11 +32,22 @@ spec:
       labels:
         app: app-shell
     spec:
-      # Same pinning as dev/preview: the Pi node has a 16K page-size kernel
-      # (jemalloc-based workloads abort there) and is the small node anyway —
-      # keep prod serving pods on the 4K-page main node.
-      nodeSelector:
-        biyard.io/node-class: main
+      # Same scheduling as dev/preview: the Pi node's 16K page-size kernel
+      # breaks jemalloc workloads, so it stays excluded; main (arm64) and
+      # the amd64 node are both fine and both schedulable.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: app-shell
           image: registry.infra.svc.cluster.local:5000/ratel-app-shell:${SHA_TAG}

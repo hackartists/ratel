@@ -14,8 +14,8 @@
 # ingress-nginx picks the MOST SPECIFIC matching path per request, so
 # listing the API prefixes ahead of the catch-all "/" is enough — no
 # priority annotation needed. /designs and /roadmap are additional to
-# dev/prod: this preview's app-shell is built with the `local-dev` feature,
-# which mounts those routes for design/roadmap review.
+# dev/prod: this preview's app-shell is built with the `design-preview`
+# feature, which mounts those routes for design/roadmap review.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

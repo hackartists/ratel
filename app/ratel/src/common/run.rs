@@ -265,19 +265,7 @@ fn serve() {
             crate::common::events::outbox::spawn_outbox_poller();
         }
 
-        #[cfg(feature = "local-dev")]
-        {
-            if crate::common::events::stream_poller_enabled() {
-                tracing::info!("Starting local-dev DynamoDB Stream poller");
-                crate::common::stream_poller::spawn_stream_poller();
-            } else {
-                tracing::info!(
-                    "RATEL_STREAM_POLLER=off — in-process stream poller disabled (using ratel_cdc/ratel_worker pipeline)"
-                );
-            }
-        }
-
-        #[cfg(feature = "local-dev")]
+        #[cfg(feature = "design-preview")]
         let app = {
             let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             let design_dir = manifest_dir.join("assets/design");

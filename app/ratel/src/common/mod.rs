@@ -64,13 +64,7 @@ pub mod migrations;
 #[cfg(feature = "server")]
 pub mod events;
 
-#[cfg(feature = "server")]
-pub mod stream_handler;
-
-#[cfg(all(feature = "server", feature = "local-dev"))]
-pub mod stream_poller;
-
-#[cfg(all(feature = "server", feature = "local-dev"))]
+#[cfg(all(feature = "server", feature = "design-preview"))]
 pub mod design_preview;
 
 #[cfg(feature = "server")]

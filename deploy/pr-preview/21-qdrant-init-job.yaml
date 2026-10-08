@@ -1,11 +1,17 @@
-# qdrant-init — one-shot Job mirroring the compose `qdrant-init` service:
-# creates the ratel-local-main collection via
-# scripts/qdrant-init-entrypoint.sh (mounted from the pr-preview-scripts
-# ConfigMap, same as localstack-init).
+# qdrant-init — one-shot Job that creates this PR's qdrant collection on the
+# SHARED infra qdrant (qdrant.infra.svc.cluster.local:6333), replacing the
+# PR preview's former private qdrant Deployment (deleted; see the shared-
+# infra migration). Collection name is namespaced per PR
+# (ratel_pr_${PR_NUM}_main) so PRs never collide with each other, with dev,
+# or with prod on the shared instance.
 #
-# The compose service gates on qdrant being healthy; the script itself exits
-# non-zero while qdrant is unreachable (curl -sf), so here the Job's
-# backoffLimit provides the retry loop instead.
+# scripts/qdrant-init-entrypoint.sh is idempotent on create (checks
+# `GET /collections/<name>` first, no-ops if it already exists) but has no
+# delete path — a PR preview that re-runs against a STALE collection from a
+# previous push would see leftover vectors from the old run. RESET=true
+# below tells this Job to DELETE the collection before (re-)creating it, so
+# every e2e run starts clean. pr-preview-cleanup.yml does the final delete
+# when the PR closes.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -20,11 +26,22 @@ spec:
       labels:
         app: qdrant-init
     spec:
-      # qdrant (jemalloc) aborts on the Pi node's 16K page-size kernel,
-      # and the Pi is the small node anyway — pin every preview/dev pod to
-      # the 4K-page main node (same class asset pins its e2e pod to).
-      nodeSelector:
-        biyard.io/node-class: main
+      # Schedule on main (arm64) or the amd64 node — see the app-shell
+      # comment; the Pi stays excluded (16K page-size kernel). qdrant itself
+      # is shared infra now, but this init Job still runs as a cluster pod.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       restartPolicy: Never
       containers:
         - name: init
@@ -32,9 +49,11 @@ spec:
           command: ["bash", "/scripts/qdrant-init-entrypoint.sh"]
           env:
             - name: ENDPOINT
-              value: http://qdrant:6333
+              value: http://qdrant.infra.svc.cluster.local:6333
             - name: COLLECTION
-              value: ratel-local-main
+              value: ratel_pr_${PR_NUM}_main
+            - name: RESET
+              value: "true"
           volumeMounts:
             - name: scripts
               mountPath: /scripts

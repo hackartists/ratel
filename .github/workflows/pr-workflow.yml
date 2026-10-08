@@ -110,7 +110,7 @@ jobs:
   # apps/web/src) are edited directly. gen-ts stays, since
   # packages/ts-bridges is still generated from the Rust route macros.
   rust-check:
-    runs-on: [self-hosted, Linux]
+    runs-on: [self-hosted, linux, amd64]
 
     env:
       # rustup swaps components by staging them in $RUSTUP_HOME/tmp and
@@ -208,140 +208,54 @@ jobs:
           git diff --exit-code -- ../../packages/ts-bridges
           test -z "$(git status --porcelain -- ../../packages/ts-bridges)"
 
-  # # ────────────────────────────────────────────────────────────────────────
-  # # build-image: build the arm64 app-shell image ON the self-hosted runner
-  # # and push it to the in-cluster registry as ratel-app-shell:pr-<num>.
-  # #
-  # # The runners are biyard org-level k8s pods on the home k3s cluster
-  # # (kubectl + helm + buildctl preinstalled, BUILDKIT_HOST preset, NO docker
-  # # CLI). Both cluster nodes are arm64, so a native `make build-testing`
-  # # here already produces arm64 binaries — the buildkit step only packages
-  # # the dx output (app/ratel/Dockerfile copies target/dx/app-shell/release/
-  # # web) and pushes; no compile happens inside the Dockerfile.
-  # #
-  # # The compile-time env block is IDENTICAL to the ratel-app job above —
-  # # DYNAMO_ENDPOINT=http://localstack:4566 etc. are baked into the binary,
-  # # and stay valid in-cluster because deploy/pr-preview names its k8s
-  # # Services after the docker-compose hostnames (localstack, qdrant).
-  # #
-  # # PR-only: the image tag needs github.event.number.
-  # # ────────────────────────────────────────────────────────────────────────
+  # ────────────────────────────────────────────────────────────────────────
+  # build-image: cross-compile the app-shell image (amd64+arm64) via the
+  # in-cluster buildkitd and push it to the in-cluster registry as
+  # ratel-app-shell:pr-<num>.
+  #
+  # Runner: amd64 (part of the multi-arch migration — runs-on moved off the
+  # arm64-only runner pool; see the workflow-wide rationale in dev-workflow.yml).
+  # app/ratel/Dockerfile now cross-compiles BOTH platforms INSIDE buildkit
+  # via tonistiigi/xx + xx-cargo (ONE amd64 buildkitd invocation produces
+  # both the amd64 and the arm64 binary — see the Dockerfile header) — there
+  # is no native `cargo build` on this runner anymore, so none of the old
+  # Rust-toolchain/cargo-cache/build-deps steps are needed here; this job is
+  # now just checkout + buildkit-image.sh.
+  #
+  # Compile-time config: SAME PR-preview values as before
+  # (DYNAMO_TABLE_PREFIX=ratel-local, ENV=local, FEATURES=server,bypass,
+  # design-preview — verification code 000000 + /designs,/roadmap, see
+  # deploy/pr-preview/40-ingress.yaml), forwarded as BUILD_ARGS (non-secret)
+  # / SECRETS (the stand-in AWS_* creds — PR previews use fixed
+  # test/test/ap-northeast-2 values, not real secrets, but they still ride
+  # through --secret for consistency with dev/prod-workflow.yml).
+  #
+  # PR-only: the image tag needs github.event.number.
+  # ────────────────────────────────────────────────────────────────────────
   build-image:
-    runs-on: [self-hosted, Linux, ARM64]
+    runs-on: [self-hosted, linux, amd64]
     timeout-minutes: 90
     if: github.event_name == 'pull_request'
-
-    env:
-      # Same EXDEV guard rust-check documents: the runner image ships a
-      # toolchain whose directory sits on a different mount from
-      # $RUSTUP_HOME/tmp, so any rustup write that finishes with rename(2)
-      # dies with "Invalid cross-device link (os error 18)". This job hit it
-      # when `command -v rustup` missed the preinstalled proxies and the
-      # rustup-init fallback tried to UPDATE that toolchain instead. A
-      # workspace RUSTUP_HOME puts toolchains/ and tmp/ on one filesystem;
-      # the cost is a toolchain download per run (~1 min).
-      RUSTUP_HOME: ${{ github.workspace }}/.rustup-build-image
 
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        # The self-hosted runner usually has a working stable toolchain. A
-        # bare `rustup toolchain install stable` tries to UPDATE it, which
-        # can fail with EXDEV on these runners (.rustup/toolchains and
-        # .rustup/tmp on different mounts). Install only when genuinely
-        # absent. No wasm target here — app-shell is API-only after the
-        # React frontend migration (docs/superpower/
-        # 2026-09-14-react-frontend-migration.md § 5.1).
-        run: |
-          if ! command -v rustup >/dev/null 2>&1; then
-            if [ -x "$HOME/.cargo/bin/rustup" ]; then
-              export PATH="$HOME/.cargo/bin:$PATH"
-            else
-              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-              export PATH="$HOME/.cargo/bin:$PATH"
-            fi
-            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          fi
-          rustup toolchain list | grep -q '^stable' || rustup toolchain install stable --profile minimal
-
-      - name: Restore cargo registry/index (restore-only)
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          # Shared, job-agnostic key so future warm-cache jobs can share it.
-          # Restore-only — this workflow never saves (cache-store hygiene,
-          # same policy as asset's pr-workflow).
-          key: ratel-cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ratel-cargo-${{ runner.os }}-
-
-      - name: Restore build target (restore-only)
-        uses: actions/cache/restore@v5
-        with:
-          path: target
-          key: ratel-target-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ratel-target-${{ runner.os }}-
-
-      - name: Install build deps (C toolchain, pkg-config, openssl headers)
-        # The server build needs a linker + pkg-config + openssl dev
-        # headers. Idempotent + multi-distro (asset pattern); a no-op once
-        # the persistent runner image has them.
-        run: |
-          set -eu
-          if command -v cc >/dev/null 2>&1 && command -v pkg-config >/dev/null 2>&1 && [ -f /usr/include/openssl/ssl.h ]; then
-            echo "C toolchain + pkg-config + openssl headers already present"
-            exit 0
-          fi
-          SUDO=""
-          if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
-          if command -v apt-get >/dev/null 2>&1; then
-            $SUDO apt-get update -qq
-            $SUDO apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev
-          elif command -v dnf >/dev/null 2>&1; then
-            $SUDO dnf install -y gcc make pkgconf-pkg-config openssl-devel
-          elif command -v apk >/dev/null 2>&1; then
-            $SUDO apk add --no-cache build-base pkgconfig openssl-dev
-          else
-            echo "::warning::no known package manager; relying on preinstalled toolchain"
-          fi
-
-      - name: Build app-shell (native arm64 cargo build, API only)
-        # `make build-testing` is a plain `cargo build --release` (bypass +
-        # local-dev features; no dx/dioxus-cli, no wasm client) that leaves
-        # the binary at target/server-image/server — see the "Fixed
-        # contracts" section of docs/superpower/
-        # 2026-09-14-react-frontend-migration.md § 5.1.
-        env:
-          # SAME compile-time env block as before — these bake into the
-          # binary. The k8s Service names in deploy/pr-preview mirror the
-          # compose hostnames, so the baked endpoints stay valid.
-          DYNAMO_TABLE_PREFIX: ratel-local
-          ENV: local
-          RUSTFLAGS: "-D warnings"
-          RUST_LOG: error
-          DYNAMO_ENDPOINT: http://localstack:4566
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_REGION: ap-northeast-2
-          AWS_ACCOUNT_ID: test
-          COMMIT: pr-${{ github.event.number }}
-        run: |
-          cd app/ratel
-          make build-testing
-
-      - name: Push app-shell image to the in-cluster registry (buildkit)
-        # Packages the release binary with app/ratel/Dockerfile via the
-        # in-cluster buildkitd and pushes registry.infra.svc.cluster.local:5000/
-        # ratel-app-shell:pr-<num> — the tag the e2e job deploys.
+      - name: Push app-shell image to the in-cluster registry (buildkit, multi-arch)
         env:
           NAME: ratel-app-shell
-          CONTEXT: target/server-image
           DOCKERFILE: app/ratel/Dockerfile
           IMAGE_TAG: pr-${{ github.event.number }}
+          BUILD_ARGS: >-
+            ENV=local
+            DYNAMO_TABLE_PREFIX=ratel-local
+            DYNAMODB_ENDPOINT=none
+            AWS_REGION=ap-northeast-2
+            RUST_LOG=error
+            FEATURES=server,bypass,design-preview
+          SECRETS: >-
+            AWS_ACCESS_KEY_ID=test
+            AWS_SECRET_ACCESS_KEY=test
+            ACCOUNT_ID=test
         run: bash scripts/buildkit-image.sh
 
   # ────────────────────────────────────────────────────────────────────────
@@ -354,7 +268,7 @@ jobs:
   # bypass feature (make build-testing above).
   # ────────────────────────────────────────────────────────────────────────
   build-web-image:
-    runs-on: [self-hosted, Linux, ARM64]
+    runs-on: [self-hosted, linux, amd64]
     timeout-minutes: 30
     if: github.event_name == 'pull_request'
 
@@ -383,35 +297,88 @@ jobs:
         run: bash scripts/buildkit-image.sh
 
   # ────────────────────────────────────────────────────────────────────────
+  # build-events-image: cross-compile the ratel_cdc + ratel_worker binaries
+  # (amd64+arm64) via the in-cluster buildkitd and push as
+  # ratel-events:pr-<num> — NEW for the shared-infra migration: PR previews
+  # did not run an events tier before (see deploy/pr-preview/25-events.yaml).
+  # Same cross-compile approach as build-image (deploy/dev/Dockerfile.events
+  # builds both binaries INSIDE buildkit via xx-cargo).
+  # ────────────────────────────────────────────────────────────────────────
+  build-events-image:
+    runs-on: [self-hosted, linux, amd64]
+    timeout-minutes: 60
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Push events image to the in-cluster registry (buildkit, multi-arch)
+        env:
+          NAME: ratel-events
+          DOCKERFILE: deploy/dev/Dockerfile.events
+          IMAGE_TAG: pr-${{ github.event.number }}
+          BUILD_ARGS: >-
+            ENV=local
+            DYNAMO_TABLE_PREFIX=ratel-pr-${{ github.event.number }}
+            DYNAMODB_ENDPOINT=none
+            AWS_REGION=ap-northeast-2
+            RUST_LOG=info
+          SECRETS: >-
+            AWS_ACCESS_KEY_ID=test
+            AWS_SECRET_ACCESS_KEY=test
+            ACCOUNT_ID=test
+        run: bash scripts/buildkit-image.sh
+
+  # ────────────────────────────────────────────────────────────────────────
   # e2e: PR-isolated Playwright run on the home k3s cluster — full rationale
-  # in the file header. Deploy deploy/pr-preview/*.yaml (localstack +
-  # localstack-init + qdrant + qdrant-init + app-shell + web + Ingress) into
-  # namespace ratel-pr-<num>, wait for the stack, run the suite in a k8s pod
-  # from the official Playwright image (kubectl cp in / exec / cp out — the
-  # runner pods have no docker CLI and no browser OS deps), publish the HTML
-  # report to the pr-webroot, then TEAR THE NAMESPACE DOWN — per project
-  # policy the preview exists only for the duration of the test run (unlike
-  # asset, which keeps it for the PR's lifetime). Only the report webroot
-  # (ratel-report-<num>.pr.biyard.co) outlives the run;
-  # pr-preview-cleanup.yml removes it on PR close and catches namespaces
-  # left behind by cancelled/crashed runs.
+  # in the file header. SHARED-INFRA MIGRATION: the preview no longer runs
+  # its own localstack/qdrant/postgres — it creates a per-PR database/
+  # collection/topic on the SAME shared infra dev/prod use
+  # (postgres.infra.svc.cluster.local, qdrant.infra.svc.cluster.local,
+  # redpanda-0.redpanda.infra.svc.cluster.local — mirrors biyard/dataroom's
+  # ci.yml deploy-pr job), deploys deploy/pr-preview/*.yaml (app-shell + web +
+  # the new ratel-events tier + Ingress) into namespace ratel-pr-<num>, waits
+  # for the stack, runs the suite in a k8s pod from the official Playwright
+  # image (kubectl cp in / exec / cp out — the runner pods have no docker CLI
+  # and no browser OS deps), publishes the HTML report to the pr-webroot,
+  # then TEARS THE NAMESPACE DOWN — per project policy the preview exists
+  # only for the duration of the test run (unlike asset/dataroom, which keep
+  # it for the PR's lifetime). The per-PR Postgres database / qdrant
+  # collection / Kafka topic are NOT torn down here on purpose — a re-run
+  # (push to the same PR) reuses and resets them (qdrant-init-job RESET=true;
+  # postgres keeps its data, re-seeded data-only each run); only the report
+  # webroot and the namespace end this run. pr-preview-cleanup.yml does the
+  # FINAL teardown of the database/collection/topic when the PR closes, and
+  # catches namespaces left behind by cancelled/crashed runs.
   #
   # NON-BLOCKING (`continue-on-error: true`) while the new infra path
   # stabilizes; promote to a required check once green history backs it.
   # pull_request-only — PR_NUM comes from github.event.number.
   # ────────────────────────────────────────────────────────────────────────
   e2e:
-    runs-on: [self-hosted, Linux, ARM64]
+    # arm64: this job needs the pr-webroot PVC mounted at /root/nginx to
+    # publish the Playwright report (see "Publish the Playwright report"
+    # below) — only the arm64 runner StatefulSet (`runner`) has that mount;
+    # `runner-amd64` does not. Moving this job to amd64 broke the report
+    # publish step with "/root/nginx (pr-webroot mount) is missing on this
+    # runner" even though the Playwright run itself succeeded. Mounting
+    # pr-webroot on runner-amd64 too is a cluster-infra change outside this
+    # PR's scope, so this job stays on arm64 for now.
+    runs-on: [self-hosted, linux, arm64]
     timeout-minutes: 90
     continue-on-error: true # non-blocking introduction — see job comment above
     if: github.event_name == 'pull_request'
-    needs: [build-image, build-web-image]
+    needs: [build-image, build-web-image, build-events-image]
     env:
       # PR number threads through everything: the namespace, the ingress
-      # host, the report webroot dir, and the image tag build-image pushed.
+      # host, the report webroot dir, and the image tags the build-*-image
+      # jobs pushed.
       PR_NUM: "${{ github.event.number }}"
       NS: "ratel-pr-${{ github.event.number }}"
       HOST: "ratel-${{ github.event.number }}.pr.biyard.co"
+      DB_ROLE: ratel
+      DB_PASSWORD: ratel
+      DB_NAME: "ratel_pr_${{ github.event.number }}"
 
     steps:
       - uses: actions/checkout@v6
@@ -419,42 +386,63 @@ jobs:
       - name: Recreate the per-PR namespace (clean state)
         # Every run starts EMPTY: deleting the previous namespace first
         # guarantees this run's pods pull the freshly pushed :pr-<num>
-        # image and that no state (tables, seeds, qdrant collections)
-        # leaks between runs. The preview is fully namespace-contained —
-        # no shared db to reset (unlike asset).
+        # image. The per-PR Postgres database / qdrant collection / Kafka
+        # topic on shared infra are NOT deleted here — they are reset by
+        # the steps below (qdrant RESET=true; postgres is re-seeded
+        # data-only) and only fully torn down by pr-preview-cleanup.yml
+        # when the PR closes.
         run: |
           set -euo pipefail
           kubectl delete namespace "${NS}" --ignore-not-found --wait --timeout=180s || true
           kubectl create namespace "${NS}"
 
-      - name: Create the init-script ConfigMaps
-        # The localstack-init / qdrant-init Jobs run the SAME scripts the
-        # docker-compose testing profile mounts; here they're delivered as
-        # ConfigMaps built from the repo files (≈60 KB total — far under the
-        # 1 MB ConfigMap limit).
+      - name: Ensure the per-PR database and its owner exist on shared infra Postgres (create-if-absent, never drop)
+        # Mirrors biyard/dataroom's ci.yml deploy-pr job. The role is shared
+        # across every PR/dev/prod database (created once, left alone after);
+        # the per-PR database itself is dropped only by pr-preview-cleanup.yml.
+        run: |
+          set -euo pipefail
+          pg() { kubectl -n infra exec postgres-0 -- psql -U asset -d asset -tA -c "$1"; }
+          if [ "$(pg "SELECT 1 FROM pg_roles WHERE rolname = '${DB_ROLE}'")" != "1" ]; then
+            pg "CREATE ROLE ${DB_ROLE} LOGIN PASSWORD '${DB_PASSWORD}'"
+            echo "created role ${DB_ROLE}"
+          else
+            # The role may already exist from dev/prod with a DIFFERENT
+            # password (e.g. created before this PR-preview path existed, or
+            # rotated independently) — force it to the password every
+            # workload in this file expects, so app-shell's DATABASE_URL
+            # never hits "password authentication failed" on an otherwise
+            # pre-existing role.
+            pg "ALTER ROLE ${DB_ROLE} LOGIN PASSWORD '${DB_PASSWORD}'"
+            echo "role ${DB_ROLE} already existed — password reset to the expected value"
+          fi
+          if [ "$(pg "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'")" != "1" ]; then
+            pg "CREATE DATABASE ${DB_NAME} OWNER ${DB_ROLE}"
+            echo "created database ${DB_NAME}"
+          fi
+
+      - name: Create the postgres-seed ConfigMap
+        # localstack/qdrant init-script ConfigMaps are gone (no more
+        # localstack); qdrant-init still mounts scripts/qdrant-init-entrypoint.sh
+        # from pr-preview-scripts, and postgres-seed still mounts
+        # scripts/postgres-seed.sql from pr-preview-postgres-seed — both built
+        # as ConfigMaps from the repo files (well under the 1 MB limit).
         run: |
           set -euo pipefail
           kubectl -n "${NS}" create configmap pr-preview-scripts \
-            --from-file=scripts/localstack-init-entrypoint.sh \
-            --from-file=scripts/dynamodb-schema.json \
             --from-file=scripts/qdrant-init-entrypoint.sh \
             --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n "${NS}" create configmap pr-preview-dynamodb-data \
-            --from-file=scripts/dynamodb-data/ \
-            --dry-run=client -o yaml | kubectl apply -f -
-          # Postgres migration: the postgres-seed Job loads the same Playwright
-          # fixtures into Postgres (data-only SQL generated from the
-          # scripts/dynamodb-data/*.json seed, as Postgres rows).
           kubectl -n "${NS}" create configmap pr-preview-postgres-seed \
             --from-file=scripts/postgres-seed.sql \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy the preview stack (envsubst → kubectl apply)
         # Plain YAML with ${PR_NUM} placeholders — no helm chart exists in
-        # ratel, and the stack is 4 workloads; envsubst keeps it inspectable.
-        # The substitution list is restricted to ${PR_NUM} so nothing else
-        # in the manifests can be clobbered by runner env. sed fallback in
-        # case the runner image lacks gettext's envsubst.
+        # ratel, and the stack is now 6 workloads (app-shell, web, 4
+        # ratel-events Deployments) + 2 init Jobs + Ingress; envsubst keeps
+        # it inspectable. The substitution list is restricted to ${PR_NUM}
+        # so nothing else in the manifests can be clobbered by runner env.
+        # sed fallback in case the runner image lacks gettext's envsubst.
         run: |
           set -euo pipefail
           subst() {
@@ -471,31 +459,28 @@ jobs:
 
       - name: Wait for the stack to answer through ingress-nginx
         # Ordered waits so a failure names its culprit: init Jobs first
-        # (table + seeds + qdrant collection), then rollouts (app-shell's
-        # initContainer gates on the table, so its rollout implies the init
-        # chain — the generic `get deploy` loop also covers the new `web`
-        # Deployment), then prove BOTH backends through the ingress split
-        # (docs/superpower/2026-09-14-react-frontend-migration.md § 5.1):
-        # "/" now answers from `web`, not app-shell (API-only). The PR host
-        # rides the ingress default certificate, hence -k; --resolve pins the
-        # public name to the controller's ClusterIP (no DNS round-trip, no
-        # hairpin dependency). /launchpad/health only accepts POST with a
-        # signed body (see the readinessProbe comment on
-        # deploy/pr-preview/30-app-shell.yaml), so a plain GET is expected to
-        # answer 404/405 — anything other than a connection failure or a 5xx
-        # proves the ingress → app-shell route itself works.
+        # (qdrant collection reset+recreated, postgres schema+seed), then
+        # rollouts (app-shell's initContainer gates on shared-infra Postgres
+        # having this PR's database ready — the generic `get deploy` loop
+        # also covers web and the 4 ratel-events Deployments), then prove
+        # BOTH backends through the ingress split (docs/superpower/
+        # 2026-09-14-react-frontend-migration.md § 5.1): "/" now answers
+        # from `web`, not app-shell (API-only). The PR host rides the
+        # ingress default certificate, hence -k; --resolve pins the public
+        # name to the controller's ClusterIP (no DNS round-trip, no hairpin
+        # dependency). /launchpad/health only accepts POST with a signed
+        # body (see the readinessProbe comment on
+        # deploy/pr-preview/30-app-shell.yaml), so a plain GET is expected
+        # to answer 404/405 — anything other than a connection failure or a
+        # 5xx proves the ingress → app-shell route itself works.
         run: |
           set -euo pipefail
-          kubectl -n "${NS}" wait --for=condition=complete job/localstack-init --timeout=420s
           kubectl -n "${NS}" wait --for=condition=complete job/qdrant-init --timeout=300s
+          kubectl -n "${NS}" wait --for=condition=complete job/postgres-seed --timeout=300s
           for d in $(kubectl -n "${NS}" get deploy -o name); do
             echo "── rollout ${d}"
             kubectl -n "${NS}" rollout status "$d" --timeout=420s
           done
-          # Postgres migration: the seed Job's initContainer blocks until
-          # app-shell has migrated the schema, then loads the fixtures — wait
-          # for it here so Playwright never races an unseeded database.
-          kubectl -n "${NS}" wait --for=condition=complete job/postgres-seed --timeout=300s
           INGRESS_IP=$(kubectl -n infra get svc ingress-nginx-controller -o jsonpath='{.spec.clusterIP}')
           [ -n "$INGRESS_IP" ] || { echo "::error::ingress-nginx-controller service not found"; exit 1; }
           base="https://${HOST}"

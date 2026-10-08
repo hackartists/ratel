@@ -9,7 +9,7 @@
 # Ingress (deploy/pr-preview/40-ingress.yaml) sends every path EXCEPT the API
 # prefixes (/api, /v3, /mcp, /hooks, /launchpad/health, /launchpad/points,
 # /admin/proxy, /designs, /roadmap — the last two only exist on this preview's
-# app-shell, which is built with the local-dev feature) here.
+# app-shell, which is built with the design-preview feature) here.
 #
 # API_ORIGIN points at the in-namespace app-shell Service so the small Node
 # server (apps/web/server/serve.mjs) can fetch space/post metadata for
@@ -32,8 +32,19 @@ spec:
       labels:
         app: web
     spec:
-      nodeSelector:
-        biyard.io/node-class: main
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: web
           image: registry.infra.svc.cluster.local:5000/ratel-web:pr-${PR_NUM}
