@@ -137,6 +137,8 @@ RUN --mount=type=secret,id=AWS_ACCESS_KEY_ID \
       if [ -s "$f" ]; then export "${key}=$(cat "$f")"; fi; \
     done; \
     cd app/ratel \
+    && export PKG_CONFIG_ALLOW_CROSS=1 \
+    && export PKG_CONFIG_PATH="/usr/lib/$(xx-info triple)/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig" \
     && xx-cargo build --release --no-default-features --features "${FEATURES}" --bin app-shell \
     && mkdir -p /out \
     && cp "/app/target/$(xx-cargo --print-target-triple)/release/app-shell" /out/app-shell \
