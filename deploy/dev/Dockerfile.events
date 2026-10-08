@@ -42,8 +42,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       clang lld cmake pkg-config \
     && rm -rf /var/lib/apt/lists/*
 ARG TARGETPLATFORM
+# gcc/g++/libc6-dev: xx-cargo's cross linker driver.
+# libssl-dev: openssl-sys needs the TARGET arch's OpenSSL headers/libs.
+# libcurl4-openssl-dev: rdkafka-sys's librdkafka vendored build includes
+# curl/curl.h (rdkafka_conf.c) even with -DWITH_CURL=0 — the header must be
+# present for the TARGET arch or cmake's C compile step fails outright
+# (biyard/dataroom's Dockerfile installs the same package for app-shell).
+# zlib1g-dev: rdkafka's `cmake-build` feature links librdkafka dynamically
+# against zlib (see this file's base-image comment above — the only
+# non-glibc dynamic dep the resulting binaries carry).
 RUN xx-apt-get update && xx-apt-get install -y --no-install-recommends \
-      gcc g++ libc6-dev libssl-dev zlib1g-dev \
+      gcc g++ libc6-dev libssl-dev libcurl4-openssl-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
