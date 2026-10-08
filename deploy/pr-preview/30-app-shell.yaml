@@ -1,21 +1,27 @@
-# app-shell — the ratel Dioxus fullstack server, mirroring the compose
-# `app-shell-testing` service: the image built by the build-image job
-# (native arm64 `make build-testing` output packaged with app/ratel/Dockerfile
-# and pushed to the in-cluster registry as ratel-app-shell:pr-<num>).
-# Runtime env is IP/PORT only, same as compose — every backend endpoint
-# (DYNAMO_ENDPOINT=http://localstack:4566, table prefix ratel-local, bypass
-# auth, ...) was baked at compile time and stays valid because the Services
-# here reuse the compose hostnames.
+# app-shell — the ratel Dioxus fullstack server for PR previews, now on the
+# SHARED infra backing services (shared-infra migration): the image is
+# cross-compiled multi-arch (amd64+arm64) by build-image's buildkit step
+# (app/ratel/Dockerfile — see the Dockerfile header for the xx-cargo
+# cross-compile rationale) with FEATURES=server,bypass,design-preview, and
+# pushed to the in-cluster registry as ratel-app-shell:pr-<num>.
 #
-# Startup ordering: compose used `depends_on: localstack healthy +
-# localstack-init completed`. Emulated with an initContainer that polls
-# DynamoDB for the ratel-local-main table — i.e. it waits for BOTH localstack
-# being up AND the init Job having created the table, so app-shell never
-# serves against a missing table (the server itself starts fine either way,
-# but requests would 500 and the readiness curl would pass misleadingly).
-# Seed data lands moments after table creation; the e2e workflow additionally
-# waits for the init Job's Complete condition before running tests, so tests
-# never race the seeds.
+# Backing services are no longer private per-PR Deployments (localstack,
+# qdrant, postgres were deleted from this directory) — app-shell now talks
+# to the SAME shared infra namespace dev/prod use:
+#   - postgres.infra.svc.cluster.local:5432, database ratel_pr_${PR_NUM}
+#     (role/database created by the e2e workflow before this manifest is
+#     applied; see pr-workflow.yml's "Ensure the per-PR database ... exist"
+#     step, mirroring dataroom's ci.yml deploy-pr job)
+#   - qdrant.infra.svc.cluster.local:6333/6334, collection
+#     ratel_pr_${PR_NUM}_main (created by 21-qdrant-init-job.yaml)
+#   - redpanda-0.redpanda.infra.svc.cluster.local:9093, topic
+#     pr-${PR_NUM}.ratel.cdc.v1 (consumed/produced by the ratel-events tier,
+#     25-events.yaml)
+# The old DYNAMO_ENDPOINT/localstack path and its AWS_* stand-in credentials
+# are gone entirely — the app's DynamoDB client is vestigial (no live reads/
+# writes; see app/ratel/src/common/config/server/dynamodb.rs) and needs no
+# endpoint to construct successfully once DYNAMODB_ENDPOINT defaults to
+# "none" at compile time (the image's default ARG — see the Dockerfile).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,23 +40,39 @@ spec:
         app: app-shell
     spec:
       # qdrant (jemalloc) aborts on the Pi node's 16K page-size kernel,
-      # and the Pi is the small node anyway — pin every preview/dev pod to
-      # the 4K-page main node (same class asset pins its e2e pod to).
-      nodeSelector:
-        biyard.io/node-class: main
+      # so the Pi stays excluded — but main (arm64) and the dedicated
+      # amd64 node are both fine (4K page size), so schedule on either
+      # (multi-arch images make this possible; the amd64 node carries a
+      # taint, hence the toleration below).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       initContainers:
         # Postgres migration: the app connects to Postgres and migrates its
-        # schema on startup, so gate the app on Postgres being ready (replaces
-        # the old wait-for-dynamo gate — the app no longer needs the DynamoDB
-        # table to exist; its vestigial Dynamo client connects lazily).
+        # schema on startup, so gate the app on the shared infra Postgres
+        # being reachable AND this PR's database already existing (created
+        # by the e2e workflow before this manifest is applied).
         - name: wait-for-postgres
           image: postgres:16-alpine
+          env:
+            - name: PGPASSWORD
+              value: ratel
           command:
             - sh
             - -c
             - |
-              until pg_isready -h postgres -p 5432 -U ratel -d ratel >/dev/null 2>&1; do
-                echo "waiting for postgres..."
+              until pg_isready -h postgres.infra.svc.cluster.local -p 5432 -U ratel -d ratel_pr_${PR_NUM} >/dev/null 2>&1; do
+                echo "waiting for postgres.infra.svc.cluster.local / ratel_pr_${PR_NUM}..."
                 sleep 3
               done
               echo "postgres ready — starting app-shell"
@@ -70,25 +92,15 @@ spec:
               value: "8080"
             # Postgres migration: the app resolves its pool from DATABASE_URL
             # and migrates the inventory schema on startup (common/run.rs).
+            # Shared infra postgres — dedicated per-PR database.
             - name: DATABASE_URL
-              value: postgres://ratel:ratel@postgres:5432/ratel
+              value: postgres://ratel:***@postgres.infra.svc.cluster.local:5432/ratel_pr_${PR_NUM}
             # Per-instance sqlx POOL max (client side), NOT postgres server
             # max_connections. Small (10) to mirror production sizing
             # (replicas × pool ≤ server max_connections) and to keep the pool a
             # leak check under the e2e run.
             - name: POSTGRES_MAX_CONNECTIONS
               value: "10"
-            # Vestigial DynamoDB client is still constructed at boot (no live
-            # reads/writes) — keep the AWS_*/DYNAMO_* vars so construction
-            # succeeds; DYNAMO_ENDPOINT points at localstack which is still up.
-            - name: AWS_ACCESS_KEY_ID
-              value: test
-            - name: AWS_SECRET_ACCESS_KEY
-              value: test
-            - name: AWS_REGION
-              value: ap-northeast-2
-            - name: AWS_DEFAULT_REGION
-              value: ap-northeast-2
           # app-shell is API-only after the React frontend migration (see
           # docs/superpower/2026-09-14-react-frontend-migration.md § 5.1) —
           # `/` no longer exists. `/launchpad/health` is NOT a substitute:

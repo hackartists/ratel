@@ -1,0 +1,246 @@
+# Events tier (PR PREVIEW) — the Redpanda CDC producer + worker consumers,
+# on the SAME shared infra redpanda dev/prod use
+# (redpanda-0.redpanda.infra.svc.cluster.local:9093). New for the shared-infra
+# migration: PR previews did not run an events tier before (there was no
+# Redpanda in the old localstack-based preview stack at all). All four
+# Deployments run the ratel-events image (deploy/dev/Dockerfile.events,
+# cross-compiled multi-arch — see that Dockerfile's header), built by the
+# build-image job with --features redpanda from the SAME PR-preview
+# compile-time env as app-shell.
+#
+# Topic/group namespacing: PR-unique so concurrent PR previews on the shared
+# broker never cross-consume or collide — pr-${PR_NUM}.ratel.cdc.v1 (topic)
+# and pr-${PR_NUM}-ratel-worker-<role> (consumer group, set via
+# RATEL_WORKER_GROUP so it does not collide with dev's/prod's
+# ratel-worker-<role> or another PR's). pr-preview-cleanup.yml deletes the
+# topic (regex `^pr-<num>\.`) and its consumer groups when the PR closes.
+#
+# RATEL_WORKER_DRY_RUN="0" (NOT shadow mode): unlike dev/prod, which shadow
+# until their explicit event-pipeline cutover, a PR preview's e2e run has to
+# exercise the real handlers (XP, notifications, cross-posts, ...) to prove
+# the change under test actually works end to end — shadow mode would make
+# the whole events tier a no-op for the duration of the test run.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ratel-cdc
+  namespace: ratel-pr-${PR_NUM}
+  labels:
+    app: ratel-cdc
+    tier: events
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ratel-cdc
+  template:
+    metadata:
+      labels:
+        app: ratel-cdc
+        tier: events
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
+      containers:
+        - name: cdc
+          image: registry.infra.svc.cluster.local:5000/ratel-events:pr-${PR_NUM}
+          imagePullPolicy: Always
+          command: ["./ratel_cdc"]
+          env:
+            - name: RATEL_KAFKA_BROKERS
+              value: redpanda-0.redpanda.infra.svc.cluster.local:9093
+            - name: RATEL_CDC_TOPIC
+              value: pr-${PR_NUM}.ratel.cdc.v1
+            - name: DYNAMO_TABLE_PREFIX
+              value: ratel-pr-${PR_NUM}
+            - name: RUST_LOG
+              value: info
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ratel-worker-default
+  namespace: ratel-pr-${PR_NUM}
+  labels:
+    app: ratel-worker-default
+    tier: events
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ratel-worker-default
+  template:
+    metadata:
+      labels:
+        app: ratel-worker-default
+        tier: events
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
+      containers:
+        - name: worker
+          image: registry.infra.svc.cluster.local:5000/ratel-events:pr-${PR_NUM}
+          imagePullPolicy: Always
+          command: ["./ratel_worker"]
+          env:
+            - name: RATEL_KAFKA_BROKERS
+              value: redpanda-0.redpanda.infra.svc.cluster.local:9093
+            - name: RATEL_CDC_TOPIC
+              value: pr-${PR_NUM}.ratel.cdc.v1
+            - name: RATEL_WORKER_ROLE
+              value: default
+            - name: RATEL_WORKER_GROUP
+              value: pr-${PR_NUM}-ratel-worker-default
+            # Real handler execution (not shadow) — see the header comment.
+            - name: RATEL_WORKER_DRY_RUN
+              value: "0"
+            - name: DYNAMO_TABLE_PREFIX
+              value: ratel-pr-${PR_NUM}
+            - name: RUST_LOG
+              value: info
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ratel-worker-analyze
+  namespace: ratel-pr-${PR_NUM}
+  labels:
+    app: ratel-worker-analyze
+    tier: events
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ratel-worker-analyze
+  template:
+    metadata:
+      labels:
+        app: ratel-worker-analyze
+        tier: events
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
+      containers:
+        - name: worker
+          image: registry.infra.svc.cluster.local:5000/ratel-events:pr-${PR_NUM}
+          imagePullPolicy: Always
+          command: ["./ratel_worker"]
+          env:
+            - name: RATEL_KAFKA_BROKERS
+              value: redpanda-0.redpanda.infra.svc.cluster.local:9093
+            - name: RATEL_CDC_TOPIC
+              value: pr-${PR_NUM}.ratel.cdc.v1
+            - name: RATEL_WORKER_ROLE
+              value: analyze
+            - name: RATEL_WORKER_GROUP
+              value: pr-${PR_NUM}-ratel-worker-analyze
+            - name: RATEL_WORKER_DRY_RUN
+              value: "0"
+            - name: DYNAMO_TABLE_PREFIX
+              value: ratel-pr-${PR_NUM}
+            - name: RUST_LOG
+              value: info
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ratel-worker-egress
+  namespace: ratel-pr-${PR_NUM}
+  labels:
+    app: ratel-worker-egress
+    tier: events
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ratel-worker-egress
+  template:
+    metadata:
+      labels:
+        app: ratel-worker-egress
+        tier: events
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
+      containers:
+        - name: worker
+          image: registry.infra.svc.cluster.local:5000/ratel-events:pr-${PR_NUM}
+          imagePullPolicy: Always
+          command: ["./ratel_worker"]
+          env:
+            - name: RATEL_KAFKA_BROKERS
+              value: redpanda-0.redpanda.infra.svc.cluster.local:9093
+            - name: RATEL_CDC_TOPIC
+              value: pr-${PR_NUM}.ratel.cdc.v1
+            - name: RATEL_WORKER_ROLE
+              value: egress
+            - name: RATEL_WORKER_GROUP
+              value: pr-${PR_NUM}-ratel-worker-egress
+            - name: RATEL_WORKER_DRY_RUN
+              value: "0"
+            - name: DYNAMO_TABLE_PREFIX
+              value: ratel-pr-${PR_NUM}
+            - name: RUST_LOG
+              value: info
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi

@@ -25,13 +25,20 @@ name: PR preview cleanup
 # anything that still slips past — e.g. a run cancelled so late that its own
 # teardown step never got a turn.
 #
-# No database step: the ratel preview is fully namespace-contained
-# (LocalStack + Postgres + Qdrant live inside the namespace), so deleting the
-# namespace is the whole app-tier teardown.
+# Shared-infra note: since the shared-infra migration, the PR preview no
+# longer runs its own LocalStack/Postgres/Qdrant inside the namespace — it
+# uses the SAME shared infra postgres/qdrant/redpanda dev/prod use
+# (postgres.infra.svc.cluster.local, qdrant.infra.svc.cluster.local,
+# redpanda-0.redpanda.infra.svc.cluster.local). This workflow now ALSO drops
+# this PR's Postgres database (ratel_pr_<num>), deletes its qdrant collection
+# (ratel_pr_<num>_main), and deletes its Kafka topic + consumer groups
+# (pr-<num>.* / pr-<num>-ratel-worker-*) — mirrors biyard/dataroom's
+# pr-preview-cleanup.yml pattern.
 #
-# Registry note: the ratel-app-shell:pr-<num> and ratel-web:pr-<num> tags in
-# the in-cluster registry are NOT deleted here (the registry API needs digest
-# lookups + an offline GC pass); registry housekeeping is home-infra's job.
+# Registry note: the ratel-app-shell:pr-<num>, ratel-web:pr-<num>, and
+# ratel-events:pr-<num> tags in the in-cluster registry are NOT deleted here
+# (the registry API needs digest lookups + an offline GC pass); registry
+# housekeeping is home-infra's job.
 on:
   pull_request:
     types: [closed]
@@ -40,7 +47,7 @@ jobs:
   cleanup:
     # Same self-hosted pool as e2e: the runner pods carry in-cluster
     # kubectl credentials and mount the pr-webroot PVC at /root/nginx.
-    runs-on: [self-hosted, Linux, ARM64]
+    runs-on: [self-hosted, linux, amd64]
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -152,6 +159,45 @@ jobs:
             exit 1
           fi
           echo "cleaned up PR ${PR_NUM} preview leftovers"
+
+      - name: Tear down this PR's shared-infra resources (Postgres DB, qdrant collection, Kafka topic+groups)
+        if: always()
+        # Runs even if the namespace teardown above failed — these shared
+        # infra resources are independent of the namespace and should still
+        # be torn down (and are each individually idempotent / safe to
+        # retry via pr-preview-sweeper if this step itself fails).
+        run: |
+          set -uo pipefail
+          pg() { kubectl -n infra exec postgres-0 -- psql -U asset -d asset -tA -c "$1"; }
+
+          echo "dropping Postgres database ratel_pr_${PR_NUM} (if present)"
+          pg "DROP DATABASE IF EXISTS ratel_pr_${PR_NUM} WITH (FORCE)" \
+            && echo "dropped ratel_pr_${PR_NUM}" \
+            || echo "::warning::failed to drop database ratel_pr_${PR_NUM} (non-fatal, sweeper will retry)"
+
+          echo "deleting qdrant collection ratel_pr_${PR_NUM}_main (if present)"
+          curl -sf -X DELETE "http://qdrant.infra.svc.cluster.local:6333/collections/ratel_pr_${PR_NUM}_main" >/dev/null 2>&1 \
+            && echo "deleted collection ratel_pr_${PR_NUM}_main" \
+            || echo "::warning::qdrant collection delete failed or was already absent (non-fatal)"
+
+          rpk="kubectl -n infra exec redpanda-0 -c redpanda -- rpk"
+          if ! ${rpk} topic list >/dev/null 2>&1; then
+            rpk="kubectl -n infra exec redpanda-0 -c redpanda -- rpk -X brokers=localhost:9093"
+          fi
+          echo "deleting Kafka topic(s) matching ^pr-${PR_NUM}\\. (if present)"
+          topics=$(${rpk} topic list --regex "^pr-${PR_NUM}\\..*" 2>/dev/null | awk 'NR > 1 {print $1}' || true)
+          if [ -n "${topics}" ]; then
+            ${rpk} topic delete --regex "^pr-${PR_NUM}\\..*" \
+              && echo "deleted topics: ${topics}" \
+              || echo "::warning::topic delete failed (non-fatal, sweeper will retry)"
+          else
+            echo "no topics matched ^pr-${PR_NUM}\\."
+          fi
+          for group in $(${rpk} group list 2>/dev/null | tr -s ' \t' '\n' | grep "^pr-${PR_NUM}-" | sort -u || true); do
+            ${rpk} group delete "${group}" >/dev/null 2>&1 \
+              && echo "deleted group ${group}" \
+              || echo "::warning::group delete failed: ${group}"
+          done
 
       - name: Mark the sticky comment as torn down
         if: always()

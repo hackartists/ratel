@@ -1,35 +1,92 @@
-# ratel-events — the Redpanda CDC producer (ratel_cdc) + worker
-# (ratel_worker) binaries, built NATIVELY on the arm64 runner with
-# `cargo build --release --features redpanda` and copied in by the
-# dev-workflow build-images job (the build context is a staging dir
-# containing just the two binaries — NOT the repo root).
+# syntax=docker/dockerfile:1.7
 #
-# Base image choice — ubuntu:24.04, same as app/ratel/Dockerfile:
-#   - glibc compatibility is PROVEN: the app-shell `server` binary is built
-#     on the same runner and runs in ubuntu:24.04 today, so these binaries
-#     (same toolchain, same runner) run too. A debian:bookworm-slim base
-#     would risk a glibc-version mismatch (bookworm 2.36 < the runner's
-#     toolchain glibc) and distroless/cc would complicate debugging for no
-#     meaningful size win here.
+# ratel-events — the Redpanda CDC producer (ratel_cdc) + worker
+# (ratel_worker) binaries, now CROSS-COMPILED inside this Dockerfile via
+# tonistiigi/xx + xx-cargo (biyard/dataroom pattern,
+# services/dataroom/Dockerfile) — ONE amd64 buildkitd produces both the
+# amd64 and arm64 binary from a single `buildctl --opt
+# platform=linux/amd64,linux/arm64` invocation. This replaces the former
+# "runner compiles natively with --features redpanda, Dockerfile just COPYs
+# the two binaries" split; the build context is now the repo root (not a
+# two-binary staging dir).
+#
+# Base image choice — ubuntu:24.04, unchanged from the native-build era:
+#   - glibc compatibility is proven the same way app/ratel/Dockerfile's
+#     final stage was (Debian bookworm-slim has an older glibc than the
+#     rust:1-bookworm builder's; xx-cargo cross-links against the TARGET
+#     sysroot's glibc, which here is also Debian bookworm via
+#     xx-apt-get, so bookworm-slim is consistent for THIS Dockerfile too —
+#     see the parallel comment in app/ratel/Dockerfile's final stage).
 #   - librdkafka is STATICALLY linked into the binaries (rdkafka's
 #     `cmake-build` feature builds it from source and links it in), and our
 #     rdkafka dep enables NO ssl/sasl features (Cargo.toml:
 #     features = ["cmake-build", "tokio"] — brokers speak plaintext on the
 #     internal :9093 listener), so there is no dynamic libssl/libsasl2
 #     dependency. Remaining dynamic deps: glibc + libgcc + zlib (rdkafka's
-#     default `libz` feature links the system zlib) — all present in the
-#     ubuntu base. The build job runs `ldd` on both binaries and fails on
-#     any "not found" before the image is pushed.
+#     default `libz` feature links the system zlib, provided by
+#     xx-apt-get's zlib1g-dev in the builder stage).
 #   - ca-certificates: the AWS SDK (rustls) needs CA roots to reach real
 #     DynamoDB/Bedrock over TLS.
+#
+# Compile-time secrets: SAME option_env! set as app/ratel/Dockerfile (the
+# events binaries reach DynamoDB through the same baked AwsConfig/
+# DynamoConfig) — forwarded identically via ARG (non-secret) / --secret
+# (sensitive). Events RUNTIME config (RATEL_*) stays plain env (events/
+# config.rs), unaffected by this file.
+
+FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.9.0 AS xx
+
+FROM --platform=$BUILDPLATFORM rust:1-bookworm AS builder
+COPY --from=xx / /
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      clang lld cmake pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+ARG TARGETPLATFORM
+RUN xx-apt-get update && xx-apt-get install -y --no-install-recommends \
+      gcc g++ libc6-dev zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+# ratel pins no rust-toolchain.toml (unlike dataroom) — use the
+# rust:1-bookworm base image's preinstalled stable toolchain.
+RUN xx-cargo --setup-target-triple
+COPY . .
+
+ARG ENV=prod
+ARG DYNAMO_TABLE_PREFIX=ratel-prod
+ARG DYNAMODB_ENDPOINT=none
+ARG AWS_REGION=ap-northeast-2
+ARG RUST_LOG=info
+
+ENV CARGO_TARGET_DIR=/app/target
+
+RUN --mount=type=secret,id=AWS_ACCESS_KEY_ID \
+    --mount=type=secret,id=AWS_SECRET_ACCESS_KEY \
+    --mount=type=secret,id=ACCOUNT_ID \
+    --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
+    --mount=type=cache,target=/app/target,id=cargo-target-events-${TARGETPLATFORM} \
+    set -eu; \
+    for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY ACCOUNT_ID; do \
+      f="/run/secrets/${key}"; \
+      if [ -s "$f" ]; then export "${key}=$(cat "$f")"; fi; \
+    done; \
+    cd app/ratel \
+    && xx-cargo build --release --features redpanda --bin ratel_cdc --bin ratel_worker \
+    && triple="$(xx-cargo --print-target-triple)" \
+    && mkdir -p /out \
+    && cp "/app/target/${triple}/release/ratel_cdc" /out/ratel_cdc \
+    && cp "/app/target/${triple}/release/ratel_worker" /out/ratel_worker \
+    && xx-verify /out/ratel_cdc \
+    && xx-verify /out/ratel_worker
+
 FROM ubuntu:24.04
 
 RUN for i in 1 2 3; do apt-get update && break || sleep 5; done \
-    && apt-get install -y ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
-COPY ratel_cdc ratel_worker ./
+COPY --from=builder /out/ratel_cdc /out/ratel_worker ./
 
 # Default to the worker; the k8s Deployments set an explicit command
 # (./ratel_cdc or ./ratel_worker) per role anyway.

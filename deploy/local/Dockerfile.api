@@ -50,11 +50,11 @@ ARG PORTONE_INICIS_CHANNEL_KEY=
 ARG PORTONE_KPN_CHANNEL_KEY=
 ARG PORTONE_API_SECRET=
 
-# `server,bypass,local-dev` = the PR-preview feature set: verification code
-# 000000 is accepted, and /designs + /roadmap are served. Built from the
+# `server,bypass,design-preview` = the PR-preview feature set: verification
+# code 000000 is accepted, and /designs + /roadmap are served. Built from the
 # workspace root, so app/ratel/.cargo's size-optimised LTO release profile
 # (CI only) does not apply and rebuilds stay incremental.
-ARG FEATURES=server,bypass,local-dev
+ARG FEATURES=server,bypass,design-preview
 ARG CARGO_PROFILE=release
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -78,8 +78,8 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /out/app-shell /app/app-shell
 
-# The local-dev feature mounts /designs and /roadmap from paths resolved
-# against the compile-time manifest dir (/build/app/ratel).
+# The design-preview feature mounts /designs and /roadmap from paths
+# resolved against the compile-time manifest dir (/build/app/ratel).
 COPY --from=build /build/app/ratel/assets/design /build/app/ratel/assets/design
 COPY --from=build /build/roadmap /build/roadmap
 
