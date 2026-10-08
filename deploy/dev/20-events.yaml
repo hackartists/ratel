@@ -50,10 +50,23 @@ spec:
         tier: events
     spec:
       # qdrant (jemalloc) aborts on the Pi node's 16K page-size kernel,
-      # and the Pi is the small node anyway — pin every preview/dev pod to
-      # the 4K-page main node (same class asset pins its e2e pod to).
-      nodeSelector:
-        biyard.io/node-class: main
+      # so the Pi stays excluded — but main (arm64) and the dedicated
+      # amd64 node are both fine (4K page size), so schedule on either
+      # (multi-arch images make this possible; the amd64 node carries a
+      # taint, hence the toleration below).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: cdc
           image: registry.infra.svc.cluster.local:5000/ratel-events:${SHA_TAG}
@@ -93,10 +106,23 @@ spec:
         tier: events
     spec:
       # qdrant (jemalloc) aborts on the Pi node's 16K page-size kernel,
-      # and the Pi is the small node anyway — pin every preview/dev pod to
-      # the 4K-page main node (same class asset pins its e2e pod to).
-      nodeSelector:
-        biyard.io/node-class: main
+      # so the Pi stays excluded — but main (arm64) and the dedicated
+      # amd64 node are both fine (4K page size), so schedule on either
+      # (multi-arch images make this possible; the amd64 node carries a
+      # taint, hence the toleration below).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: worker
           image: registry.infra.svc.cluster.local:5000/ratel-events:${SHA_TAG}
@@ -148,10 +174,23 @@ spec:
         tier: events
     spec:
       # qdrant (jemalloc) aborts on the Pi node's 16K page-size kernel,
-      # and the Pi is the small node anyway — pin every preview/dev pod to
-      # the 4K-page main node (same class asset pins its e2e pod to).
-      nodeSelector:
-        biyard.io/node-class: main
+      # so the Pi stays excluded — but main (arm64) and the dedicated
+      # amd64 node are both fine (4K page size), so schedule on either
+      # (multi-arch images make this possible; the amd64 node carries a
+      # taint, hence the toleration below).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: worker
           image: registry.infra.svc.cluster.local:5000/ratel-events:${SHA_TAG}
@@ -202,10 +241,23 @@ spec:
         tier: events
     spec:
       # qdrant (jemalloc) aborts on the Pi node's 16K page-size kernel,
-      # and the Pi is the small node anyway — pin every preview/dev pod to
-      # the 4K-page main node (same class asset pins its e2e pod to).
-      nodeSelector:
-        biyard.io/node-class: main
+      # so the Pi stays excluded — but main (arm64) and the dedicated
+      # amd64 node are both fine (4K page size), so schedule on either
+      # (multi-arch images make this possible; the amd64 node carries a
+      # taint, hence the toleration below).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: worker
           image: registry.infra.svc.cluster.local:5000/ratel-events:${SHA_TAG}

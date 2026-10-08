@@ -1,13 +1,19 @@
-# postgres-seed — one-shot Job that loads the Playwright fixtures into Postgres,
-# the migration-era replacement for the DynamoDB seed the localstack-init Job
-# performs (test users hi+user1@…, hiteam, memberships, attribute codes, …).
+# postgres-seed — one-shot Job that loads the Playwright fixtures into this
+# PR's database on the SHARED infra postgres
+# (postgres.infra.svc.cluster.local:5432), replacing the PR preview's former
+# private postgres Deployment (deleted; see the shared-infra migration).
+# Database is namespaced per PR (ratel_pr_${PR_NUM}); role/database creation
+# itself happens in pr-workflow.yml's e2e job BEFORE this Job is applied
+# (mirrors dataroom's ci.yml deploy-pr "Ensure the per-PR database and its
+# owner exist" step) — this Job only loads data into a database that must
+# already exist.
 #
 # Source of truth: scripts/postgres-seed.sql — a data-only, schema-independent
-# dump (column-inserts, --disable-triggers) generated from the same
-# scripts/dynamodb-data/*.json fixtures, translated to the Postgres schema, so the
-# seeded rows are byte-for-byte the DynamoDB fixtures re-expressed as Postgres
-# rows. The e2e job mounts it from a ConfigMap it creates right before applying
-# these manifests:
+# dump (column-inserts, --disable-triggers) generated from the
+# scripts/dynamodb-data/*.json fixtures, translated to the Postgres schema, so
+# the seeded rows are byte-for-byte the DynamoDB fixtures re-expressed as
+# Postgres rows. The e2e job mounts it from a ConfigMap it creates right
+# before applying these manifests:
 #   pr-preview-postgres-seed  ← scripts/postgres-seed.sql   (mounts at /seed)
 #
 # Ordering: the seed is DATA-only, so the app-shell must have migrated the
@@ -30,8 +36,19 @@ spec:
       labels:
         app: postgres-seed
     spec:
-      nodeSelector:
-        biyard.io/node-class: main
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       restartPolicy: Never
       initContainers:
         # Block until app-shell has migrated the schema (the `users` table is
@@ -47,7 +64,7 @@ spec:
             - sh
             - -c
             - |
-              until psql -h postgres -U ratel -d ratel -tAc "select to_regclass('public.users')" 2>/dev/null | grep -q '^users$'; do
+              until psql -h postgres.infra.svc.cluster.local -U ratel -d ratel_pr_${PR_NUM} -tAc "select to_regclass('public.users')" 2>/dev/null | grep -q '^users$'; do
                 echo "waiting for app-shell to migrate the schema (users table)..."
                 sleep 3
               done
@@ -65,7 +82,7 @@ spec:
             - sh
             - -c
             - |
-              psql -h postgres -U ratel -d ratel -v ON_ERROR_STOP=1 -f /seed/postgres-seed.sql
+              psql -h postgres.infra.svc.cluster.local -U ratel -d ratel_pr_${PR_NUM} -v ON_ERROR_STOP=1 -f /seed/postgres-seed.sql
               echo "postgres seed loaded"
           volumeMounts:
             - name: seed

@@ -58,8 +58,19 @@ spec:
       # Same pinning as dev/preview: keep prod pods on the 4K-page main node
       # (the Pi node's 16K page-size kernel breaks jemalloc workloads and it
       # is the small node anyway).
-      nodeSelector:
-        biyard.io/node-class: main
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: cdc
           image: registry.infra.svc.cluster.local:5000/ratel-events:${SHA_TAG}
@@ -98,9 +109,20 @@ spec:
         app: ratel-worker-default
         tier: events
     spec:
-      # Same pinning as dev/preview — see the ratel-cdc comment above.
-      nodeSelector:
-        biyard.io/node-class: main
+      # Same scheduling as dev/preview — see the ratel-cdc comment above.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: worker
           image: registry.infra.svc.cluster.local:5000/ratel-events:${SHA_TAG}
@@ -152,9 +174,20 @@ spec:
         app: ratel-worker-analyze
         tier: events
     spec:
-      # Same pinning as dev/preview — see the ratel-cdc comment above.
-      nodeSelector:
-        biyard.io/node-class: main
+      # Same scheduling as dev/preview — see the ratel-cdc comment above.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: worker
           image: registry.infra.svc.cluster.local:5000/ratel-events:${SHA_TAG}
@@ -205,9 +238,20 @@ spec:
         app: ratel-worker-egress
         tier: events
     spec:
-      # Same pinning as dev/preview — see the ratel-cdc comment above.
-      nodeSelector:
-        biyard.io/node-class: main
+      # Same scheduling as dev/preview — see the ratel-cdc comment above.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: worker
           image: registry.infra.svc.cluster.local:5000/ratel-events:${SHA_TAG}

@@ -34,8 +34,19 @@ spec:
       labels:
         app: web
     spec:
-      nodeSelector:
-        biyard.io/node-class: main
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
       containers:
         - name: web
           image: registry.infra.svc.cluster.local:5000/ratel-web:${SHA_TAG}

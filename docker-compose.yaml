@@ -331,7 +331,7 @@ services:
 
   # ── Local stack (`make local`, docs/local-docker.md) ──────────────────────
   # Everything built inside Docker: the host needs no Rust or Node. The API
-  # image is compiled with `server,bypass,local-dev` (verification code
+  # image is compiled with `server,bypass,design-preview` (verification code
   # 000000) and the web image bundles the React app with VITE_BYPASS=true and
   # proxies the API paths to local-api, standing in for the k3s ingress.
   local-api:

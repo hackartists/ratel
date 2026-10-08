@@ -148,7 +148,22 @@ pub struct SpaceAction {
 
     /// Required Attributes gate — independent of (AND-combined with)
     /// `depends_on`. See [`SpaceActionRequiredAttributes`].
+    ///
+    /// `version = 1`: added after the v0 baseline (see
+    /// `space_post_comment.rs`'s `hidden`/`report_count` for the established
+    /// pattern) — an EXISTING database gets `ALTER TABLE ... ADD COLUMN`
+    /// instead of a v0 checksum mismatch that aborts startup. Missing this
+    /// attribute is exactly what broke dev: the v0 baseline DDL changed
+    /// shape for every already-deployed database, whose ledger still
+    /// recorded the pre-this-field v0 checksum. `sql_default` is required
+    /// for jsonb columns (no automatic default exists for a `PostgresJson`
+    /// newtype) — `'[]'::jsonb` matches `SpaceActionRequiredAttributes`'s
+    /// empty-`Vec` serde default.
     #[serde(default)]
+    #[cfg_attr(
+        feature = "server",
+        postgres(version = 1, sql_default = "'[]'::jsonb")
+    )]
     pub required_attributes: SpaceActionRequiredAttributes,
 }
 

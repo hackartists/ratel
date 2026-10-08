@@ -9,7 +9,7 @@
 #
 # Services (docker-compose profile `local`):
 #   local-web            http://localhost:4173  React app (proxies API paths)
-#   local-api            http://localhost:8080  Rust API server (bypass + local-dev)
+#   local-api            http://localhost:8080  Rust API server (bypass + design-preview)
 #   postgres             localhost:55432        ratel/ratel, seeded test users
 #   localstack           localhost:4566         DynamoDB/S3 (reset on every up)
 #   qdrant               localhost:6333/6334

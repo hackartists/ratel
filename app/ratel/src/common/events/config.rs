@@ -57,11 +57,3 @@ impl EventsConfig {
     }
 }
 
-/// `RATEL_STREAM_POLLER=off` disables the in-process local-dev stream poller
-/// so the CDC + worker pipeline can be tested without double-processing.
-pub fn stream_poller_enabled() -> bool {
-    !matches!(
-        std::env::var("RATEL_STREAM_POLLER").as_deref(),
-        Ok("off") | Ok("0") | Ok("false")
-    )
-}

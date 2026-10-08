@@ -185,7 +185,13 @@ lambda = ["lambda_http", "lambda_runtime", "server"]
 # Redpanda event pipeline (k3s migration): CDC producer + worker binaries.
 # Never enabled by web/mobile/lambda/default server builds.
 redpanda = ["server", "dep:rdkafka"]
-local-dev = ["beta","dep:pulldown-cmark"]
+# Design/roadmap preview routes (/designs, /roadmap) — used by PR previews
+# and local dev. Split out of the old `local-dev` feature when the
+# local-dev-only DynamoDB Stream poller (stream_poller.rs/stream_handler.rs)
+# was deleted: the routes have nothing to do with the stream poller and must
+# keep working on PR previews (deploy/pr-preview/40-ingress.yaml routes
+# /designs, /roadmap to app-shell).
+design-preview = ["beta", "dep:pulldown-cmark"]
 beta = []
 # TypeScript bindings for apps/web: ts-rs derives on the wire types plus the
 # ts_bridge manifest tests the route macros emit. Used only by `make gen-ts`.
