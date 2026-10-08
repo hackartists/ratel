@@ -275,13 +275,15 @@ export function PollContentCard() {
                 );
               }}
               onPrivacyConsentChange={(i, patch) => {
-                setQuestions((qs) =>
-                  qs.map((q, qi) => {
+                setQuestions((qs) => {
+                  const next = qs.map((q, qi) => {
                     if (qi !== i) return q;
                     if (q.answer_type === "privacy_consent") return { ...q, ...patch };
                     return q;
-                  }),
-                );
+                  });
+                  saveQuestions(next);
+                  return next;
+                });
               }}
               onBlurSave={() => saveQuestions(questions)}
             />
@@ -647,7 +649,6 @@ function PrivacyConsentBody({
           content={termsBodyHtml}
           onContentChange={(html) => {
             onPrivacyConsentChange(idx, { terms_body_html: html });
-            onBlurSave();
           }}
         />
       </div>
