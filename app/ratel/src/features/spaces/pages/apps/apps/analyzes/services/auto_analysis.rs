@@ -62,7 +62,9 @@ pub async fn process_analyze_report(
     result.poll_aggregates = PollAggregates(poll_aggregates);
     result.quiz_aggregates = QuizAggregates(quiz_aggregates);
     result.follow_aggregates = FollowAggregates(follow_aggregates);
-    SpaceAnalyzeReportResult::repository().insert(&result).await?;
+    SpaceAnalyzeReportResult::repository()
+        .insert(&result)
+        .await?;
 
     // 4. Flip the parent report's status. Any consumers gated on
     //    `status==Finish` (list-card click, refetch) start working here.
@@ -103,7 +105,10 @@ async fn aggregate_polls(
 
         // Gather all answers for this poll.
         let poll_sk = EntityType::SpacePoll(poll_id.clone());
-        let mut answers_by_user: HashMap<String, Vec<crate::features::spaces::pages::actions::actions::poll::Answer>> = HashMap::new();
+        let mut answers_by_user: HashMap<
+            String,
+            Vec<crate::features::spaces::pages::actions::actions::poll::Answer>,
+        > = HashMap::new();
         let rows = SpacePollUserAnswer::list_by_poll(space_pk, &poll_sk).await?;
         for row in rows {
             let user_key = row.actor_pk.clone();
@@ -118,7 +123,9 @@ async fn aggregate_polls(
             let is_text = matches!(
                 question,
                 crate::features::spaces::pages::actions::actions::poll::Question::ShortAnswer(_)
-                    | crate::features::spaces::pages::actions::actions::poll::Question::Subjective(_)
+                    | crate::features::spaces::pages::actions::actions::poll::Question::Subjective(
+                        _
+                    )
             );
 
             let mut option_counts: Vec<u32> = vec![0; labels.len()];
@@ -209,7 +216,9 @@ async fn aggregate_quizzes(
     space_pk: &Partition,
     matched_users: &HashSet<String>,
 ) -> Result<Vec<QuizQuestionAggregate>> {
-    use crate::features::spaces::pages::actions::actions::quiz::{SpaceQuizAnswer, SpaceQuizAttempt};
+    use crate::features::spaces::pages::actions::actions::quiz::{
+        SpaceQuizAnswer, SpaceQuizAttempt,
+    };
     use crate::features::spaces::pages::actions::models::SpaceAction;
 
     let quizzes = list_all_quizzes(cli, space_pk).await?;
@@ -271,8 +280,7 @@ async fn aggregate_quizzes(
             let quiz_id = quiz_id_st.clone();
             let user_pk = user_pk.clone();
             async move {
-                let attempt =
-                    SpaceQuizAttempt::find_latest_by_quiz_user(&quiz_id, &user_pk).await;
+                let attempt = SpaceQuizAttempt::find_latest_by_quiz_user(&quiz_id, &user_pk).await;
                 attempt
             }
         });
@@ -291,7 +299,9 @@ async fn aggregate_quizzes(
             let is_text = matches!(
                 question,
                 crate::features::spaces::pages::actions::actions::poll::Question::ShortAnswer(_)
-                    | crate::features::spaces::pages::actions::actions::poll::Question::Subjective(_)
+                    | crate::features::spaces::pages::actions::actions::poll::Question::Subjective(
+                        _
+                    )
             );
 
             let mut option_counts: Vec<u32> = vec![0; labels.len()];
@@ -325,7 +335,9 @@ async fn aggregate_quizzes(
                             option_counts[*idx as usize] += 1;
                         }
                     }
-                    if !correct_indices.is_empty() && picked.iter().any(|i| correct_indices.contains(i)) {
+                    if !correct_indices.is_empty()
+                        && picked.iter().any(|i| correct_indices.contains(i))
+                    {
                         correct_count += 1;
                     }
                 }
@@ -415,8 +427,7 @@ async fn aggregate_follows(
     let mut targets: Vec<SpaceFollowUser> = Vec::new();
     let mut bookmark: Option<String> = None;
     loop {
-        let (rows, next) =
-            SpaceFollowUser::list_by_space(&space_partition, bookmark, 50).await?;
+        let (rows, next) = SpaceFollowUser::list_by_space(&space_partition, bookmark, 50).await?;
         targets.extend(rows);
         match next {
             Some(b) => bookmark = Some(b),
@@ -439,7 +450,8 @@ async fn aggregate_follows(
         let mut page: i64 = 1;
         const PAGE_SIZE: i64 = 100;
         loop {
-            let result = UserFollow::list_followers_page(&target_partition, page, PAGE_SIZE).await?;
+            let result =
+                UserFollow::list_followers_page(&target_partition, page, PAGE_SIZE).await?;
             for row in &result.items {
                 if matched_users.contains(&row.user_pk) {
                     count += 1;
@@ -498,7 +510,11 @@ fn normalize_option_indices(
             raw.iter()
                 .filter_map(|v| {
                     let signed = *v as i64 - min as i64;
-                    if signed < 0 { None } else { Some(signed as u32) }
+                    if signed < 0 {
+                        None
+                    } else {
+                        Some(signed as u32)
+                    }
                 })
                 .collect()
         }
@@ -514,10 +530,10 @@ fn question_option_labels(
         Question::SingleChoice(q) | Question::MultipleChoice(q) => q.options.clone(),
         Question::Checkbox(q) => q.options.clone(),
         Question::Dropdown(q) => q.options.clone(),
-        Question::LinearScale(q) => (q.min_value..=q.max_value)
-            .map(|v| v.to_string())
-            .collect(),
-        Question::ShortAnswer(_) | Question::Subjective(_) => Vec::new(),
+        Question::LinearScale(q) => (q.min_value..=q.max_value).map(|v| v.to_string()).collect(),
+        Question::ShortAnswer(_) | Question::Subjective(_) | Question::PrivacyConsent(_) => {
+            Vec::new()
+        }
     }
 }
 

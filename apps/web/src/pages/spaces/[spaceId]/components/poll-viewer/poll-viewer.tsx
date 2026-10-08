@@ -46,6 +46,8 @@ function defaultAnswer(question: Question): Answer {
       return { answer_type: "dropdown", answer: null };
     case "linear_scale":
       return { answer_type: "linear_scale", answer: null };
+    case "privacy_consent":
+      return { answer_type: "privacy_consent", agreed: false, phone: null, code: null };
   }
 }
 
@@ -79,6 +81,10 @@ function hasAnswerForQuestion(question: Question, answer: Answer | undefined): b
       return answer.answer_type === "dropdown" && answer.answer !== null;
     case "linear_scale":
       return answer.answer_type === "linear_scale" && answer.answer !== null;
+    case "privacy_consent":
+      return (
+        answer.answer_type === "privacy_consent" && answer.agreed === true && answer.phone !== null && answer.phone.trim() !== ""
+      );
   }
 }
 
@@ -732,7 +738,13 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
     return d && d !== "" ? d : null;
   };
   const questionImage = (question: Question): string | null => {
-    if (question.answer_type === "short_answer" || question.answer_type === "subjective") return null;
+    if (
+      question.answer_type === "short_answer" ||
+      question.answer_type === "subjective" ||
+      question.answer_type === "privacy_consent"
+    ) {
+      return null;
+    }
     return question.image_url && question.image_url !== "" ? question.image_url : null;
   };
 

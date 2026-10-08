@@ -277,7 +277,10 @@ fn option_text(
         Question::MultipleChoice(q) => &q.options,
         Question::Checkbox(q) => &q.options,
         Question::Dropdown(q) => &q.options,
-        Question::ShortAnswer(_) | Question::Subjective(_) | Question::LinearScale(_) => &[],
+        Question::ShortAnswer(_)
+        | Question::Subjective(_)
+        | Question::LinearScale(_)
+        | Question::PrivacyConsent(_) => &[],
     };
     opts.get(idx)
         .cloned()

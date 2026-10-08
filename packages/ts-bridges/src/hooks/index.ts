@@ -104,6 +104,7 @@ export * from "./useGetMeet";
 export * from "./useGetMembershipHandlerGetApiMeMembership";
 export * from "./useGetMembershipHandlerGetV3MeMemberships";
 export * from "./useGetModerationSetting";
+export * from "./useGetMyPhone";
 export * from "./useGetMyScore";
 export * from "./useGetMyStats";
 export * from "./useGetOverviewFiles";

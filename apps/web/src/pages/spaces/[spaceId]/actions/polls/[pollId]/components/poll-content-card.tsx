@@ -2,16 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import type { Question } from "@ratel/ts-bridges";
 import { useUpdatePoll } from "@ratel/ts-bridges/hooks";
 import { AutosaveStatusBadge, type SaveStatus } from "@/components/space-actions/autosave-status-badge";
+import { Editor } from "@/components/editor/editor";
 import { usePollCreatorI18n } from "./poll-creator.i18n";
 import { useToast } from "@/lib/toast";
 import { usePoll } from "../hooks/use-poll";
 
 // poll/views/main/creator/content_card/component.rs (`ContentCard`) — title +
-// question builder. The creator UI only produces four question shapes
-// (single/multi/subjective/linear); checkbox/dropdown/short_answer only ever
-// come from legacy data and this editor doesn't offer converting into them.
+// question builder. The creator UI only produces five question shapes
+// (single/multi/subjective/linear/privacy_consent); checkbox/dropdown/short_answer
+// only ever come from legacy data and this editor doesn't offer converting
+// into them.
 
-type QType = "single" | "multi" | "subjective" | "linear";
+type QType = "single" | "multi" | "subjective" | "linear" | "privacy_consent";
 
 function qtypeStr(q: Question): QType {
   switch (q.answer_type) {
@@ -28,6 +30,8 @@ function qtypeStr(q: Question): QType {
       return "multi";
     case "dropdown":
       return "single";
+    case "privacy_consent":
+      return "privacy_consent";
   }
 }
 
@@ -68,6 +72,15 @@ function convertToQtype(existing: Question, target: QType): Question {
         max_value: 5,
         min_label: "",
         max_label: "",
+        is_required: null,
+      };
+    case "privacy_consent":
+      return {
+        answer_type: "privacy_consent",
+        title,
+        description: null,
+        terms_title: "",
+        terms_body_html: "",
         is_required: null,
       };
   }
@@ -261,6 +274,15 @@ export function PollContentCard() {
                   }),
                 );
               }}
+              onPrivacyConsentChange={(i, patch) => {
+                setQuestions((qs) =>
+                  qs.map((q, qi) => {
+                    if (qi !== i) return q;
+                    if (q.answer_type === "privacy_consent") return { ...q, ...patch };
+                    return q;
+                  }),
+                );
+              }}
               onBlurSave={() => saveQuestions(questions)}
             />
           ))}
@@ -305,6 +327,7 @@ interface QuestionBlockProps {
   onRemove: (idx: number) => void;
   onSubjectiveChange: (idx: number, value: string) => void;
   onLinearChange: (idx: number, min: number, max: number) => void;
+  onPrivacyConsentChange: (idx: number, patch: { terms_title?: string; terms_body_html?: string }) => void;
   onBlurSave: () => void;
 }
 
@@ -321,6 +344,7 @@ function QuestionBlock({
   onRemove,
   onSubjectiveChange,
   onLinearChange,
+  onPrivacyConsentChange,
   onBlurSave,
 }: QuestionBlockProps) {
   const qtype = qtypeStr(question);
@@ -329,6 +353,7 @@ function QuestionBlock({
   const isMulti = qtype === "multi";
   const isSubjective = qtype === "subjective";
   const isLinear = qtype === "linear";
+  const isPrivacyConsent = qtype === "privacy_consent";
 
   return (
     <div className="q-block" data-qtype={qtype} data-testid={`poll-question-${idx}`}>
@@ -371,6 +396,16 @@ function QuestionBlock({
           >
             {tr.qtypeLinear}
           </button>
+          <button
+            className="segmented__btn"
+            type="button"
+            role="tab"
+            aria-selected={isPrivacyConsent ? "true" : "false"}
+            data-qtype-set="privacy_consent"
+            onClick={() => onTypeChange(idx, "privacy_consent")}
+          >
+            {tr.qtypePrivacyConsent}
+          </button>
         </div>
         <div className="q-block__head-spacer" />
         <button className="icon-btn" type="button" aria-label={tr.removeQuestion} onClick={() => onRemove(idx)}>
@@ -403,6 +438,15 @@ function QuestionBlock({
       )}
       {isSubjective && <SubjectiveBody idx={idx} question={question} tr={tr} onSubjectiveChange={onSubjectiveChange} onBlurSave={onBlurSave} />}
       {isLinear && <LinearBody idx={idx} question={question} tr={tr} onLinearChange={onLinearChange} onBlurSave={onBlurSave} />}
+      {isPrivacyConsent && (
+        <PrivacyConsentBody
+          idx={idx}
+          question={question}
+          tr={tr}
+          onPrivacyConsentChange={onPrivacyConsentChange}
+          onBlurSave={onBlurSave}
+        />
+      )}
     </div>
   );
 }
@@ -559,6 +603,53 @@ function LinearBody({
             onBlur={onBlurSave}
           />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PrivacyConsentBody({
+  idx,
+  question,
+  tr,
+  onPrivacyConsentChange,
+  onBlurSave,
+}: {
+  idx: number;
+  question: Question;
+  tr: ReturnType<typeof usePollCreatorI18n>;
+  onPrivacyConsentChange: (idx: number, patch: { terms_title?: string; terms_body_html?: string }) => void;
+  onBlurSave: () => void;
+}) {
+  const termsTitle = question.answer_type === "privacy_consent" ? question.terms_title : "";
+  const termsBodyHtml = question.answer_type === "privacy_consent" ? question.terms_body_html : "";
+
+  return (
+    <div className="q-body q-body--privacy-consent" data-testid={`poll-question-${idx}-privacy-consent`}>
+      <span className="always-on-pill" data-testid={`poll-question-${idx}-phone-always-on`}>
+        {tr.privacyConsentAlwaysOn}
+      </span>
+      <div className="field">
+        <label className="field__label">{tr.privacyConsentTermsTitleLabel}</label>
+        <input
+          className="input"
+          data-testid={`poll-question-${idx}-terms-title`}
+          placeholder={tr.privacyConsentTermsTitlePlaceholder}
+          value={termsTitle}
+          onChange={(e) => onPrivacyConsentChange(idx, { terms_title: e.target.value })}
+          onBlur={onBlurSave}
+        />
+      </div>
+      <div className="field">
+        <label className="field__label">{tr.privacyConsentTermsBodyLabel}</label>
+        <Editor
+          className="poll-privacy-consent-editor"
+          content={termsBodyHtml}
+          onContentChange={(html) => {
+            onPrivacyConsentChange(idx, { terms_body_html: html });
+            onBlurSave();
+          }}
+        />
       </div>
     </div>
   );
