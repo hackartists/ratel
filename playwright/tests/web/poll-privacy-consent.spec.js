@@ -167,15 +167,16 @@ test.describe.serial("Poll privacy-consent question", () => {
 
     // Participant role renders PollResponseView variant="read", which opens
     // on an overview step (poll-read-overview) before the question-by-
-    // question flow; click through to reach the actual question.
-    const nextBtn = page.getByTestId("poll-read-next");
-    if (await nextBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await nextBtn.click();
-      await page.waitForLoadState("load");
-    }
+    // question flow; click through to reach the actual question. Poll for
+    // the Next button instead of a single isVisible check — CI's k8s pod is
+    // slower than local dev and the suspense-loaded role/space queries can
+    // still be in flight right after goto()'s hydration wait.
+    await expect(page.getByTestId("poll-read-next")).toBeVisible({ timeout: 20000 });
+    await page.getByTestId("poll-read-next").click();
+    await page.waitForLoadState("load");
 
     const question = page.getByTestId("poll-question-privacy-consent");
-    await expect(question).toBeVisible();
+    await expect(question).toBeVisible({ timeout: 20000 });
     await expect(page.getByTestId("pc-terms-title")).toHaveText(termsTitle);
     await expect(page.getByTestId("pc-terms")).toContainText(termsBodyText);
 
