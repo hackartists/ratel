@@ -18,6 +18,7 @@ import { useGetEncryptionMaterial, useGetPoll, useRespondPoll } from "@ratel/ts-
 import { canExecuteSpaceAction } from "@/components/space/access";
 import { useActionOverlay, useCompletedActionCard, useOptionalActionOverlay } from "@/components/space/action-overlay";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
+import { PrivacyConsentViewer } from "@/components/space-actions/question-viewer";
 import { useActionPollI18n } from "./i18n";
 import {
   buildStoredVoterKeyFromEncryptionMaterial,
@@ -720,6 +721,22 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
             question={question}
             answer={currentAnswer}
             disabled={disabled}
+            onChange={(ans) =>
+              setAnswers((prev) => {
+                const next = [...prev];
+                next[idx] = ans;
+                return next;
+              })
+            }
+          />
+        );
+      case "privacy_consent":
+        return (
+          <PrivacyConsentViewer
+            question={question}
+            answer={currentAnswer}
+            disabled={disabled}
+            hideTitle
             onChange={(ans) =>
               setAnswers((prev) => {
                 const next = [...prev];

@@ -4,6 +4,7 @@ import { useGetMyPhone, useSendCode, useVerifyCode } from "@ratel/ts-bridges/hoo
 import { Check } from "@/components/icons/validations";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
 import { Input, InputVariant } from "@/components/ui/input";
+import { PhoneInput, type PhoneInputValue } from "@/components/ui/phone-input";
 import { TextArea } from "@/components/ui/textarea";
 import { useQuestionViewerI18n } from "./question-viewer.i18n";
 
@@ -539,16 +540,21 @@ interface PrivacyConsentQuestionShape {
  * agree → phone input or prefilled-verified phone + "Change" → SMS verify.
  * The verified `code` rides in the `Answer` payload for `respond_poll`'s
  * server-side re-verification; it is never trusted on its own here. */
-function PrivacyConsentViewer({
+export function PrivacyConsentViewer({
   question,
   answer,
   disabled,
   onChange,
+  hideTitle = false,
 }: {
   question: PrivacyConsentQuestionShape;
   answer?: Answer;
   disabled: boolean;
   onChange: (answer: Answer) => void;
+  /** The caller already renders the question title/description itself
+   * (e.g. poll-viewer.tsx's question-card header) — skip the internal
+   * QuestionTitle to avoid a duplicate. */
+  hideTitle?: boolean;
 }) {
   const tr = useQuestionViewerI18n();
   const myPhone = useGetMyPhone();
@@ -559,7 +565,7 @@ function PrivacyConsentViewer({
   const phone = answer?.answer_type === "privacy_consent" ? answer.phone : null;
   const code = answer?.answer_type === "privacy_consent" ? answer.code : null;
 
-  const [phoneDraft, setPhoneDraft] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState<PhoneInputValue | undefined>(undefined);
   const [codeDraft, setCodeDraft] = useState("");
   const [mode, setMode] = useState<"prefilled" | "entry">("entry");
   const [verifyError, setVerifyError] = useState(false);
@@ -591,7 +597,9 @@ function PrivacyConsentViewer({
 
   return (
     <div className="flex w-full flex-col gap-4" data-testid="poll-question-privacy-consent">
-      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      {!hideTitle && (
+        <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      )}
 
       <div
         className="rounded-xl border border-card-border bg-option-card-bg p-4 text-sm leading-relaxed text-foreground-muted max-h-56 overflow-y-auto"
@@ -652,21 +660,20 @@ function PrivacyConsentViewer({
                 {tr.privacyConsentPhoneLabel}
               </span>
               <div className="flex gap-2">
-                <Input
-                  variant={InputVariant.Plain}
-                  className="flex-1"
+                <PhoneInput
                   placeholder={tr.privacyConsentPhonePlaceholder}
                   data-testid="pc-phone-input"
                   value={phoneDraft}
                   disabled={disabled}
-                  onChange={(e) => setPhoneDraft(e.target.value)}
+                  onChange={setPhoneDraft}
                 />
                 <Button
                   buttonStyle={ButtonStyle.Outline}
                   shape={ButtonShape.Square}
-                  disabled={disabled || phoneDraft.trim() === ""}
+                  disabled={disabled || !phoneDraft}
                   data-testid="pc-send-code-btn"
                   onClick={() => {
+                    if (!phoneDraft) return;
                     sendCode.mutate({ phone: phoneDraft });
                     emit({ phone: phoneDraft, code: null });
                   }}
@@ -692,9 +699,10 @@ function PrivacyConsentViewer({
                 <Button
                   buttonStyle={ButtonStyle.Outline}
                   shape={ButtonShape.Square}
-                  disabled={disabled || codeDraft.trim() === "" || phoneDraft.trim() === ""}
+                  disabled={disabled || codeDraft.trim() === "" || !phoneDraft}
                   data-testid="pc-verify-btn"
                   onClick={() => {
+                    if (!phoneDraft) return;
                     verifyCode.mutate(
                       { phone: phoneDraft, code: codeDraft },
                       {
