@@ -12,7 +12,8 @@ import { click, goto, waitPopup } from "../utils";
  * format AWS SNS's `publish().phone_number(...)` requires
  * (app/ratel/src/features/auth/controllers/send_code.rs).
  *
- * Asserts against the actual `send_code` network request body, not just the
+ * Asserts against the actual `send-verification-code` network request body
+ * (POST /api/auth/verification/send-verification-code), not just the
  * displayed input value, so a regression that reintroduces raw/national-
  * format phone numbers in the request is caught. Expected E.164 strings are
  * built from parts at runtime rather than written as literals.
@@ -23,6 +24,10 @@ import { click, goto, waitPopup } from "../utils";
 
 function e164(countryCallingCode, nationalDigits) {
   return `+${countryCallingCode}${nationalDigits}`;
+}
+
+function isSendVerificationCodeRequest(req) {
+  return req.url().includes("send-verification-code") && req.method() === "POST";
 }
 
 test.describe("Phone login: country select + E.164 formatting", () => {
@@ -52,9 +57,7 @@ test.describe("Phone login: country select + E.164 formatting", () => {
 
     // The actual network request must carry hyphen-free E.164, not the
     // display string and not the raw national-format input.
-    const sendCodeRequest = page.waitForRequest(
-      (req) => req.url().includes("send_code") || req.url().includes("send-code"),
-    );
+    const sendCodeRequest = page.waitForRequest(isSendVerificationCodeRequest);
     await click(page, { testId: "phone-continue-button" });
     const request = await sendCodeRequest;
     const body = request.postDataJSON();
@@ -83,9 +86,7 @@ test.describe("Phone login: country select + E.164 formatting", () => {
 
     await expect(phoneInput).toHaveValue("(213) 373-4253");
 
-    const sendCodeRequest = page.waitForRequest(
-      (req) => req.url().includes("send_code") || req.url().includes("send-code"),
-    );
+    const sendCodeRequest = page.waitForRequest(isSendVerificationCodeRequest);
     await click(page, { testId: "phone-continue-button" });
     const request = await sendCodeRequest;
     const body = request.postDataJSON();
