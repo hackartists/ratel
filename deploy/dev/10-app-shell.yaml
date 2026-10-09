@@ -86,6 +86,14 @@ spec:
               value: postgres://ratel:ratel@postgres.infra.svc.cluster.local:5432/ratel-dev
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: /usr/src/app/.gcp/firebase-service-account.json
+            # SNS SMS: ap-northeast-2 (Seoul, the default AWS_REGION) is still
+            # in the SMS sandbox (verified numbers only), while
+            # ap-northeast-1 (Tokyo) is out of sandbox with a real spend
+            # limit. config/server/aws_sns.rs reads this at runtime
+            # (std::env::var) before falling back to the compile-time
+            # AWS_REGION, so this needs no rebuild.
+            - name: SNS_REGION
+              value: ap-northeast-1
           envFrom:
             - secretRef:
                 name: ratel-dev-secrets
