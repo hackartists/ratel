@@ -60,6 +60,7 @@ mod mcp_tests;
 mod meet_action_tests;
 mod notifications_tests;
 mod poll_privacy_consent_tests;
+mod respond_poll_privacy_consent_tests;
 mod post_tests;
 mod report_tests;
 mod space_action_notification_tests;
