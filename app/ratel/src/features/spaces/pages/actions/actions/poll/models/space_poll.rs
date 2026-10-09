@@ -113,6 +113,17 @@ impl SpacePoll {
             .map_err(crate::common::Error::from)
     }
 
+    /// Every poll row for a space (mirrors `SpaceAction::list_by_space`).
+    /// Used by `get_space` to detect a `PrivacyConsent` question anywhere in
+    /// the space's polls without caring about ordering.
+    pub async fn list_by_space(space_pk: &SpacePartition) -> crate::common::Result<Vec<Self>> {
+        Self::repository()
+            .find(Self::query().space_id(StringOp::Eq(space_pk.0.clone())))
+            .await
+            .map(|p| p.items)
+            .map_err(crate::common::Error::from)
+    }
+
     /// Atomic `user_response_count += delta` (SQL `SET col = col + $d`).
     pub async fn bump_response_count(poll_id: Uuid, delta: i64) -> crate::common::Result<()> {
         use postgres::sqlx::{Postgres, QueryBuilder};

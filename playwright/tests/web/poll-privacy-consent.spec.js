@@ -1,10 +1,12 @@
 import { expect, test } from "@playwright/test";
 import {
   click,
+  clickNoNav,
   createAction,
   fill,
   goto,
   publishAction,
+  waitPopup,
 } from "../utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,5 +253,32 @@ test.describe.serial("Poll privacy-consent question", () => {
       },
     );
     expect(res.ok(), "respond with bad code must be rejected").toBeFalsy();
+  });
+
+  // get_space exposes `has_privacy_consent_question` (true once the space's
+  // poll carries the privacy_consent question created above). The sign-in
+  // modal reads it (SigninCard → LoginModal `defaultLoginMethod`) to default
+  // an anonymous visitor straight to the phone tab, since that's the login
+  // method the space's own poll is about to ask for anyway.
+  test("Anonymous visitor: sign-in modal defaults to the phone tab", async ({ browser }) => {
+    const context = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
+    const page = await context.newPage();
+
+    try {
+      await goto(page, spaceUrl);
+      await page.addStyleTag({
+        content: "*, *::before, *::after { animation-play-state: paused !important; }",
+      });
+
+      await clickNoNav(page, { testId: "btn-signin" });
+      await waitPopup(page, { visible: true });
+
+      await expect(page.getByTestId("phone-input")).toBeVisible();
+      await expect(page.getByTestId("email-input")).not.toBeVisible();
+    } finally {
+      await context.close();
+    }
   });
 });

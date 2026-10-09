@@ -47,9 +47,16 @@ type WalletStep = "None" | "WaitingSignature" | "Done";
 
 export interface LoginModalProps {
   onSuccess?: () => void;
+  /**
+   * Initial tab for the credential form. Defaults to `"email"`. Space
+   * contexts with a `PrivacyConsent` poll question pass `"phone"` so the
+   * sign-in flow collects the same verified phone number the space's poll
+   * will ask for (see `SigninCard`).
+   */
+  defaultLoginMethod?: "email" | "phone";
 }
 
-export function LoginModal({ onSuccess }: LoginModalProps) {
+export function LoginModal({ onSuccess, defaultLoginMethod = "email" }: LoginModalProps) {
   const tr = useLoginModalI18n();
   const enumText = useEnumI18n();
   const popup = usePopup();
@@ -59,7 +66,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   const [email, setEmail] = React.useState("");
   const [code, setCode] = React.useState("");
   const [showCode, setShowCode] = React.useState(false);
-  const [loginMethod, setLoginMethod] = React.useState<"email" | "phone">("email");
+  const [loginMethod, setLoginMethod] = React.useState<"email" | "phone">(defaultLoginMethod);
   const [phone, setPhone] = React.useState<PhoneInputValue | undefined>(undefined);
   const [phoneCode, setPhoneCode] = React.useState("");
   const [showPhoneCode, setShowPhoneCode] = React.useState(false);
