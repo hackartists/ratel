@@ -55842,3 +55842,53 @@ html[data-theme="light"] .ff-home .featured-title {
     overscroll-behavior: contain;
   }
 }
+
+/* === src/components/ui/phone-input ======================================
+   Country-combobox phone input for phone login (auth/login-modal.tsx) and
+   the poll PrivacyConsent flow (space-actions/question-viewer.tsx). Overrides
+   `react-phone-number-input`'s own `style.css` (imported once in main.tsx)
+   so the control reads as one of this app's Input fields: same box/border/
+   radius/padding as `InputVariant.Default` (components/ui/input.tsx), with
+   the library's internal flag + national-number layout kept intact. Every
+   selector is scoped under `.phone-input`, the `className` passed from
+   components/ui/phone-input.tsx, to avoid leaking into other `.PhoneInput*`
+   usages the library itself defines globally. */
+.phone-input {
+  --comp-bg: var(--dark, #1c1c1c) var(--light, #ffffff);
+  --comp-border: var(--dark, #464646) var(--light, #e5e5e5);
+  --comp-text: var(--dark, #ffffff) var(--light, #000000);
+
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 56px;
+  padding: 0 20px;
+  border: 1px solid var(--comp-border);
+  border-radius: 10px;
+  background: var(--comp-bg);
+  color: var(--comp-text);
+}
+.phone-input.PhoneInput--focus {
+  border-color: var(--dark, #fcb300) var(--light, #fcb300);
+}
+.phone-input .PhoneInputCountry {
+  margin-right: 0;
+}
+.phone-input .PhoneInputCountrySelect {
+  color: var(--comp-text);
+}
+.phone-input .PhoneInputInput {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--comp-text);
+  font-size: 16px;
+  font-weight: 300;
+}
+.phone-input .PhoneInputInput::placeholder {
+  color: var(--dark, #8a8a8a) var(--light, #a3a3a3);
+}
