@@ -27,6 +27,7 @@ const en = {
   qtype_multi: "Multi",
   qtype_subjective: "Subjective",
   qtype_linear: "Linear",
+  qtype_privacy_consent: "Privacy Consent",
   remove_question: "Remove question",
   add_question: "Add question",
   add_option: "Add option",
@@ -37,6 +38,11 @@ const en = {
   subjective_placeholder: "Optional prompt shown above the response box...",
   linear_min_label: "Min",
   linear_max_label: "Max",
+  privacy_consent_terms_title_label: "Consent terms title",
+  privacy_consent_terms_title_placeholder: "e.g. Phone Number Collection & Use Consent",
+  privacy_consent_terms_body_label: "Consent terms body",
+  privacy_consent_always_on: "Phone collection always on — no toggle",
+  privacy_consent_description_placeholder: "Shown under the title to the respondent",
   schedule_starts_at: "Starts at",
   schedule_ends_at: "Ends at",
   voting_response_editable_label: "Allow response editing",
@@ -77,6 +83,7 @@ const ko: Record<keyof typeof en, string> = {
   qtype_multi: "다중",
   qtype_subjective: "주관식",
   qtype_linear: "선형",
+  qtype_privacy_consent: "개인정보 동의",
   remove_question: "질문 삭제",
   add_question: "질문 추가",
   add_option: "선지 추가",
@@ -87,6 +94,11 @@ const ko: Record<keyof typeof en, string> = {
   subjective_placeholder: "응답 상자 위에 표시되는 선택적 프롬프트...",
   linear_min_label: "최소",
   linear_max_label: "최대",
+  privacy_consent_terms_title_label: "약관 제목",
+  privacy_consent_terms_title_placeholder: "예: 휴대폰 번호 수집 및 이용 동의",
+  privacy_consent_terms_body_label: "약관 본문",
+  privacy_consent_always_on: "휴대폰 수집 항상 켜짐 — 토글 없음",
+  privacy_consent_description_placeholder: "응답자에게 제목 아래 표시됩니다",
   schedule_starts_at: "시작",
   schedule_ends_at: "종료",
   voting_response_editable_label: "응답 수정 허용",
@@ -129,6 +141,7 @@ export interface PollCreatorI18n {
   qtypeMulti: string;
   qtypeSubjective: string;
   qtypeLinear: string;
+  qtypePrivacyConsent: string;
   removeQuestion: string;
   addQuestion: string;
   addOption: string;
@@ -139,6 +152,11 @@ export interface PollCreatorI18n {
   subjectivePlaceholder: string;
   linearMinLabel: string;
   linearMaxLabel: string;
+  privacyConsentTermsTitleLabel: string;
+  privacyConsentTermsTitlePlaceholder: string;
+  privacyConsentTermsBodyLabel: string;
+  privacyConsentAlwaysOn: string;
+  privacyConsentDescriptionPlaceholder: string;
   scheduleStartsAt: string;
   scheduleEndsAt: string;
   votingResponseEditableLabel: string;
@@ -181,6 +199,7 @@ export function usePollCreatorI18n(): PollCreatorI18n {
     qtypeMulti: t("qtype_multi"),
     qtypeSubjective: t("qtype_subjective"),
     qtypeLinear: t("qtype_linear"),
+    qtypePrivacyConsent: t("qtype_privacy_consent"),
     removeQuestion: t("remove_question"),
     addQuestion: t("add_question"),
     addOption: t("add_option"),
@@ -191,6 +210,11 @@ export function usePollCreatorI18n(): PollCreatorI18n {
     subjectivePlaceholder: t("subjective_placeholder"),
     linearMinLabel: t("linear_min_label"),
     linearMaxLabel: t("linear_max_label"),
+    privacyConsentTermsTitleLabel: t("privacy_consent_terms_title_label"),
+    privacyConsentTermsTitlePlaceholder: t("privacy_consent_terms_title_placeholder"),
+    privacyConsentTermsBodyLabel: t("privacy_consent_terms_body_label"),
+    privacyConsentAlwaysOn: t("privacy_consent_always_on"),
+    privacyConsentDescriptionPlaceholder: t("privacy_consent_description_placeholder"),
     scheduleStartsAt: t("schedule_starts_at"),
     scheduleEndsAt: t("schedule_ends_at"),
     votingResponseEditableLabel: t("voting_response_editable_label"),

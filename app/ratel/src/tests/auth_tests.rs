@@ -180,3 +180,124 @@ async fn test_password_signup_and_login_backward_compat() {
     };
     assert_ne!(s, 200, "wrong password must not log in");
 }
+
+// ── Unified phone passwordless auth (login_with_phone) ──────────────────────
+// No separate phone signup step: `/api/auth/login` with `LoginRequest::Phone`
+// verifies the SMS code and auto-creates the account on first use. These
+// tests replace the old `signup_with_phone`/`SignupType::Phone` coverage —
+// that path has been retired in favor of this single entry point.
+
+/// First login for a never-seen phone number creates a real, usable account:
+/// a generated username that satisfies `validate_username`, a matching
+/// display name, the shared default avatar, and the indexed `User.phone`
+/// column populated (not just the `UserPhoneNumber` linkage row).
+#[by_macros::pg_test]
+async fn test_phone_login_first_time_auto_creates_user() {
+    let ctx = TestContext::setup().await;
+
+    let phone = format!("+1555{:07}", uuid::Uuid::now_v7().as_u128() % 10_000_000);
+
+    // A PhoneVerification row must exist before login_with_phone will accept
+    // the "000000" bypass code (the None check happens before the bypass
+    // branch) — mirrors the real SMS flow's send-code step.
+    let (s, _, _) = crate::test_post! {
+        app: ctx.app.clone(),
+        path: "/api/auth/verification/send-verification-code",
+        body: { "req": { "phone": phone } }
+    };
+    assert_eq!(s, 200, "send-code for phone should succeed");
+
+    let (s, _, body) = crate::test_post! {
+        app: ctx.app.clone(),
+        path: "/api/auth/login",
+        body: { "req": { "phone": phone, "code": "000000" } },
+        response_type: crate::features::auth::controllers::LoginResponse
+    };
+    assert_eq!(s, 200, "first-time phone login should auto-create + log in");
+
+    let user = body.user;
+    assert_eq!(user.phone.as_deref(), Some(phone.as_str()), "User.phone must be populated");
+    assert!(
+        !user.username.is_empty() && user.username.len() >= 3 && user.username.len() <= 20,
+        "generated username must satisfy validate_username: {:?}",
+        user.username
+    );
+    assert!(
+        !user.display_name.is_empty(),
+        "generated display_name must not be empty"
+    );
+    assert_eq!(
+        user.profile_url,
+        "https://metadata.ratel.foundation/ratel/default-profile.png",
+        "auto-created phone user should get the shared default avatar"
+    );
+    assert_eq!(
+        user.user_type,
+        crate::common::types::UserType::Individual,
+        "auto-created phone user should be Individual, not Anonymous"
+    );
+
+    // The UserPhoneNumber linkage row exists and points at this user.
+    let linkage = crate::features::auth::UserPhoneNumber::find_by_phone_number(&phone)
+        .await
+        .expect("query UserPhoneNumber")
+        .expect("linkage row must exist after first login");
+    assert_eq!(linkage.user_pk, user.pk().to_string());
+}
+
+/// Logging in again with the SAME phone number returns the SAME user — no
+/// duplicate account, idempotent on the `UserPhoneNumber` linkage.
+#[by_macros::pg_test]
+async fn test_phone_login_second_time_returns_same_user() {
+    let ctx = TestContext::setup().await;
+
+    let phone = format!("+1555{:07}", uuid::Uuid::now_v7().as_u128() % 10_000_000);
+
+    let (s, _, _) = crate::test_post! {
+        app: ctx.app.clone(),
+        path: "/api/auth/verification/send-verification-code",
+        body: { "req": { "phone": phone } }
+    };
+    assert_eq!(s, 200, "send-code for phone should succeed");
+
+    let (s, _, body1) = crate::test_post! {
+        app: ctx.app.clone(),
+        path: "/api/auth/login",
+        body: { "req": { "phone": phone, "code": "000000" } },
+        response_type: crate::features::auth::controllers::LoginResponse
+    };
+    assert_eq!(s, 200, "first phone login");
+
+    let (s, _, body2) = crate::test_post! {
+        app: ctx.app.clone(),
+        path: "/api/auth/login",
+        body: { "req": { "phone": phone, "code": "000000" } },
+        response_type: crate::features::auth::controllers::LoginResponse
+    };
+    assert_eq!(s, 200, "second phone login");
+
+    assert_eq!(
+        body1.user.id, body2.user.id,
+        "same phone must resolve to the same user id across logins"
+    );
+}
+
+/// A code for a phone number that never requested one is rejected (no
+/// `PhoneVerification` row to check against).
+#[by_macros::pg_test]
+async fn test_phone_login_unknown_code_rejected() {
+    let ctx = TestContext::setup().await;
+
+    let phone = format!("+1555{:07}", uuid::Uuid::now_v7().as_u128() % 10_000_000);
+
+    let (s, _, _) = crate::test_post! {
+        app: ctx.app.clone(),
+        path: "/api/auth/login",
+        body: { "req": { "phone": phone, "code": "123456" } }
+    };
+    assert_ne!(
+        s, 200,
+        "a phone with no PhoneVerification row must not log in"
+    );
+}
+

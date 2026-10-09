@@ -8,21 +8,23 @@ use rmcp::schemars;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(untagged)]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub enum VerifyCodeRequest {
-    Email {
-        email: String,
-        code: String,
-    },
-    Phone {
-        phone: String,
-        code: String,
-    },
+    Email { email: String, code: String },
+    Phone { phone: String, code: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct VerifyCodeResponse {
     pub success: bool,
 }
@@ -30,12 +32,8 @@ pub struct VerifyCodeResponse {
 #[post("/api/auth/verification/verify-code")]
 pub async fn verify_code_handler(req: VerifyCodeRequest) -> Result<VerifyCodeResponse> {
     match req {
-        VerifyCodeRequest::Email { email, code } => {
-            verify_email_code_handler(email, code).await
-        }
-        VerifyCodeRequest::Phone { phone, code } => {
-            verify_phone_code_handler(phone, code).await
-        }
+        VerifyCodeRequest::Email { email, code } => verify_email_code_handler(email, code).await,
+        VerifyCodeRequest::Phone { phone, code } => verify_phone_code_handler(phone, code).await,
     }
 }
 
@@ -64,8 +62,7 @@ pub async fn verify_email_code(email: &str, code: &str) -> Result<()> {
     // the compile-time `bypass` feature (which never ships to production). The
     // email is admin-managed (see admin test-accounts), so this is scoped to a
     // known allowlist and skips the EmailVerification record requirement.
-    if code.eq("000000") && crate::common::models::auth::TestAccount::is_test_account(email).await
-    {
+    if code.eq("000000") && crate::common::models::auth::TestAccount::is_test_account(email).await {
         return Ok(());
     }
 
@@ -91,25 +88,21 @@ async fn verify_email_code_handler(email: String, code: String) -> Result<Verify
     Ok(VerifyCodeResponse { success: true })
 }
 
+/// Shared phone-code verification used by verify-code, login, and
+/// `respond_poll`'s server-side re-verification of privacy-consent answers.
+/// Returns Ok(()) when the code is valid; increments attempt_count and
+/// errors otherwise. Honors the `bypass` test code "000000". Does NOT
+/// consume the code (same reuse-within-window behavior as login→signup).
 #[cfg(feature = "server")]
-async fn verify_phone_code_handler(
-    phone: String,
-    code: String,
-) -> Result<VerifyCodeResponse> {
+pub async fn verify_phone_code(phone: &str, code: &str) -> Result<()> {
     use crate::features::auth::constants::MAX_ATTEMPT_COUNT;
 
     let now = crate::common::utils::time::get_now_timestamp();
-    let verification = PhoneVerification::find_by_phone(&phone).await?;
-
-    if verification.is_none() {
-        return Err(Error::NotFoundVerificationCode);
-    }
-
-    tracing::debug!("code {}", code);
+    let verification = PhoneVerification::find_by_phone(phone).await?;
 
     #[cfg(feature = "bypass")]
     if code.eq("000000") {
-        return Ok(VerifyCodeResponse { success: true });
+        return Ok(());
     }
 
     let phone_verification = verification.ok_or(Error::NotFoundVerificationCode)?;
@@ -127,5 +120,11 @@ async fn verify_phone_code_handler(
         return Err(Error::InvalidVerificationCode);
     }
 
+    Ok(())
+}
+
+#[cfg(feature = "server")]
+async fn verify_phone_code_handler(phone: String, code: String) -> Result<VerifyCodeResponse> {
+    verify_phone_code(&phone, &code).await?;
     Ok(VerifyCodeResponse { success: true })
 }

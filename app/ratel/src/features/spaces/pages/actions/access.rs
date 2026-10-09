@@ -23,6 +23,7 @@ pub fn can_execute_space_action(
     space_status: Option<SpaceStatus>,
     action_status: Option<&SpaceActionStatus>,
     dependencies_met: bool,
+    required_attributes_met: bool,
     join_anytime: bool,
 ) -> bool {
     let role_ok = match role {
@@ -52,5 +53,5 @@ pub fn can_execute_space_action(
         SpaceUserRole::Viewer => false,
     };
 
-    role_ok && status_ok && dependencies_met
+    role_ok && status_ok && dependencies_met && required_attributes_met
 }

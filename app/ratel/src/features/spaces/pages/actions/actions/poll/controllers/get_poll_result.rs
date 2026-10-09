@@ -4,7 +4,11 @@ use crate::features::spaces::pages::actions::actions::poll::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case", tag = "answer_type")]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub enum PollResultSummary {
     SingleChoice {
         total_count: i64,
@@ -38,10 +42,18 @@ pub enum PollResultSummary {
         total_count: i64,
         answers: HashMap<String, i64>,
     },
+    PrivacyConsent {
+        total_count: i64,
+        agreed_count: i64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct PollResultResponse {
     pub created_at: i64,
     pub summaries: Vec<PollResultSummary>,
@@ -69,8 +81,7 @@ pub async fn get_poll_result(
         summaries_by_school,
         sample_answers,
         final_answers,
-    ) = SpacePollUserAnswer::summarize_responses_with_attribute(&space_pk, &poll_sk_entity)
-        .await?;
+    ) = SpacePollUserAnswer::summarize_responses_with_attribute(&space_pk, &poll_sk_entity).await?;
 
     Ok(PollResultResponse {
         created_at: crate::common::utils::time::get_now_timestamp_millis(),
@@ -162,6 +173,13 @@ impl From<SpacePollSummary> for PollResultSummary {
             } => Self::LinearScale {
                 total_count,
                 answers: stringify_answer_map(answers),
+            },
+            SpacePollSummary::PrivacyConsent {
+                total_count,
+                agreed_count,
+            } => Self::PrivacyConsent {
+                total_count,
+                agreed_count,
             },
         }
     }

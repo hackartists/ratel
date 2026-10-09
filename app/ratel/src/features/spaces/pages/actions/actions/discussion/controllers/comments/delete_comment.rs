@@ -22,12 +22,20 @@ pub async fn delete_comment(
     )
     .await?;
 
+    let req_attrs_met = crate::features::spaces::pages::actions::services::required_attributes::required_attributes_met(
+        &space,
+        &space_action,
+        &user.pk(),
+    )
+    .await?;
+
     if !crate::features::spaces::pages::actions::can_execute_space_action(
         role,
         space_action.prerequisite,
         space.status,
         space_action.status.as_ref(),
         deps_met,
+        req_attrs_met,
         space.join_anytime,
     ) {
         return Err(SpaceActionDiscussionError::NotAvailableInCurrentStatus.into());
@@ -93,10 +101,11 @@ pub async fn delete_comment(
 
     // Decrement the dashboard aggregate.
     let space_pk: Partition = space_id.into();
-    let _ = crate::features::spaces::space_common::models::aggregate::DashboardAggregate::inc_comments(
-        &space_pk, -1,
-    )
-    .await;
+    let _ =
+        crate::features::spaces::space_common::models::aggregate::DashboardAggregate::inc_comments(
+            &space_pk, -1,
+        )
+        .await;
 
     Ok(())
 }

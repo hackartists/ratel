@@ -90,7 +90,12 @@ export function ActionCard({ action, spaceId, deletable = false, onDeleted }: Ac
   const title = action.title === "" ? tr.untitled : action.title;
   const description = action.description === "" ? tr.noDescription : action.description;
   const isClosed = status === "Closed";
-  const isLocked = role !== "Creator" && action.depends_on.length > 0 && !action.dependencies_met;
+  const isLocked =
+    role !== "Creator" &&
+    ((action.depends_on.length > 0 && !action.dependencies_met) ||
+      (action.required_attributes.length > 0 && !action.required_attributes_met));
+  const lockReason =
+    action.depends_on.length > 0 && !action.dependencies_met ? tr.dependenciesNotMet : tr.requiredAttributesNotMet;
   const cardClass = isLocked
     ? "flex flex-col w-full text-left border transition-colors gap-[0.625rem] !rounded-[1rem] !bg-neutral-900 light:!bg-white !p-[0.9375rem] border-neutral-800 light:border-neutral-300 opacity-60 cursor-not-allowed"
     : isClosed
@@ -119,7 +124,7 @@ export function ActionCard({ action, spaceId, deletable = false, onDeleted }: Ac
       className={cardClass}
       onClick={() => {
         if (isLocked) {
-          toast.info(tr.dependenciesNotMet);
+          toast.info(lockReason);
           return;
         }
         if (role !== "Creator") {
@@ -195,7 +200,7 @@ export function ActionCard({ action, spaceId, deletable = false, onDeleted }: Ac
       {isLocked && (
         <div className="flex gap-1.5 items-center font-medium text-[0.75rem]/[1rem] text-foreground-muted">
           <Lock1 width="14" height="14" className="[&>path]:stroke-current" />
-          <span>{tr.dependenciesNotMet}</span>
+          <span>{lockReason}</span>
         </div>
       )}
 

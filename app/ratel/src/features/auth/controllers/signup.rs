@@ -55,10 +55,9 @@ pub enum SignupType {
         email: String,
         code: String,
     },
-    Phone {
-        phone: String,
-        code: String,
-    },
+    // No `Phone` variant: phone auth is unified under `LoginRequest::Phone` /
+    // `login_with_phone` (login.rs), which verifies the code and auto-creates
+    // the account on first use — there is no separate phone signup step.
     OAuth {
         provider: OauthProvider,
         access_token: String,
@@ -104,7 +103,6 @@ pub async fn signup_handler(req: SignupRequest) -> Result<SignupResponse> {
             code,
         } => signup_with_email_password(req.clone(), email, password, code).await?,
         SignupType::Email { email, code } => signup_with_email(req.clone(), email, code).await?,
-        SignupType::Phone { phone, code } => signup_with_phone(phone, code).await?,
         SignupType::OAuth {
             provider,
             access_token,
@@ -284,32 +282,6 @@ async fn signup_with_oauth(
         username,
         None,
     );
-
-    user.create().await?;
-
-    Ok(user)
-}
-
-#[cfg(feature = "server")]
-async fn signup_with_phone(phone: String, code: String) -> Result<User> {
-    tracing::debug!("Signing up with phone: {}", phone);
-
-    let is_invalid = PhoneVerification::find_by_phone_and_code(&phone, &code)
-        .await?
-        .is_none();
-
-    #[cfg(feature = "bypass")]
-    let is_invalid = is_invalid && !code.eq("000000");
-
-    if is_invalid {
-        return Err(Error::InvalidVerificationCode);
-    }
-
-    if let Some(existing) = User::find_by_phone(&phone).await? {
-        return Ok(existing);
-    }
-
-    let user = User::new_phone(phone);
 
     user.create().await?;
 

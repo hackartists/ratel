@@ -33,7 +33,7 @@ RUST_LOG ?= debug
 RUSTFLAGS ?= -D warnings
 
 PORT ?= 8080
-RUN_FEATURES ?= local-dev,bypass
+RUN_FEATURES ?= design-preview,bypass
 
 # Auto-detect the host's LAN IP so Android devices / emulators on the same
 # network can reach `dx serve` running on this workstation. OS branch is
@@ -341,7 +341,7 @@ build:
 	$(call copy-server,$(WORKSPACE_TARGET)/release/app-shell)
 
 build-testing:
-	$(SERVER_BUILD) --features server,bypass,local-dev
+	$(SERVER_BUILD) --features server,bypass,design-preview
 	$(call copy-server,$(WORKSPACE_TARGET)/release/app-shell)
 
 build-arm:

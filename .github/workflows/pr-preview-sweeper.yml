@@ -38,9 +38,14 @@ permissions:
 
 jobs:
   sweep:
-    # Self-hosted: needs in-cluster kubectl credentials and the pr-webroot PVC
-    # mounted at /root/nginx — same pool as e2e and cleanup.
-    runs-on: [self-hosted, Linux]
+    # arm64: this job reads/removes report dirs under the pr-webroot PVC
+    # mounted at /root/nginx — only the arm64 runner StatefulSet (`runner`)
+    # has that mount; `runner-amd64` does not (confirmed while debugging the
+    # e2e job's amd64 move, which hit the identical missing-mount failure).
+    # Needs in-cluster kubectl credentials too, present on every self-hosted
+    # runner regardless of arch, so the webroot mount is what pins this job
+    # to arm64, not the kubectl access.
+    runs-on: [self-hosted, linux, arm64]
     timeout-minutes: 30
     env:
       DRY_RUN: "${{ inputs.dry_run && 'true' || 'false' }}"

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Poll Designer — Privacy Consent Question</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+    html[data-theme="dark"]{
+      --bg-void:#06060e;--bg-glass:rgba(12,12,26,0.65);--bg-glass-hover:rgba(20,20,40,0.80);
+      --border-subtle:rgba(255,255,255,0.06);--border-strong:rgba(255,255,255,0.12);
+      --text-primary:#f0f0f5;--text-muted:#8888a8;--text-dim:#55556a;
+      --surface-soft:rgba(255,255,255,0.02);--surface-hover:rgba(255,255,255,0.04);
+      --glow-aura-a:rgba(129,140,248,0.06);--glow-aura-b:rgba(252,179,0,0.03);
+      --input-bg:rgba(255,255,255,0.02);--input-border:rgba(255,255,255,0.08);
+    }
+    :root{
+      --accent-gold:#fcb300;--accent-teal:#6eedd8;--accent-red:#ef4444;
+      --font-display:'Orbitron',sans-serif;--font-body:'Outfit',sans-serif;
+      --poll-color:#818cf8;--poll-bg:rgba(129,140,248,0.10);--poll-border:rgba(129,140,248,0.28);--poll-glow:rgba(129,140,248,0.18);
+      --consent-color:#6eedd8;--consent-bg:rgba(110,237,216,0.10);--consent-border:rgba(110,237,216,0.28);
+    }
+    html,body{min-height:100%;background:var(--bg-void);color:var(--text-primary);font-family:var(--font-body)}
+    .wrap{max-width:900px;margin:0 auto;padding:40px 24px 80px}
+    .hdr{font-family:var(--font-display);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px}
+    h1{font-family:var(--font-display);font-size:22px;letter-spacing:.06em;margin-bottom:28px}
+
+    .q-block{padding:16px;border-radius:14px;background:var(--surface-soft);border:1px solid var(--border-subtle);display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+    .q-block[data-qtype="privacy_consent"]{border-color:var(--consent-border)}
+    .q-block__head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .q-block__num{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:24px;padding:0 8px;border-radius:6px;background:var(--poll-bg);color:var(--poll-color);border:1px solid var(--poll-border);font-family:var(--font-display);font-size:11px;font-weight:700}
+    .q-block__head-spacer{flex:1}
+    .segmented{display:inline-flex;padding:3px;background:var(--surface-soft);border:1px solid var(--border-subtle);border-radius:10px;gap:2px;flex-wrap:wrap}
+    .segmented__btn{padding:6px 11px;border-radius:8px;background:transparent;border:none;color:var(--text-muted);font-size:11px;font-weight:500;cursor:pointer}
+    .segmented__btn[aria-selected="true"]{background:rgba(252,179,0,0.12);color:var(--accent-gold)}
+    .segmented__btn[data-qtype-set="privacy_consent"][aria-selected="true"]{background:var(--consent-bg);color:var(--consent-color)}
+    .icon-btn{width:30px;height:30px;border-radius:8px;border:1px solid var(--border-subtle);background:transparent;color:var(--text-muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+    .icon-btn:hover{border-color:rgba(239,68,68,0.3);color:var(--accent-red)}
+    .icon-btn svg{width:13px;height:13px}
+
+    .input,.textarea{width:100%;padding:11px 14px;border-radius:10px;background:var(--input-bg);border:1px solid var(--input-border);color:var(--text-primary);font-size:14px;outline:none}
+    .input:focus,.textarea:focus{border-color:rgba(252,179,0,.4)}
+    .textarea{resize:vertical;min-height:72px}
+    .field{display:flex;flex-direction:column;gap:6px}
+    .field__label{font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted)}
+
+    .consent-body{display:flex;flex-direction:column;gap:14px;padding:14px;border-radius:12px;background:var(--consent-bg);border:1px dashed var(--consent-border)}
+    .consent-note{font-size:12px;color:var(--text-muted);display:flex;gap:8px;align-items:flex-start}
+    .consent-note svg{width:16px;height:16px;flex-shrink:0;color:var(--consent-color);margin-top:1px}
+
+    .editor{border:1px solid var(--input-border);border-radius:12px;background:var(--input-bg);overflow:hidden}
+    .editor__toolbar{display:flex;gap:2px;padding:8px 10px;border-bottom:1px solid var(--border-subtle);background:var(--surface-soft)}
+    .editor__tool{min-width:30px;height:30px;padding:0 8px;border-radius:7px;background:transparent;border:1px solid transparent;color:var(--text-muted);cursor:pointer;font-family:var(--font-display);font-size:11px;font-weight:700}
+    .editor__tool:hover{background:var(--surface-hover);color:var(--accent-gold)}
+    .editor__body{padding:16px 18px;min-height:120px;color:var(--text-primary);font-size:14px;line-height:1.7;outline:none}
+    .editor__body p{margin:6px 0}
+
+    .always-on-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:100px;background:var(--consent-bg);border:1px solid var(--consent-border);color:var(--consent-color);font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;align-self:flex-start}
+
+    .add-btn{width:100%;padding:12px;border-radius:12px;border:1.5px dashed var(--border-strong);background:transparent;color:var(--text-muted);font-family:var(--font-display);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+    .add-btn:hover{border-color:var(--poll-color);color:var(--poll-color);background:var(--poll-bg)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hdr">Stage 2 Mockup · Poll Content Card</div>
+    <h1>Designer — "Privacy Consent" question type</h1>
+
+    <!-- Existing choice question, for context -->
+    <div class="q-block" data-qtype="single" data-testid="poll-question-0">
+      <div class="q-block__head">
+        <span class="q-block__num">Q1</span>
+        <div class="segmented" role="tablist" data-testid="poll-question-0-type">
+          <button class="segmented__btn" role="tab" aria-selected="true" data-qtype-set="single">Single</button>
+          <button class="segmented__btn" role="tab" aria-selected="false" data-qtype-set="multi">Multi</button>
+          <button class="segmented__btn" role="tab" aria-selected="false" data-qtype-set="subjective">Subjective</button>
+          <button class="segmented__btn" role="tab" aria-selected="false" data-qtype-set="linear">Linear</button>
+          <button class="segmented__btn" role="tab" aria-selected="false" data-qtype-set="privacy_consent">Privacy Consent</button>
+        </div>
+      </div>
+      <input class="input" value="Which offset standard should we adopt?" />
+    </div>
+
+    <!-- New privacy_consent question -->
+    <div class="q-block" data-qtype="privacy_consent" data-testid="poll-question-1">
+      <div class="q-block__head">
+        <span class="q-block__num">Q2</span>
+        <div class="segmented" role="tablist" data-testid="poll-question-1-type">
+          <button class="segmented__btn" role="tab" aria-selected="false" data-qtype-set="single">Single</button>
+          <button class="segmented__btn" role="tab" aria-selected="false" data-qtype-set="multi">Multi</button>
+          <button class="segmented__btn" role="tab" aria-selected="false" data-qtype-set="subjective">Subjective</button>
+          <button class="segmented__btn" role="tab" aria-selected="false" data-qtype-set="linear">Linear</button>
+          <button class="segmented__btn" role="tab" aria-selected="true" data-qtype-set="privacy_consent">Privacy Consent</button>
+        </div>
+        <div class="q-block__head-spacer"></div>
+        <button class="icon-btn" aria-label="Remove question" data-testid="poll-question-1-remove">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="field">
+        <label class="field__label">Question title</label>
+        <input class="input" data-testid="poll-question-1-title" value="Prize draw contact consent" />
+      </div>
+
+      <div class="field">
+        <label class="field__label">Description (optional)</label>
+        <input class="input" data-testid="poll-question-1-description" placeholder="Shown under the title to the respondent" value="We need your phone number to notify winners of the raffle." />
+      </div>
+
+      <div class="consent-body">
+        <span class="always-on-pill" data-testid="poll-question-1-phone-always-on">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18"/></svg>
+          Phone collection always on — no toggle
+        </span>
+
+        <div class="field">
+          <label class="field__label">Consent terms title</label>
+          <input class="input" data-testid="poll-question-1-terms-title" value="Phone Number Collection &amp; Use Consent" />
+        </div>
+
+        <div class="field">
+          <label class="field__label">Consent terms body (rich text)</label>
+          <div class="editor" data-testid="poll-question-1-terms-editor">
+            <div class="editor__toolbar" role="toolbar" aria-label="Editor tools">
+              <button class="editor__tool" title="Heading 2">H2</button>
+              <button class="editor__tool"><strong>B</strong></button>
+              <button class="editor__tool"><em>I</em></button>
+              <button class="editor__tool" title="List">•</button>
+            </div>
+            <div class="editor__body" contenteditable="true" data-testid="poll-question-1-terms-body">
+              <p>We collect your phone number solely to contact prize-draw winners. It is stored alongside your other poll answers and is not shared with third parties.</p>
+              <p>By continuing, you agree to be contacted via SMS for this purpose only.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="consent-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>
+          <span>Participants must check "I agree" then verify a phone number via SMS code before they can submit the poll. The server re-verifies the code — it never trusts the client's "verified" flag.</span>
+        </div>
+      </div>
+    </div>
+
+    <button class="add-btn" data-testid="poll-question-add">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add question
+    </button>
+  </div>
+
+  <script>
+    document.querySelectorAll('.segmented').forEach(function(seg){
+      seg.querySelectorAll('[role="tab"]').forEach(function(b){
+        b.addEventListener('click', function(){
+          seg.querySelectorAll('[role="tab"]').forEach(function(x){ x.setAttribute('aria-selected','false'); });
+          b.setAttribute('aria-selected','true');
+          var block = seg.closest('.q-block');
+          if (block) block.setAttribute('data-qtype', b.getAttribute('data-qtype-set'));
+        });
+      });
+    });
+  </script>
+</body>
+</html>

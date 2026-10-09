@@ -42,7 +42,13 @@ export function SigninCard({
         className="cta-signin"
         data-testid="btn-signin"
         onClick={() => {
-          popup.open(<LoginModal onSuccess={() => void ctx.restart()} />, { title: tr.loginTitle });
+          popup.open(
+            <LoginModal
+              onSuccess={() => void ctx.restart()}
+              defaultLoginMethod={ctx.space.has_privacy_consent_question ? "phone" : "email"}
+            />,
+            { title: tr.loginTitle },
+          );
         }}
       >
         {tr.signIn}

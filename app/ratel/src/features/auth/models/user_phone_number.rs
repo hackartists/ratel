@@ -32,13 +32,21 @@ impl UserPhoneNumber {
         }
     }
 
-    /// The phone linkage row for `phone_number`, if any (was `find_by_phone_number`).
-    pub async fn find_by_phone_number(
-        phone_number: &str,
-    ) -> crate::common::Result<Option<Self>> {
+    /// The phone linkage row for `phone`, if any (was `find_by_phone_number`).
+    pub async fn find_by_phone_number(phone_number: &str) -> crate::common::Result<Option<Self>> {
         use postgres::ops::StringOp;
         Self::repository()
             .find_one(Self::query().phone_number(StringOp::Eq(phone_number.to_string())))
+            .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// The phone linkage row for a given user, if any. Used to prefill a
+    /// verified phone number in the poll privacy-consent response flow.
+    pub async fn find_by_user_pk(user_pk: &Partition) -> crate::common::Result<Option<Self>> {
+        use postgres::ops::StringOp;
+        Self::repository()
+            .find_one(Self::query().user_pk(StringOp::Eq(user_pk.to_string())))
             .await
             .map_err(crate::common::Error::from)
     }

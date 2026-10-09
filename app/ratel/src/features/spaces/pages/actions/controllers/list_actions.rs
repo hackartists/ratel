@@ -12,9 +12,9 @@ use crate::features::spaces::pages::actions::actions::poll::SpacePollUserAnswer;
 #[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::quiz::{SpaceQuiz, SpaceQuizAttempt};
 #[cfg(feature = "server")]
-use postgres::ops::StringOp;
-#[cfg(feature = "server")]
 use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use postgres::ops::StringOp;
 #[cfg(feature = "server")]
 use std::collections::{HashMap, HashSet};
 
@@ -127,6 +127,31 @@ pub async fn list_actions(
                 .all(|dep_id| participated_by_id.get(dep_id).copied().unwrap_or(false));
     }
 
+    for action in actions.iter_mut() {
+        if action.required_attributes.is_empty() {
+            action.required_attributes_met = true;
+            continue;
+        }
+        action.required_attributes_met = match current_user.as_ref() {
+            Some(user) => {
+                let full_action =
+                    crate::features::spaces::pages::actions::models::SpaceAction::get_one(
+                        &space_id,
+                        &action.action_id,
+                    )
+                    .await?
+                    .ok_or(Error::SpaceActionNotFound)?;
+                crate::features::spaces::pages::actions::services::required_attributes::required_attributes_met(
+                    &space,
+                    &full_action,
+                    &user.pk(),
+                )
+                .await?
+            }
+            None => false,
+        };
+    }
+
     if !matches!(role, SpaceUserRole::Creator) {
         actions.retain(|a| {
             a.prerequisite
@@ -213,7 +238,10 @@ async fn has_completed_follow_action(
     use std::str::FromStr;
     let space_user_pk =
         Partition::from_str(&space.user_pk).unwrap_or(Partition::User(space.user_pk.clone()));
-    if !target_user_pks.iter().any(|target| target == &space_user_pk) {
+    if !target_user_pks
+        .iter()
+        .any(|target| target == &space_user_pk)
+    {
         target_user_pks.push(space_user_pk);
     }
 

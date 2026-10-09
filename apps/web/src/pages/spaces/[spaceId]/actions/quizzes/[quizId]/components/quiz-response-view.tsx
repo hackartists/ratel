@@ -33,6 +33,8 @@ function defaultAnswerForQuestion(question: Question): Answer {
       return { answer_type: "dropdown", answer: null };
     case "linear_scale":
       return { answer_type: "linear_scale", answer: null };
+    case "privacy_consent":
+      return { answer_type: "privacy_consent", agreed: false, phone: null, code: null };
   }
 }
 

@@ -82,7 +82,7 @@ jobs:
   # This job (the `dev` branch) SAVES the ratel-cargo-* / ratel-target-*
   # caches that pr-workflow's self-hosted jobs restore read-only.
   build-images:
-    runs-on: [self-hosted, Linux]
+    runs-on: [self-hosted, linux, amd64]
     timeout-minutes: 120
     env:
       # ── Compile-time env — replicated from the old lambda build job. ──
@@ -91,25 +91,16 @@ jobs:
       DISABLE_ANSI: true
       ENV: dev
       RUST_LOG: error
-      RUSTFLAGS: "-D warnings"
-      # The runner PODS have an 8Gi memory limit; an unbounded cold
-      # `cargo build --release` (the dx build this replaced hit the same
-      # ceiling) OOM-killed runner-4 (exit 137, run 30898864146). Bound
-      # rustc parallelism so the build fits the pod.
-      CARGO_BUILD_JOBS: "2"
       SERVICE: app-shell
       DOMAIN: dev.ratel.foundation
       BUCKET_NAME: metadata.ratel.foundation
       SLACK_HOOK: ${{ secrets.DEV_SLACK }}
 
-      # Real AWS credentials — baked (option_env!) for DynamoDB/S3/Bedrock.
-      # The old job got AWS_* exported by configure-aws-credentials; here
-      # they are set directly. AWS_ACCOUNT_ID also silences the Makefile's
-      # `aws sts` default (no aws CLI on the runner).
+      # Real AWS credentials — passed to buildkit as --secret (never land in
+      # the image's build history or layers; see scripts/buildkit-image.sh).
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: ap-northeast-2
-      AWS_ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
       ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
 
       BINANCE_API_KEY: ${{ secrets.DEV_BINANCE_API_KEY }}
@@ -138,7 +129,7 @@ jobs:
       P256_CRV: ${{ secrets.P256_CRV }}
 
       DYNAMO_TABLE_PREFIX: ratel-dev
-      DYNAMO_ENDPOINT: none
+      DYNAMODB_ENDPOINT: none
 
       FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
       FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
@@ -187,88 +178,86 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        # Idempotent (same pattern as pr-workflow's build-image): reuse the
-        # runner's stable toolchain, install only if absent. No wasm target
-        # here — app-shell is API-only after the React frontend migration
-        # (docs/superpower/2026-09-14-react-frontend-migration.md § 5.1), so
-        # nothing in this job compiles for wasm32-unknown-unknown anymore.
-        run: |
-          if ! command -v rustup >/dev/null 2>&1; then
-            if [ -x "$HOME/.cargo/bin/rustup" ]; then
-              export PATH="$HOME/.cargo/bin:$PATH"
-            else
-              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-              export PATH="$HOME/.cargo/bin:$PATH"
-            fi
-            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          fi
-          rustup toolchain list | grep -q '^stable' || rustup toolchain install stable --profile minimal
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Cache cargo registry/index (save — warms the PR restore-only caches)
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ratel-cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ratel-cargo-${{ runner.os }}-
-
-      - name: Cache build target (save — warms the PR restore-only caches)
-        uses: actions/cache@v5
-        with:
-          path: target
-          key: ratel-target-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ratel-target-${{ runner.os }}-
-
-      - name: Install build deps (C toolchain, cmake for librdkafka, openssl headers)
-        # cmake + a C toolchain: rdkafka's `cmake-build` feature compiles
-        # librdkafka from source for the events binaries. Idempotent +
-        # multi-distro; a no-op once the persistent runner has them.
-        run: |
-          set -eu
-          if command -v cc >/dev/null 2>&1 && command -v cmake >/dev/null 2>&1 && command -v pkg-config >/dev/null 2>&1 && [ -f /usr/include/openssl/ssl.h ]; then
-            echo "C toolchain + cmake + pkg-config + openssl headers already present"
-            exit 0
-          fi
-          SUDO=""
-          if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
-          if command -v apt-get >/dev/null 2>&1; then
-            $SUDO apt-get update -qq
-            $SUDO apt-get install -y --no-install-recommends build-essential cmake make pkg-config libssl-dev
-          elif command -v dnf >/dev/null 2>&1; then
-            $SUDO dnf install -y gcc make cmake pkgconf-pkg-config openssl-devel
-          elif command -v apk >/dev/null 2>&1; then
-            $SUDO apk add --no-cache build-base cmake pkgconfig openssl-dev
-          else
-            echo "::warning::no known package manager; relying on preinstalled toolchain"
-          fi
-
-      - name: Build app-shell (make build — dev release, API only, no bypass/local-dev/lambda)
-        # `make build` is a plain `cargo build --release` (no dx/dioxus-cli,
-        # no wasm client) that leaves the binary at
-        # target/server-image/server — see the "Fixed contracts" section of
-        # docs/superpower/2026-09-14-react-frontend-migration.md § 5.1.
-        run: |
-          cd app/ratel
-          make build
-
-      - name: Push app-shell image (buildkit → :dev-<sha> and :dev)
+      - name: Push app-shell image (buildkit cross-compile → :dev-<sha> and :dev)
+        # Multi-arch (amd64+arm64): the Dockerfile cross-compiles INSIDE
+        # buildkit via tonistiigi/xx — no native cargo build on this runner
+        # anymore (see app/ratel/Dockerfile's header for the rationale).
+        # Non-secret compile-time config rides as BUILD_ARGS; every
+        # sensitive value (AWS creds, API secrets, PEMs, AEAD keys) rides as
+        # SECRETS (buildctl --secret — never lands in the image's build
+        # history; app/ratel/Dockerfile reads each with
+        # RUN --mount=type=secret).
+        env:
+          NAME: ratel-app-shell
+          DOCKERFILE: app/ratel/Dockerfile
+          BUILD_ARGS: >-
+            ENV=${{ env.ENV }}
+            DOMAIN=${{ env.DOMAIN }}
+            BUCKET_NAME=${{ env.BUCKET_NAME }}
+            DYNAMO_TABLE_PREFIX=${{ env.DYNAMO_TABLE_PREFIX }}
+            DYNAMODB_ENDPOINT=${{ env.DYNAMODB_ENDPOINT }}
+            AWS_REGION=${{ env.AWS_REGION }}
+            KAIA_ENDPOINT=${{ env.KAIA_ENDPOINT }}
+            KAIA_ARCHIVE_ENDPOINT=${{ env.KAIA_ARCHIVE_ENDPOINT }}
+            BLOCK_EXPLORER_URL=${{ env.BLOCK_EXPLORER_URL }}
+            IC_URL=${{ env.IC_URL }}
+            RATEL_CANISTER_ID=${{ env.RATEL_CANISTER_ID }}
+            QDRANT_URL=${{ env.QDRANT_URL }}
+            QDRANT_PREFIX=ratel-dev
+            LAUNCHPAD_POINT_SYMBOL=${{ env.LAUNCHPAD_POINT_SYMBOL }}
+            WALLETCONNECT_PROJECT_ID=${{ env.WALLETCONNECT_PROJECT_ID }}
+            DISABLE_ANSI=${{ env.DISABLE_ANSI }}
+            RUST_LOG=${{ env.RUST_LOG }}
+            FEATURES=server
+          SECRETS: >-
+            AWS_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY
+            ACCOUNT_ID
+            PORTONE_STORE_ID
+            PORTONE_INICIS_CHANNEL_KEY
+            PORTONE_KPN_CHANNEL_KEY
+            PORTONE_API_SECRET
+            FIREBASE_API_KEY
+            FIREBASE_AUTH_DOMAIN
+            FIREBASE_PROJECT_ID
+            FIREBASE_STORAGE_BUCKET
+            FIREBASE_MESSAGING_SENDER_ID
+            FIREBASE_APP_ID
+            FIREBASE_MEASUREMENT_ID
+            ICP_IDENTITY_PEM
+            VOTER_TAG_SECRET
+            ATTR_VOTING_AUTHORITY_JSON
+            QDRANT_API_KEY
+            LINKEDIN_CLIENT_ID
+            LINKEDIN_CLIENT_SECRET
+            LAUNCHPAD_BASE_URL
+            LAUNCHPAD_PROJECT_ID
+            LAUNCHPAD_PARTNER_SECRET
+            CROSS_POSTING_DATA_KEY
+            CROSS_POSTING_DATA_KEY_PREVIOUS
+            TELEGRAM_TOKEN
+            BBS_BLS_X
+            BBS_BLS_Y
+            BBS_BLS_D
+            BBS_BLS_CRV
+            P256_X
+            P256_Y
+            P256_D
+            P256_CRV
         run: |
           set -euo pipefail
-          export NAME=ratel-app-shell
-          export CONTEXT=target/server-image
-          export DOCKERFILE=app/ratel/Dockerfile
           IMAGE_TAG="${SHA_TAG}" bash scripts/buildkit-image.sh
           # Second push is a cache hit in buildkitd — just retags.
           IMAGE_TAG=dev bash scripts/buildkit-image.sh
+
+      - name: Setup Node
+        # amd64 migration: this runner pool (unlike the old arm64 pool) has
+        # no system-wide Node/corepack install, so `corepack enable` below
+        # failed with "command not found" (run 37756874504). Matches the
+        # setup-node step already used by pr-workflow.yml's build-web-image.
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Build web (React static site)
         env:
@@ -294,6 +283,9 @@ jobs:
           pnpm -C apps/web build
 
       - name: Push web image (buildkit → :dev-<sha> and :dev)
+        # Web has no native deps / no Rust — multi-arch here is just a
+        # manifest-list push of the SAME static dist/server payload under
+        # both platforms (apps/web/Dockerfile needs no change).
         run: |
           set -euo pipefail
           export NAME=ratel-web
@@ -302,42 +294,27 @@ jobs:
           IMAGE_TAG="${SHA_TAG}" bash scripts/buildkit-image.sh
           IMAGE_TAG=dev bash scripts/buildkit-image.sh
 
-      - name: Build events binaries (ratel_cdc + ratel_worker, --features redpanda)
-        # Same compile-time env (job env above) — the events binaries reach
-        # real DynamoDB via the same baked AwsConfig/DynamoConfig. Events
-        # runtime config (RATEL_*) is env-read at runtime by design.
-        run: |
-          cd app/ratel
-          cargo build --release --features redpanda --bin ratel_cdc --bin ratel_worker
-
-      - name: Verify events binary linkage (ldd)
-        # deploy/dev/Dockerfile.events documents the base-image reasoning:
-        # librdkafka is statically linked (cmake-build) with no ssl/sasl
-        # features, so the only dynamic deps should be glibc/libgcc/zlib —
-        # all present in ubuntu:24.04. Fail here, before pushing, if a
-        # library would be missing at runtime.
-        run: |
-          set -euo pipefail
-          for bin in target/release/ratel_cdc target/release/ratel_worker; do
-            echo "── ldd ${bin}"
-            ldd "$bin"
-            if ldd "$bin" | grep -q "not found"; then
-              echo "::error::${bin} has unresolved dynamic libraries"
-              exit 1
-            fi
-          done
-
-      - name: Push events image (buildkit → :dev-<sha> and :dev)
-        # Stage just the two binaries as the build context — sending the
-        # multi-GB target/ tree to buildkitd would be pure waste.
+      - name: Push events image (buildkit cross-compile → :dev-<sha> and :dev)
+        # Same cross-compile approach as app-shell — deploy/dev/Dockerfile.events
+        # now builds ratel_cdc + ratel_worker INSIDE buildkit via xx-cargo,
+        # for both platforms, from the repo-root context (no more native
+        # `cargo build --features redpanda` + ldd + staging-dir dance on
+        # this runner).
+        env:
+          NAME: ratel-events
+          DOCKERFILE: deploy/dev/Dockerfile.events
+          BUILD_ARGS: >-
+            ENV=${{ env.ENV }}
+            DYNAMO_TABLE_PREFIX=${{ env.DYNAMO_TABLE_PREFIX }}
+            DYNAMODB_ENDPOINT=${{ env.DYNAMODB_ENDPOINT }}
+            AWS_REGION=${{ env.AWS_REGION }}
+            RUST_LOG=${{ env.RUST_LOG }}
+          SECRETS: >-
+            AWS_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY
+            ACCOUNT_ID
         run: |
           set -euo pipefail
-          rm -rf .build/events
-          mkdir -p .build/events
-          cp target/release/ratel_cdc target/release/ratel_worker .build/events/
-          export NAME=ratel-events
-          export CONTEXT=.build/events
-          export DOCKERFILE=deploy/dev/Dockerfile.events
           IMAGE_TAG="${SHA_TAG}" bash scripts/buildkit-image.sh
           IMAGE_TAG=dev bash scripts/buildkit-image.sh
 

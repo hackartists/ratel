@@ -1,6 +1,6 @@
-use crate::features::spaces::pages::actions::actions::poll::*;
 #[cfg(feature = "server")]
 use crate::common::utils::time::get_now_timestamp_millis;
+use crate::features::spaces::pages::actions::actions::poll::*;
 #[cfg(feature = "server")]
 use postgres::PostgresEntity;
 #[cfg(feature = "server")]
@@ -110,6 +110,17 @@ impl SpacePoll {
                     .poll_id(StringOp::Eq(poll_id.0.clone())),
             )
             .await
+            .map_err(crate::common::Error::from)
+    }
+
+    /// Every poll row for a space (mirrors `SpaceAction::list_by_space`).
+    /// Used by `get_space` to detect a `PrivacyConsent` question anywhere in
+    /// the space's polls without caring about ordering.
+    pub async fn list_by_space(space_pk: &SpacePartition) -> crate::common::Result<Vec<Self>> {
+        Self::repository()
+            .find(Self::query().space_id(StringOp::Eq(space_pk.0.clone())))
+            .await
+            .map(|p| p.items)
             .map_err(crate::common::Error::from)
     }
 
@@ -254,6 +265,8 @@ impl From<(SpacePoll, bool)>
             status: None,
             depends_on: Vec::new(),
             dependencies_met: true,
+            required_attributes: Vec::new(),
+            required_attributes_met: true,
         }
     }
 }

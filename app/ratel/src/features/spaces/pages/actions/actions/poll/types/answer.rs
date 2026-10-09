@@ -1,8 +1,8 @@
 use crate::features::spaces::pages::actions::actions::poll::*;
 
 use super::question::{
-    CheckboxQuestion, ChoiceQuestion, DropdownQuestion, LinearScaleQuestion, Question,
-    SubjectiveQuestion,
+    CheckboxQuestion, ChoiceQuestion, DropdownQuestion, LinearScaleQuestion,
+    PrivacyConsentQuestion, Question, SubjectiveQuestion,
 };
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
@@ -11,7 +11,11 @@ use rmcp::schemars;
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "answer_type")]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub enum Answer {
     SingleChoice {
         answer: Option<i32>,
@@ -38,6 +42,16 @@ pub enum Answer {
     LinearScale {
         answer: Option<i32>,
     },
+    PrivacyConsent {
+        agreed: bool,
+        #[serde(default)]
+        phone: Option<String>,
+        /// The SMS code submitted at response time. Carried only in the
+        /// request DTO for server-side re-verification in `respond_poll`;
+        /// always cleared to `None` before the answer is persisted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<String>,
+    },
 }
 
 impl Answer {
@@ -54,13 +68,10 @@ impl Answer {
                 .as_ref()
                 .map(|v| v.iter().map(|&a| a as u32).collect())
                 .unwrap_or_default(),
-            Answer::Dropdown { answer } => {
-                answer.map(|a| vec![a as u32]).unwrap_or_default()
-            }
-            Answer::LinearScale { answer } => {
-                answer.map(|a| vec![a as u32]).unwrap_or_default()
-            }
+            Answer::Dropdown { answer } => answer.map(|a| vec![a as u32]).unwrap_or_default(),
+            Answer::LinearScale { answer } => answer.map(|a| vec![a as u32]).unwrap_or_default(),
             Answer::ShortAnswer { .. } | Answer::Subjective { .. } => vec![0],
+            Answer::PrivacyConsent { .. } => vec![0],
         }
     }
 }
@@ -202,6 +213,14 @@ pub fn validate_answers(questions: Vec<Question>, answers: Vec<Answer>) -> bool 
                     if (ans as i64) < min_value || (ans as i64) > max_value {
                         return false;
                     }
+                }
+            }
+            (
+                Question::PrivacyConsent(PrivacyConsentQuestion { is_required, .. }),
+                Answer::PrivacyConsent { agreed, phone, .. },
+            ) => {
+                if is_required.unwrap_or_default() && (!agreed || phone.is_none()) {
+                    return false;
                 }
             }
             _ => {

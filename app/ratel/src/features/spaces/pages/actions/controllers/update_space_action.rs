@@ -3,20 +3,39 @@ use super::*;
 use crate::common::models::space::SpaceCommon;
 #[cfg(feature = "server")]
 use crate::features::membership::models::{
-    ensure_team_membership_monthly_refill, ensure_user_membership_monthly_refill, Membership,
-    TeamMembership, UserMembership,
+    Membership, TeamMembership, UserMembership, ensure_team_membership_monthly_refill,
+    ensure_user_membership_monthly_refill,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub enum UpdateSpaceActionRequest {
-    Credits { credits: u64 },
-    Status { status: SpaceActionStatus },
-    Dependencies { depends_on: Vec<String> },
-    Prerequisite { prerequisite: bool },
-    Title { title: String },
-    Description { description: String },
+    Credits {
+        credits: u64,
+    },
+    Status {
+        status: SpaceActionStatus,
+    },
+    Dependencies {
+        depends_on: Vec<String>,
+    },
+    RequiredAttributes {
+        required_attributes: Vec<RequiredAttributeRule>,
+    },
+    Prerequisite {
+        prerequisite: bool,
+    },
+    Title {
+        title: String,
+    },
+    Description {
+        description: String,
+    },
 }
 
 #[post(
@@ -71,6 +90,11 @@ pub async fn update_space_action(
                 return Err(SpaceActionError::InvalidDependency.into());
             }
             space_action.depends_on = SpaceActionDependsOn(depends_on);
+        }
+        UpdateSpaceActionRequest::RequiredAttributes {
+            required_attributes,
+        } => {
+            space_action.required_attributes = SpaceActionRequiredAttributes(required_attributes);
         }
         UpdateSpaceActionRequest::Prerequisite { prerequisite } => {
             space_action.prerequisite = prerequisite;
@@ -152,7 +176,16 @@ async fn update_credits(
         )
         .await
     } else {
-        remove_credits(user, space, space_id, action_id, space_action, &behavior, now).await
+        remove_credits(
+            user,
+            space,
+            space_id,
+            action_id,
+            space_action,
+            &behavior,
+            now,
+        )
+        .await
     }
 }
 
@@ -160,7 +193,9 @@ async fn update_credits(
 /// the same as the old `Option`-returning DynamoDB lookup (`None` → caller
 /// applies no per-space credit cap).
 #[cfg(feature = "server")]
-async fn get_membership_or_none(tier: &crate::features::membership::models::MembershipTier) -> Result<Option<Membership>> {
+async fn get_membership_or_none(
+    tier: &crate::features::membership::models::MembershipTier,
+) -> Result<Option<Membership>> {
     match Membership::get_by_membership_tier(tier).await {
         Ok(m) => Ok(Some(m)),
         Err(Error::NotFound(_)) => Ok(None),
@@ -196,7 +231,9 @@ async fn set_credits(
     space_action.credits = credits as i64;
     space_action.total_points = total_points;
 
-    let tx = postgres::Tx::begin().await.map_err(crate::common::Error::from)?;
+    let tx = postgres::Tx::begin()
+        .await
+        .map_err(crate::common::Error::from)?;
 
     use std::str::FromStr;
     let space_user_pk =
@@ -288,8 +325,7 @@ async fn remove_credits(
     now: i64,
 ) -> Result<()> {
     let existing =
-        SpaceReward::get_by_action(space_id.clone(), action_id.to_string(), behavior.clone())
-            .await;
+        SpaceReward::get_by_action(space_id.clone(), action_id.to_string(), behavior.clone()).await;
 
     space_action.credits = 0;
     space_action.total_points = 0;
@@ -298,7 +334,9 @@ async fn remove_credits(
         return Ok(());
     };
 
-    let tx = postgres::Tx::begin().await.map_err(crate::common::Error::from)?;
+    let tx = postgres::Tx::begin()
+        .await
+        .map_err(crate::common::Error::from)?;
 
     if reward.credits > 0 {
         use std::str::FromStr;

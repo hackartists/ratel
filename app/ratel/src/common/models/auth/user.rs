@@ -330,28 +330,11 @@ impl User {
         }
     }
 
-    pub fn new_phone(phone: String) -> Self {
-        let now = utils::time::now();
-        let display_name = names::Generator::with_naming(names::Name::Numbered)
-            .next()
-            .unwrap()
-            .replace('-', " ");
-
-        Self {
-            id: uuid::Uuid::now_v7(),
-            created_at: now,
-            updated_at: now,
-            display_name: display_name.clone(),
-            email: phone.to_string(),
-            profile_url: "".to_string(),
-            term_agreed: true,
-            informed_agreed: false,
-            user_type: UserType::Individual,
-            username: display_name,
-            password: None,
-            ..Default::default()
-        }
-    }
+    // `new_phone` was retired: it stored the phone number into `email` and
+    // never wrote the indexed `phone` column or a `UserPhoneNumber` linkage
+    // row. Phone account creation now goes through
+    // `login.rs::login_with_phone`, which builds a `User` via `User::new`
+    // plus sets `.phone` directly.
 
     /// Extract the [`Uuid`] id from a `Partition::User(..)` key, if it is one and
     /// parses. Returns `None` for any other partition or an unparseable id.

@@ -1,10 +1,10 @@
-use crate::features::spaces::pages::actions::*;
 #[cfg(feature = "server")]
 use crate::common::utils::time::get_now_timestamp_millis;
-#[cfg(feature = "server")]
-use postgres::ops::StringOp;
+use crate::features::spaces::pages::actions::*;
 #[cfg(feature = "server")]
 use postgres::PostgresEntity;
+#[cfg(feature = "server")]
+use postgres::ops::StringOp;
 #[cfg(feature = "server")]
 use uuid::Uuid;
 
@@ -16,7 +16,11 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[serde(transparent)]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct SpaceActionDependsOn(pub Vec<String>);
 
 impl std::ops::Deref for SpaceActionDependsOn {
@@ -38,6 +42,57 @@ impl From<Vec<String>> for SpaceActionDependsOn {
     }
 }
 
+/// One Required Attribute rule: a Poll action's single-choice question,
+/// restricted to a set of allowed answer values. A participant satisfies
+/// the rule when their recorded answer to that question is one of
+/// `allowed_values` (OR across values). `question_index` addresses the
+/// question because `Question` carries no stable id — it is the question's
+/// position in the poll's `questions` array.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
+pub struct RequiredAttributeRule {
+    pub poll_action_id: String,
+    pub question_index: usize,
+    pub allowed_values: Vec<String>,
+}
+
+/// Opaque jsonb wrapper for the action's Required Attributes list — same
+/// cross-platform / transparent-serde shape as [`SpaceActionDependsOn`].
+/// All rules in the list must be satisfied (AND); this set is evaluated
+/// independently of (and in addition to) `depends_on`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
+#[serde(transparent)]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
+pub struct SpaceActionRequiredAttributes(pub Vec<RequiredAttributeRule>);
+
+impl std::ops::Deref for SpaceActionRequiredAttributes {
+    type Target = Vec<RequiredAttributeRule>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for SpaceActionRequiredAttributes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<RequiredAttributeRule>> for SpaceActionRequiredAttributes {
+    fn from(v: Vec<RequiredAttributeRule>) -> Self {
+        Self(v)
+    }
+}
+
 /// A space action (poll / quiz / discussion / follow / meet companion row).
 ///
 /// Postgres migration: the DynamoDB identity was
@@ -54,7 +109,10 @@ impl From<Vec<String>> for SpaceActionDependsOn {
 // the legacy `pk`/`sk`/`space_pk` keys. See `SpaceActionWire`.
 #[serde(into = "SpaceActionWire")]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
-#[cfg_attr(feature = "server", postgres(table = "space_actions", unique(space_id, action_id)))]
+#[cfg_attr(
+    feature = "server",
+    postgres(table = "space_actions", unique(space_id, action_id))
+)]
 pub struct SpaceAction {
     #[serde(default)]
     pub id: uuid::Uuid,
@@ -87,6 +145,26 @@ pub struct SpaceAction {
 
     #[serde(default)]
     pub depends_on: SpaceActionDependsOn,
+
+    /// Required Attributes gate — independent of (AND-combined with)
+    /// `depends_on`. See [`SpaceActionRequiredAttributes`].
+    ///
+    /// `version = 1`: added after the v0 baseline (see
+    /// `space_post_comment.rs`'s `hidden`/`report_count` for the established
+    /// pattern) — an EXISTING database gets `ALTER TABLE ... ADD COLUMN`
+    /// instead of a v0 checksum mismatch that aborts startup. Missing this
+    /// attribute is exactly what broke dev: the v0 baseline DDL changed
+    /// shape for every already-deployed database, whose ledger still
+    /// recorded the pre-this-field v0 checksum. `sql_default` is required
+    /// for jsonb columns (no automatic default exists for a `PostgresJson`
+    /// newtype) — `'[]'::jsonb` matches `SpaceActionRequiredAttributes`'s
+    /// empty-`Vec` serde default.
+    #[serde(default)]
+    #[cfg_attr(
+        feature = "server",
+        postgres(version = 1, sql_default = "'[]'::jsonb")
+    )]
+    pub required_attributes: SpaceActionRequiredAttributes,
 }
 
 #[cfg(feature = "server")]
@@ -114,6 +192,7 @@ impl SpaceAction {
             additional_score: 0,
             status: Some(SpaceActionStatus::Designing),
             depends_on: SpaceActionDependsOn::default(),
+            required_attributes: SpaceActionRequiredAttributes::default(),
         }
     }
 
@@ -183,7 +262,11 @@ impl SpaceAction {
 // No `JsonSchema` here: `SpaceAction` itself does not derive it, and
 // `SpaceActionDependsOn` has no impl.
 #[derive(Serialize)]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SpaceAction"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/", rename = "SpaceAction")
+)]
 pub struct SpaceActionWire {
     /// `CompositePartition(SpacePartition(space_id), action_id)`.
     pub pk: CompositePartition<SpacePartition, String>,
@@ -207,6 +290,7 @@ pub struct SpaceActionWire {
     pub additional_score: i64,
     pub status: Option<SpaceActionStatus>,
     pub depends_on: SpaceActionDependsOn,
+    pub required_attributes: SpaceActionRequiredAttributes,
 }
 
 impl From<SpaceAction> for SpaceActionWire {
@@ -231,6 +315,7 @@ impl From<SpaceAction> for SpaceActionWire {
             additional_score: a.additional_score,
             status: a.status,
             depends_on: a.depends_on,
+            required_attributes: a.required_attributes,
         }
     }
 }

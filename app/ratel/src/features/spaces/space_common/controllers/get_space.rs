@@ -125,6 +125,22 @@ pub async fn get_space(
         actions.iter().any(|a| a.prerequisite)
     };
 
+    // A space "collects personal information" iff one of its polls carries a
+    // `PrivacyConsent` question. The frontend uses this to default the
+    // sign-in modal to the phone tab (that question type always collects a
+    // verified phone number), rather than duplicating poll-question lookup
+    // logic client-side.
+    let has_privacy_consent_question = {
+        use crate::features::spaces::pages::actions::actions::poll::models::SpacePoll;
+        use crate::features::spaces::pages::actions::actions::poll::types::Question;
+        let polls = SpacePoll::list_by_space(&space_id_partition)
+            .await
+            .unwrap_or_default();
+        polls
+            .iter()
+            .any(|poll| poll.questions.iter().any(|q| matches!(q, Question::PrivacyConsent(_))))
+    };
+
     Ok(SpaceResponse {
         id: space_pk.clone().into(),
         post_id: post_pk.into(),
@@ -170,6 +186,7 @@ pub async fn get_space(
         is_report: false,
         logo: space.logo,
         has_prerequisite,
+        has_privacy_consent_question,
         started_at: space.started_at,
     })
 }
@@ -220,6 +237,8 @@ pub struct SpaceResponse {
     pub logo: String,
     #[serde(default)]
     pub has_prerequisite: bool,
+    #[serde(default)]
+    pub has_privacy_consent_question: bool,
     pub started_at: Option<i64>,
 }
 

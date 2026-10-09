@@ -7,7 +7,11 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct RespondPollRequest {
     pub answers: Vec<Answer>,
     /// When set, the server uses this client-side ABE ciphertext for the
@@ -22,7 +26,11 @@ pub struct RespondPollRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct RespondPollResponse {}
 
 #[cfg(feature = "server")]
@@ -175,12 +183,20 @@ pub async fn respond_poll(
     )
     .await?;
 
+    let req_attrs_met = crate::features::spaces::pages::actions::services::required_attributes::required_attributes_met(
+        &space,
+        &space_action,
+        &member.pk,
+    )
+    .await?;
+
     if !crate::features::spaces::pages::actions::can_execute_space_action(
         role,
         space_action.prerequisite,
         space.status,
         space_action.status.as_ref(),
         deps_met,
+        req_attrs_met,
         space.join_anytime,
     ) {
         return Err(SpacePollError::PollNotInProgress.into());
@@ -190,8 +206,48 @@ pub async fn respond_poll(
         return Err(SpacePollError::AnswerMismatch.into());
     }
 
-    let existing =
-        SpacePollUserAnswer::find_one(&space_pk, &poll_sk_entity, &member.pk).await?;
+    // Privacy-consent answers carry an unverified client "verified" claim —
+    // never trust it. Re-verify phone+code against the stored
+    // PhoneVerification record, then strip the code before persisting.
+    //
+    // Exception: a phone already linked to this user (`UserPhoneNumber`,
+    // e.g. the number used for phone login) is already server-verified —
+    // the frontend sends the sentinel `code: "verified"` for it instead of
+    // a real OTP, which `verify_phone_code` would otherwise always reject.
+    let linked_phone = crate::features::auth::models::UserPhoneNumber::find_by_user_pk(&member.pk)
+        .await?
+        .map(|p| p.phone_number);
+
+    let mut answers = req.answers.clone();
+    for answer in answers.iter_mut() {
+        if let Answer::PrivacyConsent {
+            agreed,
+            phone,
+            code,
+        } = answer
+        {
+            if *agreed {
+                let phone_number = phone
+                    .as_deref()
+                    .ok_or(SpacePollError::PhoneVerificationFailed)?;
+                let already_linked = linked_phone.as_deref() == Some(phone_number);
+                if !already_linked {
+                    let submitted_code = code
+                        .as_deref()
+                        .ok_or(SpacePollError::PhoneVerificationFailed)?;
+                    crate::features::auth::controllers::verify_phone_code(phone_number, submitted_code)
+                        .await
+                        .map_err(|e| {
+                            crate::error!("privacy-consent phone verification failed: {e}");
+                            SpacePollError::PhoneVerificationFailed
+                        })?;
+                }
+            }
+            *code = None;
+        }
+    }
+
+    let existing = SpacePollUserAnswer::find_one(&space_pk, &poll_sk_entity, &member.pk).await?;
 
     if existing.is_some() && !poll.response_editable {
         return Err(SpacePollError::EditNotAllowed.into());
@@ -204,33 +260,33 @@ pub async fn respond_poll(
             .as_ref()
             .ok_or(SpacePollError::VoteVerificationFailed)?;
 
-        let (ciphertext_json, voter_tag) = match (&req.client_ciphertext_json, &req.client_voter_tag) {
-            (Some(ct), Some(tag)) => {
-                let expected_tag = crypto.build_voter_tag(&poll_sk_entity, &member.pk)?;
-                if expected_tag != *tag {
-                    crate::error!(
-                        "client voter_tag mismatch: expected {expected_tag}, got {tag}"
-                    );
-                    return Err(SpacePollError::VoteVerificationFailed.into());
+        let (ciphertext_json, voter_tag) =
+            match (&req.client_ciphertext_json, &req.client_voter_tag) {
+                (Some(ct), Some(tag)) => {
+                    let expected_tag = crypto.build_voter_tag(&poll_sk_entity, &member.pk)?;
+                    if expected_tag != *tag {
+                        crate::error!(
+                            "client voter_tag mismatch: expected {expected_tag}, got {tag}"
+                        );
+                        return Err(SpacePollError::VoteVerificationFailed.into());
+                    }
+                    (ct.clone(), tag.clone())
                 }
-                (ct.clone(), tag.clone())
-            }
-            _ => {
-                let metadata = PollMetadata {
-                    poll_sk: poll_sk_entity.to_string(),
-                    submitted_at_ms: now,
-                };
-                let envelope =
-                    crypto.encrypt(&poll_sk_entity, &member.pk, &req.answers, Some(&metadata))?;
-                (envelope.ciphertext_json, envelope.voter_tag)
-            }
-        };
+                _ => {
+                    let metadata = PollMetadata {
+                        poll_sk: poll_sk_entity.to_string(),
+                        submitted_at_ms: now,
+                    };
+                    let envelope =
+                        crypto.encrypt(&poll_sk_entity, &member.pk, &answers, Some(&metadata))?;
+                    (envelope.ciphertext_json, envelope.voter_tag)
+                }
+            };
 
         use sha2::Digest;
         let ciphertext_hash = hex::encode(sha2::Sha256::digest(ciphertext_json.as_bytes()));
 
-        let selections: Vec<ratel_canister::types::QuestionSelection> = req
-            .answers
+        let selections: Vec<ratel_canister::types::QuestionSelection> = answers
             .iter()
             .enumerate()
             .flat_map(|(q_idx, answer)| {
@@ -257,7 +313,7 @@ pub async fn respond_poll(
     // Postgres record (was DynamoDB)
     if let Some(mut existing_answer) = existing {
         let now = crate::common::utils::time::get_now_timestamp_millis();
-        existing_answer.answers = PollUserAnswers(req.answers);
+        existing_answer.answers = PollUserAnswers(answers);
         existing_answer.created_at = now;
         existing_answer.save().await?;
     } else {
@@ -265,7 +321,7 @@ pub async fn respond_poll(
         let answer_record = SpacePollUserAnswer::new(
             space_pk.clone(),
             poll_sk_entity.clone(),
-            req.answers,
+            answers,
             respondent,
             member.clone(),
         );

@@ -132,6 +132,50 @@ pub async fn login_handler(req: LoginRequest) -> Result<LoginResponse> {
     })
 }
 
+/// Default avatar for auto-created accounts (phone signup has no profile-picture
+/// step). Same URL the web signup modal falls back to for OAuth/wallet/email
+/// signups with no uploaded photo.
+#[cfg(feature = "server")]
+const DEFAULT_PROFILE_URL: &str = "https://metadata.ratel.foundation/ratel/default-profile.png";
+
+/// Mints a random display name + matching username for an auto-created phone
+/// account. `names::Generator::with_naming(Numbered)` emits lowercase
+/// `word-word-1234`, which already satisfies `validate_username`'s character
+/// rules (lowercase alphanumeric + `_`/`-`) — but not always its 3-20 char
+/// length cap (the dictionary has entries like "black-and-white"), so this
+/// retries past both a failed length check and a username/team collision.
+#[cfg(feature = "server")]
+async fn generate_phone_identity() -> Result<(String, String)> {
+    use crate::features::auth::utils::validator::validate_username;
+    use crate::features::posts::models::Team;
+
+    for _ in 0..20 {
+        let raw = names::Generator::with_naming(names::Name::Numbered)
+            .next()
+            .unwrap();
+        let username = raw.clone();
+        let display_name = raw.replace('-', " ");
+
+        if validate_username(&username).is_err() {
+            continue;
+        }
+        if User::find_by_username(&username).await?.is_some() {
+            continue;
+        }
+        if Team::find_by_username(&username).await?.is_some() {
+            continue;
+        }
+
+        return Ok((display_name, username));
+    }
+
+    Err(Error::UsernameAlreadyExists)
+}
+
+/// Unified phone auth: verifies the SMS code, then logs in the existing
+/// `UserPhoneNumber`-linked user or auto-creates one on first use (no
+/// password, no separate signup step — see `signup.rs`'s retired
+/// `signup_with_phone`, which this supersedes).
 #[cfg(feature = "server")]
 pub async fn login_with_phone(phone: String, code: String) -> Result<User> {
     // Verify the phone verification code
@@ -176,21 +220,27 @@ pub async fn login_with_phone(phone: String, code: String) -> Result<User> {
     let existing_phone = UserPhoneNumber::find_by_phone_number(&phone).await?;
 
     let user = if existing_phone.is_none() {
-        // Create new user with phone number
-        let username = format!("user{}", now);
-        let display_name = phone.clone();
+        // Auto-create on first use: random display name/username (same
+        // generator `User::new_phone` used to use), the shared default
+        // avatar, and `Individual` rather than `Anonymous` — this is a real,
+        // fully-usable account, just one that skipped the profile-entry step.
+        let (display_name, username) = generate_phone_identity().await?;
         let email = format!("{}@phone.placeholder", username);
 
-        let user = User::new(
+        let mut user = User::new(
             display_name,
             email,
-            String::new(), // No avatar
-            false,         // Not verified
-            false,         // Not admin
-            UserType::Anonymous,
+            DEFAULT_PROFILE_URL.to_string(),
+            true,  // term_agreed: no ToS checkbox in the SMS flow, default to agreed
+            false, // informed_agreed
+            UserType::Individual,
             username,
             None, // No password
         );
+        // Populate the indexed `phone` column too, not just the
+        // `UserPhoneNumber` linkage row, so admin tooling / future lookups
+        // via `User::find_by_phone` work.
+        user.phone = Some(phone.clone());
 
         let user_phone = UserPhoneNumber::new(user.pk(), phone.clone());
 

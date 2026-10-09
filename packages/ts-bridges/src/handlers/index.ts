@@ -104,6 +104,7 @@ export { getMeet } from "./getMeet";
 export { getMembershipHandlerGetApiMeMembership } from "./getMembershipHandlerGetApiMeMembership";
 export { getMembershipHandlerGetV3MeMemberships } from "./getMembershipHandlerGetV3MeMemberships";
 export { getModerationSetting } from "./getModerationSetting";
+export { getMyPhoneHandler } from "./getMyPhoneHandler";
 export { getMyScoreHandler } from "./getMyScoreHandler";
 export { getMyStatsHandler } from "./getMyStatsHandler";
 export { getOverviewFiles } from "./getOverviewFiles";

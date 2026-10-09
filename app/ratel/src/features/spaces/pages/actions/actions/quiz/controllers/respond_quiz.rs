@@ -1,4 +1,4 @@
-use crate::common::models::space::{SpaceUser, SpaceCommon};
+use crate::common::models::space::{SpaceCommon, SpaceUser};
 use crate::features::spaces::pages::actions::actions::quiz::*;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
@@ -6,12 +6,19 @@ use rmcp::schemars;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct RespondQuizRequest {
     pub answers: Vec<Answer>,
 }
 
-#[mcp_tool(name = "respond_quiz", description = "Submit answers to a quiz. Requires participant role. Returns score.")]
+#[mcp_tool(
+    name = "respond_quiz",
+    description = "Submit answers to a quiz. Requires participant role. Returns score."
+)]
 #[post(
     "/api/spaces/{space_pk}/quizzes/{quiz_id}/respond",
     role: SpaceUserRole,
@@ -20,11 +27,11 @@ pub struct RespondQuizRequest {
     space: SpaceCommon
 )]
 pub async fn respond_quiz(
-    #[mcp(description = "Space partition key")]
-    space_pk: SpacePartition,
-    #[mcp(description = "Quiz sort key (e.g. 'SpaceQuiz#<uuid>')")]
-    quiz_id: SpaceQuizEntityType,
-    #[mcp(description = "Quiz answers. Each answer: {\"answer_type\": \"single_choice\", \"answer\": <index>} or {\"answer_type\": \"multiple_choice\", \"answer\": [<indices>]}")]
+    #[mcp(description = "Space partition key")] space_pk: SpacePartition,
+    #[mcp(description = "Quiz sort key (e.g. 'SpaceQuiz#<uuid>')")] quiz_id: SpaceQuizEntityType,
+    #[mcp(
+        description = "Quiz answers. Each answer: {\"answer_type\": \"single_choice\", \"answer\": <index>} or {\"answer_type\": \"multiple_choice\", \"answer\": [<indices>]}"
+    )]
     req: RespondQuizRequest,
 ) -> Result<()> {
     let common_config = crate::common::CommonConfig::default();
@@ -37,13 +44,19 @@ pub async fn respond_quiz(
         .ok_or(Error::NotFound("Quiz not found".into()))?;
 
     let space_action = crate::features::spaces::pages::actions::models::SpaceAction::get_one(
-        &space_id,
-        &quiz_id.0,
+        &space_id, &quiz_id.0,
     )
     .await?
     .ok_or(Error::SpaceActionNotFound)?;
 
     let deps_met = crate::features::spaces::pages::actions::services::dependency::dependencies_met(
+        &space,
+        &space_action,
+        &member.pk,
+    )
+    .await?;
+
+    let req_attrs_met = crate::features::spaces::pages::actions::services::required_attributes::required_attributes_met(
         &space,
         &space_action,
         &member.pk,
@@ -56,6 +69,7 @@ pub async fn respond_quiz(
         space.status,
         space_action.status.as_ref(),
         deps_met,
+        req_attrs_met,
         space.join_anytime,
     ) {
         return Err(SpaceActionQuizError::NotAvailableInCurrentStatus.into());
@@ -79,7 +93,14 @@ pub async fn respond_quiz(
         return Err(SpaceActionQuizError::NoRemainingAttempts.into());
     }
     let score = calculate_score(&quiz.questions, &correct.answers, &req.answers)?;
-    let attempt = SpaceQuizAttempt::new(space_id.clone(), quiz_id.clone(), member.clone(), req.answers, score, quiz.pass_score);
+    let attempt = SpaceQuizAttempt::new(
+        space_id.clone(),
+        quiz_id.clone(),
+        member.clone(),
+        req.answers,
+        score,
+        quiz.pass_score,
+    );
     SpaceQuizAttempt::repository()
         .insert(&attempt)
         .await

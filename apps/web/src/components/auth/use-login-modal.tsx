@@ -16,6 +16,8 @@ export interface OpenLoginModalOptions {
   title?: string;
   /** Runs after the login or sign-up succeeded and the user context is set. */
   onSuccess?: () => void;
+  /** Forwarded to {@link LoginModal}'s `defaultLoginMethod` prop. */
+  defaultLoginMethod?: "email" | "phone";
 }
 
 export interface LoginModalService {
@@ -27,8 +29,8 @@ export function useLoginModal(): LoginModalService {
   const popup = usePopup();
   return React.useMemo(
     () => ({
-      open: ({ title = LOGIN_MODAL_TITLE, onSuccess } = {}) =>
-        popup.open(<LoginModal onSuccess={onSuccess} />, { title }),
+      open: ({ title = LOGIN_MODAL_TITLE, onSuccess, defaultLoginMethod } = {}) =>
+        popup.open(<LoginModal onSuccess={onSuccess} defaultLoginMethod={defaultLoginMethod} />, { title }),
     }),
     [popup],
   );

@@ -14,7 +14,8 @@ This is the product index. Each checkbox maps to **exactly one spec file** in `r
 
 - [ ] [Badge system (non-transferable recognition badges)](roadmap/badge.md)
 - [ ] [Action navigation (actions should be canonical pages, not overlays)](roadmap/action-navigation.md)
+- [ ] [Poll privacy-consent question (phone collection + SMS verification)](roadmap/poll-privacy-consent.md)
 
 ## Shipped
 
-_None yet._
+- [x] [Discussion Required Attributes (gate participation on poll single-choice answers)](docs/superpower/2026-10-08-discussion-required-attributes.md)

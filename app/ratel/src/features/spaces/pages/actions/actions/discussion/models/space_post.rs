@@ -1,8 +1,8 @@
-use crate::features::spaces::pages::actions::actions::discussion::*;
 #[cfg(feature = "server")]
 use crate::features::spaces::pages::actions::actions::discussion::models::{
     SpacePostComment, SpacePostCommentLike,
 };
+use crate::features::spaces::pages::actions::actions::discussion::*;
 #[cfg(feature = "server")]
 use postgres::PostgresEntity;
 #[cfg(feature = "server")]
@@ -17,7 +17,11 @@ use rmcp::schemars;
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresJson))]
 #[serde(transparent)]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/")
+)]
 pub struct PostFiles(pub Vec<File>);
 
 impl std::ops::Deref for PostFiles {
@@ -41,7 +45,10 @@ impl std::ops::Deref for PostFiles {
 #[serde(into = "SpacePostWire")]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(feature = "server", derive(postgres::PostgresEntity))]
-#[cfg_attr(feature = "server", postgres(table = "space_posts", unique(space_id, post_id)))]
+#[cfg_attr(
+    feature = "server",
+    postgres(table = "space_posts", unique(space_id, post_id))
+)]
 pub struct SpacePost {
     #[serde(default)]
     pub id: uuid::Uuid,
@@ -196,7 +203,8 @@ impl SpacePost {
         content: String,
         images: Vec<String>,
         author: &crate::common::models::space::SpaceUser,
-    ) -> crate::features::spaces::pages::actions::actions::discussion::Result<SpacePostComment> {
+    ) -> crate::features::spaces::pages::actions::actions::discussion::Result<SpacePostComment>
+    {
         let post = Self::get_one(&space_pk, &space_post_pk)
             .await?
             .ok_or(SpaceActionDiscussionError::NotFound)?;
@@ -326,6 +334,8 @@ impl From<(SpacePost, SpaceUserRole)>
             status: None,
             depends_on: Vec::new(),
             dependencies_met: true,
+            required_attributes: Vec::new(),
+            required_attributes_met: true,
         }
     }
 }
@@ -394,7 +404,11 @@ impl SpacePost {
 /// and `files` is a `#[serde(transparent)]` newtype over the old `Vec<File>`.
 #[derive(Serialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
-#[cfg_attr(feature = "ts-bridge", derive(ts_rs::TS), ts(export, export_to = "types/", rename = "SpacePost"))]
+#[cfg_attr(
+    feature = "ts-bridge",
+    derive(ts_rs::TS),
+    ts(export, export_to = "types/", rename = "SpacePost")
+)]
 pub struct SpacePostWire {
     /// `Partition::Space(space_id)` — renders as `SPACE#{space_id}`.
     pub pk: Partition,
