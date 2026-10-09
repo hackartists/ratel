@@ -209,6 +209,15 @@ pub async fn respond_poll(
     // Privacy-consent answers carry an unverified client "verified" claim —
     // never trust it. Re-verify phone+code against the stored
     // PhoneVerification record, then strip the code before persisting.
+    //
+    // Exception: a phone already linked to this user (`UserPhoneNumber`,
+    // e.g. the number used for phone login) is already server-verified —
+    // the frontend sends the sentinel `code: "verified"` for it instead of
+    // a real OTP, which `verify_phone_code` would otherwise always reject.
+    let linked_phone = crate::features::auth::models::UserPhoneNumber::find_by_user_pk(&member.pk)
+        .await?
+        .map(|p| p.phone_number);
+
     let mut answers = req.answers.clone();
     for answer in answers.iter_mut() {
         if let Answer::PrivacyConsent {
@@ -221,15 +230,18 @@ pub async fn respond_poll(
                 let phone_number = phone
                     .as_deref()
                     .ok_or(SpacePollError::PhoneVerificationFailed)?;
-                let submitted_code = code
-                    .as_deref()
-                    .ok_or(SpacePollError::PhoneVerificationFailed)?;
-                crate::features::auth::controllers::verify_phone_code(phone_number, submitted_code)
-                    .await
-                    .map_err(|e| {
-                        crate::error!("privacy-consent phone verification failed: {e}");
-                        SpacePollError::PhoneVerificationFailed
-                    })?;
+                let already_linked = linked_phone.as_deref() == Some(phone_number);
+                if !already_linked {
+                    let submitted_code = code
+                        .as_deref()
+                        .ok_or(SpacePollError::PhoneVerificationFailed)?;
+                    crate::features::auth::controllers::verify_phone_code(phone_number, submitted_code)
+                        .await
+                        .map_err(|e| {
+                            crate::error!("privacy-consent phone verification failed: {e}");
+                            SpacePollError::PhoneVerificationFailed
+                        })?;
+                }
             }
             *code = None;
         }
