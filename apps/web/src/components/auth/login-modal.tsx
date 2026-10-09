@@ -4,6 +4,7 @@ import { ApiError } from "@ratel/ts-bridges/runtime";
 import { Button, ButtonShape } from "@/components/ui/button";
 import { Input, InputType } from "@/components/ui/input";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
+import { PhoneInput, type PhoneInputValue } from "@/components/ui/phone-input";
 import { WalletConnect } from "@/components/icons/wallet";
 import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useLoginModalI18n } from "./login-modal.i18n";
@@ -59,7 +60,7 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   const [code, setCode] = React.useState("");
   const [showCode, setShowCode] = React.useState(false);
   const [loginMethod, setLoginMethod] = React.useState<"email" | "phone">("email");
-  const [phone, setPhone] = React.useState("");
+  const [phone, setPhone] = React.useState<PhoneInputValue | undefined>(undefined);
   const [phoneCode, setPhoneCode] = React.useState("");
   const [showPhoneCode, setShowPhoneCode] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
@@ -128,8 +129,11 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
   // Phone login: enter phone → send code → enter code → submit. Unlike email,
   // a successful `loginWithPhone` handles both brand-new and returning users
   // (the account is auto-created server-side), so there is no
-  // `UserNotFound`-to-signup branch here.
+  // `UserNotFound`-to-signup branch here. `phone` is always undefined or a
+  // complete E.164 string (`PhoneInput`'s own `value`/`onChange` contract),
+  // so an incomplete/empty entry simply can't reach the server call.
   const submitPhoneLogin = async () => {
+    if (phone === undefined) return;
     setErrorMessage(null);
 
     if (!showPhoneCode) {
@@ -347,17 +351,15 @@ export function LoginModal({ onSuccess }: LoginModalProps) {
                 {tr.phoneNumber}
               </label>
               <div className="relative w-full">
-                <Input
+                <PhoneInput
                   id="phone"
                   name="tel"
                   autoComplete="tel"
-                  data-slot="input"
                   data-testid="phone-input"
                   disabled={loading}
                   placeholder={tr.phonePlaceholder}
-                  type={InputType.Text}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={setPhone}
                   onConfirm={() => void submitPhoneLogin()}
                 />
               </div>

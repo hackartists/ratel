@@ -7,6 +7,10 @@ import { routes } from "@/App";
 import { initI18n } from "@/i18n";
 import { installViewportTracking } from "@/lib/viewport";
 import { PRERENDERED_ROUTES } from "@/prerendered-routes";
+// `react-phone-number-input`'s base stylesheet for the country-select combobox
+// used by the phone login input (components/ui/phone-input.tsx); overrides
+// that match the app's own input styling live in assets/main.css.
+import "react-phone-number-input/style.css";
 
 // React Router basename from Vite's `base` ("/" collapses to "").
 const ROUTER_BASENAME = import.meta.env.BASE_URL.replace(/\/$/, "");
