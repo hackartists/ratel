@@ -22,8 +22,8 @@ import { click, goto, waitPopup } from "../utils";
  * isn't exercised here; this spec stops at the send-code request.
  */
 
-function e164(countryCallingCode, nationalDigits) {
-  return `+${countryCallingCode}${nationalDigits}`;
+function e164(countryCallingCode, nationalSignificantNumber) {
+  return `+${countryCallingCode}${nationalSignificantNumber}`;
 }
 
 function isSendVerificationCodeRequest(req) {
@@ -63,7 +63,9 @@ test.describe("Phone login: country select + E.164 formatting", () => {
     const body = request.postDataJSON();
     const phone = body?.phone ?? body?.req?.phone;
 
-    expect(phone).toBe(e164("82", nationalDigits));
+    // Korean mobile numbers drop the leading trunk "0" in E.164 — the
+    // national significant number is "1012345678", not "01012345678".
+    expect(phone).toBe(e164("82", nationalDigits.replace(/^0/, "")));
     expect(phone).not.toContain("-");
   });
 
