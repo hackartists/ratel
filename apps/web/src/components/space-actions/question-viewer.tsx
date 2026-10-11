@@ -608,7 +608,9 @@ export function PrivacyConsentViewer({
         <div className="mb-1 text-text-primary font-semibold" data-testid="pc-terms-title">
           {question.terms_title}
         </div>
-        <div dangerouslySetInnerHTML={{ __html: question.terms_body_html }} />
+        <div className="ratel-editor" data-editable="false">
+          <div className="re-content" dangerouslySetInnerHTML={{ __html: question.terms_body_html }} />
+        </div>
       </div>
 
       <label className="flex items-start gap-2 rounded-xl border border-card-border bg-option-card-bg p-3 cursor-pointer">
