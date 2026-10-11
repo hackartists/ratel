@@ -152,6 +152,14 @@ pub async fn list_actions(
         };
     }
 
+    // Required Attributes gate: hide an action from non-Creator roles once it
+    // declares at least one rule and the viewer doesn't satisfy it. Creators
+    // (admins/operators) always see every action regardless of this gate —
+    // same carve-out as the status/prerequisite `retain` below.
+    if !matches!(role, SpaceUserRole::Creator) {
+        actions.retain(|a| a.required_attributes.is_empty() || a.required_attributes_met);
+    }
+
     if !matches!(role, SpaceUserRole::Creator) {
         actions.retain(|a| {
             a.prerequisite
