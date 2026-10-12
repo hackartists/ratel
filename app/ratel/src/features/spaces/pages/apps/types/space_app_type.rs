@@ -26,6 +26,12 @@ pub enum SpaceAppType {
     /// runtime filter lives in `apps_section/component.rs`.
     #[translate(en = "Report", ko = "보고서")]
     Report,
+    /// Sampling app — draws a balanced sample from entry-poll respondents.
+    /// `version = 1` adds the label to the existing native enum
+    /// (`ALTER TYPE … ADD VALUE`); it must stay the last variant.
+    #[cfg_attr(feature = "server", postgres(version = 1))]
+    #[translate(en = "Sampling", ko = "표본 추출")]
+    Sampling,
 }
 
 impl SpaceAppType {
@@ -42,6 +48,7 @@ impl SpaceAppType {
             SpaceAppType::File => "bg-violet-500",
             SpaceAppType::Panels => "bg-sky-500",
             SpaceAppType::Report => "bg-purple-500",
+            SpaceAppType::Sampling => "bg-rose-500",
         }
     }
 
@@ -56,6 +63,7 @@ impl SpaceAppType {
             SpaceAppType::Panels => tr.app_description_panels,
             SpaceAppType::General => tr.app_description_general,
             SpaceAppType::Report => tr.app_description_report,
+            SpaceAppType::Sampling => tr.app_description_sampling,
         }
         .to_string()
     }
@@ -87,5 +95,9 @@ translate! {
     app_description_report: {
         en: "Compose and publish reports from analyze data.",
         ko: "분석 데이터를 기반으로 보고서를 작성·발행하세요.",
+    },
+    app_description_sampling: {
+        en: "Draw a balanced sample from entry-poll respondents",
+        ko: "엔트리 폴 응답자에서 균형 잡힌 표본을 추출하세요.",
     },
 }

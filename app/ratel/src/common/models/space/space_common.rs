@@ -102,6 +102,19 @@ pub struct SpaceCommon {
     pub quota: i64,
     #[serde(default = "max_quota")]
     pub remains: i64,
+
+    /// Set while the Sampling app is installed. Written only by the Sampling
+    /// app install/uninstall paths so hot-path role checks need no extra read.
+    #[serde(default)]
+    #[cfg_attr(feature = "server", postgres(version = 2, sql_default = "FALSE"))]
+    pub sampling_enabled: bool,
+
+    /// Mirrors `SpaceSamplingConfig::allow_recruit_during_sampling`; consulted
+    /// by [`SpaceCommon::is_participation_open`] while the space is in
+    /// `Sampling`.
+    #[serde(default)]
+    #[cfg_attr(feature = "server", postgres(version = 2, sql_default = "FALSE"))]
+    pub sampling_recruit_open: bool,
 }
 
 fn default_true() -> bool {
@@ -165,12 +178,68 @@ impl SpaceCommon {
     }
 
     pub fn is_active(&self) -> bool {
-        matches!(self.status, Some(SpaceStatus::Ongoing | SpaceStatus::Open))
+        matches!(
+            self.status,
+            Some(SpaceStatus::Ongoing | SpaceStatus::Open | SpaceStatus::Sampling)
+        )
     }
 
+    /// Whether a new participant may join and Candidates may run
+    /// prerequisite actions right now.
+    ///
+    /// `Open` always recruits; `Sampling` recruits only when the Sampling
+    /// app allows recruiting during sampling; `Ongoing` follows
+    /// `join_anytime`.
     pub fn is_participation_open(&self) -> bool {
-        matches!(self.status, Some(SpaceStatus::Open))
-            || (self.join_anytime && matches!(self.status, Some(SpaceStatus::Ongoing)))
+        match self.status {
+            Some(SpaceStatus::Open) => true,
+            Some(SpaceStatus::Sampling) => self.sampling_recruit_open,
+            Some(SpaceStatus::Ongoing) => self.join_anytime,
+            _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod participation_tests {
+    use super::*;
+
+    fn space(status: SpaceStatus, join_anytime: bool, recruit: bool) -> SpaceCommon {
+        SpaceCommon {
+            status: Some(status),
+            join_anytime,
+            sampling_recruit_open: recruit,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn open_always_recruits() {
+        assert!(space(SpaceStatus::Open, false, false).is_participation_open());
+    }
+
+    #[test]
+    fn sampling_follows_recruit_option() {
+        assert!(space(SpaceStatus::Sampling, false, true).is_participation_open());
+        assert!(!space(SpaceStatus::Sampling, true, false).is_participation_open());
+    }
+
+    #[test]
+    fn ongoing_follows_join_anytime() {
+        assert!(space(SpaceStatus::Ongoing, true, false).is_participation_open());
+        assert!(!space(SpaceStatus::Ongoing, false, true).is_participation_open());
+    }
+
+    #[test]
+    fn designing_and_finished_are_closed() {
+        assert!(!space(SpaceStatus::Designing, true, true).is_participation_open());
+        assert!(!space(SpaceStatus::Finished, true, true).is_participation_open());
+        assert!(!SpaceCommon::default().is_participation_open());
+    }
+
+    #[test]
+    fn sampling_counts_as_active() {
+        assert!(space(SpaceStatus::Sampling, false, false).is_active());
     }
 }
 

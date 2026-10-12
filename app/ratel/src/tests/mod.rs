@@ -64,6 +64,7 @@ mod respond_poll_privacy_consent_tests;
 mod post_tests;
 mod report_tests;
 mod required_attributes_gating_tests;
+mod sampling_tests;
 mod space_action_notification_tests;
 mod space_member_tests;
 mod space_status_change_tests;

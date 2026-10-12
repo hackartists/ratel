@@ -175,6 +175,8 @@ pub async fn get_space(
         files: None,
         anonymous_participation: space.anonymous_participation,
         join_anytime: space.join_anytime,
+        sampling_enabled: space.sampling_enabled,
+        sampling_recruit_open: space.sampling_recruit_open,
         can_participate,
         participants: space.participants,
         participated,
@@ -224,6 +226,14 @@ pub struct SpaceResponse {
     pub anonymous_participation: bool,
     #[serde(default)]
     pub join_anytime: bool,
+    /// Whether the Sampling app is installed; the space then moves
+    /// `Open → Sampling → Ongoing` instead of `Open → Ongoing`.
+    #[serde(default)]
+    pub sampling_enabled: bool,
+    /// Whether new participants may still join while the space is in
+    /// `Sampling`.
+    #[serde(default)]
+    pub sampling_recruit_open: bool,
     pub can_participate: bool,
     pub participants: i64,
     pub participated: bool,

@@ -337,15 +337,23 @@ where
                 space.status,
                 Some(crate::common::SpaceStatus::Ongoing | crate::common::SpaceStatus::Finished)
             ) {
-                if has_completed_prerequisite_actions(&space, &user)
+                let prerequisites_done = has_completed_prerequisite_actions(&space, &user)
                     .await
                     .map_err(|err| {
                         serializable_role_error(
                             "Failed to verify prerequisite actions for role",
                             err,
                         )
-                    })?
-                {
+                    })?;
+                let admitted = prerequisites_done
+                    && crate::features::spaces::pages::apps::apps::sampling::services::admits_participant(
+                        &space, &user_pk,
+                    )
+                    .await
+                    .map_err(|err| {
+                        serializable_role_error("Failed to verify sampling admission for role", err)
+                    })?;
+                if admitted {
                     SpaceUserRole::Participant
                 } else {
                     SpaceUserRole::Candidate

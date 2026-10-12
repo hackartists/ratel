@@ -66,11 +66,11 @@ pub async fn respond_quiz(
     if !crate::features::spaces::pages::actions::can_execute_space_action(
         role,
         space_action.prerequisite,
-        space.status,
+        space.status.clone(),
         space_action.status.as_ref(),
         deps_met,
         req_attrs_met,
-        space.join_anytime,
+        space.is_participation_open(),
     ) {
         return Err(SpaceActionQuizError::NotAvailableInCurrentStatus.into());
     }

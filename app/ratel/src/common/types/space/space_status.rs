@@ -13,6 +13,8 @@ pub enum SpaceStatus {
     Designing,
     #[translate(en = "Open", ko = "모집중")]
     Open,
+    #[translate(en = "Sampling", ko = "표본추출중")]
+    Sampling,
     #[translate(en = "Ongoing", ko = "진행중")]
     Ongoing,
     #[translate(en = "Processing", ko = "집계중")]
@@ -29,6 +31,7 @@ impl Serialize for SpaceStatus {
         serializer.serialize_str(match self {
             SpaceStatus::Designing => "Designing",
             SpaceStatus::Open => "Open",
+            SpaceStatus::Sampling => "Sampling",
             SpaceStatus::Ongoing => "Ongoing",
             SpaceStatus::Processing => "Processing",
             SpaceStatus::Finished => "Finished",
@@ -46,10 +49,26 @@ impl<'de> Deserialize<'de> for SpaceStatus {
         match value.as_str() {
             "Designing" | "DESIGNING" | "Waiting" | "WAITING" => Ok(SpaceStatus::Designing),
             "Open" | "OPEN" | "InProgress" | "IN_PROGRESS" => Ok(SpaceStatus::Open),
+            "Sampling" | "SAMPLING" => Ok(SpaceStatus::Sampling),
             "Ongoing" | "ONGOING" | "Started" | "STARTED" => Ok(SpaceStatus::Ongoing),
             "Processing" | "PROCESSING" => Ok(SpaceStatus::Processing),
             "Finished" | "FINISHED" => Ok(SpaceStatus::Finished),
             _ => Err(de::Error::custom(format!("Invalid SpaceStatus: {}", value))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sampling_round_trips_through_serde() {
+        let json = serde_json::to_string(&SpaceStatus::Sampling).unwrap();
+        assert_eq!(json, "\"Sampling\"");
+        let back: SpaceStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, SpaceStatus::Sampling);
+        let upper: SpaceStatus = serde_json::from_str("\"SAMPLING\"").unwrap();
+        assert_eq!(upper, SpaceStatus::Sampling);
     }
 }

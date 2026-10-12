@@ -193,11 +193,11 @@ pub async fn respond_poll(
     if !crate::features::spaces::pages::actions::can_execute_space_action(
         role,
         space_action.prerequisite,
-        space.status,
+        space.status.clone(),
         space_action.status.as_ref(),
         deps_met,
         req_attrs_met,
-        space.join_anytime,
+        space.is_participation_open(),
     ) {
         return Err(SpacePollError::PollNotInProgress.into());
     }
@@ -310,6 +310,8 @@ pub async fn respond_poll(
             .await?;
     }
 
+    let sampling_answers = answers.clone();
+
     // Postgres record (was DynamoDB)
     if let Some(mut existing_answer) = existing {
         let now = crate::common::utils::time::get_now_timestamp_millis();
@@ -344,6 +346,16 @@ pub async fn respond_poll(
 
         // Reward payout + XP recording run on EventBridge via SPACE_POLL_USER_ANSWER#
         // INSERT → handle_poll_xp. See features/activity/services/handle_xp_event.rs.
+    }
+
+    if role != SpaceUserRole::Creator {
+        crate::features::spaces::pages::apps::apps::sampling::services::on_entry_poll_answered(
+            &space,
+            &poll,
+            &member.pk,
+            &sampling_answers,
+        )
+        .await?;
     }
 
     crate::features::spaces::space_common::services::bump_participant_activity(
