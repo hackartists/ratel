@@ -458,16 +458,13 @@ const en = {
     IncentiveChainRequired: "Incentive chain is required",
     UnsupportedOnServer: "This operation is not supported on the server",
   },
-  // app/ratel/src/features/spaces/pages/apps/apps/sampling/types/enums.rs `SamplingAllocation`
   SamplingAllocation: {
     Equal: "Equal allocation",
   },
-  // app/ratel/src/features/spaces/pages/apps/apps/sampling/types/enums.rs `SamplingMethod`
   SamplingMethod: {
     FirstCome: "First come, first served",
     Random: "Random",
   },
-  // app/ratel/src/features/spaces/pages/apps/apps/sampling/types/error.rs `SpaceSamplingError`
   SpaceSamplingError: {
     NotEnabled: "The Sampling app is not installed in this space.",
     NotConfigured: "Save the Sampling settings before starting sampling.",

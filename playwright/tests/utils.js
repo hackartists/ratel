@@ -686,7 +686,6 @@ export async function addRequiredAttribute(
 }
 
 
-// ─── Sampling app helpers ──────────────────────────────────────────────────
 
 /** Entry poll used by the Sampling specs: Q0 age, Q1 gender, Q2 resident. */
 export const SAMPLING_ENTRY_QUESTIONS = [
