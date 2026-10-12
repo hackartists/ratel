@@ -46,6 +46,7 @@ export function ActionDependencySelector({ spaceId, actionId, initialDependsOn, 
       a.action_id !== actionId &&
       !selected.includes(a.action_id) &&
       a.action_type !== "Follow" &&
+      a.action_type !== "Announcement" &&
       !blockedByCycle.has(a.action_id),
   );
 

@@ -157,6 +157,7 @@ export const routeTree: RouteNode = {
                 page("quizzes/:quizId", "QuizActionPage"),
                 page("follows/:followId", "FollowActionPage"),
                 page("meets/:meetId", "MeetActionPage"),
+                page("announcements/:announcementId", "AnnouncementActionPage"),
               ],
             },
             {

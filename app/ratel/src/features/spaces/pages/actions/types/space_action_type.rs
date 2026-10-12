@@ -20,16 +20,26 @@ pub enum SpaceActionType {
     Quiz,
     #[translate(ko = "미팅", en = "Meet")]
     Meet,
+    /// Space notice (one per space): shown to a user right before they join
+    /// and pinned first in the action list. Content lives in the companion
+    /// `SpaceAction.title`/`description`; it carries no reward and records
+    /// no per-user completion.
+    #[translate(ko = "공지", en = "Announcement")]
+    #[cfg_attr(feature = "server", postgres(version = 1))]
+    Announcement,
 }
 
 impl SpaceActionType {
-    pub fn to_behavior(&self) -> RewardUserBehavior {
+    /// Reward behavior credited for this action type; `None` for types that
+    /// carry no reward (`Announcement`).
+    pub fn to_behavior(&self) -> Option<RewardUserBehavior> {
         match self {
-            SpaceActionType::Poll => RewardUserBehavior::RespondPoll,
-            SpaceActionType::TopicDiscussion => RewardUserBehavior::DiscussionComment,
-            SpaceActionType::Quiz => RewardUserBehavior::QuizAnswer,
-            SpaceActionType::Follow => RewardUserBehavior::Follow,
-            SpaceActionType::Meet => RewardUserBehavior::AttendMeet,
+            SpaceActionType::Poll => Some(RewardUserBehavior::RespondPoll),
+            SpaceActionType::TopicDiscussion => Some(RewardUserBehavior::DiscussionComment),
+            SpaceActionType::Quiz => Some(RewardUserBehavior::QuizAnswer),
+            SpaceActionType::Follow => Some(RewardUserBehavior::Follow),
+            SpaceActionType::Meet => Some(RewardUserBehavior::AttendMeet),
+            SpaceActionType::Announcement => None,
         }
     }
 

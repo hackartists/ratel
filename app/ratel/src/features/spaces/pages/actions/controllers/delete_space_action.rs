@@ -161,6 +161,9 @@ pub async fn delete_space_action(space_id: SpacePartition, action_id: String) ->
             delete_entities_tx(&[meet.id], space_action.id, "meet").await?;
             let _ = DashboardAggregate::inc_meets(&space_pk, -1).await;
         }
+        SpaceActionType::Announcement => {
+            delete_entities_tx(&[], space_action.id, "announcement").await?;
+        }
     }
 
     Ok(())

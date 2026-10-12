@@ -37,6 +37,7 @@ const TYPE_BADGE_COLOR: Record<SpaceActionType, BadgeColor> = {
   Follow: BadgeColor.Pink,
   Quiz: BadgeColor.Purple,
   Meet: BadgeColor.Green,
+  Announcement: BadgeColor.Grey,
 };
 
 export function formatWithCommas(value: number): string {
@@ -75,6 +76,7 @@ export function ActionCard({ action, spaceId, deletable = false, onDeleted }: Ac
     Follow: tr.actionTypeFollow,
     Quiz: tr.actionTypeQuiz,
     Meet: tr.actionTypeMeet,
+    Announcement: enumT("SpaceActionType", "Announcement"),
   }[action.action_type];
   const pointValue = action.total_point ?? 0;
   const points = `${formatWithCommas(pointValue)} P`;

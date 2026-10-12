@@ -23,6 +23,8 @@ export function actionUrl(action: SpaceActionSummary, spaceId: string): string {
       return `/spaces/${spaceId}/actions/quizzes/${action.action_id}`;
     case "Meet":
       return `/spaces/${spaceId}/actions/meets/${action.action_id}`;
+    case "Announcement":
+      return `/spaces/${spaceId}/actions/announcements/${action.action_id}`;
   }
 }
 
@@ -181,6 +183,13 @@ function ActionTypeIcon({ actionType }: { actionType: SpaceActionType }) {
         <svg {...common}>
           <rect x="3" y="4" width="14" height="14" rx="2" ry="2" />
           <path d="M21 7l-4 4 4 4z" />
+        </svg>
+      );
+    case "Announcement":
+      return (
+        <svg {...common}>
+          <path d="M3 11l18-5v12L3 14v-3z" />
+          <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
         </svg>
       );
   }

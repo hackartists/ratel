@@ -46,6 +46,13 @@ pub enum SpaceActionError {
         ko = "유효하지 않은 액션 의존성입니다."
     )]
     InvalidDependency,
+
+    #[error("setting not supported for announcement")]
+    #[translate(
+        en = "This setting is not available for announcements",
+        ko = "공지에는 사용할 수 없는 설정입니다."
+    )]
+    UnsupportedForAnnouncement,
 }
 
 #[cfg(feature = "server")]
@@ -53,9 +60,9 @@ impl SpaceActionError {
     pub fn status_code(&self) -> crate::axum::http::StatusCode {
         use crate::axum::http::StatusCode;
         match self {
-            SpaceActionError::InvalidStatusTransition | SpaceActionError::InvalidDependency => {
-                StatusCode::BAD_REQUEST
-            }
+            SpaceActionError::InvalidStatusTransition
+            | SpaceActionError::InvalidDependency
+            | SpaceActionError::UnsupportedForAnnouncement => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

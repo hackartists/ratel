@@ -20,6 +20,7 @@ import { useToast } from "@/lib/toast";
 import { useDismissOnOutsideSelector } from "@/lib/use-dismiss-on-outside-selector";
 import actionDashboardScript from "../../../../../legacy-scripts/features/spaces/pages/index/action_dashboard/script.js?url&no-inline";
 import { AddActionCard } from "./add-action-card";
+import { AnnouncementActionCard } from "./announcement-card";
 import { buildActionLookup, resolveDependencyLock } from "./dependency-lock";
 import { DiscussionActionCard } from "./discussion-card";
 import { FollowActionCard } from "./follow-card";
@@ -59,6 +60,8 @@ export function deriveActionStatus(action: SpaceActionSummary): ActionStatus {
       if (action.user_participated) return "Completed";
       if (ended) return "Skipped";
       return "Active";
+    case "Announcement":
+      return "Active";
   }
 }
 
@@ -79,7 +82,7 @@ export function ActionDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
   const completed = actions.filter((a) => deriveActionStatus(a) === "Completed");
   const skipped = actions.filter((a) => deriveActionStatus(a) === "Skipped");
 
-  const total = actions.length;
+  const total = actions.filter((a) => a.action_type !== "Announcement").length;
   const done = completed.length;
   const skippedCount = skipped.length;
   const progressPct = total > 0 ? Math.trunc((done / total) * 100.0) : 0;
@@ -211,6 +214,8 @@ export function ActionDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
                     return <FollowActionCard key={key} action={action} isAdmin={isAdmin} lock={lock} />;
                   case "Meet":
                     return <MeetActionCard key={key} action={action} isAdmin={isAdmin} />;
+                  case "Announcement":
+                    return <AnnouncementActionCard key={key} action={action} />;
                 }
               })}
               {isAdmin && <AddActionCard onClick={() => setTypePickerOpen(true)} />}
@@ -399,5 +404,7 @@ function questTypeCss(t: SpaceActionType): string {
       return "follow";
     case "Meet":
       return "meet";
+    case "Announcement":
+      return "announcement";
   }
 }

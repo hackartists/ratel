@@ -183,10 +183,13 @@ pub async fn list_actions(
                 space.join_anytime,
                 all_pre_actions_done,
             ) {
-                actions.retain(|a| a.prerequisite);
+                actions
+                    .retain(|a| a.prerequisite || a.action_type == SpaceActionType::Announcement);
             }
         }
     }
+
+    actions.sort_by_key(|a| a.action_type != SpaceActionType::Announcement);
 
     debug!("actions: {:?}", actions);
     Ok(actions)
