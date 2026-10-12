@@ -30292,9 +30292,11 @@ a.file-item { text-decoration: none; color: inherit; cursor: pointer; }
 }
 .app-row-btn svg { width: 10px; height: 10px; }
 .app-row-btn--uninstall {
+  padding: 6px;
   border-color: rgba(239,68,68,0.3);
   color: #ef4444;
 }
+.app-row-btn--uninstall svg { width: 12px; height: 12px; }
 .app-row-btn--uninstall:hover {
   background: rgba(239,68,68,0.1);
   border-color: #ef4444;
