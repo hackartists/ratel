@@ -8,7 +8,7 @@
 import { useMemo, useState } from "react";
 import type { Answer } from "@ratel/ts-bridges";
 import { useRespondQuiz } from "@ratel/ts-bridges/hooks";
-import { canExecuteSpaceAction } from "@/components/space/access";
+import { canExecuteSpaceAction, isParticipationOpen } from "@/components/space/access";
 import { useActionOverlay, useCompletedActionCard } from "@/components/space/action-overlay";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
 import { useQuizArenaI18n } from "./i18n";
@@ -45,7 +45,7 @@ export function QuizArenaPage({ spaceId, quizId }: { spaceId: string; quizId: st
     space.status,
     actionStatus,
     true,
-    space.join_anytime,
+    isParticipationOpen(space),
   );
   const canSubmit = canRespond && canExecute && isInProgress && !hasPassed && quiz.attempt_count < totalAllowed;
   // "Not started yet" — same condition that drives the `quiz_not_started`

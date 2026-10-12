@@ -175,6 +175,7 @@ export const routeTree: RouteNode = {
                     page("analyzes/poll/:pollId", "SpaceAnalyzeDetailPage"),
                     page("analyzes/discussion/:discussionId", "SpaceAnalyzeDiscussionPage"),
                     page("panels", "SpacePanelsAppPage"),
+                    page("sampling", "SpaceSamplingAppPage"),
                     page("incentive-pool", "SpaceIncentivePoolAppPage"),
                   ],
                 },

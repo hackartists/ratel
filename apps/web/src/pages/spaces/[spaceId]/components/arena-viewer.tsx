@@ -21,9 +21,11 @@ export function ArenaViewer({ dimmed, candidateView }: { dimmed: boolean; candid
   const statusText =
     space.status === SpaceStatus.Ongoing
       ? tr.statusOngoing
-      : space.status === SpaceStatus.Finished
-        ? tr.statusFinished
-        : tr.statusOpen;
+      : space.status === SpaceStatus.Sampling
+        ? tr.statusSampling
+        : space.status === SpaceStatus.Finished
+          ? tr.statusFinished
+          : tr.statusOpen;
   const participants = formatNumber(space.participants);
   const remaining = space.quota === 0 ? "-" : formatNumber(space.remains);
   const rewards = space.rewards !== null ? formatNumber(space.rewards) : "0";

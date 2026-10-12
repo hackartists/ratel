@@ -11,6 +11,10 @@ use crate::features::posts::models::Post;
 use crate::features::posts::types::PostStatus;
 #[cfg(feature = "server")]
 use crate::features::spaces::space_common::models::SpaceInvitationMember;
+#[cfg(feature = "server")]
+use crate::features::spaces::pages::apps::apps::sampling::{
+    SpaceSamplingCell, SpaceSamplingConfig, SpaceSamplingError,
+};
 use crate::features::spaces::space_common::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +49,12 @@ pub enum UpdateSpaceRequest {
     },
     Finish {
         finished: bool,
+    },
+    /// Moves a Sampling-enabled space from `Open` to `Sampling`. Declared
+    /// before `StartTime`, whose all-optional fields would otherwise match
+    /// `{"sampling": true}` under `untagged`.
+    Sampling {
+        sampling: bool,
     },
     Quota {
         quotas: i64,
@@ -105,7 +115,7 @@ impl From<SpaceCommon> for UpdateSpaceResponse {
 pub async fn update_space(
     #[mcp(description = "Space partition key")]
     space_id: SpacePartition,
-    #[mcp(description = "Update data as JSON. Supported variants: {\"visibility\": \"Public\"}, {\"anonymous_participation\": true}, {\"join_anytime\": true}, {\"start\": true}, {\"finished\": true}, {\"quotas\": 100}, {\"title\": \"...\"}, {\"content\": \"...\"}, {\"publish\": true, \"visibility\": \"Public\"}, {\"logo\": \"url\"}")]
+    #[mcp(description = "Update data as JSON. Supported variants: {\"visibility\": \"Public\"}, {\"anonymous_participation\": true}, {\"join_anytime\": true}, {\"start\": true}, {\"finished\": true}, {\"sampling\": true} (Open → Sampling, Sampling app only), {\"quotas\": 100}, {\"title\": \"...\"}, {\"content\": \"...\"}, {\"publish\": true, \"visibility\": \"Public\"}, {\"logo\": \"url\"}")]
     req: UpdateSpaceRequest,
 ) -> Result<UpdateSpaceResponse> {
     if role != SpaceUserRole::Creator {
@@ -122,6 +132,7 @@ pub async fn update_space(
     let mut updated_space = space.clone();
     updated_space.updated_at = now;
     let mut status_transition: Option<(Option<SpaceStatus>, SpaceStatus)> = None;
+    let mut begin_sampling: Option<(SpaceSamplingConfig, Vec<SpaceSamplingCell>)> = None;
 
     match req {
         UpdateSpaceRequest::Publish {
@@ -177,18 +188,46 @@ pub async fn update_space(
         UpdateSpaceRequest::Start { start } => {
             use crate::features::spaces::space_common::models::SpaceEmailVerification;
 
-            if updated_space.status != Some(SpaceStatus::Open) {
-                return Err(SpaceError::StartNowNotSupported.into());
+            if updated_space.sampling_enabled && updated_space.status == Some(SpaceStatus::Open) {
+                return Err(SpaceSamplingError::SamplingRequired.into());
             }
-
-            if !start {
+            let from = if updated_space.sampling_enabled {
+                SpaceStatus::Sampling
+            } else {
+                SpaceStatus::Open
+            };
+            if updated_space.status != Some(from.clone()) || !start {
                 return Err(SpaceError::StartNowNotSupported.into());
             }
 
             updated_space.status = Some(SpaceStatus::Ongoing);
 
             let _ = SpaceEmailVerification::expire_verifications(space_pk.clone()).await?;
-            status_transition = Some((Some(SpaceStatus::Open), SpaceStatus::Ongoing));
+            status_transition = Some((Some(from), SpaceStatus::Ongoing));
+        }
+        UpdateSpaceRequest::Sampling { sampling } => {
+            use crate::features::spaces::pages::apps::apps::sampling::services::{
+                sampling_space_id, validate_ready,
+            };
+
+            if !sampling {
+                return Err(SpaceError::StartNowNotSupported.into());
+            }
+            if !updated_space.sampling_enabled {
+                return Err(SpaceSamplingError::NotEnabled.into());
+            }
+            if updated_space.status != Some(SpaceStatus::Open) {
+                return Err(SpaceSamplingError::InvalidTransition.into());
+            }
+            let sid = sampling_space_id(&updated_space);
+            let config = SpaceSamplingConfig::get_for(&sid)
+                .await?
+                .ok_or(SpaceSamplingError::NotConfigured)?;
+            let cells = validate_ready(&sid, &config).await?;
+
+            updated_space.status = Some(SpaceStatus::Sampling);
+            status_transition = Some((Some(SpaceStatus::Open), SpaceStatus::Sampling));
+            begin_sampling = Some((config, cells));
         }
         UpdateSpaceRequest::Finish { finished } => {
             if updated_space.status != Some(SpaceStatus::Ongoing) {
@@ -255,6 +294,12 @@ pub async fn update_space(
         // the write. The dispatcher re-checks each rule's field conditions
         // (status / participants), so emitting on every update is safe.
         EventOutbox::emit_insert_tx(&tx, topic::SPACE_COMMON, &updated_space).await?;
+        if let Some((config, cells)) = &begin_sampling {
+            crate::features::spaces::pages::apps::apps::sampling::services::begin_sampling_tx(
+                &tx, config, cells, now,
+            )
+            .await?;
+        }
         if let Some((old_status, new_status)) = status_transition {
             let event = SpaceStatusChangeEvent::new(space_pk.clone(), old_status, new_status);
             SpaceStatusChangeEvent::repository()

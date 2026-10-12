@@ -62,9 +62,11 @@ function SpaceIndexPage() {
   const statusText =
     space.status === SpaceStatus.Ongoing
       ? tr.statusOngoing
-      : space.status === SpaceStatus.Finished
-        ? tr.statusFinished
-        : tr.statusOpen;
+      : space.status === SpaceStatus.Sampling
+        ? tr.statusSampling
+        : space.status === SpaceStatus.Finished
+          ? tr.statusFinished
+          : tr.statusOpen;
   const remaining = formatNumber(space.remains);
   const rewards = space.rewards !== null ? formatNumber(space.rewards) : "0";
 

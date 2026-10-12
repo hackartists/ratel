@@ -684,3 +684,147 @@ export async function addRequiredAttribute(
   await click(page, { testId: "btn-confirm-required-attribute" });
   await page.waitForLoadState("load");
 }
+
+
+
+/** Entry poll used by the Sampling specs: Q0 age, Q1 gender, Q2 resident. */
+export const SAMPLING_ENTRY_QUESTIONS = [
+  { title: "Age group", options: ["20s", "30s"] },
+  { title: "Gender", options: ["Male", "Female"] },
+  { title: "Resident", options: ["Yes", "No"] },
+];
+
+/**
+ * Create a draft post + space via REST, then build the entry poll through
+ * the poll editor (three single-choice questions, prerequisite on).
+ * Returns `{ spaceId, spaceUrl, pollId, pollTitle }`.
+ */
+export async function createSpaceWithEntryPoll(page, { title, pollTitle = "Entry poll" }) {
+  const postRes = await page.request.post("/api/posts", { data: {} });
+  expect(postRes.ok(), `create post: ${await postRes.text()}`).toBeTruthy();
+  const postPk = (await postRes.json()).post_pk;
+  const postId = postPk.includes("#") ? postPk.split("#")[1] : postPk;
+
+  await goto(page, `/posts/${postId}/edit`);
+  await fill(page, { placeholder: "Title your post…" }, title);
+  const editor = await getEditor(page);
+  await editor.fill(`${title} — sampling e2e`);
+  await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 30000 });
+
+  const spaceRes = await page.request.post("/api/spaces/create", {
+    data: { req: { post_id: postId } },
+  });
+  expect(spaceRes.ok(), `create space: ${await spaceRes.text()}`).toBeTruthy();
+  const spaceId = (await spaceRes.json()).space_id;
+  const spaceUrl = `/spaces/${spaceId}`;
+
+  await createAction(page, spaceUrl, "poll", /\/actions\/polls\//);
+  const pollId = page.url().split("/actions/polls/")[1].split(/[/?#]/)[0];
+  await fill(page, { placeholder: "Enter poll title..." }, pollTitle);
+  await commitAutosave(page);
+  for (let i = 0; i < SAMPLING_ENTRY_QUESTIONS.length; i += 1) {
+    await addPollQuestion(page, "single");
+    await fillPollQuestion(page, i, SAMPLING_ENTRY_QUESTIONS[i]);
+  }
+  await togglePrerequisite(page);
+
+  return { spaceId, spaceUrl, pollId, pollTitle };
+}
+
+/** Install the Sampling app from the space settings panel and open its settings page. */
+export async function installSamplingApp(page, spaceUrl) {
+  await goto(page, spaceUrl);
+  await clickNoNav(page, { testId: "btn-settings" });
+  await clickNoNav(page, { testId: "install-app-sampling" });
+  await click(page, { testId: "settings-app-sampling" });
+  await page.waitForURL(/\/apps\/sampling/, { waitUntil: "load" });
+  await waitForAppReady(page);
+}
+
+/**
+ * Fill and save the Sampling settings on `/apps/sampling`.
+ * `rules`: `[{ pollTitle, questionTitle, allowedValues }]`, `dims`: question
+ * indices, `method`: `"first-come" | "random"`.
+ */
+export async function configureSampling(page, { rules = [], dims = [], total, method = "first-come", recruit = false }) {
+  await expect(page.getByTestId("sampling-entry-poll-select")).toBeVisible();
+  for (const rule of rules) {
+    await addRequiredAttribute(page, rule);
+  }
+  for (const dim of dims) {
+    const box = page.getByTestId(`sampling-dimension-${dim}`);
+    if (!(await box.isChecked())) await box.check();
+  }
+  await fill(page, { testId: "sampling-total-input" }, String(total));
+  await page.getByTestId(`sampling-method-${method}`).check();
+  const toggle = page.getByTestId("sampling-recruit-toggle");
+  if (((await toggle.getAttribute("aria-checked")) === "true") !== recruit) {
+    await clickNoNav(page, { testId: "sampling-recruit-toggle" });
+  }
+  await expect(page.getByTestId("sampling-cell-total")).toHaveText(String(total));
+  await clickNoNav(page, { testId: "sampling-save" });
+  await expect(page.getByTestId("sampling-dashboard")).toBeVisible({ timeout: 30000 });
+}
+
+/** Publish the space as public from the arena topbar. */
+export async function publishSpacePublic(page, spaceUrl) {
+  await goto(page, spaceUrl);
+  await clickNoNav(page, { testId: "btn-publish" });
+  await clickNoNav(page, { testId: "public-option" });
+  await click(page, { label: "Confirm visibility selection" });
+  await expect(page.getByTestId("btn-publish")).toBeHidden({ timeout: 30000 });
+}
+
+/**
+ * Sign up a brand-new user through `POST /api/auth/signup` (bypass build,
+ * code `000000`) in a fresh context. Returns `{ context, page }`; the caller
+ * closes the context.
+ */
+export async function signUpViaApi(browser, tag) {
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  const page = await context.newPage();
+  const suffix = `${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+  const username = `s${tag}${suffix}`.toLowerCase().slice(0, 20);
+  const res = await page.request.post("/api/auth/signup", {
+    data: {
+      req: {
+        email: `e2e_samp_${suffix}_${tag}@biyard.co`,
+        code: "000000",
+        display_name: `Sampler ${tag}`,
+        username,
+        profile_url: "https://metadata.ratel.foundation/ratel/default-profile.png",
+        description: "",
+        term_agreed: true,
+        informed_agreed: true,
+      },
+    },
+  });
+  expect(res.ok(), `signup ${tag}: ${await res.text()}`).toBeTruthy();
+  return { context, page };
+}
+
+/** Participate in the space and answer the entry poll with option indices `picks`. */
+export async function joinAndAnswerViaApi(page, spaceId, pollId, picks) {
+  const join = await page.request.post(`/api/spaces/${spaceId}/participate`, {
+    data: { body: { informed_agreed: true } },
+  });
+  expect(join.ok(), `participate: ${await join.text()}`).toBeTruthy();
+  const res = await page.request.post(`/api/spaces/${spaceId}/polls/${pollId}/respond`, {
+    data: { req: { answers: picks.map((answer) => ({ answer_type: "single_choice", answer })) } },
+  });
+  expect(res.ok(), `respond entry poll: ${await res.text()}`).toBeTruthy();
+}
+
+/** Move the space Open → Sampling (`kind = "sampling"`) or Sampling → Ongoing (`"start"`) from the topbar. */
+export async function transitionSpace(page, spaceUrl, kind) {
+  await goto(page, spaceUrl);
+  if (kind === "sampling") {
+    await clickNoNav(page, { testId: "btn-sampling" });
+    await clickNoNav(page, { testId: "sampling-space-button" });
+    await expect(page.getByTestId("btn-start")).toBeVisible({ timeout: 30000 });
+  } else {
+    await clickNoNav(page, { testId: "btn-start" });
+    await clickNoNav(page, { testId: "start-space-button" });
+    await expect(page.getByTestId("btn-finish")).toBeVisible({ timeout: 30000 });
+  }
+}

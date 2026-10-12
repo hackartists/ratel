@@ -10,7 +10,7 @@ import { Settings2 } from "@/components/icons/settings";
 import { UserGroup } from "@/components/icons/user";
 import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
-import { useSpaceContext } from "@/components/space/space-context";
+import { spaceQueryKeys, useSpaceContext } from "@/components/space/space-context";
 import { usePopup } from "@/lib/popup";
 import { useToast } from "@/lib/toast";
 import { useAppsSectionI18n } from "./apps-section.i18n";
@@ -21,7 +21,7 @@ import { UninstallAppPopup } from "./uninstall-app-popup";
 // + SpaceAppType helpers (pages/apps/types/space_app_type.rs). The variant list is the
 // generated `SpaceAppType` (the non-`beta` build, like the reference app).
 
-const VARIANTS: SpaceAppType[] = ["General", "File", "Analyzes", "Panels", "Report"];
+const VARIANTS: SpaceAppType[] = ["General", "File", "Analyzes", "Panels", "Sampling", "Report"];
 
 const isDefaultApp = (t: SpaceAppType) => t === "General" || t === "File";
 
@@ -36,6 +36,8 @@ function settingsPath(t: SpaceAppType, spaceId: string): string {
       return `/spaces/${spaceId}/apps/analyzes`;
     case "Panels":
       return `/spaces/${spaceId}/apps/panels`;
+    case "Sampling":
+      return `/spaces/${spaceId}/apps/sampling`;
     case "Report":
       return `/spaces/${spaceId}/report`;
   }
@@ -64,6 +66,9 @@ export function AppsSection({ spaceId }: { spaceId: string }) {
       await uninstall.mutateAsync({ spaceId, appType });
       popup.close();
       await queryClient.refetchQueries({ queryKey: appsKey, exact: true });
+      if (appType === "Sampling") {
+        await queryClient.refetchQueries({ queryKey: spaceQueryKeys.space(spaceId), exact: true });
+      }
     } catch (err) {
       toast.error(err);
     } finally {
@@ -117,6 +122,9 @@ export function AppsSection({ spaceId }: { spaceId: string }) {
                   await install.mutateAsync({ spaceId, appType });
                   setInProgress(null);
                   void queryClient.refetchQueries({ queryKey: appsKey, exact: true });
+                  if (appType === "Sampling") {
+                    void queryClient.refetchQueries({ queryKey: spaceQueryKeys.space(spaceId), exact: true });
+                  }
                 } catch (err) {
                   setInProgress(null);
                   toast.error(err);
@@ -146,6 +154,7 @@ function AppIcon({ appType }: { appType: SpaceAppType }) {
     case "Report":
       return <FileIcon width="24" height="24" className="text-white [&>path]:stroke-current [&>path]:fill-none" />;
     case "Panels":
+    case "Sampling":
       return <UserGroup width="24" height="24" className="text-white [&>path]:stroke-current [&>path]:fill-transparent" />;
   }
 }
@@ -172,12 +181,14 @@ function AppRow({
     File: "app-row__icon app-row__icon--file",
     Analyzes: "app-row__icon app-row__icon--analyze",
     Panels: "app-row__icon app-row__icon--panel",
+    Sampling: "app-row__icon app-row__icon--panel",
     Report: "app-row__icon app-row__icon--general",
   }[appType];
   const desc = {
     File: descTr.appDescriptionFile,
     Analyzes: descTr.appDescriptionAnalyzes,
     Panels: descTr.appDescriptionPanels,
+    Sampling: descTr.appDescriptionSampling,
     General: descTr.appDescriptionGeneral,
     Report: descTr.appDescriptionReport,
   }[appType];

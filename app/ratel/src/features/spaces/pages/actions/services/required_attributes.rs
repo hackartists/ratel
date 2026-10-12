@@ -14,9 +14,7 @@ pub async fn required_attributes_met(
     user_pk: &Partition,
 ) -> crate::common::Result<bool> {
     use crate::SpacePollEntityType;
-    use crate::features::spaces::pages::actions::actions::poll::{
-        Answer, SpacePoll, SpacePollUserAnswer,
-    };
+    use crate::features::spaces::pages::actions::actions::poll::{SpacePoll, SpacePollUserAnswer};
 
     if action.required_attributes.is_empty() {
         return Ok(true);
@@ -42,27 +40,124 @@ pub async fn required_attributes_met(
             None => return Ok(false),
         };
 
-        let answered_index = match answer.answers.0.get(rule.question_index) {
-            Some(Answer::SingleChoice {
-                answer: Some(idx), ..
-            }) => *idx,
-            _ => return Ok(false),
-        };
-
-        let answered_value = match poll.questions.0.get(rule.question_index) {
-            Some(
-                crate::features::spaces::pages::actions::actions::poll::Question::SingleChoice(q),
-            ) => match q.options.get(answered_index as usize) {
-                Some(v) => v.clone(),
-                None => return Ok(false),
-            },
-            _ => return Ok(false),
-        };
-
-        if !rule.allowed_values.iter().any(|v| v == &answered_value) {
+        if !rule_satisfied(rule, &poll, &answer.answers.0) {
             return Ok(false);
         }
     }
 
     Ok(true)
+}
+
+/// Pure evaluation of one Required Attribute rule against an already-loaded
+/// poll and the user's answers to it.
+///
+/// Shared by action gating ([`required_attributes_met`]) and the Sampling
+/// app's population check, so both apply the exact same matching: the
+/// referenced question must be single-choice, the user must have picked an
+/// option, and that option's text must be one of `allowed_values`.
+#[cfg(feature = "server")]
+pub fn rule_satisfied(
+    rule: &crate::features::spaces::pages::actions::models::RequiredAttributeRule,
+    poll: &crate::features::spaces::pages::actions::actions::poll::SpacePoll,
+    answers: &[crate::features::spaces::pages::actions::actions::poll::Answer],
+) -> bool {
+    use crate::features::spaces::pages::actions::actions::poll::{Answer, Question};
+
+    let answered_index = match answers.get(rule.question_index) {
+        Some(Answer::SingleChoice {
+            answer: Some(idx), ..
+        }) => *idx,
+        _ => return false,
+    };
+
+    let answered_value = match poll.questions.0.get(rule.question_index) {
+        Some(Question::SingleChoice(q)) => match usize::try_from(answered_index)
+            .ok()
+            .and_then(|i| q.options.get(i))
+        {
+            Some(v) => v,
+            None => return false,
+        },
+        _ => return false,
+    };
+
+    rule.allowed_values.iter().any(|v| v == answered_value)
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+    use crate::features::spaces::pages::actions::actions::poll::{
+        Answer, ChoiceQuestion, PollQuestions, Question, SpacePoll,
+    };
+    use crate::features::spaces::pages::actions::models::RequiredAttributeRule;
+
+    fn single(title: &str, options: &[&str]) -> Question {
+        Question::SingleChoice(ChoiceQuestion {
+            title: title.to_string(),
+            options: options.iter().map(|o| o.to_string()).collect(),
+            ..Default::default()
+        })
+    }
+
+    fn poll() -> SpacePoll {
+        SpacePoll {
+            questions: PollQuestions(vec![
+                single("Age", &["20s", "30s"]),
+                Question::MultipleChoice(ChoiceQuestion {
+                    title: "Hobby".to_string(),
+                    options: vec!["A".to_string(), "B".to_string()],
+                    ..Default::default()
+                }),
+            ]),
+            ..Default::default()
+        }
+    }
+
+    fn rule(question_index: usize, allowed: &[&str]) -> RequiredAttributeRule {
+        RequiredAttributeRule {
+            poll_action_id: "p".to_string(),
+            question_index,
+            allowed_values: allowed.iter().map(|v| v.to_string()).collect(),
+        }
+    }
+
+    fn pick(i: i32) -> Answer {
+        Answer::SingleChoice {
+            answer: Some(i),
+            other: None,
+        }
+    }
+
+    #[test]
+    fn matches_an_allowed_value() {
+        assert!(rule_satisfied(&rule(0, &["30s"]), &poll(), &[pick(1)]));
+        assert!(rule_satisfied(&rule(0, &["20s", "30s"]), &poll(), &[pick(0)]));
+    }
+
+    #[test]
+    fn rejects_a_value_outside_the_allowed_set() {
+        assert!(!rule_satisfied(&rule(0, &["30s"]), &poll(), &[pick(0)]));
+    }
+
+    #[test]
+    fn rejects_out_of_range_indices() {
+        assert!(!rule_satisfied(&rule(0, &["30s"]), &poll(), &[pick(7)]));
+        assert!(!rule_satisfied(&rule(5, &["30s"]), &poll(), &[pick(1)]));
+        assert!(!rule_satisfied(&rule(0, &["30s"]), &poll(), &[pick(-1)]));
+    }
+
+    #[test]
+    fn rejects_non_single_choice_questions_and_missing_answers() {
+        let multi = Answer::MultipleChoice {
+            answer: Some(vec![0]),
+            other: None,
+        };
+        assert!(!rule_satisfied(&rule(1, &["A"]), &poll(), &[pick(0), multi]));
+        let unanswered = Answer::SingleChoice {
+            answer: None,
+            other: None,
+        };
+        assert!(!rule_satisfied(&rule(0, &["20s"]), &poll(), &[unanswered]));
+    }
 }

@@ -439,6 +439,12 @@ pub enum Error {
 
     #[error("{0}")]
     #[translate(from)]
+    SpaceSampling(
+        #[from] crate::features::spaces::pages::apps::apps::sampling::types::SpaceSamplingError,
+    ),
+
+    #[error("{0}")]
+    #[translate(from)]
     SpaceReport(#[from] crate::features::spaces::pages::report::types::SpaceReportError),
 
 
@@ -526,6 +532,7 @@ impl dioxus::fullstack::axum::response::IntoResponse for Error {
             Error::MeetAction(e) => e.status_code(),
             Error::SpaceFollow(e) => e.status_code(),
             Error::SpaceApp(e) => e.status_code(),
+            Error::SpaceSampling(e) => e.status_code(),
             Error::SpaceReport(e) => e.status_code(),
             Error::Character(e) => e.status_code(),
             Error::FactOrFold(e) => e.status_code(),
@@ -661,6 +668,7 @@ impl dioxus::fullstack::AsStatusCode for Error {
             Error::MeetAction(e) => e.status_code(),
             Error::SpaceFollow(e) => e.status_code(),
             Error::SpaceApp(e) => e.status_code(),
+            Error::SpaceSampling(e) => e.status_code(),
             Error::SpaceReport(e) => e.status_code(),
             Error::Character(e) => e.status_code(),
             Error::FactOrFold(e) => e.status_code(),

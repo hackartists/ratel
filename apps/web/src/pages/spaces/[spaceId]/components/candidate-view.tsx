@@ -2,7 +2,9 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { useEnumI18n } from "@/i18n/enums.i18n";
 import { SpaceStatus, useSpaceContext } from "@/components/space/space-context";
+import { isParticipationOpen } from "@/components/space/access";
 import { PrerequisiteCard } from "./prerequisite-card";
+import { SamplingEntryCard } from "./sampling-entry-card";
 import { WaitingCard } from "./waiting-card";
 
 // app/ratel/src/features/spaces/pages/index/component.rs:175-205 (`CandidateView`).
@@ -26,6 +28,9 @@ export function CandidateView() {
   const te = useEnumI18n();
   const navigate = useNavigate();
   const announcement = ctx.actions.find((a) => a.action_type === "Announcement");
+  const samplingCard =
+    ctx.space.sampling_enabled &&
+    showsSamplingCard(ctx.space.status, ctx.space.join_anytime, allDone, isParticipationOpen(ctx.space));
 
   return (
     <>
@@ -41,7 +46,27 @@ export function CandidateView() {
           </div>
         </div>
       )}
-      {allDone ? <WaitingCard prereqs={prereqs} /> : <PrerequisiteCard />}
+      {samplingCard ? <SamplingEntryCard /> : allDone ? <WaitingCard prereqs={prereqs} /> : <PrerequisiteCard />}
     </>
   );
+}
+
+/**
+ * Whether a Candidate of a Sampling space sees the Sampling card instead of
+ * the prerequisite / waiting cards: once the entry poll is done while
+ * recruiting or sampling, whenever recruiting is closed during sampling, and
+ * once the space is ongoing with late joining off.
+ */
+function showsSamplingCard(status: string | null, joinAnytime: boolean, allDone: boolean, participationOpen: boolean): boolean {
+  switch (status) {
+    case SpaceStatus.Open:
+      return allDone;
+    case SpaceStatus.Sampling:
+      return allDone || !participationOpen;
+    case SpaceStatus.Ongoing:
+    case SpaceStatus.Finished:
+      return !joinAnytime;
+    default:
+      return false;
+  }
 }

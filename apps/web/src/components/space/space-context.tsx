@@ -68,6 +68,7 @@ import type {
 export const SpaceStatus = {
   Designing: "Designing",
   Open: "Open",
+  Sampling: "Sampling",
   Ongoing: "Ongoing",
   Processing: "Processing",
   Finished: "Finished",

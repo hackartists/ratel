@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useLikePost, useUpdateSpace } from "@ratel/ts-bridges/hooks";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { isSpaceAdmin, SpacePublishState, SpaceStatus, useSpaceContext } from "@/components/space/space-context";
-import { SpaceEndModal, SpaceStartModal } from "@/components/space/space-status-modals";
+import { SpaceEndModal, SpaceSamplingModal, SpaceStartModal } from "@/components/space/space-status-modals";
 import { SpaceVisibilityModal } from "@/components/space/space-visibility-modal";
 import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { useUserContext } from "@/lib/auth";
@@ -36,6 +36,8 @@ export function ArenaTopbar({
   const hasUser = useUserContext().user !== null;
   const isPublished = ctx.space.publish_state === SpacePublishState.Published;
   const isInProgress = ctx.space.status === SpaceStatus.Open;
+  const needsSampling = isInProgress && ctx.space.sampling_enabled;
+  const canStart = (isInProgress && !ctx.space.sampling_enabled) || ctx.space.status === SpaceStatus.Sampling;
   const isStarted = ctx.space.status === SpaceStatus.Ongoing;
   const spaceId = ctx.space.id;
   const overviewOpen = activePanel === "Overview";
@@ -53,7 +55,9 @@ export function ArenaTopbar({
       <div className="arena-topbar__brand">
         <img className="arena-topbar__logo" src={logo} alt="Space logo" />
         <span className="arena-topbar__title">{title}</span>
-        <span className="arena-topbar__status">{statusText}</span>
+        <span className="arena-topbar__status" data-testid="arena-topbar-status">
+          {statusText}
+        </span>
         {isAdmin && (
           <span className="arena-topbar__role" data-testid="arena-topbar-admin-badge">
             <svg
@@ -124,7 +128,29 @@ export function ArenaTopbar({
               </svg>
               <span className="tooltip">{tr.publish}</span>
             </button>
-          ) : isInProgress ? (
+          ) : needsSampling ? (
+            <button
+              aria-label={tr.sampling}
+              className="hud-btn hud-btn--publish"
+              data-testid="btn-sampling"
+              onClick={() => {
+                popup.open(<SpaceSamplingModal spaceId={spaceId} onSuccess={() => void ctx.restart()} />);
+              }}
+            >
+              <svg
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.5"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M3 4h18l-7 8v6l-4 2v-8z" />
+              </svg>
+              <span className="tooltip">{tr.sampling}</span>
+            </button>
+          ) : canStart ? (
             <button
               aria-label={tr.start}
               className="hud-btn hud-btn--publish"

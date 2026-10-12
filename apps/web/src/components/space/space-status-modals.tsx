@@ -2,6 +2,7 @@ import * as React from "react";
 import { useUpdateSpace } from "@ratel/ts-bridges/hooks";
 import type { SpacePartition } from "@ratel/ts-bridges";
 import { useSpaceEndModalI18n } from "./space-end-modal.i18n";
+import { useSpaceSamplingModalI18n } from "./space-sampling-modal.i18n";
 import { useSpaceStartModalI18n } from "./space-start-modal.i18n";
 import { usePopup } from "@/lib/popup";
 import { useToast } from "@/lib/toast";
@@ -28,19 +29,25 @@ function StatusModal({
   onSuccess,
   onClose,
   kind,
-}: StatusModalProps & { kind: "start" | "end" }) {
+}: StatusModalProps & { kind: "start" | "end" | "sampling" }) {
   const startTr = useSpaceStartModalI18n();
   const endTr = useSpaceEndModalI18n();
+  const samplingTr = useSpaceSamplingModalI18n();
   const popup = usePopup();
   const toast = useToast();
   const updateSpace = useUpdateSpace();
   const [busy, setBusy] = React.useState(false);
   const busyRef = React.useRef(false);
 
-  const warning = kind === "start" ? startTr.warning : endTr.warning;
-  const cancel = kind === "start" ? startTr.cancel : endTr.cancel;
-  const label = kind === "start" ? startTr.start : endTr.end;
-  const busyLabel = kind === "start" ? startTr.starting : endTr.ending;
+  const copy = {
+    start: { warning: startTr.warning, cancel: startTr.cancel, label: startTr.start, busy: startTr.starting },
+    end: { warning: endTr.warning, cancel: endTr.cancel, label: endTr.end, busy: endTr.ending },
+    sampling: { warning: samplingTr.warning, cancel: samplingTr.cancel, label: samplingTr.confirm, busy: samplingTr.busy },
+  }[kind];
+  const { warning, cancel, label } = copy;
+  const busyLabel = copy.busy;
+  const req = kind === "start" ? { start: true } : kind === "sampling" ? { sampling: true } : { finished: true };
+  const testId = { start: "start-space-button", end: "end-space-button", sampling: "sampling-space-button" }[kind];
 
   const onConfirm = async () => {
     if (busyRef.current) return;
@@ -49,7 +56,7 @@ function StatusModal({
     try {
       await updateSpace.mutateAsync({
         spaceId,
-        req: kind === "start" ? { start: true } : { finished: true },
+        req,
       });
       onSuccess();
       popup.close();
@@ -74,7 +81,7 @@ function StatusModal({
           {cancel}
         </button>
         <button
-          data-testid={kind === "start" ? "start-space-button" : "end-space-button"}
+          data-testid={testId}
           onClick={() => void onConfirm()}
           disabled={busy}
           className={busy ? CONFIRM_BUSY_CLASS : CONFIRM_CLASS}
@@ -89,6 +96,11 @@ function StatusModal({
 /** Rust `SpaceStartModal`. */
 export function SpaceStartModal(props: StatusModalProps) {
   return <StatusModal {...props} kind="start" />;
+}
+
+/** Confirms moving a Sampling-enabled space from `Open` to `Sampling`. */
+export function SpaceSamplingModal(props: StatusModalProps) {
+  return <StatusModal {...props} kind="sampling" />;
 }
 
 /** Rust `SpaceEndModal`. */

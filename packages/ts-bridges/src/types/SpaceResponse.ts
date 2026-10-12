@@ -10,4 +10,14 @@ import type { SpaceType } from "./SpaceType";
 import type { SpaceVisibility } from "./SpaceVisibility";
 import type { UserType } from "./UserType";
 
-export type SpaceResponse = { id: SpacePartition, post_id: FeedPartition, sk: EntityType, title: string, content: string, created_at: number, updated_at: number, urls: Array<string>, space_type: SpaceType, features: Array<string>, status: SpaceStatus | null, permissions: number, author_type: UserType, author_display_name: string, author_username: string, author_profile_url: string, certified: boolean, likes: number, comments: number, shares: number, liked: boolean, reports: number, rewards: number | null, visibility: SpaceVisibility, publish_state: SpacePublishState, booster: BoosterType, files: Array<File> | null, anonymous_participation: boolean, join_anytime: boolean, can_participate: boolean, participants: number, participated: boolean, participant_display_name: string | null, participant_profile_url: string | null, participant_username: string | null, remains: number, quota: number, is_report: boolean, logo: string, has_prerequisite: boolean, has_privacy_consent_question: boolean, started_at: number | null, };
+export type SpaceResponse = { id: SpacePartition, post_id: FeedPartition, sk: EntityType, title: string, content: string, created_at: number, updated_at: number, urls: Array<string>, space_type: SpaceType, features: Array<string>, status: SpaceStatus | null, permissions: number, author_type: UserType, author_display_name: string, author_username: string, author_profile_url: string, certified: boolean, likes: number, comments: number, shares: number, liked: boolean, reports: number, rewards: number | null, visibility: SpaceVisibility, publish_state: SpacePublishState, booster: BoosterType, files: Array<File> | null, anonymous_participation: boolean, join_anytime: boolean,
+/**
+ * Whether the Sampling app is installed; the space then moves
+ * `Open → Sampling → Ongoing` instead of `Open → Ongoing`.
+ */
+sampling_enabled: boolean,
+/**
+ * Whether new participants may still join while the space is in
+ * `Sampling`.
+ */
+sampling_recruit_open: boolean, can_participate: boolean, participants: number, participated: boolean, participant_display_name: string | null, participant_profile_url: string | null, participant_username: string | null, remains: number, quota: number, is_report: boolean, logo: string, has_prerequisite: boolean, has_privacy_consent_question: boolean, started_at: number | null, };

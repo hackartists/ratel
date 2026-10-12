@@ -8,6 +8,7 @@ const en = {
   app_description_general: "Settings (Admin)",
   app_description_analyzes: "Check out the poll results.",
   app_description_report: "Compose and publish reports from analyze data.",
+  app_description_sampling: "Draw a balanced sample from entry-poll respondents",
 };
 
 const ko: Record<keyof typeof en, string> = {
@@ -17,6 +18,7 @@ const ko: Record<keyof typeof en, string> = {
   app_description_general: "설정(관리자)",
   app_description_analyzes: "설문조사 결과를 확인하세요.",
   app_description_report: "분석 데이터를 기반으로 보고서를 작성·발행하세요.",
+  app_description_sampling: "엔트리 폴 응답자에서 균형 잡힌 표본을 추출하세요.",
 };
 
 export const i18n = { en, ko };
@@ -28,6 +30,7 @@ export interface SpaceAppTypeI18n {
   appDescriptionGeneral: string;
   appDescriptionAnalyzes: string;
   appDescriptionReport: string;
+  appDescriptionSampling: string;
 }
 
 export function useSpaceAppTypeI18n(): SpaceAppTypeI18n {
@@ -39,5 +42,6 @@ export function useSpaceAppTypeI18n(): SpaceAppTypeI18n {
     appDescriptionGeneral: t("app_description_general"),
     appDescriptionAnalyzes: t("app_description_analyzes"),
     appDescriptionReport: t("app_description_report"),
+    appDescriptionSampling: t("app_description_sampling"),
   };
 }

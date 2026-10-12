@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Answer, Question } from "@ratel/ts-bridges";
 import { respondQuiz } from "@ratel/ts-bridges";
-import { canExecuteSpaceAction } from "@/components/space-actions/access";
+import { canExecuteSpaceAction, isParticipationOpen } from "@/components/space-actions/access";
 import { FileCard } from "@/components/space-actions/file-card";
 import { FullActionLayover } from "@/components/space-actions/full-action-layover";
 import { hasAnswerForQuestion, QuestionViewer, shouldAutoNext } from "@/components/space-actions/question-viewer";
@@ -67,7 +67,7 @@ export function QuizResponseView({ spaceId, quizId, canRespond }: { spaceId: str
     space.status,
     quiz.space_action.status,
     true,
-    space.join_anytime,
+    isParticipationOpen(space),
   );
   const hasPassed = quiz.passed ?? false;
   const totalAllowed = quiz.retry_count + 1;

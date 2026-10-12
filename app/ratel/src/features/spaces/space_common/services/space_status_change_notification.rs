@@ -43,8 +43,20 @@ pub async fn handle_space_status_change(event: SpaceStatusChangeEvent) -> Result
             }
         }
         (Some(SpaceStatus::Open), SpaceStatus::Ongoing)
+        | (Some(SpaceStatus::Open), SpaceStatus::Sampling)
         | (Some(SpaceStatus::Ongoing), SpaceStatus::Finished) => {
             resolve_space_participant_user_pks(&event_space_pk).await?
+        }
+        (Some(SpaceStatus::Sampling), SpaceStatus::Ongoing) => {
+            let space = match load_space(&event_space_pk).await? {
+                Some(s) => s,
+                None => return Ok(()),
+            };
+            if space.sampling_enabled && !space.join_anytime {
+                resolve_entered_sample_user_pks(&space).await?
+            } else {
+                resolve_space_participant_user_pks(&event_space_pk).await?
+            }
         }
         _ => return Ok(()),
     };
@@ -178,6 +190,22 @@ pub(crate) async fn resolve_space_participant_user_pks(
         .collect())
 }
 
+/// Users who entered the sample of a Sampling space — the only audience of
+/// the start notice when late joining is off.
+pub(crate) async fn resolve_entered_sample_user_pks(space: &SpaceCommon) -> Result<Vec<Partition>> {
+    use crate::features::spaces::pages::apps::apps::sampling::services::sampling_space_id;
+    use crate::features::spaces::pages::apps::apps::sampling::{
+        SamplingMemberStatus, SpaceSamplingMember,
+    };
+
+    Ok(SpaceSamplingMember::list_by_space(&sampling_space_id(space))
+        .await?
+        .into_iter()
+        .filter(|m| m.status == SamplingMemberStatus::Entered)
+        .filter_map(|m| m.user_pk.parse::<Partition>().ok())
+        .collect())
+}
+
 pub(crate) async fn resolve_emails(user_pks: Vec<Partition>) -> Result<Vec<String>> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut out: Vec<String> = Vec::new();
@@ -205,6 +233,10 @@ fn status_change_copy(new_status: &SpaceStatus, space_title: &str) -> (String, S
         SpaceStatus::Open => (
             format!("{space_title} is now live"),
             "Your team just published this space. You can invite participants and track activity from the dashboard.".to_string(),
+        ),
+        SpaceStatus::Sampling => (
+            format!("{space_title} is now sampling"),
+            "Sampling has started for the space you joined. Head in to check whether you can enter.".to_string(),
         ),
         SpaceStatus::Ongoing => (
             format!("{space_title} is starting now"),

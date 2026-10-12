@@ -96,7 +96,10 @@ import { i18n as spaceAppType } from "@/components/space/settings-panel/i18n";
 import { i18n as spaceCommonSpaceVisibilityModalVisibilityModal } from "@/components/space/space-common-space-visibility-modal-visibility-modal.i18n";
 import { i18n as spaceEndModal } from "@/components/space/space-end-modal.i18n";
 import { i18n as spaceFile } from "@/pages/spaces/[spaceId]/apps/files/space-file.i18n";
+import { i18n as spaceSamplingModal } from "@/components/space/space-sampling-modal.i18n";
 import { i18n as spaceStartModal } from "@/components/space/space-start-modal.i18n";
+import { i18n as spaceSampling } from "@/pages/spaces/[spaceId]/apps/sampling/i18n";
+import { i18n as samplingEntryCard } from "@/pages/spaces/[spaceId]/components/sampling-entry-card.i18n";
 import { i18n as spaceViewer } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 import { i18n as subTeam } from "@/pages/[username]/sub-teams/sub-team.i18n";
 import { i18n as syndicationPanel } from "@/components/cross-posting/syndication-panel.i18n";
@@ -202,6 +205,7 @@ export const modules = {
   quizCreator,
   quizRead,
   ratelArenaTopbar,
+  samplingEntryCard,
   reportDetail,
   reportList,
   rewardHistorySection,
@@ -212,6 +216,8 @@ export const modules = {
   spaceCommonSpaceVisibilityModalVisibilityModal,
   spaceEndModal,
   spaceFile,
+  spaceSampling,
+  spaceSamplingModal,
   spaceStartModal,
   spaceViewer,
   subTeam,
