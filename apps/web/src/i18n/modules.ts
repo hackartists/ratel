@@ -13,6 +13,7 @@ import { i18n as actionStatusControl } from "@/components/space-actions/action-s
 import { i18n as adminLayout } from "@/layouts/admin-layout.i18n";
 import { i18n as adminRewards } from "@/pages/admin/components/i18n";
 import { i18n as aiModeratorSetting } from "@/components/space-actions/ai-moderator-setting.i18n";
+import { i18n as appsSection } from "@/components/space/settings-panel/apps-section.i18n";
 import { i18n as arcadeExchangeModal } from "@/components/arcade/i18n";
 import { i18n as arcadeHome } from "@/pages/arcade/i18n";
 import { i18n as arcadeLayout } from "@/components/arcade/arcade-layout.i18n";
@@ -128,6 +129,7 @@ export const modules = {
   adminLayout,
   adminRewards,
   aiModeratorSetting,
+  appsSection,
   arcadeExchangeModal,
   arcadeHome,
   arcadeLayout,
