@@ -29,7 +29,7 @@ import { useLegacyScript } from "@/lib/legacy-scripts";
 import { applyMentionMarkup, mentionDisplay, parseMentionSegments } from "@/lib/mention";
 import { handlePasteEvent } from "@/lib/paste-image-uploader";
 import { usePopup } from "@/lib/popup";
-import { canExecuteSpaceAction } from "@/components/space/access";
+import { canExecuteSpaceAction, isParticipationOpen } from "@/components/space/access";
 import { bareCommentId, DiscussionArenaProvider, useDiscussionArena } from "./hooks/use-discussion-arena";
 
 function BackChevronIcon() {
@@ -597,7 +597,7 @@ function DiscussionArenaContent({ targetCommentId }: { targetCommentId: string |
     space_action.status === "Ongoing" ? "InProgress" : space_action.status === "Finish" ? "Finish" : "NotStarted";
   const isInProgress = status === "InProgress";
   const canRespond = role === "Creator" || role === "Participant";
-  const canExecute = canExecuteSpaceAction(role, space_action.prerequisite, space.status, space_action.status, true, space.join_anytime);
+  const canExecute = canExecuteSpaceAction(role, space_action.prerequisite, space.status, space_action.status, true, isParticipationOpen(space));
   const isCreator = role === "Creator";
   const canComment = canRespond && canExecute && (isCreator || isInProgress);
 

@@ -12,12 +12,13 @@ import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 import { useSpaceAppTypeI18n } from "./i18n";
 import { useToast } from "@/lib/toast";
+import { spaceQueryKeys } from "@/components/space/space-context";
 
 // app/ratel/src/features/spaces/pages/index/settings_panel/apps_section/component.rs (`AppsSection`)
 // + SpaceAppType helpers (pages/apps/types/space_app_type.rs). The variant list is the
 // generated `SpaceAppType` (the non-`beta` build, like the reference app).
 
-const VARIANTS: SpaceAppType[] = ["General", "File", "Analyzes", "Panels", "Report"];
+const VARIANTS: SpaceAppType[] = ["General", "File", "Analyzes", "Panels", "Sampling", "Report"];
 
 const isDefaultApp = (t: SpaceAppType) => t === "General" || t === "File";
 
@@ -32,6 +33,8 @@ function settingsPath(t: SpaceAppType, spaceId: string): string {
       return `/spaces/${spaceId}/apps/analyzes`;
     case "Panels":
       return `/spaces/${spaceId}/apps/panels`;
+    case "Sampling":
+      return `/spaces/${spaceId}/apps/sampling`;
     case "Report":
       return `/spaces/${spaceId}/report`;
   }
@@ -84,6 +87,9 @@ export function AppsSection({ spaceId }: { spaceId: string }) {
                   await install.mutateAsync({ spaceId, appType });
                   setInProgress(null);
                   void queryClient.refetchQueries({ queryKey: appsKey, exact: true });
+                  if (appType === "Sampling") {
+                    void queryClient.refetchQueries({ queryKey: spaceQueryKeys.space(spaceId), exact: true });
+                  }
                 } catch (err) {
                   setInProgress(null);
                   toast.error(err);
@@ -113,6 +119,7 @@ function AppIcon({ appType }: { appType: SpaceAppType }) {
     case "Report":
       return <FileIcon width="24" height="24" className="text-white [&>path]:stroke-current [&>path]:fill-none" />;
     case "Panels":
+    case "Sampling":
       return <UserGroup width="24" height="24" className="text-white [&>path]:stroke-current [&>path]:fill-transparent" />;
   }
 }
@@ -136,12 +143,14 @@ function AppRow({
     File: "app-row__icon app-row__icon--file",
     Analyzes: "app-row__icon app-row__icon--analyze",
     Panels: "app-row__icon app-row__icon--panel",
+    Sampling: "app-row__icon app-row__icon--panel",
     Report: "app-row__icon app-row__icon--general",
   }[appType];
   const desc = {
     File: descTr.appDescriptionFile,
     Analyzes: descTr.appDescriptionAnalyzes,
     Panels: descTr.appDescriptionPanels,
+    Sampling: descTr.appDescriptionSampling,
     General: descTr.appDescriptionGeneral,
     Report: descTr.appDescriptionReport,
   }[appType];

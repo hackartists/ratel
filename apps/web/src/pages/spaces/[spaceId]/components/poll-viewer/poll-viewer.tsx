@@ -15,7 +15,7 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import type { Answer, Question, SpacePartition, SpacePollEntityType, VoteEncryptionMaterialResponse } from "@ratel/ts-bridges";
 import { useGetEncryptionMaterial, useGetPoll, useRespondPoll } from "@ratel/ts-bridges/hooks";
-import { canExecuteSpaceAction } from "@/components/space/access";
+import { canExecuteSpaceAction, isParticipationOpen } from "@/components/space/access";
 import { useActionOverlay, useCompletedActionCard, useOptionalActionOverlay } from "@/components/space/action-overlay";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
 import { PrivacyConsentViewer } from "@/components/space-actions/question-viewer";
@@ -488,7 +488,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   const [showSecretModal, setShowSecretModal] = React.useState(false);
   const [applyingSecret, setApplyingSecret] = React.useState(false);
 
-  const canSubmitForSecret = poll ? canRespond && canExecuteSpaceAction(role, poll.space_action.prerequisite, space.status, poll.space_action.status, true, space.join_anytime) && poll.status === "InProgress" && poll.my_response === null : false;
+  const canSubmitForSecret = poll ? canRespond && canExecuteSpaceAction(role, poll.space_action.prerequisite, space.status, poll.space_action.status, true, isParticipationOpen(space)) && poll.status === "InProgress" && poll.my_response === null : false;
   const needsSecret = encryptionEnabled && canSubmitForSecret;
   const materialQuery = useGetEncryptionMaterial(spaceId, pollId, { enabled: needsSecret });
   const encryptionMaterial: VoteEncryptionMaterialResponse | undefined = materialQuery.data;
@@ -526,7 +526,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   const questions = poll.questions;
   const total = questions.length;
 
-  const canExecuteAction = canExecuteSpaceAction(role, poll.space_action.prerequisite, space.status, poll.space_action.status, true, space.join_anytime);
+  const canExecuteAction = canExecuteSpaceAction(role, poll.space_action.prerequisite, space.status, poll.space_action.status, true, isParticipationOpen(space));
   const isInProgress = poll.status === "InProgress";
   const isNotStarted = poll.status === "NotStarted";
   const hasResponse = poll.my_response !== null;

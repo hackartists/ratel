@@ -28,6 +28,7 @@ const en = {
   english: "English",
   korean: "Korean",
   status_open: "Open for Participation",
+  status_sampling: "Sampling",
   status_ongoing: "In Progress",
   status_finished: "Finished",
   login_title: "Join the Movement",
@@ -137,6 +138,7 @@ const en = {
   home: "Home",
   publish: "Publish",
   start: "Start",
+  sampling: "Sampling",
   finish: "Finish",
   comments_count: "comments",
 };
@@ -168,6 +170,7 @@ const ko: Record<keyof typeof en, string> = {
   english: "영어",
   korean: "한국어",
   status_open: "참여 가능",
+  status_sampling: "표본추출중",
   status_ongoing: "진행 중",
   status_finished: "종료",
   login_title: "로그인 및 회원가입",
@@ -277,6 +280,7 @@ const ko: Record<keyof typeof en, string> = {
   home: "홈",
   publish: "게시",
   start: "시작",
+  sampling: "표본 추출",
   finish: "종료",
   comments_count: "개의 댓글",
 };
@@ -310,6 +314,7 @@ export interface SpaceViewerI18n {
   english: string;
   korean: string;
   statusOpen: string;
+  statusSampling: string;
   statusOngoing: string;
   statusFinished: string;
   loginTitle: string;
@@ -419,6 +424,7 @@ export interface SpaceViewerI18n {
   home: string;
   publish: string;
   start: string;
+  sampling: string;
   finish: string;
   commentsCount: string;
 }
@@ -452,6 +458,7 @@ export function useSpaceViewerI18n(): SpaceViewerI18n {
     english: t("english"),
     korean: t("korean"),
     statusOpen: t("status_open"),
+    statusSampling: t("status_sampling"),
     statusOngoing: t("status_ongoing"),
     statusFinished: t("status_finished"),
     loginTitle: t("login_title"),
@@ -561,6 +568,7 @@ export function useSpaceViewerI18n(): SpaceViewerI18n {
     home: t("home"),
     publish: t("publish"),
     start: t("start"),
+    sampling: t("sampling"),
     finish: t("finish"),
     commentsCount: t("comments_count"),
   };

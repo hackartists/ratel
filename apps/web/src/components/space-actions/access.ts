@@ -1,4 +1,4 @@
-import type { SpaceActionStatus, SpaceStatus, SpaceUserRole } from "@ratel/ts-bridges";
+import type { SpaceActionStatus, SpaceResponse, SpaceStatus, SpaceUserRole } from "@ratel/ts-bridges";
 
 // app/ratel/src/features/spaces/pages/actions/mod.rs — action lock and
 // execution rules shared by every action page.
@@ -19,7 +19,7 @@ export function canExecuteSpaceAction(
   spaceStatus: SpaceStatus | null | undefined,
   actionStatus: SpaceActionStatus | null | undefined,
   dependenciesMet: boolean,
-  joinAnytime: boolean,
+  participationOpen: boolean,
 ): boolean {
   let roleOk: boolean;
   switch (role) {
@@ -43,11 +43,10 @@ export function canExecuteSpaceAction(
       statusOk = !(spaceStatus === "Processing" || spaceStatus === "Finished");
       break;
     case "Candidate": {
-      const spaceOk = spaceStatus === "Open" || (joinAnytime && spaceStatus === "Ongoing");
       // Candidates only reach prerequisite actions (enforced by roleOk), and
       // those must be runnable regardless of the action's Designing/Ongoing
       // state — completing them is what clears Candidate → Participant.
-      statusOk = spaceOk && (prerequisite || actionStatus === "Ongoing");
+      statusOk = participationOpen && (prerequisite || actionStatus === "Ongoing");
       break;
     }
     case "Participant":
@@ -59,4 +58,23 @@ export function canExecuteSpaceAction(
   }
 
   return roleOk && statusOk && dependenciesMet;
+}
+
+/**
+ * Rust `SpaceCommon::is_participation_open`: whether new participants may
+ * join and Candidates may still run prerequisite actions. `Open` always
+ * recruits, `Sampling` only when the Sampling app allows recruiting during
+ * sampling, `Ongoing` when late joining is on.
+ */
+export function isParticipationOpen(space: Pick<SpaceResponse, "status" | "join_anytime" | "sampling_recruit_open">): boolean {
+  switch (space.status) {
+    case "Open":
+      return true;
+    case "Sampling":
+      return space.sampling_recruit_open;
+    case "Ongoing":
+      return space.join_anytime;
+    default:
+      return false;
+  }
 }

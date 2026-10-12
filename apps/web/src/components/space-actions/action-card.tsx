@@ -10,7 +10,7 @@ import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useActionCardI18n } from "./action-card.i18n";
 import { usePopup } from "@/lib/popup";
 import { useToast } from "@/lib/toast";
-import { isActionLocked } from "./access";
+import { isActionLocked, isParticipationOpen } from "./access";
 import { summaryUrl } from "./action-urls";
 import { DeleteActionPopup } from "./delete-action";
 import { useSpace, useSpaceRole } from "@/components/space/space-context";
@@ -129,7 +129,7 @@ export function ActionCard({ action, spaceId, deletable = false, onDeleted }: Ac
         }
         if (role !== "Creator") {
           const spaceStatus = space.status;
-          const enableAction = action.prerequisite && (spaceStatus === "Open" || spaceStatus === "Ongoing");
+          const enableAction = action.prerequisite && (isParticipationOpen(space) || spaceStatus === "Ongoing");
           if (!enableAction) {
             if (spaceStatus !== "Ongoing") {
               toast.error(new Error(enumT("Error", "SpaceNotStarted")));

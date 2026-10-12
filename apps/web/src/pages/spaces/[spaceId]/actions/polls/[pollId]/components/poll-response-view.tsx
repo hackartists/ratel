@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Answer } from "@ratel/ts-bridges";
 import { getEncryptionMaterial, respondPoll } from "@ratel/ts-bridges";
-import { canExecuteSpaceAction } from "@/components/space-actions/access";
+import { canExecuteSpaceAction, isParticipationOpen } from "@/components/space-actions/access";
 import { FullActionLayover } from "@/components/space-actions/full-action-layover";
 import { hasAnswerForQuestion, QuestionViewer, shouldAutoNext } from "@/components/space-actions/question-viewer";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
@@ -62,7 +62,7 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
     space.status,
     poll.space_action.status,
     true,
-    space.join_anytime,
+    isParticipationOpen(space),
   );
 
   const allAnswered = useMemo(() => {

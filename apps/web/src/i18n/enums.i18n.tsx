@@ -458,6 +458,33 @@ const en = {
     IncentiveChainRequired: "Incentive chain is required",
     UnsupportedOnServer: "This operation is not supported on the server",
   },
+  // app/ratel/src/features/spaces/pages/apps/apps/sampling/types/enums.rs `SamplingAllocation`
+  SamplingAllocation: {
+    Equal: "Equal allocation",
+  },
+  // app/ratel/src/features/spaces/pages/apps/apps/sampling/types/enums.rs `SamplingMethod`
+  SamplingMethod: {
+    FirstCome: "First come, first served",
+    Random: "Random",
+  },
+  // app/ratel/src/features/spaces/pages/apps/apps/sampling/types/error.rs `SpaceSamplingError`
+  SpaceSamplingError: {
+    NotEnabled: "The Sampling app is not installed in this space.",
+    NotConfigured: "Save the Sampling settings before starting sampling.",
+    SamplingRequired: "Run Sampling before starting this space.",
+    InvalidTransition: "Sampling can only start while the space is open.",
+    ConfigLocked: "Sampling settings can no longer change after sampling has started.",
+    InvalidEntryPoll: "Choose a prerequisite poll as the entry poll.",
+    InvalidDimension: "Sampling items must be distinct single-choice questions of the entry poll.",
+    InvalidRule: "Population rules must use single-choice questions of the entry poll.",
+    InvalidTotal: "The sample size must be at least 1.",
+    ConfigOutdated: "The entry poll changed after the settings were saved. Save the Sampling settings again.",
+    NotSampling: "Entry is only possible while sampling is in progress.",
+    NotInPopulation: "You are not part of this space's population.",
+    CellFull: "Your sample group is already full.",
+    NotSelected: "You were not selected for the sample.",
+    SaveFailed: "Failed to save the Sampling data.",
+  },
   // app/ratel/src/features/spaces/pages/apps/types/space_app_type.rs `SpaceAppType`
   SpaceAppType: {
     General: "General",
@@ -466,6 +493,7 @@ const en = {
     Panels: "Panels",
     IncentivePool: "Incentive Pool",
     Report: "Report",
+    Sampling: "Sampling",
   },
   // app/ratel/src/features/spaces/types/error.rs `SpaceError`
   SpaceError: {
@@ -540,6 +568,7 @@ const en = {
   SpaceStatus: {
     Designing: "Designing",
     Open: "Open",
+    Sampling: "Sampling",
     Ongoing: "Ongoing",
     Processing: "Processing",
     Finished: "Completed",
@@ -1045,6 +1074,30 @@ const ko: { [T in keyof typeof en]: Record<keyof (typeof en)[T], string> } = {
     IncentiveChainRequired: "인센티브 체인이 필요합니다.",
     UnsupportedOnServer: "이 작업은 서버에서 지원되지 않습니다.",
   },
+  SamplingAllocation: {
+    Equal: "균등 배분",
+  },
+  SamplingMethod: {
+    FirstCome: "선착순",
+    Random: "랜덤",
+  },
+  SpaceSamplingError: {
+    NotEnabled: "이 스페이스에 표본 추출 앱이 설치되어 있지 않습니다.",
+    NotConfigured: "표본 추출을 시작하려면 먼저 Sampling 설정을 저장하세요.",
+    SamplingRequired: "이 스페이스는 시작하기 전에 표본 추출을 진행해야 합니다.",
+    InvalidTransition: "표본 추출은 모집중 상태에서만 시작할 수 있습니다.",
+    ConfigLocked: "표본 추출이 시작된 후에는 Sampling 설정을 변경할 수 없습니다.",
+    InvalidEntryPoll: "엔트리 폴로 사전 참여 설문을 선택하세요.",
+    InvalidDimension: "표본 추출 항목은 엔트리 폴의 서로 다른 단일 선택 문항이어야 합니다.",
+    InvalidRule: "모집단 조건은 엔트리 폴의 단일 선택 문항만 사용할 수 있습니다.",
+    InvalidTotal: "표본 수는 1 이상이어야 합니다.",
+    ConfigOutdated: "설정 저장 후 엔트리 폴이 변경되었습니다. Sampling 설정을 다시 저장하세요.",
+    NotSampling: "표본 추출 중에만 입장할 수 있습니다.",
+    NotInPopulation: "이 스페이스의 모집단에 포함되어 있지 않습니다.",
+    CellFull: "해당 표본 그룹의 모집이 마감되어 입장할 수 없습니다.",
+    NotSelected: "표본으로 선정되지 않아 입장할 수 없습니다.",
+    SaveFailed: "Sampling 데이터 저장에 실패했습니다.",
+  },
   SpaceAppType: {
     General: "스페이스 설정",
     File: "파일",
@@ -1052,6 +1105,7 @@ const ko: { [T in keyof typeof en]: Record<keyof (typeof en)[T], string> } = {
     Panels: "패널",
     IncentivePool: "인센티브 풀",
     Report: "보고서",
+    Sampling: "표본 추출",
   },
   SpaceError: {
     NoEligibleCredential: "모든 속성을 인증해야합니다.",
@@ -1119,6 +1173,7 @@ const ko: { [T in keyof typeof en]: Record<keyof (typeof en)[T], string> } = {
   SpaceStatus: {
     Designing: "설계중",
     Open: "모집중",
+    Sampling: "표본추출중",
     Ongoing: "진행중",
     Processing: "집계중",
     Finished: "종료",
@@ -1202,7 +1257,7 @@ export const i18n = { en, ko };
  * enum (Rust type name, possibly qualified in this module), not from a key here.
  */
 export const delegates = {
-  Error: { Follow: "FollowError", Space: "SpaceError", Essence: "EssenceError", SpaceReward: "SpaceRewardError", SpaceActionQuiz: "SpaceActionQuizError", SpaceActionDiscussion: "SpaceActionDiscussionError", ExchangePoints: "ExchangePointsError", Member: "MemberError", SpaceStatusChange: "SpaceStatusChangeError", McpServer: "McpServerError", AiModerator: "AiModeratorError", Activity: "ActivityError", Character: "CharacterError", Notifications: "NotificationsError", SubTeam: "SubTeamError", CrossPosting: "CrossPostingError", FactOrFold: "FactOrFoldError", Arcade: "ArcadeError", Auth: "AuthError", Post: "PostError", Social: "SocialError", MembershipPayment: "MembershipPaymentError", Timeline: "TimelineError", Admin: "AdminError", Service: "ServiceError", Infra: "InfraError", FileUpload: "FileUploadError", SpaceAction: "SpaceActionError", SpacePoll: "SpacePollError", MeetAction: "MeetActionError", SpaceFollow: "SpaceFollowError", SpaceApp: "SpaceAppError", SpaceReport: "SpaceReportError", TauriError: "Error" },
+  Error: { Follow: "FollowError", Space: "SpaceError", Essence: "EssenceError", SpaceReward: "SpaceRewardError", SpaceActionQuiz: "SpaceActionQuizError", SpaceActionDiscussion: "SpaceActionDiscussionError", ExchangePoints: "ExchangePointsError", Member: "MemberError", SpaceStatusChange: "SpaceStatusChangeError", McpServer: "McpServerError", AiModerator: "AiModeratorError", Activity: "ActivityError", Character: "CharacterError", Notifications: "NotificationsError", SubTeam: "SubTeamError", CrossPosting: "CrossPostingError", FactOrFold: "FactOrFoldError", Arcade: "ArcadeError", Auth: "AuthError", Post: "PostError", Social: "SocialError", MembershipPayment: "MembershipPaymentError", Timeline: "TimelineError", Admin: "AdminError", Service: "ServiceError", Infra: "InfraError", FileUpload: "FileUploadError", SpaceAction: "SpaceActionError", SpacePoll: "SpacePollError", MeetAction: "MeetActionError", SpaceFollow: "SpaceFollowError", SpaceApp: "SpaceAppError", SpaceSampling: "SpaceSamplingError", SpaceReport: "SpaceReportError", TauriError: "Error" },
 } as const;
 
 export type EnumType = keyof typeof en;
