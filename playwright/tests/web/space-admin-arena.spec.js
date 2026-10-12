@@ -192,6 +192,40 @@ test.describe.serial("Space admin arena", () => {
     await expect(page.getByTestId("install-app-analyzes")).toBeHidden();
   });
 
+  test("Test 5b: Uninstall the installed app (Analyzes)", async ({ page }) => {
+    await goto(page, spaceUrl);
+
+    await click(page, { testId: "btn-settings" });
+    await expect(page.getByTestId("apps-section")).toBeVisible();
+
+    await expect(page.getByTestId("uninstall-app-general")).toHaveCount(0);
+    await expect(page.getByTestId("uninstall-app-file")).toHaveCount(0);
+
+    await click(page, { testId: "uninstall-app-analyzes" });
+    await expect(page.getByTestId("uninstall-app-popup")).toBeVisible();
+    await click(page, { testId: "uninstall-app-cancel" });
+    await expect(page.getByTestId("uninstall-app-popup")).toBeHidden();
+    await expect(page.getByTestId("settings-app-analyzes")).toBeVisible();
+
+    await click(page, { testId: "uninstall-app-analyzes" });
+    await click(page, { testId: "uninstall-app-confirm" });
+    await expect(page.getByTestId("uninstall-app-popup")).toBeHidden({
+      timeout: 15000,
+    });
+
+    await expect(page.getByTestId("install-app-analyzes")).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page.getByTestId("settings-app-analyzes")).toBeHidden();
+    await expect(page.getByTestId("uninstall-app-analyzes")).toBeHidden();
+
+    await goto(page, spaceUrl);
+    await click(page, { testId: "btn-settings" });
+    await expect(page.getByTestId("install-app-analyzes")).toBeVisible({
+      timeout: 15000,
+    });
+  });
+
   test("Test 6: Add-action card visible for admin", async ({ page }) => {
     await goto(page, spaceUrl);
     await expect(page.getByTestId("admin-add-action-card")).toBeVisible();

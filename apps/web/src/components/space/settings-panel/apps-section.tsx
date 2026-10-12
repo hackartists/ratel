@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { useInstallSpaceApp } from "@ratel/ts-bridges/hooks";
+import { useInstallSpaceApp, useUninstallSpaceApp } from "@ratel/ts-bridges/hooks";
 import { getSpaceApps } from "@ratel/ts-bridges";
 import type { SpaceAppType } from "@ratel/ts-bridges";
 import { File as FileIcon } from "@/components/icons/file";
@@ -10,8 +10,12 @@ import { Settings2 } from "@/components/icons/settings";
 import { UserGroup } from "@/components/icons/user";
 import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
-import { useSpaceAppTypeI18n } from "./i18n";
+import { useSpaceContext } from "@/components/space/space-context";
+import { usePopup } from "@/lib/popup";
 import { useToast } from "@/lib/toast";
+import { useAppsSectionI18n } from "./apps-section.i18n";
+import { useSpaceAppTypeI18n } from "./i18n";
+import { UninstallAppPopup } from "./uninstall-app-popup";
 
 // app/ratel/src/features/spaces/pages/index/settings_panel/apps_section/component.rs (`AppsSection`)
 // + SpaceAppType helpers (pages/apps/types/space_app_type.rs). The variant list is the
@@ -42,13 +46,41 @@ export function AppsSection({ spaceId }: { spaceId: string }) {
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const popup = usePopup();
+  const enumTr = useEnumI18n();
   const install = useInstallSpaceApp();
+  const uninstall = useUninstallSpaceApp();
+  const canUninstall = useSpaceContext().role === "Creator";
   const appsKey = ["getSpaceApps", spaceId] as const;
   const { data: spaceApps } = useSuspenseQuery({ queryKey: appsKey, queryFn: () => getSpaceApps(spaceId) });
   const installedTypes = spaceApps.map((app) => app.app_type);
   const installedApps = VARIANTS.filter((t) => isDefaultApp(t) || installedTypes.includes(t));
   const availableApps = VARIANTS.filter((t) => !isDefaultApp(t) && !installedTypes.includes(t));
   const [inProgress, setInProgress] = React.useState<SpaceAppType | null>(null);
+
+  const uninstallApp = async (appType: SpaceAppType) => {
+    setInProgress(appType);
+    try {
+      await uninstall.mutateAsync({ spaceId, appType });
+      popup.close();
+      await queryClient.refetchQueries({ queryKey: appsKey, exact: true });
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setInProgress(null);
+    }
+  };
+
+  const confirmUninstall = (appType: SpaceAppType) => {
+    if (inProgress !== null) return;
+    popup.open(
+      <UninstallAppPopup
+        appName={enumTr("SpaceAppType", appType)}
+        onConfirm={() => uninstallApp(appType)}
+        onCancel={() => popup.close()}
+      />,
+    );
+  };
 
   return (
     <section className="settings-section apps-section" data-testid="apps-section">
@@ -63,6 +95,7 @@ export function AppsSection({ spaceId }: { spaceId: string }) {
           installed
           inProgress={inProgress === appType}
           onClick={() => navigate(settingsPath(appType, spaceId))}
+          onUninstall={canUninstall && !isDefaultApp(appType) ? () => confirmUninstall(appType) : undefined}
         />
       ))}
       {availableApps.length > 0 && (
@@ -122,13 +155,16 @@ function AppRow({
   installed,
   inProgress,
   onClick,
+  onUninstall,
 }: {
   appType: SpaceAppType;
   installed: boolean;
   inProgress: boolean;
   onClick: () => void;
+  onUninstall?: () => void;
 }) {
   const tr = useSpaceViewerI18n();
+  const appsTr = useAppsSectionI18n();
   const t = useEnumI18n();
   const descTr = useSpaceAppTypeI18n();
   const iconClass = {
@@ -175,9 +211,37 @@ function AppRow({
       </div>
       <div className="app-row__action">
         {installed ? (
-          <button className="app-row-btn" data-testid={`settings-app-${appSlug}`} disabled={inProgress} onClick={() => onClick()}>
-            {tr.settingsBtn}
-          </button>
+          <>
+            <button className="app-row-btn" data-testid={`settings-app-${appSlug}`} disabled={inProgress} onClick={() => onClick()}>
+              {tr.settingsBtn}
+            </button>
+            {onUninstall !== undefined && (
+              <button
+                className="app-row-btn app-row-btn--uninstall"
+                data-testid={`uninstall-app-${appSlug}`}
+                aria-label={appsTr.uninstall}
+                title={appsTr.uninstall}
+                disabled={inProgress}
+                onClick={() => onUninstall()}
+              >
+                <svg
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                  <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                </svg>
+              </button>
+            )}
+          </>
         ) : (
           <button
             className="app-row-btn app-row-btn--install"
