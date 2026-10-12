@@ -66,6 +66,20 @@ pub async fn update_space_action(
     // old status == Designing && new status == Ongoing).
     let old_action = space_action.clone();
 
+    if space_action.space_action_type == SpaceActionType::Announcement
+        && !matches!(
+            req,
+            UpdateSpaceActionRequest::Status { .. }
+                | UpdateSpaceActionRequest::Title { .. }
+                | UpdateSpaceActionRequest::Description { .. }
+                | UpdateSpaceActionRequest::Prerequisite {
+                    prerequisite: false
+                }
+        )
+    {
+        return Err(SpaceActionError::UnsupportedForAnnouncement.into());
+    }
+
     match req {
         UpdateSpaceActionRequest::Credits { credits } => {
             update_credits(
@@ -88,6 +102,15 @@ pub async fn update_space_action(
         UpdateSpaceActionRequest::Dependencies { depends_on } => {
             if depends_on.iter().any(|id| id == &action_id) {
                 return Err(SpaceActionError::InvalidDependency.into());
+            }
+            if !depends_on.is_empty() {
+                let siblings = SpaceAction::list_by_space(&space_id).await?;
+                if siblings.iter().any(|a| {
+                    a.space_action_type == SpaceActionType::Announcement
+                        && depends_on.contains(&a.action_id)
+                }) {
+                    return Err(SpaceActionError::InvalidDependency.into());
+                }
             }
             space_action.depends_on = SpaceActionDependsOn(depends_on);
         }
@@ -161,7 +184,10 @@ async fn update_credits(
     space_action: &mut SpaceAction,
     now: i64,
 ) -> Result<()> {
-    let behavior = space_action.space_action_type.to_behavior();
+    let behavior = space_action
+        .space_action_type
+        .to_behavior()
+        .ok_or(SpaceActionError::UnsupportedForAnnouncement)?;
 
     if credits > 0 {
         set_credits(

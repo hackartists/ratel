@@ -37,6 +37,7 @@ export { createPostHandler } from "./createPostHandler";
 export { createQuiz } from "./createQuiz";
 export { createReport } from "./createReport";
 export { createReward } from "./createReward";
+export { createSpaceAnnouncement } from "./createSpaceAnnouncement";
 export { createSpaceHandler } from "./createSpaceHandler";
 export { createSpaceIncentive } from "./createSpaceIncentive";
 export { createSubTeamDocHandler } from "./createSubTeamDocHandler";

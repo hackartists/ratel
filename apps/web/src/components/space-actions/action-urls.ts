@@ -16,6 +16,8 @@ export function actionUrl(spaceId: string, actionType: SpaceActionType, actionId
       return `/spaces/${spaceId}/actions/quizzes/${actionId}`;
     case "Meet":
       return `/spaces/${spaceId}/actions/meets/${actionId}`;
+    case "Announcement":
+      return `/spaces/${spaceId}/actions/announcements/${actionId}`;
   }
 }
 

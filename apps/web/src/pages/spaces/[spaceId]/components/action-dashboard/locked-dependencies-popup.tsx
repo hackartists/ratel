@@ -92,6 +92,8 @@ function typeLabel(kind: SpaceActionType): string {
       return "FOLLOW";
     case "Meet":
       return "MEET";
+    case "Announcement":
+      return "ANNOUNCEMENT";
   }
 }
 

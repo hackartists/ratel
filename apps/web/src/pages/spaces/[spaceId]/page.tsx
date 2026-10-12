@@ -51,7 +51,7 @@ function SpaceIndexPage() {
   const activeRef = React.useRef(activePanel);
   activeRef.current = activePanel;
   useDismissOnOutsideSelector(
-    ".overview-panel, .leaderboard-panel, .settings-panel, .notification-panel, .arena-topbar",
+    ".overview-panel, .leaderboard-panel, .settings-panel, .notification-panel, .arena-topbar, .popup-backdrop",
     () => {
       if (activeRef.current !== "None") setActivePanel("None");
     },

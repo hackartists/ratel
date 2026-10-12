@@ -145,6 +145,29 @@ export function TypePickerModal({
             <div className="type-option__name">{tr.meetName}</div>
             <div className="type-option__desc">{tr.meetDesc}</div>
           </button>
+          <button
+            className="type-option"
+            data-testid="type-option-announcement"
+            data-type="announcement"
+            onClick={pick("Announcement")}
+          >
+            <div className="type-option__icon">
+              <svg
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M3 11l18-5v12L3 14v-3z" />
+                <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+              </svg>
+            </div>
+            <div className="type-option__name">{tr.announcementName}</div>
+            <div className="type-option__desc">{tr.announcementDesc}</div>
+          </button>
         </div>
       </div>
     </div>

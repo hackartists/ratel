@@ -1,4 +1,4 @@
-import { createDiscussion, createFollow, createMeet, createPoll, createQuiz } from "@ratel/ts-bridges";
+import { createDiscussion, createFollow, createMeet, createPoll, createQuiz, createSpaceAnnouncement } from "@ratel/ts-bridges";
 import type { SpaceActionType } from "@ratel/ts-bridges";
 import { stripKeyPrefix } from "./action-urls";
 
@@ -25,6 +25,10 @@ export async function createSpaceAction(spaceId: string, actionType: SpaceAction
     case "Meet": {
       const response = await createMeet(spaceId);
       return `/spaces/${spaceId}/actions/meets/${response.sk}`;
+    }
+    case "Announcement": {
+      const response = await createSpaceAnnouncement(spaceId);
+      return `/spaces/${spaceId}/actions/announcements/${response.action_id}`;
     }
   }
 }

@@ -11,7 +11,14 @@
 //   } catch (err) {
 //     toast.error(err);
 //   }
-import { useCreateDiscussion, useCreateFollow, useCreateMeet, useCreatePoll, useCreateQuiz } from "@ratel/ts-bridges/hooks";
+import {
+  useCreateDiscussion,
+  useCreateFollow,
+  useCreateMeet,
+  useCreatePoll,
+  useCreateQuiz,
+  useCreateSpaceAnnouncement,
+} from "@ratel/ts-bridges/hooks";
 import type { SpaceActionType, SpacePartition } from "@ratel/ts-bridges";
 
 /** `EntityType` / `Partition` wire prefixes of the SubPartition ids used by space actions. */
@@ -48,6 +55,7 @@ export function useCreateSpaceAction(): (type: SpaceActionType, spaceId: SpacePa
   const createFollow = useCreateFollow();
   const createQuiz = useCreateQuiz();
   const createMeet = useCreateMeet();
+  const createAnnouncement = useCreateSpaceAnnouncement();
 
   return async (type, spaceId) => {
     switch (type) {
@@ -73,6 +81,10 @@ export function useCreateSpaceAction(): (type: SpaceActionType, spaceId: SpacePa
       case "Meet": {
         const response = await createMeet.mutateAsync(spaceId);
         return `/spaces/${spaceId}/actions/meets/${response.sk}`;
+      }
+      case "Announcement": {
+        const response = await createAnnouncement.mutateAsync(spaceId);
+        return `/spaces/${spaceId}/actions/announcements/${response.action_id}`;
       }
     }
   };

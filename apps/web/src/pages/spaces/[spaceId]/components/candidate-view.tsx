@@ -1,4 +1,6 @@
 import * as React from "react";
+import { useNavigate } from "react-router-dom";
+import { useEnumI18n } from "@/i18n/enums.i18n";
 import { SpaceStatus, useSpaceContext } from "@/components/space/space-context";
 import { isParticipationOpen } from "@/components/space/access";
 import { PrerequisiteCard } from "./prerequisite-card";
@@ -23,10 +25,30 @@ export function CandidateView() {
     }
   }, [shouldRestart, ctx]);
 
-  if (ctx.space.sampling_enabled && showsSamplingCard(ctx.space.status, ctx.space.join_anytime, allDone, isParticipationOpen(ctx.space))) {
-    return <SamplingEntryCard />;
-  }
-  return allDone ? <WaitingCard prereqs={prereqs} /> : <PrerequisiteCard />;
+  const te = useEnumI18n();
+  const navigate = useNavigate();
+  const announcement = ctx.actions.find((a) => a.action_type === "Announcement");
+  const samplingCard =
+    ctx.space.sampling_enabled &&
+    showsSamplingCard(ctx.space.status, ctx.space.join_anytime, allDone, isParticipationOpen(ctx.space));
+
+  return (
+    <>
+      {announcement && (
+        <div
+          className="prereq-item"
+          data-testid="candidate-announcement-link"
+          onClick={() => navigate(`/spaces/${ctx.spaceId}/actions/announcements/${announcement.action_id}`)}
+        >
+          <div className="prereq-item__info">
+            <span className="prereq-item__title">{announcement.title}</span>
+            <span className="prereq-item__type">{te("SpaceActionType", "Announcement")}</span>
+          </div>
+        </div>
+      )}
+      {samplingCard ? <SamplingEntryCard /> : allDone ? <WaitingCard prereqs={prereqs} /> : <PrerequisiteCard />}
+    </>
+  );
 }
 
 /**

@@ -44,6 +44,7 @@ mod pg_runtime {
 
 pub use pg_runtime::pg_block_on;
 
+mod announcement_action_tests;
 mod arcade_tests;
 mod auth_tests;
 mod cors_tests;

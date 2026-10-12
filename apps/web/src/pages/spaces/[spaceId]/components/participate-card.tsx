@@ -3,6 +3,7 @@ import { useParticipateSpace } from "@ratel/ts-bridges/hooks";
 import type { PanelRequirementStatus } from "@ratel/ts-bridges";
 import { useSpaceContext } from "@/components/space/space-context";
 import { useEnumI18n } from "@/i18n/enums.i18n";
+import { AnnouncementNotice } from "./announcement-notice";
 import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { dataBool } from "@/lib/dom";
 
@@ -29,13 +30,40 @@ export function ParticipateCard({
 }) {
   const tr = useSpaceViewerI18n();
   const [showConsent, setShowConsent] = React.useState(false);
+  const [showAnnouncement, setShowAnnouncement] = React.useState(false);
   const ctx = useSpaceContext();
   const participate = useParticipateSpace();
+  const announcement = ctx.actions.find((a) => a.action_type === "Announcement");
+
+  const join = async () => {
+    if (requireConsent) {
+      setShowConsent(true);
+      return;
+    }
+    try {
+      await participate.mutateAsync({ spaceId: ctx.spaceId, body: { informed_agreed: true } });
+    } catch {
+      return;
+    }
+    onJoined();
+    void ctx.restart();
+  };
 
   if (showConsent) {
     return (
-      <ConsentModal requirements={ctx.panelRequirements} onCancel={() => setShowConsent(false)} onJoined={onJoined} />
+      <ConsentModal
+        requirements={ctx.panelRequirements}
+        onCancel={() => {
+          setShowConsent(false);
+          setShowAnnouncement(false);
+        }}
+        onJoined={onJoined}
+      />
     );
+  }
+
+  if (showAnnouncement && announcement) {
+    return <AnnouncementNotice action={announcement} onContinue={() => void join()} />;
   }
 
   return (
@@ -59,18 +87,12 @@ export function ParticipateCard({
       <button
         className="cta-participate"
         data-testid="btn-participate"
-        onClick={async () => {
-          if (requireConsent) {
-            setShowConsent(true);
+        onClick={() => {
+          if (announcement) {
+            setShowAnnouncement(true);
             return;
           }
-          try {
-            await participate.mutateAsync({ spaceId: ctx.spaceId, body: { informed_agreed: true } });
-          } catch {
-            return;
-          }
-          onJoined();
-          void ctx.restart();
+          void join();
         }}
       >
         {tr.participate}

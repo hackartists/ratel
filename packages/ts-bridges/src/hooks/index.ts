@@ -38,6 +38,7 @@ export * from "./useCreateQuiz";
 export * from "./useCreateReport";
 export * from "./useCreateReward";
 export * from "./useCreateSpace";
+export * from "./useCreateSpaceAnnouncement";
 export * from "./useCreateSpaceIncentive";
 export * from "./useCreateSubTeamDoc";
 export * from "./useCreateSubTeamFormField";

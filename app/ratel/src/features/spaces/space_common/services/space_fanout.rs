@@ -183,7 +183,7 @@ async fn count_actions(space_pk: &Partition) -> (i64, i64, i64, i64) {
             SpaceActionType::TopicDiscussion => discussions += 1,
             SpaceActionType::Quiz => quizzes += 1,
             SpaceActionType::Follow => follows += 1,
-            SpaceActionType::Meet => {}
+            SpaceActionType::Meet | SpaceActionType::Announcement => {}
         }
     }
     (polls, discussions, quizzes, follows)
