@@ -400,6 +400,7 @@ const en = {
     MembershipCheckFailed: "Failed to check membership",
     InvalidStatusTransition: "Invalid action status transition",
     InvalidDependency: "Invalid action dependency",
+    UnsupportedForAnnouncement: "This setting is not available for announcements",
   },
   // app/ratel/src/features/spaces/pages/actions/actions/quiz/types/error.rs `SpaceActionQuizError`
   SpaceActionQuizError: {
@@ -436,6 +437,7 @@ const en = {
     Follow: "Follow",
     Quiz: "Quiz",
     Meet: "Meet",
+    Announcement: "Announcement",
   },
   // app/ratel/src/features/spaces/pages/apps/types/error.rs `SpaceAppError`
   SpaceAppError: {
@@ -991,6 +993,7 @@ const ko: { [T in keyof typeof en]: Record<keyof (typeof en)[T], string> } = {
     MembershipCheckFailed: "멤버십 확인에 실패했습니다.",
     InvalidStatusTransition: "허용되지 않은 액션 상태 전이입니다.",
     InvalidDependency: "유효하지 않은 액션 의존성입니다.",
+    UnsupportedForAnnouncement: "공지에는 사용할 수 없는 설정입니다.",
   },
   SpaceActionQuizError: {
     NoRemainingAttempts: "남은 시도 횟수가 없습니다.",
@@ -1024,6 +1027,7 @@ const ko: { [T in keyof typeof en]: Record<keyof (typeof en)[T], string> } = {
     Follow: "팔로우",
     Quiz: "퀴즈",
     Meet: "미팅",
+    Announcement: "공지",
   },
   SpaceAppError: {
     InstallFailed: "앱 설치에 실패했습니다.",

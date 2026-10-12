@@ -25,7 +25,7 @@ interface RewardPreviewData {
 }
 
 function supportsActionSettings(action: SpaceActionSummary): boolean {
-  return action.action_type !== "Follow";
+  return action.action_type !== "Follow" && action.action_type !== "Announcement";
 }
 
 function selectedActionsOf(actions: SpaceActionSummary[], selectedIds: string[]): SpaceActionSummary[] {

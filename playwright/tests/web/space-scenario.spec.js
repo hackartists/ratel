@@ -779,3 +779,142 @@ test.describe.serial("Discussion Required Attributes gate", () => {
     ).toBeTruthy();
   });
 });
+
+/**
+ * Space announcement: one per space, pinned first in the action list, and
+ * shown to a user right before the participate request goes out.
+ */
+test.describe.serial("Space announcement", () => {
+  let spaceUrl;
+  let spaceId;
+  let announcementId;
+
+  const uniqueId = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
+  const announcementTitle = `Read before joining ${uniqueId}`;
+  const announcementBody = "Please be respectful. Answers are anonymous.";
+  const member = {
+    email: `e2e_an_${uniqueId}@biyard.co`,
+    username: `an${uniqueId}`,
+    name: `Announcement Reader ${uniqueId}`,
+    password: "Test!234",
+  };
+
+  test("Setup: create team + post + space with a Follow action", async ({ page }) => {
+    const teamUsername = `e2e_an_${uniqueId}`;
+    await createTeamFromHome(page, {
+      username: teamUsername,
+      nickname: "Announcement Team",
+      description: "Space announcement e2e test",
+    });
+    const postId = await createTeamPostFromHome(
+      page,
+      teamUsername,
+      "Announcement E2E Space",
+      "Space for testing the announcement shown before a user joins the space.",
+    );
+    const spaceRes = await page.request.post("/api/spaces/create", {
+      data: { req: { post_id: postId } },
+    });
+    expect(spaceRes.ok(), `create space: ${await spaceRes.text()}`).toBeTruthy();
+    spaceId = (await spaceRes.json()).space_id;
+    spaceUrl = `/spaces/${spaceId}`;
+
+    await createAction(page, spaceUrl, "follow", /\/actions\/follows\//);
+  });
+
+  test("Creator: write and publish the announcement", async ({ page }) => {
+    await createAction(page, spaceUrl, "announcement", /\/actions\/announcements\//);
+    const m = page.url().match(/\/actions\/announcements\/([^/?#]+)/);
+    expect(m, "announcement id should be parseable from editor URL").not.toBeNull();
+    announcementId = m[1];
+
+    await expect(page.getByTestId("announcement-editor-view")).toBeVisible();
+    await fill(page, { testId: "announcement-title-input" }, announcementTitle);
+    await commitAutosave(page);
+    const editor = await getEditor(page);
+    await editor.fill(announcementBody);
+    await commitAutosave(page);
+
+    await expect
+      .poll(async () => {
+        const res = await page.request.get(`/api/spaces/${spaceId}/actions`);
+        const actions = await res.json();
+        const a = actions.find((x) => x.action_id === announcementId);
+        return a ? `${a.title}|${a.description.includes(announcementBody)}` : "";
+      })
+      .toBe(`${announcementTitle}|true`);
+
+    const statusRes = await page.request.post(
+      `/api/spaces/${spaceId}/actions/${announcementId}`,
+      { data: { req: { status: "Ongoing" } } },
+    );
+    expect(statusRes.ok(), `publish announcement: ${await statusRes.text()}`).toBeTruthy();
+  });
+
+  test("Creator: a second create returns the same announcement", async ({ page }) => {
+    const res = await page.request.post(`/api/spaces/${spaceId}/announcements`);
+    expect(res.ok(), `create announcement again: ${await res.text()}`).toBeTruthy();
+    expect((await res.json()).action_id).toBe(announcementId);
+  });
+
+  test("Creator: the announcement card is pinned first", async ({ page }) => {
+    await goto(page, spaceUrl);
+    const firstCard = page.locator("#carousel-track .quest-card").first();
+    await expect(firstCard).toHaveAttribute("data-testid", "action-card-announcement");
+    await expect(firstCard).toContainText(announcementTitle);
+  });
+
+  test("Creator: the announcement cannot be a dependency or carry a reward", async ({ page }) => {
+    const rewardRes = await page.request.post(
+      `/api/spaces/${spaceId}/actions/${announcementId}`,
+      { data: { req: { credits: 10 } } },
+    );
+    expect(rewardRes.status()).toBe(400);
+    const prereqRes = await page.request.post(
+      `/api/spaces/${spaceId}/actions/${announcementId}`,
+      { data: { req: { prerequisite: true } } },
+    );
+    expect(prereqRes.status()).toBe(400);
+  });
+
+  test("Creator: publish space as public", async ({ page }) => {
+    await goto(page, spaceUrl + "/");
+    await clickNoNav(page, { testId: "btn-publish" });
+    await waitPopup(page, { visible: true });
+    await clickNoNav(page, { testId: "public-option" });
+    await click(page, { label: "Confirm visibility selection" });
+    await waitPopup(page, { visible: false });
+  });
+
+  test("Member: sees the announcement before joining and can reopen it afterwards", async ({
+    browser,
+  }) => {
+    const { context, page } = await signUpFromSpace(browser, member, spaceUrl);
+    try {
+      await page.addStyleTag({
+        content: "*, *::before, *::after { animation-play-state: paused !important; }",
+      });
+      await clickNoNav(page, { testId: "btn-participate" });
+
+      const notice = page.getByTestId("card-announcement");
+      await expect(notice).toBeVisible();
+      await expect(notice.getByTestId("announcement-title")).toHaveText(announcementTitle);
+      await expect(notice.getByTestId("announcement-body")).toContainText(announcementBody);
+
+      await clickNoNav(page, { testId: "btn-announcement-continue" });
+      await expect(notice).toBeHidden({ timeout: 30000 });
+
+      const entry = page
+        .getByTestId("action-card-announcement")
+        .or(page.getByTestId("candidate-announcement-link"));
+      await expect(entry).toBeVisible({ timeout: 30000 });
+      await entry.click();
+      await page.waitForURL(/\/actions\/announcements\//, { timeout: 30000 });
+      const viewer = page.getByTestId("announcement-viewer-view");
+      await expect(viewer).toBeVisible();
+      await expect(viewer.getByTestId("announcement-body")).toContainText(announcementBody);
+    } finally {
+      await context.close();
+    }
+  });
+});

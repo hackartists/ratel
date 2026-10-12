@@ -133,6 +133,12 @@ const en = {
   follow_desc: "Require participants to follow curated users or teams.",
   meet_name: "Meet",
   meet_desc: "Live meeting with recording & transcript",
+  announcement_name: "Announcement",
+  announcement_desc: "Notice shown to members right before they join",
+  announcement_continue: "Continue",
+  announcement_view: "Read",
+  announcement_title_placeholder: "Announcement title",
+  announcement_body_placeholder: "Write the announcement...",
   admin_badge: "Admin",
   home: "Home",
   publish: "Publish",
@@ -273,6 +279,12 @@ const ko: Record<keyof typeof en, string> = {
   follow_desc: "참가자에게 지정된 사용자 또는 팀을 팔로우하도록 요구하세요.",
   meet_name: "미팅",
   meet_desc: "녹화·transcript 자동 저장 실시간 회의",
+  announcement_name: "공지",
+  announcement_desc: "참여 직전에 보여주는 스페이스 공지",
+  announcement_continue: "확인하고 계속",
+  announcement_view: "보기",
+  announcement_title_placeholder: "공지 제목",
+  announcement_body_placeholder: "공지 내용을 입력하세요...",
   admin_badge: "관리자",
   home: "홈",
   publish: "게시",
@@ -415,6 +427,12 @@ export interface SpaceViewerI18n {
   followDesc: string;
   meetName: string;
   meetDesc: string;
+  announcementName: string;
+  announcementDesc: string;
+  announcementContinue: string;
+  announcementView: string;
+  announcementTitlePlaceholder: string;
+  announcementBodyPlaceholder: string;
   adminBadge: string;
   home: string;
   publish: string;
@@ -557,6 +575,12 @@ export function useSpaceViewerI18n(): SpaceViewerI18n {
     followDesc: t("follow_desc"),
     meetName: t("meet_name"),
     meetDesc: t("meet_desc"),
+    announcementName: t("announcement_name"),
+    announcementDesc: t("announcement_desc"),
+    announcementContinue: t("announcement_continue"),
+    announcementView: t("announcement_view"),
+    announcementTitlePlaceholder: t("announcement_title_placeholder"),
+    announcementBodyPlaceholder: t("announcement_body_placeholder"),
     adminBadge: t("admin_badge"),
     home: t("home"),
     publish: t("publish"),

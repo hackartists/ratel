@@ -38,7 +38,7 @@ pub async fn aggregate_score(
         SpaceActionType::Follow => score.follow_score += activity.total_score,
         SpaceActionType::TopicDiscussion => score.discussion_score += activity.total_score,
         // Meet actions are not yet tracked in per-category score breakdowns.
-        SpaceActionType::Meet => {}
+        SpaceActionType::Meet | SpaceActionType::Announcement => {}
     }
 
     // Refresh the denormalized identity/display fields from the activity.
