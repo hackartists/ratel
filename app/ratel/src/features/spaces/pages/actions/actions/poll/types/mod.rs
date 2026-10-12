@@ -12,6 +12,9 @@ pub use space_poll_summary::*;
 mod question;
 pub use question::*;
 
+mod condition;
+pub use condition::*;
+
 mod respondent_attr;
 pub use respondent_attr::*;
 

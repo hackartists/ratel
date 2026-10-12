@@ -14,6 +14,7 @@ fn validate_answers_accepts_agreed_privacy_consent() {
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
+        display_condition: None,
     })];
     let answers = vec![Answer::PrivacyConsent {
         agreed: true,
@@ -32,6 +33,7 @@ fn validate_answers_rejects_unagreed_when_required() {
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
+        display_condition: None,
     })];
     let answers = vec![Answer::PrivacyConsent {
         agreed: false,
@@ -50,6 +52,7 @@ fn validate_answers_rejects_missing_phone_when_required() {
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
+        display_condition: None,
     })];
     let answers = vec![Answer::PrivacyConsent {
         agreed: true,
@@ -68,6 +71,7 @@ fn validate_answers_allows_empty_when_not_required() {
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(false),
+        display_condition: None,
     })];
     let answers = vec![Answer::PrivacyConsent {
         agreed: false,
@@ -87,6 +91,7 @@ fn validate_answers_rejects_mismatched_answer_variant() {
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
+        display_condition: None,
     })];
     let answers = vec![Answer::ShortAnswer {
         answer: Some("wrong type".to_string()),

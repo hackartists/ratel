@@ -202,9 +202,9 @@ pub async fn respond_poll(
         return Err(SpacePollError::PollNotInProgress.into());
     }
 
-    if !validate_answers(poll.questions.0.clone(), req.answers.clone()) {
-        return Err(SpacePollError::AnswerMismatch.into());
-    }
+    let outcome = evaluate_answers(&poll.questions.0, &req.answers)
+        .ok_or(SpacePollError::AnswerMismatch)?;
+    let completed = outcome.completed;
 
     // Privacy-consent answers carry an unverified client "verified" claim —
     // never trust it. Re-verify phone+code against the stored
@@ -218,7 +218,7 @@ pub async fn respond_poll(
         .await?
         .map(|p| p.phone_number);
 
-    let mut answers = req.answers.clone();
+    let mut answers = outcome.answers;
     for answer in answers.iter_mut() {
         if let Answer::PrivacyConsent {
             agreed,
@@ -313,23 +313,29 @@ pub async fn respond_poll(
     let sampling_answers = answers.clone();
 
     // Postgres record (was DynamoDB)
-    if let Some(mut existing_answer) = existing {
+    let (answer_record, newly_completed) = if let Some(mut existing_answer) = existing {
         let now = crate::common::utils::time::get_now_timestamp_millis();
+        let newly_completed = completed && !existing_answer.completed;
         existing_answer.answers = PollUserAnswers(answers);
         existing_answer.created_at = now;
+        existing_answer.completed = completed;
         existing_answer.save().await?;
+        (existing_answer, newly_completed)
     } else {
         let respondent = get_respondent_from_panels(cli, &space_pk, &member.pk).await?;
         let answer_record = SpacePollUserAnswer::new(
             space_pk.clone(),
             poll_sk_entity.clone(),
             answers,
+            completed,
             respondent,
             member.clone(),
         );
         answer_record.save().await?;
-        // Phase 5: emit so the outbox poller dispatches "PollXpRecord"
-        // (handle_poll_xp) — the Postgres analogue of the old EventBridge path.
+        (answer_record, completed)
+    };
+
+    if newly_completed {
         crate::common::events::outbox::EventOutbox::emit_insert(
             crate::common::events::outbox::topic::POLL_USER_ANSWER,
             &answer_record,
@@ -343,9 +349,6 @@ pub async fn respond_poll(
             &space_pk, 1,
         )
         .await;
-
-        // Reward payout + XP recording run on EventBridge via SPACE_POLL_USER_ANSWER#
-        // INSERT → handle_poll_xp. See features/activity/services/handle_xp_event.rs.
     }
 
     if role != SpaceUserRole::Creator {

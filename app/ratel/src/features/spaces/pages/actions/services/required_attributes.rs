@@ -3,7 +3,7 @@ use crate::features::spaces::pages::actions::*;
 
 /// Checks the action's Required Attributes gate — a set of rules independent
 /// of (and AND-combined with) `depends_on`. Each rule references a Poll
-/// action's single-choice question by index and a list of allowed answer
+/// action's single- or multiple-choice question by index and a list of allowed answer
 /// values; the rule is satisfied when the user's recorded answer to that
 /// question matches one of the allowed values (OR within a rule). A
 /// participant who never answered the referenced poll fails the rule.
@@ -52,36 +52,25 @@ pub async fn required_attributes_met(
 /// poll and the user's answers to it.
 ///
 /// Shared by action gating ([`required_attributes_met`]) and the Sampling
-/// app's population check, so both apply the exact same matching: the
-/// referenced question must be single-choice, the user must have picked an
-/// option, and that option's text must be one of `allowed_values`.
+/// app's population check, so both apply the exact same matching as poll
+/// display conditions: the referenced question must be single- or
+/// multiple-choice and at least one picked option's text must be one of
+/// `allowed_values`.
 #[cfg(feature = "server")]
 pub fn rule_satisfied(
     rule: &crate::features::spaces::pages::actions::models::RequiredAttributeRule,
     poll: &crate::features::spaces::pages::actions::actions::poll::SpacePoll,
     answers: &[crate::features::spaces::pages::actions::actions::poll::Answer],
 ) -> bool {
-    use crate::features::spaces::pages::actions::actions::poll::{Answer, Question};
+    use crate::features::spaces::pages::actions::actions::poll::answer_matches_values;
 
-    let answered_index = match answers.get(rule.question_index) {
-        Some(Answer::SingleChoice {
-            answer: Some(idx), ..
-        }) => *idx,
-        _ => return false,
-    };
-
-    let answered_value = match poll.questions.0.get(rule.question_index) {
-        Some(Question::SingleChoice(q)) => match usize::try_from(answered_index)
-            .ok()
-            .and_then(|i| q.options.get(i))
-        {
-            Some(v) => v,
-            None => return false,
-        },
-        _ => return false,
-    };
-
-    rule.allowed_values.iter().any(|v| v == answered_value)
+    match (
+        poll.questions.0.get(rule.question_index),
+        answers.get(rule.question_index),
+    ) {
+        (Some(question), Some(answer)) => answer_matches_values(question, answer, &rule.allowed_values),
+        _ => false,
+    }
 }
 
 #[cfg(all(test, feature = "server"))]
@@ -148,12 +137,22 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_single_choice_questions_and_missing_answers() {
+    fn matches_any_pick_of_a_multiple_choice_question() {
+        let multi = Answer::MultipleChoice {
+            answer: Some(vec![0, 1]),
+            other: None,
+        };
+        assert!(rule_satisfied(&rule(1, &["B"]), &poll(), &[pick(0), multi.clone()]));
+        assert!(!rule_satisfied(&rule(1, &["C"]), &poll(), &[pick(0), multi]));
+    }
+
+    #[test]
+    fn rejects_mismatched_answers_and_missing_answers() {
         let multi = Answer::MultipleChoice {
             answer: Some(vec![0]),
             other: None,
         };
-        assert!(!rule_satisfied(&rule(1, &["A"]), &poll(), &[pick(0), multi]));
+        assert!(!rule_satisfied(&rule(0, &["20s"]), &poll(), &[multi]));
         let unanswered = Answer::SingleChoice {
             answer: None,
             other: None,

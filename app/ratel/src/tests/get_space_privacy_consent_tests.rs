@@ -69,6 +69,7 @@ async fn get_space_reports_true_when_a_poll_has_a_privacy_consent_question() {
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
+        display_condition: None,
     }));
     SpacePoll::repository().insert(&poll).await.expect("save poll");
 

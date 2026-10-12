@@ -249,6 +249,7 @@ function ChoiceViewer({
             <button
               key={`opt-${index}-${optIdx}`}
               type="button"
+              data-testid={`question-option-${optIdx}`}
               aria-selected={isSelected ? "true" : "false"}
               className={`${OPTION_BASE_CLASS} ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
               disabled={disabled}

@@ -133,7 +133,7 @@ async fn has_completed_poll_action(
 
     SpacePollUserAnswer::find_one(space_pk, &poll_sk, user_pk)
         .await
-        .map(|answer| answer.is_some())
+        .map(|answer| answer.is_some_and(|a| a.completed))
         .map_err(|err| prerequisite_check_error("Failed to verify poll prerequisite", err))
 }
 

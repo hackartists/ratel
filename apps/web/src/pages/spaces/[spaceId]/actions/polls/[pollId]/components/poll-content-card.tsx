@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { Question } from "@ratel/ts-bridges";
+import type { ConditionOperator, Question, QuestionCondition, RequiredAttributeRule } from "@ratel/ts-bridges";
 import { useUpdatePoll } from "@ratel/ts-bridges/hooks";
 import { AutosaveStatusBadge, type SaveStatus } from "@/components/space-actions/autosave-status-badge";
 import { Editor } from "@/components/editor/editor";
+import { RequiredAttributeRulesEditor, type ChoiceCandidate } from "@/components/space-actions/required-attribute-rules-editor";
+import { choiceOptions, removeQuestionAt, sanitizeQuestionFlow, terminateOn } from "./poll-flow";
 import { usePollCreatorI18n } from "./poll-creator.i18n";
 import { useToast } from "@/lib/toast";
 import { usePoll } from "../hooks/use-poll";
@@ -55,13 +57,35 @@ function convertToQtype(existing: Question, target: QType): Question {
   const title = existing.title;
   const options = optionsOf(existing);
   const opts = options.length === 0 ? ["", ""] : options;
+  const display_condition = existing.display_condition ?? null;
+  const terminate_on = terminateOn(existing);
   switch (target) {
     case "single":
-      return { answer_type: "single_choice", title, description: null, image_url: null, options: opts, is_required: null, allow_other: null };
+      return {
+        answer_type: "single_choice",
+        title,
+        description: null,
+        image_url: null,
+        options: opts,
+        is_required: null,
+        allow_other: null,
+        terminate_on,
+        display_condition,
+      };
     case "multi":
-      return { answer_type: "multiple_choice", title, description: null, image_url: null, options: opts, is_required: null, allow_other: null };
+      return {
+        answer_type: "multiple_choice",
+        title,
+        description: null,
+        image_url: null,
+        options: opts,
+        is_required: null,
+        allow_other: null,
+        terminate_on,
+        display_condition,
+      };
     case "subjective":
-      return { answer_type: "subjective", title, description: "", is_required: null };
+      return { answer_type: "subjective", title, description: "", is_required: null, display_condition };
     case "linear":
       return {
         answer_type: "linear_scale",
@@ -73,6 +97,7 @@ function convertToQtype(existing: Question, target: QType): Question {
         min_label: "",
         max_label: "",
         is_required: null,
+        display_condition,
       };
     case "privacy_consent":
       return {
@@ -82,8 +107,30 @@ function convertToQtype(existing: Question, target: QType): Question {
         terms_title: "",
         terms_body_html: "",
         is_required: null,
+        display_condition,
       };
   }
+}
+
+/** Earlier single/multiple-choice questions a question's display condition may reference. */
+function conditionCandidates(questions: Question[], idx: number, pollId: string): ChoiceCandidate[] {
+  return questions.slice(0, idx).flatMap((q, qi) => {
+    const options = choiceOptions(q);
+    if (options === null) return [];
+    return [{ pollActionId: pollId, pollTitle: `Q${qi + 1}`, questionIndex: qi, questionTitle: q.title, options: options.filter((o) => o !== "") }];
+  });
+}
+
+function conditionToRules(condition: QuestionCondition | null, pollId: string): RequiredAttributeRule[] {
+  return (condition?.rules ?? []).map((r) => ({ poll_action_id: pollId, question_index: r.question_index, allowed_values: r.allowed_values }));
+}
+
+function withCondition(q: Question, rules: RequiredAttributeRule[], operator: ConditionOperator): Question {
+  const display_condition: QuestionCondition | null =
+    rules.length === 0
+      ? null
+      : { operator, rules: rules.map((r) => ({ question_index: r.question_index, allowed_values: r.allowed_values })) };
+  return { ...q, display_condition } as Question;
 }
 
 export function PollContentCard() {
@@ -137,7 +184,9 @@ export function PollContentCard() {
   }, []);
 
   const saveQuestions = (next: Question[]) => {
-    update.mutateAsync({ spacePk: spaceId, pollSk: pollId, req: { questions: next } }).catch((err) => toast.error(err));
+    update
+      .mutateAsync({ spacePk: spaceId, pollSk: pollId, req: { questions: sanitizeQuestionFlow(next) } })
+      .catch((err) => toast.error(err));
   };
 
   return (
@@ -192,27 +241,53 @@ export function PollContentCard() {
               idx={idx}
               question={question}
               tr={tr}
+              conditionCandidates={conditionCandidates(questions, idx, pollId)}
+              pollId={pollId}
+              onConditionChange={(i, rules, operator) => {
+                setQuestions((qs) => {
+                  const next = qs.map((q, qi) => (qi === i ? withCondition(q, rules, operator) : q));
+                  saveQuestions(next);
+                  return next;
+                });
+              }}
+              onTerminateToggle={(i, value) => {
+                setQuestions((qs) => {
+                  const next = qs.map((q, qi) => {
+                    if (qi !== i) return q;
+                    if (q.answer_type === "single_choice" || q.answer_type === "multiple_choice") {
+                      const current = q.terminate_on ?? [];
+                      const terminate_on = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+                      return { ...q, terminate_on };
+                    }
+                    return q;
+                  });
+                  saveQuestions(next);
+                  return next;
+                });
+              }}
               onTitleChange={(i, value) => {
                 setQuestions((qs) => qs.map((q, qi) => (qi === i ? withTitle(q, value) : q)));
               }}
               onTypeChange={(i, target) => {
                 setQuestions((qs) => {
-                  const next = qs.map((q, qi) => (qi === i ? convertToQtype(q, target) : q));
+                  const next = sanitizeQuestionFlow(qs.map((q, qi) => (qi === i ? convertToQtype(q, target) : q)));
                   saveQuestions(next);
                   return next;
                 });
               }}
               onOptionChange={(i, optIdx, value) => {
                 setQuestions((qs) =>
-                  qs.map((q, qi) => {
-                    if (qi !== i) return q;
-                    if (q.answer_type === "single_choice" || q.answer_type === "multiple_choice") {
-                      const options = q.options.slice();
-                      options[optIdx] = value;
-                      return { ...q, options };
-                    }
-                    return q;
-                  }),
+                  sanitizeQuestionFlow(
+                    qs.map((q, qi) => {
+                      if (qi !== i) return q;
+                      if (q.answer_type === "single_choice" || q.answer_type === "multiple_choice") {
+                        const options = q.options.slice();
+                        options[optIdx] = value;
+                        return { ...q, options };
+                      }
+                      return q;
+                    }),
+                  ),
                 );
               }}
               onOptionAdd={(i) => {
@@ -230,15 +305,17 @@ export function PollContentCard() {
               }}
               onOptionRemove={(i, optIdx) => {
                 setQuestions((qs) => {
-                  const next = qs.map((q, qi) => {
-                    if (qi !== i) return q;
-                    if (q.answer_type === "single_choice" || q.answer_type === "multiple_choice") {
-                      if (q.options.length > 1 && optIdx < q.options.length) {
-                        return { ...q, options: q.options.filter((_, oi) => oi !== optIdx) };
+                  const next = sanitizeQuestionFlow(
+                    qs.map((q, qi) => {
+                      if (qi !== i) return q;
+                      if (q.answer_type === "single_choice" || q.answer_type === "multiple_choice") {
+                        if (q.options.length > 1 && optIdx < q.options.length) {
+                          return { ...q, options: q.options.filter((_, oi) => oi !== optIdx) };
+                        }
                       }
-                    }
-                    return q;
-                  });
+                      return q;
+                    }),
+                  );
                   saveQuestions(next);
                   return next;
                 });
@@ -258,7 +335,7 @@ export function PollContentCard() {
               }}
               onRemove={(i) => {
                 setQuestions((qs) => {
-                  const next = qs.filter((_, qi) => qi !== i);
+                  const next = removeQuestionAt(qs, i);
                   saveQuestions(next);
                   return next;
                 });
@@ -306,7 +383,17 @@ export function PollContentCard() {
               setQuestions((qs) => {
                 const next = [
                   ...qs,
-                  { answer_type: "single_choice", title: "", description: null, image_url: null, options: ["", ""], is_required: null, allow_other: null } as Question,
+                  {
+                    answer_type: "single_choice",
+                    title: "",
+                    description: null,
+                    image_url: null,
+                    options: ["", ""],
+                    is_required: null,
+                    allow_other: null,
+                    terminate_on: [],
+                    display_condition: null,
+                  } as Question,
                 ];
                 saveQuestions(next);
                 return next;
@@ -329,6 +416,10 @@ interface QuestionBlockProps {
   idx: number;
   question: Question;
   tr: ReturnType<typeof usePollCreatorI18n>;
+  pollId: string;
+  conditionCandidates: ChoiceCandidate[];
+  onConditionChange: (idx: number, rules: RequiredAttributeRule[], operator: ConditionOperator) => void;
+  onTerminateToggle: (idx: number, value: string) => void;
   onTitleChange: (idx: number, value: string) => void;
   onTypeChange: (idx: number, target: QType) => void;
   onOptionChange: (idx: number, optIdx: number, value: string) => void;
@@ -346,6 +437,10 @@ function QuestionBlock({
   idx,
   question,
   tr,
+  pollId,
+  conditionCandidates,
+  onConditionChange,
+  onTerminateToggle,
   onTitleChange,
   onTypeChange,
   onOptionChange,
@@ -365,6 +460,11 @@ function QuestionBlock({
   const isSubjective = qtype === "subjective";
   const isLinear = qtype === "linear";
   const isPrivacyConsent = qtype === "privacy_consent";
+  const condition = question.display_condition ?? null;
+  const operator: ConditionOperator = condition?.operator ?? "And";
+  const conditionRules = conditionToRules(condition, pollId);
+  const choiceOpts = choiceOptions(question);
+  const stops = terminateOn(question);
 
   return (
     <div className="q-block" data-qtype={qtype} data-testid={`poll-question-${idx}`}>
@@ -457,6 +557,45 @@ function QuestionBlock({
           onPrivacyConsentChange={onPrivacyConsentChange}
           onBlurSave={onBlurSave}
         />
+      )}
+
+      {choiceOpts !== null && choiceOpts.some((o) => o !== "") && (
+        <div className="flex flex-col gap-2 w-full" data-testid={`poll-question-${idx}-terminate`}>
+          <span className="font-medium text-[12px]/[16px] text-foreground-muted">{tr.terminateHint}</span>
+          <div className="flex flex-wrap gap-2">
+            {choiceOpts.map((opt, oi) =>
+              opt === "" ? null : (
+                <button
+                  key={`term-${oi}`}
+                  type="button"
+                  aria-pressed={stops.includes(opt)}
+                  data-testid={`poll-question-${idx}-terminate-${oi}`}
+                  className={`py-1 px-2.5 rounded-full text-[12px]/[16px] border ${
+                    stops.includes(opt) ? "bg-primary/10 border-primary text-primary" : "border-separator text-foreground-muted"
+                  }`}
+                  onClick={() => onTerminateToggle(idx, opt)}
+                >
+                  {opt}
+                </button>
+              ),
+            )}
+          </div>
+        </div>
+      )}
+
+      {idx > 0 && (
+        <div className="w-full" data-testid={`poll-question-${idx}-condition`}>
+          <RequiredAttributeRulesEditor
+            candidates={conditionCandidates}
+            value={conditionRules}
+            onChange={(rules) => onConditionChange(idx, rules, operator)}
+            operator={operator}
+            onOperatorChange={(op) => onConditionChange(idx, conditionRules, op)}
+            hint={tr.conditionHint}
+            emptyText={tr.conditionEmpty}
+            addLabel={tr.conditionAdd}
+          />
+        </div>
       )}
     </div>
   );

@@ -12,4 +12,8 @@ pk: Partition,
 /**
  * `EntityType::SpacePollUserAnswer(space_id, poll_id)`.
  */
-sk: EntityType, id: string, actor_pk: string, poll_id: string, space_id: string, created_at: number, answers: PollUserAnswers, respondent: RespondentJson | null, user_pk: string | null, display_name: string | null, profile_url: string | null, username: string | null, };
+sk: EntityType, id: string, actor_pk: string, poll_id: string, space_id: string, created_at: number, answers: PollUserAnswers, respondent: RespondentJson | null, user_pk: string | null, display_name: string | null, profile_url: string | null, username: string | null,
+/**
+ * See [`SpacePollUserAnswer::completed`].
+ */
+completed: boolean, };

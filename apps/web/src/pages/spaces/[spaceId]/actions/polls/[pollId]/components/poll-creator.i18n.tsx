@@ -55,6 +55,10 @@ const en = {
   delete_poll_btn: "Delete poll",
   card_index_1: "01 / 02",
   card_index_2: "02 / 02",
+  condition_hint: "Show this question only when earlier answers match. Values in one rule match if any is chosen.",
+  condition_empty: "No earlier single or multiple choice question to branch on.",
+  condition_add: "+ Add display condition",
+  terminate_hint: "End the poll when this option is chosen:",
 };
 
 const ko: Record<keyof typeof en, string> = {
@@ -111,6 +115,10 @@ const ko: Record<keyof typeof en, string> = {
   delete_poll_btn: "투표 삭제",
   card_index_1: "01 / 02",
   card_index_2: "02 / 02",
+  condition_hint: "앞 문항의 응답이 조건에 맞을 때만 이 문항을 보여줍니다. 한 조건 안의 값은 하나라도 선택되면 충족됩니다.",
+  condition_empty: "조건으로 사용할 앞선 단일/복수 선택 문항이 없습니다.",
+  condition_add: "+ 노출 조건 추가",
+  terminate_hint: "이 선택지를 고르면 설문 종료:",
 };
 
 export const i18n = { en, ko };
@@ -169,6 +177,10 @@ export interface PollCreatorI18n {
   deletePollBtn: string;
   cardIndex1: string;
   cardIndex2: string;
+  conditionHint: string;
+  conditionEmpty: string;
+  conditionAdd: string;
+  terminateHint: string;
 }
 
 export function usePollCreatorI18n(): PollCreatorI18n {
@@ -227,5 +239,9 @@ export function usePollCreatorI18n(): PollCreatorI18n {
     deletePollBtn: t("delete_poll_btn"),
     cardIndex1: t("card_index_1"),
     cardIndex2: t("card_index_2"),
+    conditionHint: t("condition_hint"),
+    conditionEmpty: t("condition_empty"),
+    conditionAdd: t("condition_add"),
+    terminateHint: t("terminate_hint"),
   };
 }

@@ -49,6 +49,9 @@ pub async fn update_poll(
             if questions.is_empty() {
                 return Err(SpacePollError::QuestionsEmpty.into());
             }
+            if !validate_question_flow(&questions) {
+                return Err(SpacePollError::InvalidCondition.into());
+            }
             poll.questions = PollQuestions(questions);
         }
         UpdatePollRequest::ResponseEditable { response_editable } => {

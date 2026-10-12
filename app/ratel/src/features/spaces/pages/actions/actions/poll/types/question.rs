@@ -1,4 +1,6 @@
 use crate::features::spaces::pages::actions::actions::poll::*;
+
+use super::condition::QuestionCondition;
 #[cfg(feature = "server")]
 #[allow(unused_imports)]
 use rmcp::schemars;
@@ -41,6 +43,35 @@ impl Question {
             Question::PrivacyConsent(q) => &q.title,
         }
     }
+
+    /// The condition gating whether this question is shown.
+    pub fn display_condition(&self) -> Option<&QuestionCondition> {
+        match self {
+            Question::SingleChoice(q) | Question::MultipleChoice(q) => q.display_condition.as_ref(),
+            Question::ShortAnswer(q) | Question::Subjective(q) => q.display_condition.as_ref(),
+            Question::Checkbox(q) => q.display_condition.as_ref(),
+            Question::Dropdown(q) => q.display_condition.as_ref(),
+            Question::LinearScale(q) => q.display_condition.as_ref(),
+            Question::PrivacyConsent(q) => q.display_condition.as_ref(),
+        }
+    }
+
+    /// Option texts that end the poll when picked; only choice questions have them.
+    pub fn terminate_on(&self) -> Option<&[String]> {
+        match self {
+            Question::SingleChoice(q) | Question::MultipleChoice(q) => Some(&q.terminate_on),
+            _ => None,
+        }
+    }
+
+    /// Option texts of single- and multiple-choice questions, the only kinds a
+    /// display condition can reference.
+    pub fn choice_options(&self) -> Option<&[String]> {
+        match self {
+            Question::SingleChoice(q) | Question::MultipleChoice(q) => Some(&q.options),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Default)]
@@ -59,6 +90,10 @@ pub struct LinearScaleQuestion {
     pub min_label: String,
     pub max_label: String,
     pub is_required: Option<bool>,
+    /// Shows this question only when earlier answers satisfy the condition;
+    /// `None` means always shown.
+    #[serde(default)]
+    pub display_condition: Option<QuestionCondition>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Default)]
@@ -74,6 +109,10 @@ pub struct DropdownQuestion {
     pub image_url: Option<String>,
     pub options: Vec<String>,
     pub is_required: Option<bool>,
+    /// Shows this question only when earlier answers satisfy the condition;
+    /// `None` means always shown.
+    #[serde(default)]
+    pub display_condition: Option<QuestionCondition>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -90,6 +129,10 @@ pub struct CheckboxQuestion {
     pub options: Vec<String>,
     pub is_multi: bool,
     pub is_required: Option<bool>,
+    /// Shows this question only when earlier answers satisfy the condition;
+    /// `None` means always shown.
+    #[serde(default)]
+    pub display_condition: Option<QuestionCondition>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -103,6 +146,10 @@ pub struct SubjectiveQuestion {
     pub title: String,
     pub description: String,
     pub is_required: Option<bool>,
+    /// Shows this question only when earlier answers satisfy the condition;
+    /// `None` means always shown.
+    #[serde(default)]
+    pub display_condition: Option<QuestionCondition>,
 }
 
 /// A consent question: shows rich-text terms the respondent must agree to,
@@ -123,6 +170,10 @@ pub struct PrivacyConsentQuestion {
     /// other HTML content fields, e.g. poll/space descriptions).
     pub terms_body_html: String,
     pub is_required: Option<bool>,
+    /// Shows this question only when earlier answers satisfy the condition;
+    /// `None` means always shown.
+    #[serde(default)]
+    pub display_condition: Option<QuestionCondition>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -139,4 +190,12 @@ pub struct ChoiceQuestion {
     pub options: Vec<String>,
     pub is_required: Option<bool>,
     pub allow_other: Option<bool>,
+    /// Option texts that end the poll when picked: later questions are skipped
+    /// and the response is submitted immediately.
+    #[serde(default)]
+    pub terminate_on: Vec<String>,
+    /// Shows this question only when earlier answers satisfy the condition;
+    /// `None` means always shown.
+    #[serde(default)]
+    pub display_condition: Option<QuestionCondition>,
 }

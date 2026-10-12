@@ -21,6 +21,7 @@ import { timeAgo } from "@/lib/time";
 import { useToast } from "@/lib/toast";
 import { usePoll } from "../hooks/use-poll";
 import { EncryptedVoteVerificationPanel, PollSubmitConfirmPopup } from "./poll-encrypted-vote";
+import { emptyAnswerFor, evaluateFlow } from "./poll-flow";
 
 // poll/views/main/poll_read_page.rs (`PollReadPage`, variant "read" — the
 // participant flow: overview step + the client-side ABE encrypted-vote UI)
@@ -65,22 +66,34 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
     isParticipationOpen(space),
   );
 
+  const flow = useMemo(() => evaluateFlow(poll.questions, answers), [poll.questions, answers]);
+  const visibleIndices = useMemo(
+    () => poll.questions.map((_, i) => i).filter((i) => flow.visible[i]),
+    [poll.questions, flow],
+  );
+
   const allAnswered = useMemo(() => {
-    if (poll.questions.length === 0) return false;
-    return poll.questions.every((q, idx) => hasAnswerForQuestion(q, answers[idx]));
-  }, [poll.questions, answers]);
+    if (visibleIndices.length === 0) return false;
+    return visibleIndices.every((idx) => hasAnswerForQuestion(poll.questions[idx], answers[idx]));
+  }, [poll.questions, answers, visibleIndices]);
 
   const isInProgress = poll.status === "InProgress";
   const hasResponse = poll.my_response !== null;
   const canSubmit = canRespond && canExecuteAction && isInProgress && !hasResponse;
   const canUpdate = canRespond && canExecuteAction && isInProgress && hasResponse && poll.response_editable;
   const total = poll.questions.length;
-  const currentIdx = Math.min(questionIndex, Math.max(total - 1, 0));
+  const clampedIdx = Math.min(questionIndex, Math.max(total - 1, 0));
+  const currentIdx = flow.visible[clampedIdx]
+    ? clampedIdx
+    : ([...visibleIndices].reverse().find((i) => i < clampedIdx) ?? visibleIndices[0] ?? 0);
   const currentQuestion = poll.questions[currentIdx];
   const currentAnswer = answers[currentIdx];
   const hasCurrentAnswer = currentQuestion !== undefined ? hasAnswerForQuestion(currentQuestion, currentAnswer) : false;
-  const isFirstQuestion = total === 0 || currentIdx === 0;
-  const isLastQuestion = total === 0 || currentIdx + 1 >= total;
+  const prevIdx = [...visibleIndices].reverse().find((i) => i < currentIdx);
+  const nextIdx = visibleIndices.find((i) => i > currentIdx);
+  const visiblePosition = visibleIndices.indexOf(currentIdx) + 1;
+  const isFirstQuestion = total === 0 || prevIdx === undefined;
+  const isLastQuestion = total === 0 || nextIdx === undefined;
   const pollNextDisabled = canSubmit && !hasCurrentAnswer;
   const showSubmitButton = canRespond && (canSubmit || canUpdate);
 
@@ -159,10 +172,12 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needsSecret]);
 
-  const buildSubmitResponse = () => {
-    const payload: Answer[] = poll.questions.map(
-      (_, i) => answers[i] ?? ({ answer_type: "single_choice", answer: null, other: null } as Answer),
-    );
+  const buildSubmitResponse = (current: Record<number, Answer> = answers) => {
+    const submitFlow = evaluateFlow(poll.questions, current);
+    const payload: Answer[] = poll.questions.map((q, i) => {
+      const ans = current[i];
+      return submitFlow.visible[i] && ans !== undefined ? ans : emptyAnswerFor(q);
+    });
 
     return async () => {
       let clientCiphertextJson: string | null = null;
@@ -199,9 +214,9 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
     };
   };
 
-  const onSubmit = () => {
+  const onSubmit = (current: Record<number, Answer> = answers) => {
     if (canSubmit && !poll.response_editable) {
-      const confirmSubmit = buildSubmitResponse();
+      const confirmSubmit = buildSubmitResponse(current);
       popup.open(
         <PollSubmitConfirmPopup
           cancelLabel={tr.submitConfirmCancel}
@@ -216,7 +231,26 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
         { title: tr.submitConfirmTitle, description: tr.submitConfirmDescription },
       );
     } else {
-      void buildSubmitResponse()();
+      void buildSubmitResponse(current)();
+    }
+  };
+
+  const onAnswerChange = (ans: Answer) => {
+    const updated: Record<number, Answer> = { ...answers, [currentIdx]: ans };
+    const nextFlow = evaluateFlow(poll.questions, updated);
+    const kept: Record<number, Answer> = {};
+    Object.entries(updated).forEach(([k, v]) => {
+      const i = Number(k);
+      if (nextFlow.visible[i]) kept[i] = v;
+    });
+    setAnswers(kept);
+    if (nextFlow.terminatedAt === currentIdx && (canSubmit || canUpdate)) {
+      onSubmit(kept);
+      return;
+    }
+    const upcoming = poll.questions.findIndex((_, i) => i > currentIdx && nextFlow.visible[i]);
+    if (canSubmit && upcoming !== -1 && shouldAutoNext(currentQuestion!, ans)) {
+      setQuestionIndex(upcoming);
     }
   };
 
@@ -276,8 +310,9 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
               buttonStyle={ButtonStyle.Outline}
               shape={ButtonShape.Square}
               className="min-w-[120px]"
+              data-testid="poll-prev"
               onClick={() => {
-                if (currentIdx > 0) setQuestionIndex(currentIdx - 1);
+                if (prevIdx !== undefined) setQuestionIndex(prevIdx);
               }}
             >
               {tr.btnBack}
@@ -289,8 +324,9 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
               shape={ButtonShape.Square}
               className="min-w-[120px]"
               disabled={pollNextDisabled}
+              data-testid="poll-next"
               onClick={() => {
-                if (currentIdx + 1 < total) setQuestionIndex(currentIdx + 1);
+                if (nextIdx !== undefined) setQuestionIndex(nextIdx);
               }}
             >
               {tr.btnNext}
@@ -302,7 +338,8 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
               shape={ButtonShape.Square}
               className="min-w-[120px]"
               disabled={!allAnswered}
-              onClick={onSubmit}
+              data-testid="poll-submit"
+              onClick={() => onSubmit()}
             >
               {canUpdate ? tr.btnUpdate : tr.btnSubmit}
             </Button>
@@ -329,9 +366,9 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
         {total === 0 ? (
           <div className={`flex justify-center items-center py-10 ${emptyStateClass}`}>{tr.noQuestions}</div>
         ) : (
-          <div key={`poll-question-${currentIdx}`} className="w-full">
-            <div className="flex justify-end items-center mb-5 font-normal text-[16px] text-text-primary">
-              {`${tr.questionLabel}: ${currentIdx + 1}/${total}`}
+          <div key={`poll-question-${currentIdx}`} className="w-full" data-testid="poll-current-question" data-question-index={currentIdx}>
+            <div className="flex justify-end items-center mb-5 font-normal text-[16px] text-text-primary" data-testid="poll-progress">
+              {`${tr.questionLabel}: ${visiblePosition}/${visibleIndices.length}`}
             </div>
             <div className="w-full [&_[data-question-title-wrap]]:mb-5 [&_[data-question-title-wrap]>div]:justify-center [&_[data-question-title]]:text-center [&_[data-question-title]]:text-[21px] [&_[data-question-desc]]:text-center">
               <QuestionViewer
@@ -341,12 +378,7 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
                 answer={currentAnswer}
                 disabled={!canRespond || !canExecuteAction || !isInProgress || (!canSubmit && !canUpdate)}
                 enableOtherOption
-                onChange={(ans) => {
-                  setAnswers((prev) => ({ ...prev, [currentIdx]: ans }));
-                  if (canSubmit && currentIdx + 1 < total && shouldAutoNext(currentQuestion!, ans)) {
-                    setQuestionIndex(currentIdx + 1);
-                  }
-                }}
+                onChange={onAnswerChange}
               />
             </div>
           </div>

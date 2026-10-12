@@ -91,10 +91,10 @@ pub async fn list_actions(
             match action.action_type {
                 SpaceActionType::Poll => {
                     let poll_sk = EntityType::SpacePoll(action.action_id.clone());
-                    if let Ok(Some(_)) =
+                    if let Ok(Some(answer)) =
                         SpacePollUserAnswer::find_one(&space_pk, &poll_sk, &user.pk()).await
                     {
-                        action.user_participated = true;
+                        action.user_participated = answer.completed;
                     }
                 }
                 SpaceActionType::TopicDiscussion => {
