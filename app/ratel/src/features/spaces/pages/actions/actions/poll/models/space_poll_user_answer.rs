@@ -89,6 +89,17 @@ pub struct SpacePollUserAnswer {
     pub profile_url: Option<String>,
     #[serde(default)]
     pub username: Option<String>,
+
+    /// False when a termination option ended the poll before any other
+    /// question was answered. Such a response is stored and counted in
+    /// results, but does not count as completing the poll action.
+    #[serde(default = "completed_default")]
+    #[cfg_attr(feature = "server", postgres(version = 1, sql_default = "TRUE"))]
+    pub completed: bool,
+}
+
+fn completed_default() -> bool {
+    true
 }
 
 #[cfg(feature = "server")]
@@ -113,6 +124,7 @@ impl SpacePollUserAnswer {
         space_pk: Partition,
         poll_sk: EntityType,
         answers: Vec<Answer>,
+        completed: bool,
         respondent: Option<RespondentAttr>,
         author: crate::common::models::space::SpaceUser,
     ) -> Self {
@@ -131,6 +143,7 @@ impl SpacePollUserAnswer {
             display_name: Some(author.display_name),
             profile_url: Some(author.profile_url),
             username: Some(author.username),
+            completed,
         }
     }
 
@@ -320,6 +333,8 @@ pub struct SpacePollUserAnswerWire {
     pub display_name: Option<String>,
     pub profile_url: Option<String>,
     pub username: Option<String>,
+    /// See [`SpacePollUserAnswer::completed`].
+    pub completed: bool,
 }
 
 impl From<SpacePollUserAnswer> for SpacePollUserAnswerWire {
@@ -339,6 +354,7 @@ impl From<SpacePollUserAnswer> for SpacePollUserAnswerWire {
             display_name: a.display_name,
             profile_url: a.profile_url,
             username: a.username,
+            completed: a.completed,
         }
     }
 }

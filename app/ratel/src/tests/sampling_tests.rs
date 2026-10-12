@@ -31,6 +31,8 @@ fn choice(title: &str, options: &[&str]) -> Question {
         options: options.iter().map(|o| o.to_string()).collect(),
         is_required: Some(true),
         allow_other: None,
+        display_condition: None,
+        terminate_on: vec![],
     })
 }
 

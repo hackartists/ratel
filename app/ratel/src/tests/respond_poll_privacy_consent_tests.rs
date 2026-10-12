@@ -57,6 +57,7 @@ async fn seed_consent_poll(ctx: &TestContext) -> (String, String) {
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
+        display_condition: None,
     }));
     SpacePoll::repository().insert(&poll).await.expect("save poll");
 

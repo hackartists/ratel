@@ -35,8 +35,8 @@ function convertToQtype(existing: Question, target: QType): Question {
   const options = optionsOf(existing);
   const opts = options.length === 0 ? ["", ""] : options;
   return target === "multi"
-    ? { answer_type: "multiple_choice", title, description: null, image_url: null, options: opts, is_required: null, allow_other: null }
-    : { answer_type: "single_choice", title, description: null, image_url: null, options: opts, is_required: null, allow_other: null };
+    ? { answer_type: "multiple_choice", title, description: null, image_url: null, options: opts, is_required: null, allow_other: null, terminate_on: [], display_condition: null }
+    : { answer_type: "single_choice", title, description: null, image_url: null, options: opts, is_required: null, allow_other: null, terminate_on: [], display_condition: null };
 }
 
 function correctAnswerForQuestion(q: Question): QuizCorrectAnswer {
@@ -176,7 +176,7 @@ export function QuizQuestionsCard() {
             type="button"
             data-testid="quiz-question-add"
             onClick={() => {
-              const newQ: Question = { answer_type: "single_choice", title: "", description: null, image_url: null, options: ["", ""], is_required: null, allow_other: null };
+              const newQ: Question = { answer_type: "single_choice", title: "", description: null, image_url: null, options: ["", ""], is_required: null, allow_other: null, terminate_on: [], display_condition: null };
               const newA = correctAnswerForQuestion(newQ);
               const nextQuestions = [...questions, newQ];
               const nextAnswers = [...answers, newA];

@@ -12,6 +12,8 @@ const en = {
   select_allowed_values_hint: "Select one or more allowed answer values:",
   cancel: "Cancel",
   confirm: "Add",
+  operator_and: "Match all (AND)",
+  operator_or: "Match any (OR)",
 };
 
 const ko: Record<keyof typeof en, string> = {
@@ -22,6 +24,8 @@ const ko: Record<keyof typeof en, string> = {
   select_allowed_values_hint: "허용할 응답 값을 하나 이상 선택하세요:",
   cancel: "취소",
   confirm: "추가",
+  operator_and: "모두 만족 (AND)",
+  operator_or: "하나 이상 만족 (OR)",
 };
 
 export const i18n = { en, ko };
@@ -33,6 +37,8 @@ export interface ActionRequiredAttributeSelectorI18n {
   selectAllowedValuesHint: string;
   cancel: string;
   confirm: string;
+  operatorAnd: string;
+  operatorOr: string;
 }
 
 export function useActionRequiredAttributeSelectorI18n(): ActionRequiredAttributeSelectorI18n {
@@ -44,5 +50,7 @@ export function useActionRequiredAttributeSelectorI18n(): ActionRequiredAttribut
     selectAllowedValuesHint: t("select_allowed_values_hint"),
     cancel: t("cancel"),
     confirm: t("confirm"),
+    operatorAnd: t("operator_and"),
+    operatorOr: t("operator_or"),
   };
 }

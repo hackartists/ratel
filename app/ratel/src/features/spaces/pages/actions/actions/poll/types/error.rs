@@ -35,6 +35,13 @@ pub enum SpacePollError {
     )]
     InvalidTimeRange,
 
+    #[error("invalid display condition or termination option")]
+    #[translate(
+        en = "Question conditions may only reference options of earlier single or multiple choice questions",
+        ko = "문항 조건은 앞선 단일/복수 선택 문항의 선택지만 참조할 수 있습니다."
+    )]
+    InvalidCondition,
+
     #[error("invalid question format")]
     #[translate(en = "Invalid question format", ko = "유효하지 않은 질문 형식입니다.")]
     InvalidQuestionFormat,
