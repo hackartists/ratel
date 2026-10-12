@@ -62,18 +62,18 @@ export function SamplingSettingsForm({ sampling }: { sampling: UseSpaceSampling 
         )}
       </section>
 
-      <section className="spa-section" data-testid="sampling-section-population">
+      <section className="spa-section sampling-section--raised" data-testid="sampling-section-population">
         <div className="spa-section__head">
           <div className="spa-section__title">
             <span className="spa-section__label">{tr.populationLabel}</span>
           </div>
-          <span className="spa-section__hint">{tr.populationHint}</span>
         </div>
         <RequiredAttributeRulesEditor
           candidates={candidates}
           value={form.rules}
           onChange={(rules) => setForm({ rules })}
           disabled={locked}
+          hint={tr.populationHint}
         />
       </section>
 

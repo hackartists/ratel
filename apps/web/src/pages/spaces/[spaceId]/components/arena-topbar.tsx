@@ -55,7 +55,9 @@ export function ArenaTopbar({
       <div className="arena-topbar__brand">
         <img className="arena-topbar__logo" src={logo} alt="Space logo" />
         <span className="arena-topbar__title">{title}</span>
-        <span className="arena-topbar__status">{statusText}</span>
+        <span className="arena-topbar__status" data-testid="arena-topbar-status">
+          {statusText}
+        </span>
         {isAdmin && (
           <span className="arena-topbar__role" data-testid="arena-topbar-admin-badge">
             <svg

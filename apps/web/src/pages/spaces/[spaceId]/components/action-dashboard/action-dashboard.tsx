@@ -130,7 +130,7 @@ export function ActionDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
 
   return (
     <>
-      <div className="quest-label">
+      <div className="quest-label" data-testid="quest-label">
         <span className="quest-label__title">{tr.yourQuests}</span>
         <span className="quest-label__info" aria-label={tr.yourQuestsTooltip}>
           <svg

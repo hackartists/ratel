@@ -17,6 +17,8 @@ export interface RequiredAttributeRulesEditorProps {
   value: RequiredAttributeRule[];
   onChange: (next: RequiredAttributeRule[]) => void;
   disabled?: boolean;
+  /** Replaces the default action-gating hint above the chips. */
+  hint?: string;
 }
 
 /**
@@ -26,7 +28,7 @@ export interface RequiredAttributeRulesEditorProps {
  * a rule OR together. Persisting the list is up to `onChange`, so the same
  * editor serves action gating and the Sampling population rules.
  */
-export function RequiredAttributeRulesEditor({ candidates, value, onChange, disabled = false }: RequiredAttributeRulesEditorProps) {
+export function RequiredAttributeRulesEditor({ candidates, value, onChange, disabled = false, hint }: RequiredAttributeRulesEditorProps) {
   const tr = useActionRequiredAttributeSelectorI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingCandidate, setPendingCandidate] = useState<SingleChoiceCandidate | null>(null);
@@ -74,7 +76,7 @@ export function RequiredAttributeRulesEditor({ candidates, value, onChange, disa
 
   return (
     <div className="flex flex-col gap-2 w-full" data-testid="required-attribute-selector">
-      <span className="font-medium text-[12px]/[16px] text-foreground-muted">{tr.requiredAttributesHint}</span>
+      <span className="font-medium text-[12px]/[16px] text-foreground-muted">{hint ?? tr.requiredAttributesHint}</span>
 
       {!hasAvailable && !hasRules ? (
         <span className="font-medium italic text-[12px]/[16px] text-foreground-muted" data-testid="required-attribute-empty">
