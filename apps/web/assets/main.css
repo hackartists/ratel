@@ -28898,6 +28898,45 @@ body.comments-panel-resizing {
   .portal-author { bottom: 20px; }
 }
 
+/* ── Join-time Announcement ──────────────────────── */
+
+.portal[data-announcement="true"] {
+  align-self: stretch;
+  width: 100%;
+  min-height: 0;
+  padding: 16px;
+  animation: none;
+}
+.participate-card.announcement-notice {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 28px 32px 24px;
+  animation: none;
+}
+.announcement-notice__title {
+  width: 100%;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--arena-text);
+  overflow-wrap: anywhere;
+}
+.announcement-notice__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  text-align: left;
+}
+
+@media (max-width: 500px) {
+  .portal[data-announcement="true"] { padding: 12px; }
+  .participate-card.announcement-notice { width: 100%; padding: 20px 16px 16px; }
+  .announcement-notice__title { font-size: 18px; }
+}
+
 
 /* === src/features/spaces/pages/index/leaderboard_panel/style.css === */
 /* ── Leaderboard Panel ──────────────────────────── */

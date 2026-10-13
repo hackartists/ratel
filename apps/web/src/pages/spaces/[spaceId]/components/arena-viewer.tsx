@@ -1,4 +1,4 @@
-import type * as React from "react";
+import * as React from "react";
 import { SpaceStatus, useSpaceContext } from "@/components/space/space-context";
 import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { useUserContext } from "@/lib/auth";
@@ -15,6 +15,7 @@ export function ArenaViewer({ dimmed, candidateView }: { dimmed: boolean; candid
   const ctx = useSpaceContext();
   const space = ctx.space;
   const isLoggedIn = useUserContext().user !== null;
+  const [announcing, setAnnouncing] = React.useState(false);
 
   const logo = space.logo === "" ? DEFAULT_LOGO : space.logo;
   const authorProfile = space.author_profile_url === "" ? DEFAULT_PROFILE : space.author_profile_url;
@@ -58,6 +59,7 @@ export function ArenaViewer({ dimmed, candidateView }: { dimmed: boolean; candid
         rewards={rewards}
         requireConsent={hasRequirements}
         onJoined={() => {}}
+        onAnnouncementVisibleChange={setAnnouncing}
       />
     );
   } else if (!isLoggedIn) {
@@ -65,7 +67,7 @@ export function ArenaViewer({ dimmed, candidateView }: { dimmed: boolean; candid
   }
 
   return (
-    <div className="arena-viewer">
+    <div className="arena-viewer" data-testid="arena-viewer">
       <div className="arena-ring" />
       <div className="arena-ring arena-ring--mid" />
       <div className="arena-ring arena-ring--inner" />
@@ -79,22 +81,35 @@ export function ArenaViewer({ dimmed, candidateView }: { dimmed: boolean; candid
       <div className="particle particle--7" />
       <div className="particle particle--8" />
 
-      <div className="portal" data-testid="portal" data-dimmed={dataBool(dimmed)}>
-        <div className="portal-header">
-          <img alt="Space logo" className="portal-logo" src={logo} />
-          <h1 className="portal-title">{space.title}</h1>
-        </div>
-        <div className="portal-status">{statusText}</div>
+      <div
+        className="portal"
+        data-testid="portal"
+        data-dimmed={dataBool(dimmed)}
+        data-announcement={dataBool(announcing)}
+      >
+        {!announcing && (
+          <>
+            <div className="portal-header" data-testid="portal-header">
+              <img alt="Space logo" className="portal-logo" src={logo} />
+              <h1 className="portal-title">{space.title}</h1>
+            </div>
+            <div className="portal-status" data-testid="portal-status">
+              {statusText}
+            </div>
+          </>
+        )}
         {card}
       </div>
 
-      <div className="portal-author" data-dimmed={dataBool(dimmed)}>
-        <img alt="Author" className="portal-author__avatar" src={authorProfile} />
-        <div>
-          <div className="portal-author__name">{space.author_display_name}</div>
-          <div className="portal-author__label">{tr.spaceCreator}</div>
+      {!announcing && (
+        <div className="portal-author" data-dimmed={dataBool(dimmed)}>
+          <img alt="Author" className="portal-author__avatar" src={authorProfile} />
+          <div>
+            <div className="portal-author__name">{space.author_display_name}</div>
+            <div className="portal-author__label">{tr.spaceCreator}</div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
