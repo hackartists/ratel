@@ -109,14 +109,14 @@ function AnnouncementEditor({ action }: { action: SpaceActionSummary }) {
 
 /**
  * Read-only announcement for everyone but the creator, drawn as the same `AnnouncementNotice`
- * card the join flow shows, on the same arena stage. Continue records the read for joined
- * members who have not read it yet (so the dashboard archives it), then returns to the space home.
+ * card the join flow shows, on the same arena stage. Continue records the read when the server
+ * role (`ctx.role`, not the view toggle) is Creator, Participant or Candidate and it has not been
+ * read yet, so the participant dashboard archives it, then returns to the space home.
  */
 function AnnouncementViewer({ action }: { action: SpaceActionSummary }) {
   const tr = useSpaceViewerI18n();
   const navigate = useNavigate();
   const ctx = useSpaceContext();
-  const role = useSpaceRole();
   const toast = useToast();
   const readAnnouncement = useReadSpaceAnnouncement();
   const [continuing, setContinuing] = useState(false);
@@ -124,8 +124,8 @@ function AnnouncementViewer({ action }: { action: SpaceActionSummary }) {
   const proceed = async () => {
     if (continuing) return;
     setContinuing(true);
-    const joined = role === "Participant" || role === "Candidate";
-    if (joined && !action.user_participated) {
+    const canRecordRead = ctx.role === "Creator" || ctx.role === "Participant" || ctx.role === "Candidate";
+    if (canRecordRead && !action.user_participated) {
       try {
         await readAnnouncement.mutateAsync({ spaceId: ctx.spaceId, actionId: action.action_id });
         await ctx.restartActions();

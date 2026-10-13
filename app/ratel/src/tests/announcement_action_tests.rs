@@ -348,6 +348,17 @@ async fn test_read_announcement_rejects_non_participants_drafts_and_other_action
         200,
         "a Designing announcement cannot be read"
     );
+    assert_ne!(
+        read_announcement(
+            &ctx,
+            &space_id,
+            &announcement_id,
+            Some(ctx.test_user.1.clone())
+        )
+        .await,
+        200,
+        "a Designing announcement cannot be read by the Creator either"
+    );
 
     assert_eq!(
         update_action(
@@ -372,17 +383,6 @@ async fn test_read_announcement_rejects_non_participants_drafts_and_other_action
         "a non-participant read must fail"
     );
     assert_ne!(
-        read_announcement(
-            &ctx,
-            &space_id,
-            &announcement_id,
-            Some(ctx.test_user.1.clone())
-        )
-        .await,
-        200,
-        "the Creator does not record reads"
-    );
-    assert_ne!(
         read_announcement(&ctx, &space_id, &poll_id, Some(participant.clone())).await,
         200,
         "only announcement actions can be read"
@@ -390,5 +390,43 @@ async fn test_read_announcement_rejects_non_participants_drafts_and_other_action
     assert_eq!(
         read_announcement(&ctx, &space_id, &announcement_id, Some(participant)).await,
         200
+    );
+}
+
+#[by_macros::pg_test]
+async fn test_creator_read_announcement_marks_it_participated() {
+    let ctx = TestContext::setup().await;
+    let space_id = seed_space(&ctx, SpaceStatus::Ongoing).await;
+    seed_poll_action(&space_id, false).await;
+    let announcement_id = create_announcement(&ctx, &space_id).await;
+    assert_eq!(
+        update_action(
+            &ctx,
+            &space_id,
+            &announcement_id,
+            serde_json::json!({ "status": "Ongoing" })
+        )
+        .await,
+        200
+    );
+    let creator = ctx.test_user.1.clone();
+    let participant = join_participant(&ctx, &space_id).await;
+    assert!(!announcement_participated(&ctx, &space_id, &announcement_id, creator.clone()).await);
+
+    assert_eq!(
+        read_announcement(&ctx, &space_id, &announcement_id, Some(creator.clone())).await,
+        200,
+        "the Creator can record a read"
+    );
+    assert_eq!(
+        read_announcement(&ctx, &space_id, &announcement_id, Some(creator.clone())).await,
+        200,
+        "a repeated Creator read is idempotent"
+    );
+
+    assert!(announcement_participated(&ctx, &space_id, &announcement_id, creator).await);
+    assert!(
+        !announcement_participated(&ctx, &space_id, &announcement_id, participant).await,
+        "the Creator's read record does not mark other members"
     );
 }

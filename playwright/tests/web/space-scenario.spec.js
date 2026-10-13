@@ -977,6 +977,29 @@ test.describe.serial("Space announcement", () => {
     }
   });
 
+  test("Creator: Continue in the participant view records the creator's read", async ({ page }) => {
+    await goto(page, spaceUrl);
+    await page.addStyleTag({
+      content: "*, *::before, *::after { animation-play-state: paused !important; }",
+    });
+    const entry = page.getByTestId("action-card-announcement");
+    await expect(entry).toBeVisible({ timeout: 30000 });
+    await entry.click();
+    await page.waitForURL(/\/actions\/announcements\//, { timeout: 30000 });
+    await expect(page.getByTestId("announcement-viewer-view").getByTestId("card-announcement")).toBeVisible();
+    await click(page, { testId: "btn-announcement-continue" });
+    await page.waitForURL(new RegExp(`/spaces/${spaceId}/?$`), { timeout: 30000 });
+
+    await expect
+      .poll(async () => {
+        const res = await page.request.get(`/api/spaces/${spaceId}/actions`);
+        const actions = await res.json();
+        return actions.find((x) => x.action_id === announcementId)?.user_participated ?? null;
+      })
+      .toBe(true);
+    await expect(page.getByTestId("action-card-announcement")).toHaveCount(0);
+  });
+
   test("Member: the read announcement sits in the archive, not the active quests", async ({ browser }) => {
     const context = await browser.newContext({ storageState: memberState });
     const page = await context.newPage();

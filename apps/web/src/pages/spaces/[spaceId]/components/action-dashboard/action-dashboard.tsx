@@ -31,8 +31,11 @@ import { TypePickerModal } from "./type-picker-modal";
 
 export type ActionStatus = "Active" | "Completed" | "Skipped";
 
-/** Rust `derive_action_status`. */
-export function deriveActionStatus(action: SpaceActionSummary): ActionStatus {
+/**
+ * Rust `derive_action_status`. With `adminView` (the creator dashboard, `currentRole === "Creator"`)
+ * the announcement stays `Active` even once read, so it remains editable from the carousel.
+ */
+export function deriveActionStatus(action: SpaceActionSummary, adminView = false): ActionStatus {
   const ended = action.status === "Finish";
 
   switch (action.action_type) {
@@ -61,6 +64,7 @@ export function deriveActionStatus(action: SpaceActionSummary): ActionStatus {
       if (ended) return "Skipped";
       return "Active";
     case "Announcement":
+      if (adminView) return "Active";
       if (action.user_participated) return "Completed";
       return "Active";
   }
@@ -79,9 +83,10 @@ export function ActionDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
   const createSpaceAction = useCreateSpaceAction();
 
   const lookup = buildActionLookup(actions);
-  const active = actions.filter((a) => deriveActionStatus(a) === "Active");
-  const completed = actions.filter((a) => deriveActionStatus(a) === "Completed");
-  const skipped = actions.filter((a) => deriveActionStatus(a) === "Skipped");
+  const adminView = spaceCtx.currentRole === "Creator";
+  const active = actions.filter((a) => deriveActionStatus(a, adminView) === "Active");
+  const completed = actions.filter((a) => deriveActionStatus(a, adminView) === "Completed");
+  const skipped = actions.filter((a) => deriveActionStatus(a, adminView) === "Skipped");
 
   const total = actions.filter((a) => a.action_type !== "Announcement").length;
   const done = completed.filter((a) => a.action_type !== "Announcement").length;
