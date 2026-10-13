@@ -10,6 +10,26 @@ import { VerificationCard } from "./verification-card";
 
 // app/ratel/src/features/spaces/pages/index/arena_viewer/component.rs (`ArenaViewer`).
 
+/** Rotating rings and floating particles drawn behind the `.arena-viewer` portal. */
+export function ArenaBackdrop() {
+  return (
+    <>
+      <div className="arena-ring" />
+      <div className="arena-ring arena-ring--mid" />
+      <div className="arena-ring arena-ring--inner" />
+
+      <div className="particle" />
+      <div className="particle particle--2" />
+      <div className="particle particle--3" />
+      <div className="particle particle--4" />
+      <div className="particle particle--5" />
+      <div className="particle particle--6" />
+      <div className="particle particle--7" />
+      <div className="particle particle--8" />
+    </>
+  );
+}
+
 export function ArenaViewer({ dimmed, candidateView }: { dimmed: boolean; candidateView?: React.ReactNode }) {
   const tr = useSpaceViewerI18n();
   const ctx = useSpaceContext();
@@ -68,18 +88,7 @@ export function ArenaViewer({ dimmed, candidateView }: { dimmed: boolean; candid
 
   return (
     <div className="arena-viewer" data-testid="arena-viewer">
-      <div className="arena-ring" />
-      <div className="arena-ring arena-ring--mid" />
-      <div className="arena-ring arena-ring--inner" />
-
-      <div className="particle" />
-      <div className="particle particle--2" />
-      <div className="particle particle--3" />
-      <div className="particle particle--4" />
-      <div className="particle particle--5" />
-      <div className="particle particle--6" />
-      <div className="particle particle--7" />
-      <div className="particle particle--8" />
+      <ArenaBackdrop />
 
       <div
         className="portal"

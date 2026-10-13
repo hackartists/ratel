@@ -5,9 +5,9 @@ import { useReadSpaceAnnouncement, useUpdateSpaceAction } from "@ratel/ts-bridge
 import { Editor } from "@/components/editor";
 import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
-import { Button } from "@/components/ui/button";
 import { SeoMeta } from "@/components/ui/seo-meta";
-import { AnnouncementContent } from "@/pages/spaces/[spaceId]/components/announcement-notice";
+import { AnnouncementNotice } from "@/pages/spaces/[spaceId]/components/announcement-notice";
+import { ArenaBackdrop } from "@/pages/spaces/[spaceId]/components/arena-viewer";
 import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 import { useToast } from "@/lib/toast";
 
@@ -22,11 +22,7 @@ export function Component() {
 
   if (isAdmin) return <AnnouncementEditor action={action} />;
 
-  return (
-    <div className="flex flex-col gap-5 py-6 px-4 mx-auto w-full max-w-[760px]">
-      <AnnouncementViewer action={action} />
-    </div>
-  );
+  return <AnnouncementViewer action={action} />;
 }
 
 /**
@@ -112,8 +108,9 @@ function AnnouncementEditor({ action }: { action: SpaceActionSummary }) {
 }
 
 /**
- * Read-only announcement for participants. The confirm button records the read for joined
- * participants, so the dashboard archives the announcement, then returns to the space home.
+ * Read-only announcement for everyone but the creator, drawn as the same `AnnouncementNotice`
+ * card the join flow shows, on the same arena stage. Continue records the read for joined
+ * members who have not read it yet (so the dashboard archives it), then returns to the space home.
  */
 function AnnouncementViewer({ action }: { action: SpaceActionSummary }) {
   const tr = useSpaceViewerI18n();
@@ -122,19 +119,19 @@ function AnnouncementViewer({ action }: { action: SpaceActionSummary }) {
   const role = useSpaceRole();
   const toast = useToast();
   const readAnnouncement = useReadSpaceAnnouncement();
-  const [confirming, setConfirming] = useState(false);
+  const [continuing, setContinuing] = useState(false);
 
-  const confirm = async () => {
-    if (confirming) return;
+  const proceed = async () => {
+    if (continuing) return;
+    setContinuing(true);
     const joined = role === "Participant" || role === "Candidate";
     if (joined && !action.user_participated) {
-      setConfirming(true);
       try {
         await readAnnouncement.mutateAsync({ spaceId: ctx.spaceId, actionId: action.action_id });
         await ctx.restartActions();
       } catch (e) {
         toast.error(e);
-        setConfirming(false);
+        setContinuing(false);
         return;
       }
     }
@@ -142,13 +139,13 @@ function AnnouncementViewer({ action }: { action: SpaceActionSummary }) {
   };
 
   return (
-    <div className="flex flex-col gap-4" data-testid="announcement-viewer-view">
-      <SeoMeta title={action.title} />
-      <AnnouncementContent action={action} />
-      <div className="flex justify-start pt-2">
-        <Button data-testid="btn-announcement-confirm" disabled={confirming} onClick={() => void confirm()}>
-          {tr.announcementConfirm}
-        </Button>
+    <div className="arena" data-testid="announcement-viewer-view">
+      <SeoMeta title={action.title === "" ? tr.announcementName : action.title} />
+      <div className="arena-viewer">
+        <ArenaBackdrop />
+        <div className="portal" data-announcement="true">
+          <AnnouncementNotice action={action} busy={continuing} onContinue={() => void proceed()} />
+        </div>
       </div>
     </div>
   );

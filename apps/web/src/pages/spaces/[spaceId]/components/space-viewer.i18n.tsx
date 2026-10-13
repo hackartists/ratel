@@ -138,7 +138,6 @@ const en = {
   announcement_desc: "Notice shown to members right before they join",
   announcement_continue: "Continue",
   announcement_view: "Read",
-  announcement_confirm: "Confirm",
   announcement_title_placeholder: "Announcement title",
   announcement_body_placeholder: "Write the announcement...",
   announcement_save: "Save",
@@ -289,7 +288,6 @@ const ko: Record<keyof typeof en, string> = {
   announcement_desc: "참여 직전에 보여주는 스페이스 공지",
   announcement_continue: "확인하고 계속",
   announcement_view: "보기",
-  announcement_confirm: "확인",
   announcement_title_placeholder: "공지 제목",
   announcement_body_placeholder: "공지 내용을 입력하세요...",
   announcement_save: "저장",
@@ -442,7 +440,6 @@ export interface SpaceViewerI18n {
   announcementDesc: string;
   announcementContinue: string;
   announcementView: string;
-  announcementConfirm: string;
   announcementTitlePlaceholder: string;
   announcementBodyPlaceholder: string;
   announcementSave: string;
@@ -595,7 +592,6 @@ export function useSpaceViewerI18n(): SpaceViewerI18n {
     announcementDesc: t("announcement_desc"),
     announcementContinue: t("announcement_continue"),
     announcementView: t("announcement_view"),
-    announcementConfirm: t("announcement_confirm"),
     announcementTitlePlaceholder: t("announcement_title_placeholder"),
     announcementBodyPlaceholder: t("announcement_body_placeholder"),
     announcementSave: t("announcement_save"),
