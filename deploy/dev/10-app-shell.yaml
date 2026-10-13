@@ -67,7 +67,7 @@ spec:
             # app at the in-cluster subnet needs no rebuild — the image keeps
             # its compile-time default and this simply wins at runtime.
             #
-            # Served by the `icp` chart (infra/helm/icp), deployed into the
+            # Served by the `icp` chart (biyard/infra-helm-charts), deployed into the
             # shared `infra` namespace alongside postgres/minio/qdrant — a
             # 4-node subnet is four pods and four PVCs, too heavy to copy per
             # namespace, and the chain outlives any single app deployment

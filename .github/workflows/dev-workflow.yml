@@ -41,15 +41,7 @@ on:
   push:
     branches:
       - dev
-  workflow_dispatch:
-    inputs:
-      icp_allow_rebuild:
-        description: >-
-          Rebuild the ICP subnet from scratch. Needed when replicaCount
-          changes, because the registry fixes subnet membership when it is
-          generated. DISCARDS the chain and every canister on it.
-        type: boolean
-        default: false
+  workflow_dispatch: {}
 
 env:
   CARGO_TERM_COLOR: always
@@ -391,105 +383,9 @@ jobs:
             echo "FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 not set — push disabled (graceful skip)"
           fi
 
-      - name: Deploy the ICP subnet (helm → namespace `infra`)
-        # Runs BEFORE the app manifests: app-shell carries
-        # IC_URL=http://icp.infra.svc.cluster.local:4100, so the Service has
-        # to exist first or the first IC call after a rollout hits nothing.
-        #
-        # Lands in `infra`, not `ratel-dev`, for the same reason postgres and
-        # minio do: it is a shared backing service. A 4-node subnet is four
-        # pods and four PVCs — too heavy to copy per namespace — and its chain
-        # has to outlive any single app deployment (a PR-preview namespace is
-        # torn down; its chain should not be).
-        #
-        # Four nodes, not one: the same subnet serves the app AND the IITP
-        # tc2 throughput measurement, whose metric is "votes included in
-        # FINALIZED blocks". A single replica has no consensus, so that
-        # number does not exist there — it has to be a real subnet
-        # (n = 3f + 1, f = 1) for the measurement to mean anything.
-        #
-        # Ratel's pipeline drives it because ratel is the only consumer today.
-        # If another service starts using the subnet, ownership should move
-        # out of this workflow.
-        #
-        # Idempotent. The subnet registry is generated once and kept in the
-        # `icp-subnet` Secret; the hook compares replicaCount against the node
-        # count recorded there and refuses to regenerate silently, because a
-        # new registry means a new chain from height 0 and every canister
-        # redeployed. Changing the subnet size is therefore deliberate:
-        #   ICP_ALLOW_REBUILD=true  for the one deploy that does it.
-        #
-        # The image comes from the separate `ICP image` workflow — the
-        # replica is compiled from the ic fork and rebuilding it on every
-        # push to dev would add ~5 minutes for a byte-identical result.
-        run: |
-          set -euo pipefail
-
-          # Keep whatever size the subnet is already running at.
-          #
-          # tc2.yaml pins replicaCount to 4, and a plain deploy used to impose
-          # that on every push. So a tc2 measurement at one node left the next
-          # merge to dev to fail: the genconfig hook saw a subnet built for 1
-          # against a request for 4, refused to discard the chain without
-          # `allowRebuild`, and took the whole deploy down with it. That
-          # happened once, and it would keep happening — a measurement and an
-          # unrelated merge were fighting over a value neither cared about.
-          #
-          # Changing the subnet's size is the `ICP subnet` workflow's business,
-          # deliberately and with allow_rebuild. A deploy of the app has no
-          # opinion about it, so it reads what is there and passes it back.
-          size="$(kubectl -n infra get statefulset icp \
-                    -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
-          if [ -n "$size" ]; then
-            echo "subnet is at ${size} node(s) — keeping it"
-            keep_size=(--set "replicaCount=${size}")
-          else
-            echo "no subnet yet — taking the size from tc2.yaml"
-            keep_size=()
-          fi
-
-          # Skip entirely when the subnet is already up.
-          #
-          # The chart's genconfig hook is `pre-install,pre-upgrade`, so a plain
-          # `helm upgrade` schedules a Job pod on every app deploy. On a subnet
-          # that already exists at the requested size that pod does nothing —
-          # it reads the `icp-subnet` Secret, sees the node count matches, and
-          # exits 0. But helm still waits for it, so when the node has no pod
-          # slots left the Job stays Pending and takes the whole app deploy
-          # down with it. That happened on 2026-08-31: the deploy sat on this
-          # step while `icp-0` had been Running untouched since 2026-08-28.
-          #
-          # The subnet is a backing service like postgres or minio. Its
-          # lifecycle is not the app's, so an app deploy should not be able to
-          # fail on it. Create it when missing, leave it alone when healthy.
-          #
-          # Trade-off: chart edits no longer reach the cluster from a push to
-          # dev. That is the `ICP subnet` workflow's job — run it (it takes
-          # `replicas` and `allow_rebuild`), or dispatch this workflow with
-          # icp_allow_rebuild, which forces the upgrade path below.
-          ready="$(kubectl -n infra get statefulset icp \
-                     -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)"
-          # `if` rather than `cmd && var=yes`: under `set -e` the latter's
-          # non-zero status on a missing Secret is exactly the fresh-install
-          # case, and aborting there would break the one path that must work.
-          has_secret=no
-          if kubectl -n infra get secret icp-subnet >/dev/null 2>&1; then
-            has_secret=yes
-          fi
-          force="${{ inputs.icp_allow_rebuild || false }}"
-
-          if [ "$force" != "true" ] && [ -n "$size" ] && [ "$ready" = "$size" ] \
-             && [ "$has_secret" = yes ]; then
-            echo "subnet is healthy (${ready}/${size} ready, registry present) — skipping helm"
-            exit 0
-          fi
-
-          helm upgrade --install icp infra/helm/icp \
-            --namespace infra \
-            -f infra/helm/icp/environments/tc2.yaml \
-            "${keep_size[@]}" \
-            --set subnet.allowRebuild=${{ inputs.icp_allow_rebuild || false }} \
-            --wait --timeout 15m
+      - name: Check the ICP subnet Service (owned by biyard/infra-helm-charts)
+        # app-shell uses IC_URL=http://icp.infra.svc.cluster.local:4100.
+        run: kubectl -n infra get svc icp
 
       - name: Apply the dev manifests (envsubst → kubectl apply)
         # Substitution restricted to ${SHA_TAG} (image pin) and
