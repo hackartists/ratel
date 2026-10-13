@@ -260,6 +260,7 @@ export * from "./usePreviewAnalyzeReport";
 export * from "./usePreviewSamplingCells";
 export * from "./usePublishAnnouncement";
 export * from "./usePublishSubject";
+export * from "./useReadSpaceAnnouncement";
 export * from "./useRedeemChip";
 export * from "./useRefreshSession";
 export * from "./useRefreshSpaceIncentiveTokens";

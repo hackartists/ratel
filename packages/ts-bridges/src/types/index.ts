@@ -385,6 +385,7 @@ export type { RankingEntry } from "./RankingEntry";
 export type { RankingEntryResponse } from "./RankingEntryResponse";
 export type { RankingTableData } from "./RankingTableData";
 export type { RationaleResponse } from "./RationaleResponse";
+export type { ReadSpaceAnnouncementResponse } from "./ReadSpaceAnnouncementResponse";
 export type { RedeemChipRequest } from "./RedeemChipRequest";
 export type { RefreshSessionRequest } from "./RefreshSessionRequest";
 export type { RefreshSessionResponse } from "./RefreshSessionResponse";

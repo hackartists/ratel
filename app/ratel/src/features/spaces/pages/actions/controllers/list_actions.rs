@@ -105,6 +105,11 @@ pub async fn list_actions(
                     action.user_participated =
                         has_completed_follow_action(&space_id, &space_pk, &user.pk()).await?;
                 }
+                SpaceActionType::Announcement => {
+                    action.user_participated =
+                        SpaceAnnouncementRead::exists(&space_id, &action.action_id, &user.pk())
+                            .await?;
+                }
                 _ => {}
             }
         }

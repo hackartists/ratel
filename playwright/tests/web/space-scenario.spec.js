@@ -15,6 +15,7 @@ import {
   fillPollQuestion,
   togglePrerequisite,
   commitAutosave,
+  transitionSpace,
 } from "../utils";
 
 /**
@@ -726,12 +727,15 @@ test.describe.serial("Discussion Required Attributes gate", () => {
 
 /**
  * Space announcement: one per space, pinned first in the action list, and
- * shown to a user right before the participate request goes out.
+ * shown to a user right before the participate request goes out. Confirming
+ * it there records the read, so the member's dashboard lists it in the
+ * archive instead of the active carousel.
  */
 test.describe.serial("Space announcement", () => {
   let spaceUrl;
   let spaceId;
   let announcementId;
+  let memberState;
 
   const uniqueId = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
   const announcementTitle = `Read before joining ${uniqueId}`;
@@ -870,6 +874,14 @@ test.describe.serial("Space announcement", () => {
       await clickNoNav(page, { testId: "btn-announcement-continue" });
       await expect(notice).toBeHidden({ timeout: 30000 });
 
+      await expect
+        .poll(async () => {
+          const res = await page.request.get(`/api/spaces/${spaceId}/actions`);
+          const actions = await res.json();
+          return actions.find((x) => x.action_id === announcementId)?.user_participated ?? null;
+        })
+        .toBe(true);
+
       const entry = page
         .getByTestId("action-card-announcement")
         .or(page.getByTestId("candidate-announcement-link"));
@@ -886,6 +898,38 @@ test.describe.serial("Space announcement", () => {
       await click(page, { testId: "btn-announcement-confirm" });
       await page.waitForURL(new RegExp(`/spaces/${spaceId}/?$`), { timeout: 30000 });
       await expect(page.getByTestId("announcement-viewer-view")).toBeHidden();
+      memberState = await context.storageState();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Creator: start the space", async ({ page }) => {
+    await transitionSpace(page, spaceUrl, "start");
+  });
+
+  test("Member: the read announcement sits in the archive, not the active quests", async ({ browser }) => {
+    const context = await browser.newContext({ storageState: memberState });
+    const page = await context.newPage();
+    try {
+      await goto(page, spaceUrl);
+      await page.addStyleTag({
+        content: "*, *::before, *::after { animation-play-state: paused !important; }",
+      });
+      const archiveBtn = page.getByTestId("btn-archive");
+      await expect(archiveBtn).toBeVisible({ timeout: 30000 });
+      await expect(page.getByTestId("action-card-announcement")).toHaveCount(0);
+
+      await clickNoNav(page, { testId: "btn-archive" });
+      const panel = page.getByTestId("archive-panel");
+      await expect(panel).toHaveAttribute("data-open", "true");
+      const item = panel.locator(".archive-item").filter({ hasText: announcementTitle });
+      await expect(item).toBeVisible();
+      await expect(item.locator(".archive-item__check")).toBeVisible();
+
+      await item.click();
+      await page.waitForURL(/\/actions\/announcements\//, { timeout: 30000 });
+      await expect(page.getByTestId("announcement-viewer-view")).toBeVisible();
     } finally {
       await context.close();
     }
