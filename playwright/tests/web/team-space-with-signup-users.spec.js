@@ -17,6 +17,7 @@ import {
   togglePrerequisite,
   commitAutosave,
   waitForAppReady,
+  fillQuestionTitle,
 } from "../utils";
 
 // This test covers the full space lifecycle with three users:
@@ -353,9 +354,10 @@ test.describe.serial("Space with actions created by a team", () => {
       "To centralize power",
       "To enable collective decision-making",
     ];
-    for (let i = 0; i < fills.length; i += 1) {
-      await q0Inputs.nth(i).fill(fills[i]);
-      await q0Inputs.nth(i).press("Tab");
+    await fillQuestionTitle(page, "quiz-question-0-title", fills[0]);
+    for (let i = 1; i < fills.length; i += 1) {
+      await q0Inputs.nth(i - 1).fill(fills[i]);
+      await q0Inputs.nth(i - 1).press("Tab");
       await page.waitForLoadState("load");
       await page.waitForTimeout(200);
     }

@@ -6,7 +6,13 @@ import type { QuestionCondition } from "./QuestionCondition";
  * then collects a phone number verified via SMS code. Phone collection is
  * always on for this question type — there is no per-question toggle.
  */
-export type PrivacyConsentQuestion = { title: string, description: string | null, terms_title: string,
+export type PrivacyConsentQuestion = { title: string,
+/**
+ * Rich-text (HTML) version of `title`. When present the server derives
+ * `title` from it as plain text; `None` for questions authored before
+ * rich-text titles existed.
+ */
+html_title: string | null, description: string | null, terms_title: string,
 /**
  * Rich-text consent body, stored as sanitized HTML (same convention as
  * other HTML content fields, e.g. poll/space descriptions).

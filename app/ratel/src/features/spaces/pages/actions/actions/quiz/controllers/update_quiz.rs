@@ -68,7 +68,8 @@ pub async fn update_quiz(
     }
 
     let mut questions_for_answers: Option<Vec<Question>> = None;
-    if let Some(questions) = req.questions {
+    if let Some(mut questions) = req.questions {
+        questions.iter_mut().for_each(Question::normalize_title);
         if questions.is_empty() {
             return Err(SpaceActionQuizError::EmptyQuestions.into());
         }

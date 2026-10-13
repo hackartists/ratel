@@ -70,6 +70,7 @@ const en = {
   qtype_multi: "Multi",
   remove_question: "Remove question",
   add_question: "Add question",
+  question_title_placeholder: "Enter the question...",
   add_option: "Add option",
   remove_option: "Remove option",
   schedule_starts_at: "Starts at",
@@ -155,6 +156,7 @@ const ko: Record<keyof typeof en, string> = {
   qtype_multi: "다중",
   remove_question: "질문 삭제",
   add_question: "질문 추가",
+  question_title_placeholder: "질문을 입력하세요...",
   add_option: "선지 추가",
   remove_option: "선지 삭제",
   schedule_starts_at: "시작",
@@ -242,6 +244,7 @@ export interface QuizCreatorI18n {
   qtypeMulti: string;
   removeQuestion: string;
   addQuestion: string;
+  questionTitlePlaceholder: string;
   addOption: string;
   removeOption: string;
   scheduleStartsAt: string;
@@ -329,6 +332,7 @@ export function useQuizCreatorI18n(): QuizCreatorI18n {
     qtypeMulti: t("qtype_multi"),
     removeQuestion: t("remove_question"),
     addQuestion: t("add_question"),
+    questionTitlePlaceholder: t("question_title_placeholder"),
     addOption: t("add_option"),
     removeOption: t("remove_option"),
     scheduleStartsAt: t("schedule_starts_at"),

@@ -162,19 +162,29 @@ export function QuestionViewer({
 
 function QuestionTitle({
   title,
+  htmlTitle,
   description,
   isRequired,
 }: {
   title: string;
+  htmlTitle?: string | null;
   description?: string | null;
   isRequired?: boolean | null;
 }) {
   return (
     <div className="mb-3 flex flex-col gap-1" data-question-title-wrap="true">
       <div className="flex items-center gap-1">
-        <span className="text-lg font-semibold text-poll-question-title" data-question-title="true">
-          {title}
-        </span>
+        {htmlTitle ? (
+          <div
+            className="re-content text-lg font-semibold text-poll-question-title"
+            data-question-title="true"
+            dangerouslySetInnerHTML={{ __html: htmlTitle }}
+          />
+        ) : (
+          <span className="text-lg font-semibold text-poll-question-title" data-question-title="true">
+            {title}
+          </span>
+        )}
         {isRequired === true && <span className="text-red-500">*</span>}
       </div>
       {description !== undefined && description !== null && description !== "" && (
@@ -194,6 +204,7 @@ const OTHER_OPTION_BASE_CLASS =
 
 interface ChoiceQuestion {
   title: string;
+  html_title?: string | null;
   description: string | null;
   options: string[];
   is_required: boolean | null;
@@ -241,7 +252,7 @@ function ChoiceViewer({
 
   return (
     <>
-      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      <QuestionTitle title={question.title} htmlTitle={question.html_title} description={question.description} isRequired={question.is_required} />
       <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2">
         {question.options.map((option, optIdx) => {
           const isSelected = multi ? selectedMulti.includes(optIdx) : selectedSingle === optIdx;
@@ -331,7 +342,7 @@ function SubjectiveViewer({
   onChange,
   isShort,
 }: {
-  question: { title: string; description: string; is_required: boolean | null };
+  question: { title: string; html_title?: string | null; description: string; is_required: boolean | null };
   answer?: Answer;
   disabled: boolean;
   onChange: (answer: Answer) => void;
@@ -358,7 +369,7 @@ function SubjectiveViewer({
 
   return (
     <div className="flex w-full flex-col gap-[10px]">
-      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      <QuestionTitle title={question.title} htmlTitle={question.html_title} description={question.description} isRequired={question.is_required} />
       {isShort ? (
         <Input
           variant={InputVariant.Plain}
@@ -395,7 +406,7 @@ function CheckboxViewer({
   onChange,
 }: {
   index: number;
-  question: { title: string; description: string | null; options: string[]; is_multi: boolean; is_required: boolean | null };
+  question: { title: string; html_title?: string | null; description: string | null; options: string[]; is_multi: boolean; is_required: boolean | null };
   answer?: Answer;
   disabled: boolean;
   onChange: (answer: Answer) => void;
@@ -404,7 +415,7 @@ function CheckboxViewer({
 
   return (
     <>
-      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      <QuestionTitle title={question.title} htmlTitle={question.html_title} description={question.description} isRequired={question.is_required} />
       <div className="flex flex-col gap-2">
         {question.options.map((option, optIdx) => {
           const isSelected = selected.includes(optIdx);
@@ -443,7 +454,7 @@ function DropdownViewer({
   disabled,
   onChange,
 }: {
-  question: { title: string; description: string | null; options: string[]; is_required: boolean | null };
+  question: { title: string; html_title?: string | null; description: string | null; options: string[]; is_required: boolean | null };
   answer?: Answer;
   disabled: boolean;
   onChange: (answer: Answer) => void;
@@ -452,7 +463,7 @@ function DropdownViewer({
 
   return (
     <>
-      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      <QuestionTitle title={question.title} htmlTitle={question.html_title} description={question.description} isRequired={question.is_required} />
       <select
         className="w-full p-3 rounded-lg border border-neutral-700 bg-neutral-900 text-white focus:border-blue-500 outline-none"
         disabled={disabled}
@@ -481,6 +492,7 @@ function LinearScaleViewer({
 }: {
   question: {
     title: string;
+    html_title?: string | null;
     description: string | null;
     is_required: boolean | null;
     min_value: number;
@@ -498,7 +510,7 @@ function LinearScaleViewer({
 
   return (
     <>
-      <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+      <QuestionTitle title={question.title} htmlTitle={question.html_title} description={question.description} isRequired={question.is_required} />
       <div className="flex w-full flex-col gap-5 select-none">
         <div className="flex w-full items-center justify-between text-sm font-medium text-text-primary-muted">
           <span className="max-w-[40%] truncate">{question.min_label}</span>
@@ -531,6 +543,7 @@ function LinearScaleViewer({
 
 interface PrivacyConsentQuestionShape {
   title: string;
+  html_title?: string | null;
   description: string | null;
   terms_title: string;
   terms_body_html: string;
@@ -599,7 +612,7 @@ export function PrivacyConsentViewer({
   return (
     <div className="flex w-full flex-col gap-4" data-testid="poll-question-privacy-consent">
       {!hideTitle && (
-        <QuestionTitle title={question.title} description={question.description} isRequired={question.is_required} />
+        <QuestionTitle title={question.title} htmlTitle={question.html_title} description={question.description} isRequired={question.is_required} />
       )}
 
       <div

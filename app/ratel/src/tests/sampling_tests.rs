@@ -26,6 +26,7 @@ struct Seeded {
 fn choice(title: &str, options: &[&str]) -> Question {
     Question::SingleChoice(ChoiceQuestion {
         title: title.to_string(),
+        html_title: None,
         description: None,
         image_url: None,
         options: options.iter().map(|o| o.to_string()).collect(),

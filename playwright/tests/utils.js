@@ -525,6 +525,22 @@ export async function addPollQuestion(page, type = "single") {
 }
 
 /**
+ * Type a question title into the rich-text title editor of a poll/quiz
+ * question block (`{prefix}-question-{idx}-title`), then wait past the
+ * editor's change debounce so the autosave picks it up.
+ */
+export async function fillQuestionTitle(page, titleTestId, title) {
+  const editor = page
+    .getByTestId(titleTestId)
+    .locator('.ratel-editor[data-bound="true"] .re-content');
+  await expect(editor).toBeVisible({ timeout: 10000 });
+  await editor.click();
+  await page.keyboard.type(title);
+  await page.waitForTimeout(400);
+  await page.waitForLoadState("load");
+}
+
+/**
  * Fill the title + options of a poll question identified by its index. The
  * arena editor exposes two option inputs by default (no "Add Option" UI);
  * pass at most two option strings. Each field is blurred after fill so
@@ -533,10 +549,7 @@ export async function addPollQuestion(page, type = "single") {
 export async function fillPollQuestion(page, idx, { title, options = [] }) {
   const block = page.getByTestId(`poll-question-${idx}`);
   await expect(block).toBeVisible();
-  const titleInput = block.locator("input.input").first();
-  await titleInput.fill(title);
-  await titleInput.press("Tab");
-  await page.waitForLoadState("load");
+  await fillQuestionTitle(page, `poll-question-${idx}-title`, title);
 
   for (let i = 0; i < options.length; i += 1) {
     const opt = page

@@ -7,6 +7,7 @@ import { RequiredAttributeRulesEditor, type ChoiceCandidate } from "@/components
 import { choiceOptions, removeQuestionAt, sanitizeQuestionFlow, terminateOn } from "./poll-flow";
 import { usePollCreatorI18n } from "./poll-creator.i18n";
 import { useToast } from "@/lib/toast";
+import { htmlToPlainText } from "@/lib/content-body";
 import { usePoll } from "../hooks/use-poll";
 
 // poll/views/main/creator/content_card/component.rs (`ContentCard`) — title +
@@ -49,12 +50,13 @@ function optionsOf(q: Question): string[] {
   }
 }
 
-function withTitle(q: Question, title: string): Question {
-  return { ...q, title } as Question;
+function withHtmlTitle(q: Question, html_title: string): Question {
+  return { ...q, html_title, title: htmlToPlainText(html_title) } as Question;
 }
 
 function convertToQtype(existing: Question, target: QType): Question {
   const title = existing.title;
+  const html_title = existing.html_title ?? null;
   const options = optionsOf(existing);
   const opts = options.length === 0 ? ["", ""] : options;
   const display_condition = existing.display_condition ?? null;
@@ -64,6 +66,7 @@ function convertToQtype(existing: Question, target: QType): Question {
       return {
         answer_type: "single_choice",
         title,
+        html_title,
         description: null,
         image_url: null,
         options: opts,
@@ -76,6 +79,7 @@ function convertToQtype(existing: Question, target: QType): Question {
       return {
         answer_type: "multiple_choice",
         title,
+        html_title,
         description: null,
         image_url: null,
         options: opts,
@@ -85,11 +89,12 @@ function convertToQtype(existing: Question, target: QType): Question {
         display_condition,
       };
     case "subjective":
-      return { answer_type: "subjective", title, description: "", is_required: null, display_condition };
+      return { answer_type: "subjective", title, html_title, description: "", is_required: null, display_condition };
     case "linear":
       return {
         answer_type: "linear_scale",
         title,
+        html_title,
         description: null,
         image_url: null,
         min_value: 1,
@@ -103,6 +108,7 @@ function convertToQtype(existing: Question, target: QType): Question {
       return {
         answer_type: "privacy_consent",
         title,
+        html_title,
         description: null,
         terms_title: "",
         terms_body_html: "",
@@ -237,7 +243,7 @@ export function PollContentCard() {
 
           {questions.map((question, idx) => (
             <QuestionBlock
-              key={`q-${idx}`}
+              key={`q-${idx}-${questions.length}`}
               idx={idx}
               question={question}
               tr={tr}
@@ -265,8 +271,12 @@ export function PollContentCard() {
                   return next;
                 });
               }}
-              onTitleChange={(i, value) => {
-                setQuestions((qs) => qs.map((q, qi) => (qi === i ? withTitle(q, value) : q)));
+              onTitleChange={(i, html) => {
+                setQuestions((qs) => {
+                  const next = qs.map((q, qi) => (qi === i ? withHtmlTitle(q, html) : q));
+                  saveQuestions(next);
+                  return next;
+                });
               }}
               onTypeChange={(i, target) => {
                 setQuestions((qs) => {
@@ -386,6 +396,7 @@ export function PollContentCard() {
                   {
                     answer_type: "single_choice",
                     title: "",
+                    html_title: null,
                     description: null,
                     image_url: null,
                     options: ["", ""],
@@ -527,12 +538,14 @@ function QuestionBlock({
         </button>
       </div>
 
-      <input
-        className="input"
-        value={question.title}
-        onChange={(e) => onTitleChange(idx, e.target.value)}
-        onBlur={onBlurSave}
-      />
+      <div data-testid={`poll-question-${idx}-title`}>
+        <Editor
+          className="[&_.re-toolbar]:border-b [&_.re-toolbar]:border-[rgba(255,255,255,0.06)] [&_.re-content]:min-h-[48px] [&_.re-content]:px-[14px] [&_.re-content]:py-[10px] [&_.re-content]:outline-none"
+          content={question.html_title ?? question.title}
+          placeholder={tr.questionTitlePlaceholder}
+          onContentChange={(html) => onTitleChange(idx, html)}
+        />
+      </div>
 
       {(isSingle || isMulti) && (
         <ChoiceOptions

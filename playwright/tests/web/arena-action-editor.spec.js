@@ -12,6 +12,7 @@ import {
   setReward,
   togglePrerequisite,
   waitPopup,
+  fillQuestionTitle,
 } from "../utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -143,9 +144,10 @@ test.describe.serial("Arena action editor", () => {
       "HTML-first cards",
       "Nested tab router",
     ];
-    for (let i = 0; i < fills.length; i += 1) {
-      await inputs.nth(i).fill(fills[i]);
-      await inputs.nth(i).press("Tab");
+    await fillQuestionTitle(page, "quiz-question-0-title", fills[0]);
+    for (let i = 1; i < fills.length; i += 1) {
+      await inputs.nth(i - 1).fill(fills[i]);
+      await inputs.nth(i - 1).press("Tab");
       await page.waitForLoadState("load");
       await page.waitForTimeout(200);
     }

@@ -871,7 +871,11 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
               {`${tr.questionPrefix} ${String(currentIdx + 1).padStart(2, "0")}`}
               {isRequired(currentQuestion) && <span className="question-card__required">{tr.required}</span>}
             </div>
-            <h2 className="question-card__title">{currentQuestion.title}</h2>
+            {currentQuestion.html_title ? (
+              <div className="question-card__title re-content" dangerouslySetInnerHTML={{ __html: currentQuestion.html_title }} />
+            ) : (
+              <h2 className="question-card__title">{currentQuestion.title}</h2>
+            )}
             {questionDesc(currentQuestion) && <p className="question-card__desc">{questionDesc(currentQuestion)}</p>}
             {questionImage(currentQuestion) && <img className="question-card__image" src={questionImage(currentQuestion) ?? ""} alt="Question image" />}
             {renderQuestion(currentQuestion, currentIdx)}

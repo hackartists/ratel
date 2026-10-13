@@ -16,6 +16,7 @@ import {
   setReward,
   togglePrerequisite,
   waitPopup,
+  fillQuestionTitle,
 } from "../utils";
 
 // Full space lifecycle E2E test:
@@ -402,9 +403,10 @@ test.describe.serial("Full space lifecycle with rewards", () => {
       "Collective decision-making",
       "Social media posting",
     ];
-    for (let i = 0; i < fills.length; i += 1) {
-      await q0Inputs.nth(i).fill(fills[i]);
-      await q0Inputs.nth(i).press("Tab");
+    await fillQuestionTitle(page, "quiz-question-0-title", fills[0]);
+    for (let i = 1; i < fills.length; i += 1) {
+      await q0Inputs.nth(i - 1).fill(fills[i]);
+      await q0Inputs.nth(i - 1).press("Tab");
       await page.waitForLoadState("load");
       await page.waitForTimeout(200);
     }

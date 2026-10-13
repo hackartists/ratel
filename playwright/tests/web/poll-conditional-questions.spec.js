@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { createAction, fill, goto, publishAction, signUpViaApi } from "../utils";
+import { createAction, fill, fillQuestionTitle, goto, publishAction, signUpViaApi } from "../utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Poll conditional questions + termination options.
@@ -64,9 +64,7 @@ test.describe.serial("Poll conditional questions and termination", () => {
       await block.getByTestId(`poll-question-${idx}-type`).getByText("Multi", { exact: true }).click();
       await expect(block).toHaveAttribute("data-qtype", "multi");
     }
-    const titleInput = block.locator("input.input").first();
-    await titleInput.fill(title);
-    await titleInput.press("Tab");
+    await fillQuestionTitle(page, `poll-question-${idx}-title`, title);
     for (let i = 0; i < options.length; i += 1) {
       if (i >= 2) {
         await page.getByTestId(`poll-question-${idx}-opt-add`).click();
