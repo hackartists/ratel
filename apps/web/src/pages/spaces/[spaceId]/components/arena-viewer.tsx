@@ -67,7 +67,7 @@ export function ArenaViewer({ dimmed, candidateView }: { dimmed: boolean; candid
   }
 
   return (
-    <div className="arena-viewer">
+    <div className="arena-viewer" data-testid="arena-viewer">
       <div className="arena-ring" />
       <div className="arena-ring arena-ring--mid" />
       <div className="arena-ring arena-ring--inner" />
