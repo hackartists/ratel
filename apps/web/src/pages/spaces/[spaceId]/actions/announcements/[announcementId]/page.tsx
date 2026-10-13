@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { SpaceActionSummary, UpdateSpaceActionRequest } from "@ratel/ts-bridges";
+import type { SpaceActionStatus, SpaceActionSummary, UpdateSpaceActionRequest } from "@ratel/ts-bridges";
 import { useUpdateSpaceAction } from "@ratel/ts-bridges/hooks";
 import { Editor } from "@/components/editor";
-import { ActionStatusControl } from "@/components/space-actions/action-status-control";
-import { useSpaceContext, useSpaceRole } from "@/components/space/space-context";
+import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
+import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
 import { Button } from "@/components/ui/button";
 import { SeoMeta } from "@/components/ui/seo-meta";
 import { AnnouncementContent } from "@/pages/spaces/[spaceId]/components/announcement-notice";
@@ -20,51 +20,93 @@ export function Component() {
 
   if (!action) return null;
 
+  if (isAdmin) return <AnnouncementEditor action={action} />;
+
   return (
     <div className="flex flex-col gap-5 py-6 px-4 mx-auto w-full max-w-[760px]">
-      {isAdmin ? <AnnouncementEditor action={action} /> : <AnnouncementViewer action={action} />}
+      <AnnouncementViewer action={action} />
     </div>
   );
 }
 
-/** Title input, the post body `Editor` and the publish control; every change is saved through `update_space_action`. */
+/**
+ * Topbar with a back button and a Save button, above the title input and post body `Editor`.
+ * Save persists the title/body and publishes the announcement (moves it to `Ongoing`); there is no close step.
+ */
 function AnnouncementEditor({ action }: { action: SpaceActionSummary }) {
   const tr = useSpaceViewerI18n();
   const toast = useToast();
+  const navigate = useNavigate();
   const ctx = useSpaceContext();
+  const space = useSpace();
   const update = useUpdateSpaceAction();
   const [title, setTitle] = useState(action.title);
+  const [description, setDescription] = useState(action.description);
+  const [saving, setSaving] = useState(false);
 
-  const save = (req: UpdateSpaceActionRequest) =>
-    update
-      .mutateAsync({ spaceId: ctx.spaceId, actionId: action.action_id, req })
-      .then(() => void ctx.restartActions())
-      .catch((e) => toast.error(e));
+  const send = (req: UpdateSpaceActionRequest) =>
+    update.mutateAsync({ spaceId: ctx.spaceId, actionId: action.action_id, req });
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await send({ title });
+      await send({ description });
+      let status: SpaceActionStatus | null = action.status;
+      if (status === null) {
+        await send({ status: "Designing" });
+        status = "Designing";
+      }
+      if (status === "Designing") await send({ status: "Ongoing" });
+      await ctx.restartActions();
+      toast.info(tr.announcementSaved);
+    } catch (e) {
+      toast.error(e);
+    }
+    setSaving(false);
+  };
 
   return (
-    <div className="flex flex-col gap-5" data-testid="announcement-editor-view">
+    <div className="arena" data-testid="announcement-editor-view">
       <SeoMeta title={tr.announcementName} />
-      <ActionStatusControl
-        spaceId={ctx.spaceId}
-        actionId={action.action_id}
-        initialStatus={action.status}
-        onChanged={() => void ctx.restartActions()}
+      <ActionEditTopbar
+        spaceName={space.title}
+        actionTypeLabel={tr.announcementName}
+        actionTypeKey="announcement"
+        title={title}
+        onTitleChange={setTitle}
+        editableTitle={false}
+        rightActions={
+          <button
+            className="btn btn--primary"
+            type="button"
+            data-testid="announcement-save-btn"
+            disabled={saving}
+            onClick={() => void save()}
+          >
+            {tr.announcementSave}
+          </button>
+        }
+        onBack={() => navigate(-1)}
+        onCancel={() => navigate(-1)}
       />
-      <input
-        className="title-input"
-        data-testid="announcement-title-input"
-        placeholder={tr.announcementTitlePlaceholder}
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onBlur={() => void save({ title })}
-      />
-      <Editor
-        className="w-full"
-        content={action.description}
-        editable
-        placeholder={tr.announcementBodyPlaceholder}
-        onContentChange={(description) => void save({ description })}
-      />
+      <div className="flex flex-col gap-5 py-6 px-4 mx-auto w-full max-w-[760px]">
+        <input
+          className="title-input"
+          data-testid="announcement-title-input"
+          placeholder={tr.announcementTitlePlaceholder}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <Editor
+          className="w-full"
+          content={action.description}
+          editable
+          placeholder={tr.announcementBodyPlaceholder}
+          onContentChange={setDescription}
+        />
+      </div>
     </div>
   );
 }

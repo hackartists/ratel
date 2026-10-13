@@ -141,6 +141,8 @@ const en = {
   announcement_confirm: "Confirm",
   announcement_title_placeholder: "Announcement title",
   announcement_body_placeholder: "Write the announcement...",
+  announcement_save: "Save",
+  announcement_saved: "Announcement published.",
   admin_badge: "Admin",
   home: "Home",
   publish: "Publish",
@@ -290,6 +292,8 @@ const ko: Record<keyof typeof en, string> = {
   announcement_confirm: "확인",
   announcement_title_placeholder: "공지 제목",
   announcement_body_placeholder: "공지 내용을 입력하세요...",
+  announcement_save: "저장",
+  announcement_saved: "공지가 게시되었습니다.",
   admin_badge: "관리자",
   home: "홈",
   publish: "게시",
@@ -441,6 +445,8 @@ export interface SpaceViewerI18n {
   announcementConfirm: string;
   announcementTitlePlaceholder: string;
   announcementBodyPlaceholder: string;
+  announcementSave: string;
+  announcementSaved: string;
   adminBadge: string;
   home: string;
   publish: string;
@@ -592,6 +598,8 @@ export function useSpaceViewerI18n(): SpaceViewerI18n {
     announcementConfirm: t("announcement_confirm"),
     announcementTitlePlaceholder: t("announcement_title_placeholder"),
     announcementBodyPlaceholder: t("announcement_body_placeholder"),
+    announcementSave: t("announcement_save"),
+    announcementSaved: t("announcement_saved"),
     adminBadge: t("admin_badge"),
     home: t("home"),
     publish: t("publish"),

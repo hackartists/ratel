@@ -832,32 +832,30 @@ test.describe.serial("Space announcement", () => {
     announcementId = m[1];
 
     await expect(page.getByTestId("announcement-editor-view")).toBeVisible();
+    await expect(page.locator(".arena-topbar .back-btn")).toBeVisible();
+    await expect(page.getByTestId("action-close")).toHaveCount(0);
+    await expect(page.getByTestId("action-publish")).toHaveCount(0);
     await fill(page, { testId: "announcement-title-input" }, announcementTitle);
-    await commitAutosave(page);
     const editor = await getEditor(page);
     await editor.fill(announcementBody);
     await commitAutosave(page);
+    await page.waitForTimeout(500);
+    await click(page, { testId: "announcement-save-btn" });
 
     await expect
       .poll(async () => {
         const res = await page.request.get(`/api/spaces/${spaceId}/actions`);
         const actions = await res.json();
         const a = actions.find((x) => x.action_id === announcementId);
-        return a ? `${a.title}|${a.description.includes(announcementBody)}` : "";
+        return a ? `${a.title}|${a.description.includes(announcementBody)}|${a.status}` : "";
       })
-      .toBe(`${announcementTitle}|true`);
+      .toBe(`${announcementTitle}|true|Ongoing`);
 
     const formattedRes = await page.request.post(
       `/api/spaces/${spaceId}/actions/${announcementId}`,
       { data: { req: { description: announcementHtml } } },
     );
     expect(formattedRes.ok(), `format announcement: ${await formattedRes.text()}`).toBeTruthy();
-
-    const statusRes = await page.request.post(
-      `/api/spaces/${spaceId}/actions/${announcementId}`,
-      { data: { req: { status: "Ongoing" } } },
-    );
-    expect(statusRes.ok(), `publish announcement: ${await statusRes.text()}`).toBeTruthy();
   });
 
   test("Creator: a second create returns the same announcement", async ({ page }) => {
