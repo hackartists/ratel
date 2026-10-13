@@ -226,7 +226,7 @@ async fn list_actions_creator_sees_ungated_action_regardless_of_gate() {
         .find(|a| a["action_id"] == gated_poll_id)
         .expect("gated action present");
     assert_eq!(
-        gated["required_attributes_met"], false,
-        "Creator visibility bypasses the gate but the computed flag is unchanged"
+        gated["required_attributes_met"], true,
+        "Creator bypasses the gate, so the computed flag is reported as met"
     );
 }

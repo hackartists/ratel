@@ -17,7 +17,7 @@ import type { Answer, Question, SpacePartition, SpacePollEntityType, VoteEncrypt
 import { useGetEncryptionMaterial, useGetPoll, useRespondPoll } from "@ratel/ts-bridges/hooks";
 import { canExecuteSpaceAction, isParticipationOpen } from "@/components/space/access";
 import { useActionOverlay, useCompletedActionCard, useOptionalActionOverlay } from "@/components/space/action-overlay";
-import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
+import { useActionExecuteRole, useSpace, useSpaceContext } from "@/components/space/space-context";
 import { PrivacyConsentViewer } from "@/components/space-actions/question-viewer";
 import { useActionPollI18n } from "./i18n";
 import {
@@ -454,7 +454,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   const tr = useActionPollI18n();
   const toast = useToast();
   const spaceCtx = useSpaceContext();
-  const role = useSpaceRole();
+  const role = useActionExecuteRole();
   const space = useSpace();
   const overlayCtx = useOptionalActionOverlay();
   const overlay = useActionOverlay();
@@ -488,7 +488,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   const [showSecretModal, setShowSecretModal] = React.useState(false);
   const [applyingSecret, setApplyingSecret] = React.useState(false);
 
-  const canSubmitForSecret = poll ? canRespond && canExecuteSpaceAction(role, poll.space_action.prerequisite, space.status, poll.space_action.status, true, isParticipationOpen(space)) && poll.status === "InProgress" && poll.my_response === null : false;
+  const canSubmitForSecret = poll ? canRespond && canExecuteSpaceAction(role, poll.space_action.prerequisite, space.status, poll.space_action.status, true, isParticipationOpen(space)) && (poll.status === "InProgress" || (role === "Creator" && poll.status === "NotStarted")) && poll.my_response === null : false;
   const needsSecret = encryptionEnabled && canSubmitForSecret;
   const materialQuery = useGetEncryptionMaterial(spaceId, pollId, { enabled: needsSecret });
   const encryptionMaterial: VoteEncryptionMaterialResponse | undefined = materialQuery.data;
@@ -529,11 +529,12 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   const canExecuteAction = canExecuteSpaceAction(role, poll.space_action.prerequisite, space.status, poll.space_action.status, true, isParticipationOpen(space));
   const isInProgress = poll.status === "InProgress";
   const isNotStarted = poll.status === "NotStarted";
+  const acceptsResponses = isInProgress || (role === "Creator" && isNotStarted);
   const hasResponse = poll.my_response !== null;
-  const canSubmit = canRespond && canExecuteAction && isInProgress && !hasResponse;
-  const canUpdate = canRespond && canExecuteAction && isInProgress && hasResponse && poll.response_editable;
+  const canSubmit = canRespond && canExecuteAction && acceptsResponses && !hasResponse;
+  const canUpdate = canRespond && canExecuteAction && acceptsResponses && hasResponse && poll.response_editable;
   const showSubmit = canRespond && (canSubmit || canUpdate);
-  const disabled = !canRespond || !canExecuteAction || !isInProgress || (!canSubmit && !canUpdate);
+  const disabled = !canRespond || !canExecuteAction || !acceptsResponses || (!canSubmit && !canUpdate);
 
   const allAnswered = total > 0 && questions.every((q, i) => hasAnswerForQuestion(q, answers[i]));
   const currentIdx = Math.min(questionIndex, Math.max(0, total - 1));
@@ -800,8 +801,8 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
 
       {poll.status === "Finish" && <div className="poll-banner poll-banner--info">{tr.pollEnded}</div>}
       {poll.status === "NotStarted" && <div className="poll-banner poll-banner--info">{tr.pollNotStarted}</div>}
-      {isInProgress && !canExecuteAction && <div className="poll-banner poll-banner--warning">{tr.noPermission}</div>}
-      {isInProgress && canExecuteAction && hasResponse && !poll.response_editable && canRespond && (
+      {acceptsResponses && !canExecuteAction && <div className="poll-banner poll-banner--warning">{tr.noPermission}</div>}
+      {acceptsResponses && canExecuteAction && hasResponse && !poll.response_editable && canRespond && (
         <div className="poll-banner poll-banner--info">{tr.alreadyResponded}</div>
       )}
 
@@ -844,7 +845,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
             <button
               className="poll-begin-btn"
               data-testid="poll-arena-begin"
-              disabled={total === 0 || isNotStarted}
+              disabled={total === 0 || (isNotStarted && !acceptsResponses)}
               onClick={() => {
                 setQuestionIndex(0);
                 setStep("Poll");

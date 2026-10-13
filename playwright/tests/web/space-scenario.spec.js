@@ -16,6 +16,7 @@ import {
   togglePrerequisite,
   commitAutosave,
   fillQuestionTitle,
+  transitionSpace,
 } from "../utils";
 
 /**
@@ -577,9 +578,9 @@ test.describe.serial("Space governance scenario", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Discussion Required Attributes — gates participation on a Poll's
 // single-choice answer matching an allow-list, independent of (AND with)
-// Dependency Actions. `can_execute_space_action` runs for the Creator role
-// too, so this whole scenario is driven by the Creator alone — no extra
-// signups needed.
+// Dependency Actions. Space admins (Creator) bypass both gates, so the
+// Creator configures them here and can still comment while they are unmet.
+// Participant-side gating is covered by `space_admin_action_bypass_tests.rs`.
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe.serial("Discussion Required Attributes gate", () => {
   let spaceUrl;
@@ -690,103 +691,50 @@ test.describe.serial("Discussion Required Attributes gate", () => {
     await expect(page.getByTestId("chip-required-attribute-0")).toBeVisible();
   });
 
-  test("Blocked: unanswered poll prevents Discussion participation", async ({
-    page,
-  }) => {
+  async function commentAsAdmin(page, content) {
     const res = await page.request.post(
       `/api/spaces/${spaceId}/discussions/${discussionId}/comments`,
-      { data: { req: { content: "should be blocked", images: [] } } },
+      { data: { req: { content, images: [] } } },
     );
-    expect(res.ok(), "comment must be rejected while poll is unanswered").toBeFalsy();
+    expect(res.ok(), `admin comment "${content}": ${await res.text()}`).toBeTruthy();
+  }
+
+  test("Admin: comments while the gating poll is unanswered", async ({ page }) => {
+    await commentAsAdmin(page, "admin bypasses unanswered required attributes");
   });
 
-  test("Blocked: answering the poll with a disallowed option still blocks", async ({
-    page,
-  }) => {
+  test("Admin: comments after a disallowed poll answer", async ({ page }) => {
     const respondRes = await page.request.post(
       `/api/spaces/${spaceId}/polls/${pollId}/respond`,
       { data: { req: { answers: [{ answer_type: "single_choice", answer: 1, other: null }] } } },
     );
     expect(respondRes.ok(), `poll respond: ${await respondRes.text()}`).toBeTruthy();
 
-    const res = await page.request.post(
-      `/api/spaces/${spaceId}/discussions/${discussionId}/comments`,
-      { data: { req: { content: "should still be blocked", images: [] } } },
-    );
-    expect(
-      res.ok(),
-      "comment must be rejected when the poll answer is not in the allow-list",
-    ).toBeFalsy();
+    await commentAsAdmin(page, "admin bypasses a disallowed answer");
   });
 
-  test("Unlocked: answering with an allowed option satisfies Required Attributes (no dependency configured yet)", async ({
-    page,
-  }) => {
-    const respondRes = await page.request.post(
-      `/api/spaces/${spaceId}/polls/${pollId}/respond`,
-      { data: { req: { answers: [{ answer_type: "single_choice", answer: 0, other: null }] } } },
-    );
-    expect(respondRes.ok(), `poll respond: ${await respondRes.text()}`).toBeTruthy();
-
-    // Required Attributes alone is now satisfied and no Dependency Actions
-    // are configured on the discussion yet, so participation succeeds.
-    const res = await page.request.post(
-      `/api/spaces/${spaceId}/discussions/${discussionId}/comments`,
-      { data: { req: { content: "unlocked by required attributes alone", images: [] } } },
-    );
-    expect(
-      res.ok(),
-      `comment should succeed once Required Attributes is satisfied: ${await res.text()}`,
-    ).toBeTruthy();
-  });
-
-  test("AND case: wiring an incomplete Dependency Action back on blocks again even though Required Attributes is satisfied", async ({
-    page,
-  }) => {
+  test("Admin: comments while an incomplete Dependency Action is wired on", async ({ page }) => {
     const updateRes = await page.request.post(
       `/api/spaces/${spaceId}/actions/${discussionId}`,
       { data: { req: { depends_on: [depActionId] } } },
     );
     expect(updateRes.ok(), `set dependency: ${await updateRes.text()}`).toBeTruthy();
 
-    const res = await page.request.post(
-      `/api/spaces/${spaceId}/discussions/${discussionId}/comments`,
-      { data: { req: { content: "blocked by dependency", images: [] } } },
-    );
-    expect(
-      res.ok(),
-      "comment must be blocked while the dependency action is incomplete, even though Required Attributes is satisfied",
-    ).toBeFalsy();
-  });
-
-  test("Fully unlocked: clearing the Dependency Action restores access (Required Attributes + Dependency Actions both AND-satisfied)", async ({
-    page,
-  }) => {
-    const updateRes = await page.request.post(
-      `/api/spaces/${spaceId}/actions/${discussionId}`,
-      { data: { req: { depends_on: [] } } },
-    );
-    expect(updateRes.ok(), `clear dependency: ${await updateRes.text()}`).toBeTruthy();
-
-    const res = await page.request.post(
-      `/api/spaces/${spaceId}/discussions/${discussionId}/comments`,
-      { data: { req: { content: "now allowed through", images: [] } } },
-    );
-    expect(
-      res.ok(),
-      `comment must succeed once both gates are satisfied: ${await res.text()}`,
-    ).toBeTruthy();
+    await commentAsAdmin(page, "admin bypasses an incomplete dependency");
   });
 });
 
 /**
  * Space announcement: one per space, pinned first in the action list, and
- * shown to a user right before the participate request goes out.
+ * shown to a user right before the participate request goes out. Confirming
+ * it there records the read, so the member's dashboard lists it in the
+ * archive instead of the active carousel.
  */
 test.describe.serial("Space announcement", () => {
   let spaceUrl;
   let spaceId;
   let announcementId;
+  let memberState;
 
   const uniqueId = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
   const announcementTitle = `Read before joining ${uniqueId}`;
@@ -925,6 +873,14 @@ test.describe.serial("Space announcement", () => {
       await clickNoNav(page, { testId: "btn-announcement-continue" });
       await expect(notice).toBeHidden({ timeout: 30000 });
 
+      await expect
+        .poll(async () => {
+          const res = await page.request.get(`/api/spaces/${spaceId}/actions`);
+          const actions = await res.json();
+          return actions.find((x) => x.action_id === announcementId)?.user_participated ?? null;
+        })
+        .toBe(true);
+
       const entry = page
         .getByTestId("action-card-announcement")
         .or(page.getByTestId("candidate-announcement-link"));
@@ -941,6 +897,38 @@ test.describe.serial("Space announcement", () => {
       await click(page, { testId: "btn-announcement-confirm" });
       await page.waitForURL(new RegExp(`/spaces/${spaceId}/?$`), { timeout: 30000 });
       await expect(page.getByTestId("announcement-viewer-view")).toBeHidden();
+      memberState = await context.storageState();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Creator: start the space", async ({ page }) => {
+    await transitionSpace(page, spaceUrl, "start");
+  });
+
+  test("Member: the read announcement sits in the archive, not the active quests", async ({ browser }) => {
+    const context = await browser.newContext({ storageState: memberState });
+    const page = await context.newPage();
+    try {
+      await goto(page, spaceUrl);
+      await page.addStyleTag({
+        content: "*, *::before, *::after { animation-play-state: paused !important; }",
+      });
+      const archiveBtn = page.getByTestId("btn-archive");
+      await expect(archiveBtn).toBeVisible({ timeout: 30000 });
+      await expect(page.getByTestId("action-card-announcement")).toHaveCount(0);
+
+      await clickNoNav(page, { testId: "btn-archive" });
+      const panel = page.getByTestId("archive-panel");
+      await expect(panel).toHaveAttribute("data-open", "true");
+      const item = panel.locator(".archive-item").filter({ hasText: announcementTitle });
+      await expect(item).toBeVisible();
+      await expect(item.locator(".archive-item__check")).toBeVisible();
+
+      await item.click();
+      await page.waitForURL(/\/actions\/announcements\//, { timeout: 30000 });
+      await expect(page.getByTestId("announcement-viewer-view")).toBeVisible();
     } finally {
       await context.close();
     }

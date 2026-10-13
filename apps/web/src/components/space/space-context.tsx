@@ -205,6 +205,17 @@ export function useSpaceRole(): SpaceUserRole {
   return useSpaceContext().currentRole;
 }
 
+/**
+ * Role that gates running an action. Space admins always act as `Creator`
+ * — the server keys `can_execute_space_action` off the persisted role — so the
+ * Ongoing-space participant view and the "view as participant" toggle never
+ * block an admin from participating. Everyone else uses the effective role.
+ */
+export function useActionExecuteRole(): SpaceUserRole {
+  const ctx = useSpaceContext();
+  return isSpaceAdmin(ctx.role) ? "Creator" : ctx.currentRole;
+}
+
 /** Rust `use_actions()()`. */
 export function useActions(): SpaceActionSummary[] {
   return useSpaceContext().actions;

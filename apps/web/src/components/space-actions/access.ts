@@ -12,7 +12,7 @@ export function isActionLocked(
   return actionStatus === "Ongoing" || actionStatus === "Finish";
 }
 
-/** `can_execute_space_action`. */
+/** `can_execute_space_action`: Creators (space admins) ignore unmet dependencies and the action status. */
 export function canExecuteSpaceAction(
   role: SpaceUserRole,
   prerequisite: boolean,
@@ -57,6 +57,7 @@ export function canExecuteSpaceAction(
       break;
   }
 
+  if (role === "Creator") return roleOk && statusOk;
   return roleOk && statusOk && dependenciesMet;
 }
 

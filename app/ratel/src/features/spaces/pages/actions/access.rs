@@ -23,6 +23,10 @@ pub fn is_action_locked(
 /// the space; it decides whether Candidates may still run prerequisite
 /// actions (Open, Sampling with recruiting allowed, or Ongoing with
 /// `join_anytime`).
+///
+/// Creators (space admins) bypass `dependencies_met`,
+/// `required_attributes_met` and the action's own status; they are only
+/// blocked once the space itself is Processing or Finished.
 pub fn can_execute_space_action(
     role: SpaceUserRole,
     prerequisite: bool,
@@ -56,6 +60,10 @@ pub fn can_execute_space_action(
         }
         SpaceUserRole::Viewer => false,
     };
+
+    if matches!(role, SpaceUserRole::Creator) {
+        return role_ok && status_ok;
+    }
 
     role_ok && status_ok && dependencies_met && required_attributes_met
 }
@@ -94,6 +102,83 @@ mod tests {
             Some(SpaceStatus::Sampling),
             Some(&SpaceActionStatus::Ongoing),
             true,
+            true,
+            false,
+        ));
+    }
+
+    fn creator(
+        space_status: SpaceStatus,
+        action_status: Option<&SpaceActionStatus>,
+        dependencies_met: bool,
+        required_attributes_met: bool,
+    ) -> bool {
+        can_execute_space_action(
+            SpaceUserRole::Creator,
+            false,
+            Some(space_status),
+            action_status,
+            dependencies_met,
+            required_attributes_met,
+            false,
+        )
+    }
+
+    #[test]
+    fn creator_bypasses_unmet_dependencies() {
+        assert!(creator(
+            SpaceStatus::Ongoing,
+            Some(&SpaceActionStatus::Ongoing),
+            false,
+            true,
+        ));
+    }
+
+    #[test]
+    fn creator_bypasses_unmet_required_attributes() {
+        assert!(creator(
+            SpaceStatus::Ongoing,
+            Some(&SpaceActionStatus::Ongoing),
+            true,
+            false,
+        ));
+    }
+
+    #[test]
+    fn creator_runs_designing_action() {
+        assert!(creator(
+            SpaceStatus::Ongoing,
+            Some(&SpaceActionStatus::Designing),
+            false,
+            false,
+        ));
+        assert!(creator(SpaceStatus::Designing, None, false, false));
+    }
+
+    #[test]
+    fn creator_blocked_once_space_is_processing_or_finished() {
+        assert!(!creator(
+            SpaceStatus::Processing,
+            Some(&SpaceActionStatus::Ongoing),
+            true,
+            true,
+        ));
+        assert!(!creator(
+            SpaceStatus::Finished,
+            Some(&SpaceActionStatus::Ongoing),
+            true,
+            true,
+        ));
+    }
+
+    #[test]
+    fn participant_still_blocked_by_unmet_dependencies() {
+        assert!(!can_execute_space_action(
+            SpaceUserRole::Participant,
+            false,
+            Some(SpaceStatus::Ongoing),
+            Some(&SpaceActionStatus::Ongoing),
+            false,
             true,
             false,
         ));

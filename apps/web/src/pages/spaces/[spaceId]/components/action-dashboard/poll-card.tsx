@@ -1,6 +1,6 @@
 // app/ratel/src/features/spaces/pages/index/action_dashboard/poll_card/component.rs —
-// `PollActionCard`: quest card for a poll; previews the first question's options
-// and opens the poll overlay (or the locked-dependencies popup).
+// `PollActionCard`: quest card for a poll; opens the poll overlay (or the
+// locked-dependencies popup) without previewing any question before the survey starts.
 import { useNavigate } from "react-router-dom";
 import type { SpaceActionSummary } from "@ratel/ts-bridges";
 import { useActionOverlay } from "@/components/space/action-overlay";
@@ -11,8 +11,8 @@ import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-vi
 import { dataBool } from "@/lib/dom";
 import { usePopup } from "@/lib/popup";
 import { type DependencyLock, dependencyLockNone, openLockedPopup, resolveOutstandingActions } from "./dependency-lock";
-import { usePoll } from "./hooks/use-poll";
 import { QuestEditButton } from "./quest-edit-button";
+import { QuestCardDesc } from "./quest-card-desc";
 
 export function PollActionCard({
   action,
@@ -34,23 +34,6 @@ export function PollActionCard({
   const outstanding = resolveOutstandingActions(action, spaceCtx.actions);
 
   const pollId = subPartitionId(action.action_id, EntityPrefix.SpacePoll);
-  const poll = usePoll(spaceId, pollId);
-
-  // Extract first question's options for preview
-  const first = poll.questions[0];
-  let options: string[] = [];
-  if (first) {
-    switch (first.answer_type) {
-      case "single_choice":
-      case "multiple_choice":
-      case "checkbox":
-      case "dropdown":
-        options = first.options;
-        break;
-      default:
-        options = [];
-    }
-  }
 
   return (
     <div
@@ -119,21 +102,7 @@ export function PollActionCard({
 
       <div className="quest-card__body">
         <div className="quest-card__title">{action.title}</div>
-        {action.description !== "" && (
-          <div className="quest-card__desc" dangerouslySetInnerHTML={{ __html: action.description }} />
-        )}
-        <div className="quest-card__detail">
-          {options.length > 0 && (
-            <div className="quest-poll-options">
-              {options.map((option, i) => (
-                <div key={i} className="quest-poll-option">
-                  <span className="quest-poll-option__dot" />
-                  {` ${option}`}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <QuestCardDesc html={action.description} />
       </div>
 
       <div className="quest-card__footer">

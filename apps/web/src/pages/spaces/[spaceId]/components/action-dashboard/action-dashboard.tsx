@@ -61,6 +61,7 @@ export function deriveActionStatus(action: SpaceActionSummary): ActionStatus {
       if (ended) return "Skipped";
       return "Active";
     case "Announcement":
+      if (action.user_participated) return "Completed";
       return "Active";
   }
 }
@@ -83,8 +84,8 @@ export function ActionDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
   const skipped = actions.filter((a) => deriveActionStatus(a) === "Skipped");
 
   const total = actions.filter((a) => a.action_type !== "Announcement").length;
-  const done = completed.length;
-  const skippedCount = skipped.length;
+  const done = completed.filter((a) => a.action_type !== "Announcement").length;
+  const archivedCount = completed.length + skipped.length;
   const progressPct = total > 0 ? Math.trunc((done / total) * 100.0) : 0;
 
   const [showArchive, setShowArchive] = useState(false);
@@ -267,7 +268,7 @@ export function ActionDashboard({ isAdmin = false }: { isAdmin?: boolean }) {
           >
             <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
           </svg>
-          {done + skippedCount > 0 && <span className="archive-btn__count">{`${done + skippedCount}`}</span>}
+          {archivedCount > 0 && <span className="archive-btn__count">{`${archivedCount}`}</span>}
         </button>
       </div>
 
@@ -356,6 +357,9 @@ function ArchiveItem({
           case "TopicDiscussion":
             navigate(`/spaces/${sid}/discussions/${subPartitionId(aid, EntityPrefix.SpacePost)}`);
             break;
+          case "Announcement":
+            navigate(`/spaces/${sid}/actions/announcements/${aid}`);
+            break;
           case "Follow": // Follow has no in-overlay detail view yet; skip.
           case "Meet": // Meet has no in-overlay detail view yet; skip.
             break;
@@ -363,7 +367,9 @@ function ArchiveItem({
       }}
     >
       <div className="archive-item__info">
-        <div className="archive-item__title">{action.title}</div>
+        <div className="archive-item__title">
+          {action.action_type === "Announcement" && action.title === "" ? tr.announcementName : action.title}
+        </div>
         <div className="archive-item__meta">{`${te("SpaceActionType", action.action_type)} · ${action.credits} CR`}</div>
       </div>
       {isQuiz && isCompleted && !quizPassed ? (

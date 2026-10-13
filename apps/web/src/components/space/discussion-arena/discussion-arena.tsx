@@ -21,7 +21,7 @@ import { CommentImageGrid } from "@/components/ui/comment-image-grid";
 import { ImageUploadPreview, type PendingImage } from "@/components/ui/image-upload-preview";
 import { MentionAutocomplete } from "@/components/ui/mention-autocomplete";
 import { useOptionalActionOverlay } from "@/components/space/action-overlay";
-import { useSpace, useSpaceRole } from "@/components/space/space-context";
+import { useActionExecuteRole, useSpace } from "@/components/space/space-context";
 import { useDiscussionArenaI18n } from "./i18n";
 import { useUserContext } from "@/lib/auth";
 import { dataBool } from "@/lib/dom";
@@ -534,7 +534,7 @@ function CommentComposer({
 function DiscussionArenaContent({ targetCommentId }: { targetCommentId: string | null }) {
   const tr = useDiscussionArenaI18n();
   const arena = useDiscussionArena();
-  const role = useSpaceRole();
+  const role = useActionExecuteRole();
   const space = useSpace();
   const overlayCtx = useOptionalActionOverlay();
   const navigate = useNavigate();

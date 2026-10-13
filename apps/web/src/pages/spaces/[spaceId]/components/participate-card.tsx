@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useParticipateSpace } from "@ratel/ts-bridges/hooks";
+import { useParticipateSpace, useReadSpaceAnnouncement } from "@ratel/ts-bridges/hooks";
 import type { PanelRequirementStatus } from "@ratel/ts-bridges";
 import { useSpaceContext } from "@/components/space/space-context";
 import { useEnumI18n } from "@/i18n/enums.i18n";
@@ -47,6 +47,16 @@ export function ParticipateCard({
 
   React.useEffect(() => () => announcementVisibleChange.current?.(false), []);
 
+  const readAnnouncement = useReadSpaceAnnouncement();
+
+  /** Records the announcement shown before joining as read, so the dashboard archives it. */
+  const markAnnouncementRead = async () => {
+    if (!showAnnouncement || !announcement) return;
+    await readAnnouncement
+      .mutateAsync({ spaceId: ctx.spaceId, actionId: announcement.action_id })
+      .catch(() => undefined);
+  };
+
   const join = async () => {
     if (requireConsent) {
       setShowConsent(true);
@@ -57,6 +67,7 @@ export function ParticipateCard({
     } catch {
       return;
     }
+    await markAnnouncementRead();
     onJoined();
     void ctx.restart();
   };
@@ -70,6 +81,7 @@ export function ParticipateCard({
           setShowAnnouncement(false);
         }}
         onJoined={onJoined}
+        onParticipated={markAnnouncementRead}
       />
     );
   }
@@ -117,10 +129,13 @@ function ConsentModal({
   requirements,
   onCancel,
   onJoined,
+  onParticipated,
 }: {
   requirements: PanelRequirementStatus[];
   onCancel: () => void;
   onJoined: () => void;
+  /** Runs after the participate request succeeds and before `onJoined`. */
+  onParticipated: () => Promise<void>;
 }) {
   const tr = useSpaceViewerI18n();
   const t = useEnumI18n();
@@ -209,6 +224,7 @@ function ConsentModal({
             } catch {
               return;
             }
+            await onParticipated();
             onJoined();
             void ctx.restart();
           }}

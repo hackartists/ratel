@@ -7,7 +7,7 @@ export function isActionLocked(spaceStatus: SpaceStatus | null, actionStatus: Sp
   return actionStatus === "Ongoing" || actionStatus === "Finish";
 }
 
-/** Rust `can_execute_space_action`. */
+/** Rust `can_execute_space_action`: Creators (space admins) ignore unmet dependencies and the action status. */
 export function canExecuteSpaceAction(
   role: SpaceUserRole,
   prerequisite: boolean,
@@ -36,6 +36,7 @@ export function canExecuteSpaceAction(
       roleOk = false;
       statusOk = false;
   }
+  if (role === "Creator") return roleOk && statusOk;
   return roleOk && statusOk && dependenciesMet;
 }
 

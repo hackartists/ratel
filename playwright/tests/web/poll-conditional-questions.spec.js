@@ -307,6 +307,7 @@ test.describe.serial("Poll conditional questions and termination", () => {
 
       await goto(page, spaceUrl);
       await expect(page.getByTestId(`quest-card-${pollActionId}`)).toBeVisible({ timeout: 20000 });
+      await expect(page.getByTestId(`quest-card-${pollActionId}`).locator(".quest-poll-options")).toHaveCount(0);
     } finally {
       await context.close();
     }
