@@ -21,12 +21,15 @@ export function ParticipateCard({
   rewards,
   requireConsent = false,
   onJoined,
+  onAnnouncementVisibleChange,
 }: {
   participants: string;
   remaining: string;
   rewards: string;
   requireConsent?: boolean;
   onJoined: () => void;
+  /** Reports whether the join-time announcement step is on screen; reports `false` on unmount. */
+  onAnnouncementVisibleChange?: (visible: boolean) => void;
 }) {
   const tr = useSpaceViewerI18n();
   const [showConsent, setShowConsent] = React.useState(false);
@@ -34,6 +37,15 @@ export function ParticipateCard({
   const ctx = useSpaceContext();
   const participate = useParticipateSpace();
   const announcement = ctx.actions.find((a) => a.action_type === "Announcement");
+  const announcementVisible = !showConsent && showAnnouncement && announcement !== undefined;
+  const announcementVisibleChange = React.useRef(onAnnouncementVisibleChange);
+  announcementVisibleChange.current = onAnnouncementVisibleChange;
+
+  React.useEffect(() => {
+    announcementVisibleChange.current?.(announcementVisible);
+  }, [announcementVisible]);
+
+  React.useEffect(() => () => announcementVisibleChange.current?.(false), []);
 
   const join = async () => {
     if (requireConsent) {
