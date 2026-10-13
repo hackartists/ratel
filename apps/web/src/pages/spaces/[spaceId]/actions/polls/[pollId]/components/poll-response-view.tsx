@@ -5,7 +5,7 @@ import { getEncryptionMaterial, respondPoll } from "@ratel/ts-bridges";
 import { canExecuteSpaceAction, isParticipationOpen } from "@/components/space-actions/access";
 import { FullActionLayover } from "@/components/space-actions/full-action-layover";
 import { hasAnswerForQuestion, QuestionViewer, shouldAutoNext } from "@/components/space-actions/question-viewer";
-import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
+import { useActionExecuteRole, useSpace, useSpaceContext } from "@/components/space/space-context";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
 import { usePollParticipantI18n } from "./poll-participant.i18n";
 import { usePollReadI18n } from "./poll-read.i18n";
@@ -40,7 +40,7 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
   const navigate = useNavigate();
   const { spaceId, pollId, poll, refresh } = usePoll();
   const space = useSpace();
-  const role = useSpaceRole();
+  const role = useActionExecuteRole();
   const { restartRanking, restartMyScore } = useSpaceContext();
   const refreshScores = () => {
     void restartRanking();
@@ -78,9 +78,10 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
   }, [poll.questions, answers, visibleIndices]);
 
   const isInProgress = poll.status === "InProgress";
+  const acceptsResponses = isInProgress || (role === "Creator" && poll.status === "NotStarted");
   const hasResponse = poll.my_response !== null;
-  const canSubmit = canRespond && canExecuteAction && isInProgress && !hasResponse;
-  const canUpdate = canRespond && canExecuteAction && isInProgress && hasResponse && poll.response_editable;
+  const canSubmit = canRespond && canExecuteAction && acceptsResponses && !hasResponse;
+  const canUpdate = canRespond && canExecuteAction && acceptsResponses && hasResponse && poll.response_editable;
   const total = poll.questions.length;
   const clampedIdx = Math.min(questionIndex, Math.max(total - 1, 0));
   const currentIdx = flow.visible[clampedIdx]
@@ -376,7 +377,7 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
                 total={total}
                 question={currentQuestion!}
                 answer={currentAnswer}
-                disabled={!canRespond || !canExecuteAction || !isInProgress || (!canSubmit && !canUpdate)}
+                disabled={!canRespond || !canExecuteAction || !acceptsResponses || (!canSubmit && !canUpdate)}
                 enableOtherOption
                 onChange={onAnswerChange}
               />

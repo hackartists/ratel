@@ -115,8 +115,10 @@ pub async fn list_actions(
         .map(|a| (a.action_id.clone(), a.user_participated))
         .collect();
 
+    let is_creator = matches!(role, SpaceUserRole::Creator);
+
     for action in actions.iter_mut() {
-        if action.depends_on.is_empty() {
+        if is_creator || action.depends_on.is_empty() {
             action.dependencies_met = true;
             continue;
         }
@@ -128,7 +130,7 @@ pub async fn list_actions(
     }
 
     for action in actions.iter_mut() {
-        if action.required_attributes.is_empty() {
+        if is_creator || action.required_attributes.is_empty() {
             action.required_attributes_met = true;
             continue;
         }
