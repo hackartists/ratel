@@ -4,6 +4,7 @@ import { useSpaceContext } from "@/components/space/space-context";
 import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
 import { dataBool } from "@/lib/dom";
+import { QuestCardDesc } from "./quest-card-desc";
 
 /** Quest card for the space announcement; always active, opens the announcement page. */
 export function AnnouncementActionCard({ action }: { action: SpaceActionSummary }) {
@@ -59,9 +60,7 @@ export function AnnouncementActionCard({ action }: { action: SpaceActionSummary 
 
       <div className="quest-card__body">
         <div className="quest-card__title">{action.title === "" ? tr.announcementName : action.title}</div>
-        {action.description !== "" && (
-          <div className="quest-card__desc" dangerouslySetInnerHTML={{ __html: action.description }} />
-        )}
+        <QuestCardDesc html={action.description} />
       </div>
 
       <div className="quest-card__footer">

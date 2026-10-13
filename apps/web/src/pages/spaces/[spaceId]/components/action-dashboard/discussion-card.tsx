@@ -11,6 +11,7 @@ import { dataBool } from "@/lib/dom";
 import { usePopup } from "@/lib/popup";
 import { type DependencyLock, dependencyLockNone, openLockedPopup, resolveOutstandingActions } from "./dependency-lock";
 import { QuestEditButton } from "./quest-edit-button";
+import { QuestCardDesc } from "./quest-card-desc";
 
 export function DiscussionActionCard({
   action,
@@ -96,9 +97,7 @@ export function DiscussionActionCard({
 
       <div className="quest-card__body">
         <div className="quest-card__title">{action.title}</div>
-        {action.description !== "" && (
-          <div className="quest-card__desc" dangerouslySetInnerHTML={{ __html: action.description }} />
-        )}
+        <QuestCardDesc html={action.description} />
         <div className="quest-card__detail">
           <div className="quest-detail-chip">
             <svg
