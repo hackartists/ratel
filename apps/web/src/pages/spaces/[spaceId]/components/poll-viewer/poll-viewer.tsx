@@ -29,29 +29,9 @@ import {
 } from "@/lib/poll-encryption";
 import { useToast } from "@/lib/toast";
 import { RichQuestionTitle } from "@/components/space-actions/rich-question-title";
+import { applyAnswerChange, emptyAnswerFor, resolveNavigation, submissionAnswers } from "../../actions/polls/[pollId]/components/poll-flow";
 
 type PollStep = "Overview" | "Poll";
-
-function defaultAnswer(question: Question): Answer {
-  switch (question.answer_type) {
-    case "single_choice":
-      return { answer_type: "single_choice", answer: null, other: null };
-    case "multiple_choice":
-      return { answer_type: "multiple_choice", answer: null, other: null };
-    case "short_answer":
-      return { answer_type: "short_answer", answer: null };
-    case "subjective":
-      return { answer_type: "subjective", answer: null };
-    case "checkbox":
-      return { answer_type: "checkbox", answer: null };
-    case "dropdown":
-      return { answer_type: "dropdown", answer: null };
-    case "linear_scale":
-      return { answer_type: "linear_scale", answer: null };
-    case "privacy_consent":
-      return { answer_type: "privacy_consent", agreed: false, phone: null, code: null };
-  }
-}
 
 /** Rust `should_auto_next`. */
 function shouldAutoNext(question: Question, answer: Answer): boolean {
@@ -144,6 +124,7 @@ function PollSingleChoice({
           <div
             key={`sc-${idx}-${optIdx}`}
             className="option-single"
+            data-testid={`poll-arena-option-${optIdx}`}
             data-selected={isSel ? "true" : "false"}
             data-disabled={disabled ? "true" : "false"}
             onClick={() => {
@@ -216,6 +197,7 @@ function PollMultipleChoice({
           <div
             key={`mc-${idx}-${optIdx}`}
             className="option-multi"
+            data-testid={`poll-arena-option-${optIdx}`}
             data-selected={isSel ? "true" : "false"}
             data-disabled={disabled ? "true" : "false"}
             onClick={() => {
@@ -468,16 +450,14 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   const [step, setStep] = React.useState<PollStep>("Overview");
   const [questionIndex, setQuestionIndex] = React.useState(0);
   const [showConfirm, setShowConfirm] = React.useState(false);
-  const [answers, setAnswers] = React.useState<Answer[]>([]);
+  const [answers, setAnswers] = React.useState<Record<number, Answer>>({});
 
   React.useEffect(() => {
     if (!poll) return;
-    const base = poll.questions.map(defaultAnswer);
-    if (poll.my_response) {
-      poll.my_response.forEach((ans, i) => {
-        if (i < base.length) base[i] = ans;
-      });
-    }
+    const base: Record<number, Answer> = {};
+    poll.questions.forEach((q, i) => {
+      base[i] = poll.my_response?.[i] ?? emptyAnswerFor(q);
+    });
     setAnswers(base);
     // Re-seed only when the poll identity/response set changes, like Rust's
     // one-shot `use_signal(|| initial_answers)`.
@@ -537,10 +517,9 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   const showSubmit = canRespond && (canSubmit || canUpdate);
   const disabled = !canRespond || !canExecuteAction || !acceptsResponses || (!canSubmit && !canUpdate);
 
-  const allAnswered = total > 0 && questions.every((q, i) => hasAnswerForQuestion(q, answers[i]));
-  const currentIdx = Math.min(questionIndex, Math.max(0, total - 1));
-  const isFirst = total === 0 || currentIdx === 0;
-  const isLast = total === 0 || currentIdx + 1 >= total;
+  const nav = resolveNavigation(questions, answers, questionIndex);
+  const { currentIdx, prevIdx, nextIdx, isFirst, isLast, visibleIndices } = nav;
+  const allAnswered = visibleIndices.length > 0 && visibleIndices.every((i) => hasAnswerForQuestion(questions[i], answers[i]));
   const currentQuestion = questions[currentIdx];
   const hasCurrentAnswer = currentQuestion ? hasAnswerForQuestion(currentQuestion, answers[currentIdx]) : false;
   const nextDisabled = canSubmit && !hasCurrentAnswer;
@@ -553,7 +532,8 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
     }
   };
 
-  const doSubmit = async () => {
+  const doSubmit = async (current: Record<number, Answer> = answers) => {
+    const payload = submissionAnswers(questions, current);
     let clientCiphertextJson: string | null = null;
     let clientVoterTag: string | null = null;
 
@@ -564,7 +544,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
         return;
       }
       try {
-        const enc = await encryptAnswersForCanister(encryptionMaterial, answers, Date.now());
+        const enc = await encryptAnswersForCanister(encryptionMaterial, payload, Date.now());
         clientCiphertextJson = enc.ciphertext_json;
         clientVoterTag = enc.voter_tag;
       } catch (e) {
@@ -577,7 +557,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
       await respondPoll.mutateAsync({
         spacePk: spaceId,
         pollSk: pollId,
-        req: { answers, client_ciphertext_json: clientCiphertextJson, client_voter_tag: clientVoterTag },
+        req: { answers: payload, client_ciphertext_json: clientCiphertextJson, client_voter_tag: clientVoterTag },
       });
     } catch (err) {
       toast.error(err);
@@ -595,11 +575,23 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
     }
   };
 
-  const onSubmitClick = () => {
+  const onSubmitClick = (current: Record<number, Answer> = answers) => {
     if (canSubmit && !poll.response_editable) {
       setShowConfirm(true);
     } else {
-      void doSubmit();
+      void doSubmit(current);
+    }
+  };
+
+  const onAnswerChange = (idx: number, question: Question, ans: Answer) => {
+    const change = applyAnswerChange(questions, answers, idx, ans);
+    setAnswers(change.answers);
+    if (change.terminated && (canSubmit || canUpdate)) {
+      onSubmitClick(change.answers);
+      return;
+    }
+    if (canSubmit && change.upcomingIdx !== undefined && shouldAutoNext(question, ans)) {
+      setQuestionIndex(change.upcomingIdx);
     }
   };
 
@@ -613,7 +605,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
 
   const renderQuestion = (question: Question, idx: number) => {
     const currentAnswer = answers[idx];
-    const canNext = idx + 1 < total;
+    const onChange = (ans: Answer) => onAnswerChange(idx, question, ans);
     switch (question.answer_type) {
       case "single_choice":
         return (
@@ -623,14 +615,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
             answer={currentAnswer}
             disabled={disabled}
             otherPlaceholder={tr.otherPlaceholder}
-            onChange={(ans) => {
-              setAnswers((prev) => {
-                const next = [...prev];
-                next[idx] = ans;
-                return next;
-              });
-              if (canSubmit && canNext && shouldAutoNext(question, ans)) setQuestionIndex(idx + 1);
-            }}
+            onChange={onChange}
           />
         );
       case "multiple_choice":
@@ -641,13 +626,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
             answer={currentAnswer}
             disabled={disabled}
             otherPlaceholder={tr.otherPlaceholder}
-            onChange={(ans) =>
-              setAnswers((prev) => {
-                const next = [...prev];
-                next[idx] = ans;
-                return next;
-              })
-            }
+            onChange={onChange}
           />
         );
       case "subjective":
@@ -658,13 +637,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
             disabled={disabled}
             isShort={false}
             placeholder={tr.subjectivePlaceholder}
-            onChange={(ans) =>
-              setAnswers((prev) => {
-                const next = [...prev];
-                next[idx] = ans;
-                return next;
-              })
-            }
+            onChange={onChange}
           />
         );
       case "short_answer":
@@ -675,13 +648,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
             disabled={disabled}
             isShort
             placeholder={tr.subjectivePlaceholder}
-            onChange={(ans) =>
-              setAnswers((prev) => {
-                const next = [...prev];
-                next[idx] = ans;
-                return next;
-              })
-            }
+            onChange={onChange}
           />
         );
       case "linear_scale":
@@ -691,14 +658,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
             question={question}
             answer={currentAnswer}
             disabled={disabled}
-            onChange={(ans) => {
-              setAnswers((prev) => {
-                const next = [...prev];
-                next[idx] = ans;
-                return next;
-              });
-              if (canSubmit && canNext && shouldAutoNext(question, ans)) setQuestionIndex(idx + 1);
-            }}
+            onChange={onChange}
           />
         );
       case "checkbox":
@@ -708,13 +668,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
             question={question}
             answer={currentAnswer}
             disabled={disabled}
-            onChange={(ans) =>
-              setAnswers((prev) => {
-                const next = [...prev];
-                next[idx] = ans;
-                return next;
-              })
-            }
+            onChange={onChange}
           />
         );
       case "dropdown":
@@ -723,13 +677,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
             question={question}
             answer={currentAnswer}
             disabled={disabled}
-            onChange={(ans) =>
-              setAnswers((prev) => {
-                const next = [...prev];
-                next[idx] = ans;
-                return next;
-              })
-            }
+            onChange={onChange}
           />
         );
       case "privacy_consent":
@@ -739,13 +687,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
             answer={currentAnswer}
             disabled={disabled}
             hideTitle
-            onChange={(ans) =>
-              setAnswers((prev) => {
-                const next = [...prev];
-                next[idx] = ans;
-                return next;
-              })
-            }
+            onChange={onChange}
           />
         );
     }
@@ -787,7 +729,9 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
           </div>
         </div>
         <div className="poll-header__right">
-          {step === "Poll" && total > 0 && <span className="poll-header__counter">{`${currentIdx + 1}/${total}`}</span>}
+          {step === "Poll" && total > 0 && (
+            <span className="poll-header__counter" data-testid="poll-arena-progress">{`${nav.position}/${visibleIndices.length}`}</span>
+          )}
           <span className={statusClass}>{statusText}</span>
           {poll.space_action.activity_score > 0 && (
             <span className="poll-header__reward">
@@ -867,10 +811,10 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
       )}
 
       {step === "Poll" && total > 0 && currentQuestion && (
-        <div key={`poll-q-${currentIdx}`} className="question-stage">
+        <div key={`poll-q-${currentIdx}`} className="question-stage" data-testid="poll-arena-question" data-question-index={currentIdx}>
           <div className="question-card">
             <div className="question-card__number">
-              {`${tr.questionPrefix} ${String(currentIdx + 1).padStart(2, "0")}`}
+              {`${tr.questionPrefix} ${String(nav.position).padStart(2, "0")}`}
               {isRequired(currentQuestion) && <span className="question-card__required">{tr.required}</span>}
             </div>
             {currentQuestion.html_title ? (
@@ -889,19 +833,24 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
         <div className="poll-footer">
           <div className="poll-footer__right">
             {!isFirst && total > 0 && (
-              <button className="poll-btn poll-btn--back" onClick={() => currentIdx > 0 && setQuestionIndex(currentIdx - 1)}>
+              <button className="poll-btn poll-btn--back" data-testid="poll-arena-prev" onClick={() => prevIdx !== undefined && setQuestionIndex(prevIdx)}>
                 <BackIcon />
                 {tr.btnBack}
               </button>
             )}
             {!isLast && total > 0 && (
-              <button className="poll-btn poll-btn--next" disabled={nextDisabled} onClick={() => currentIdx + 1 < total && setQuestionIndex(currentIdx + 1)}>
+              <button
+                className="poll-btn poll-btn--next"
+                data-testid="poll-arena-next"
+                disabled={nextDisabled}
+                onClick={() => nextIdx !== undefined && setQuestionIndex(nextIdx)}
+              >
                 {tr.btnNext}
                 <NextIcon />
               </button>
             )}
             {isLast && showSubmit && total > 0 && (
-              <button className="poll-btn poll-btn--submit" data-testid="poll-submit" disabled={!allAnswered} onClick={onSubmitClick}>
+              <button className="poll-btn poll-btn--submit" data-testid="poll-submit" disabled={!allAnswered} onClick={() => onSubmitClick()}>
                 {canUpdate ? tr.btnUpdate : tr.btnSubmit}
                 <CheckIcon />
               </button>

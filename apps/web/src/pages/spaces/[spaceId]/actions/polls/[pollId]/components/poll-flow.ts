@@ -75,6 +75,89 @@ export function evaluateFlow(questions: Question[], answers: Record<number, Answ
   return { visible, terminatedAt };
 }
 
+/**
+ * Question-by-question navigation state shared by every poll respondent view.
+ * Only visible questions are reachable; the question whose answer terminated
+ * the poll is the last one.
+ */
+export interface PollNavigation extends PollFlow {
+  /** Indices of the visible questions, in poll order. */
+  visibleIndices: number[];
+  /** Index of the question on screen: the requested one, or the nearest visible one before it. */
+  currentIdx: number;
+  /** Visible question before `currentIdx`, if any. */
+  prevIdx: number | undefined;
+  /** Visible question after `currentIdx`, if any. */
+  nextIdx: number | undefined;
+  /** 1-based position of `currentIdx` among `visibleIndices`. */
+  position: number;
+  isFirst: boolean;
+  isLast: boolean;
+}
+
+/** Resolves the navigation state for `requestedIdx` against the current answers. */
+export function resolveNavigation(
+  questions: Question[],
+  answers: Record<number, Answer | undefined>,
+  requestedIdx: number,
+): PollNavigation {
+  const flow = evaluateFlow(questions, answers);
+  const visibleIndices = questions.map((_, i) => i).filter((i) => flow.visible[i]);
+  const clamped = Math.min(requestedIdx, Math.max(questions.length - 1, 0));
+  const currentIdx = flow.visible[clamped]
+    ? clamped
+    : ([...visibleIndices].reverse().find((i) => i < clamped) ?? visibleIndices[0] ?? 0);
+  const prevIdx = [...visibleIndices].reverse().find((i) => i < currentIdx);
+  const nextIdx = visibleIndices.find((i) => i > currentIdx);
+  return {
+    ...flow,
+    visibleIndices,
+    currentIdx,
+    prevIdx,
+    nextIdx,
+    position: visibleIndices.indexOf(currentIdx) + 1,
+    isFirst: questions.length === 0 || prevIdx === undefined,
+    isLast: questions.length === 0 || nextIdx === undefined,
+  };
+}
+
+/** Outcome of answering one question: the answers to keep and where the flow goes next. */
+export interface AnswerChange {
+  /** Answers with every question that became hidden dropped. */
+  answers: Record<number, Answer>;
+  /** True when this answer picked a termination option, so the poll ends here. */
+  terminated: boolean;
+  /** First visible question after the answered one, if any. */
+  upcomingIdx: number | undefined;
+}
+
+/** Applies `answer` to question `idx` and re-evaluates the flow. */
+export function applyAnswerChange(
+  questions: Question[],
+  answers: Record<number, Answer | undefined>,
+  idx: number,
+  answer: Answer,
+): AnswerChange {
+  const updated: Record<number, Answer | undefined> = { ...answers, [idx]: answer };
+  const flow = evaluateFlow(questions, updated);
+  const kept: Record<number, Answer> = {};
+  questions.forEach((_, i) => {
+    const value = updated[i];
+    if (flow.visible[i] && value !== undefined) kept[i] = value;
+  });
+  const upcoming = questions.findIndex((_, i) => i > idx && flow.visible[i]);
+  return { answers: kept, terminated: flow.terminatedAt === idx, upcomingIdx: upcoming === -1 ? undefined : upcoming };
+}
+
+/** Request payload for `respond_poll`: hidden and post-termination questions carry their empty answer. */
+export function submissionAnswers(questions: Question[], answers: Record<number, Answer | undefined>): Answer[] {
+  const flow = evaluateFlow(questions, answers);
+  return questions.map((q, i) => {
+    const ans = answers[i];
+    return flow.visible[i] && ans !== undefined ? ans : emptyAnswerFor(q);
+  });
+}
+
 /** The unanswered value matching the question's answer type. */
 export function emptyAnswerFor(question: Question): Answer {
   switch (question.answer_type) {

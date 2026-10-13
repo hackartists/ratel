@@ -21,7 +21,7 @@ import { timeAgo } from "@/lib/time";
 import { useToast } from "@/lib/toast";
 import { usePoll } from "../hooks/use-poll";
 import { EncryptedVoteVerificationPanel, PollSubmitConfirmPopup } from "./poll-encrypted-vote";
-import { emptyAnswerFor, evaluateFlow } from "./poll-flow";
+import { applyAnswerChange, resolveNavigation, submissionAnswers } from "./poll-flow";
 
 // poll/views/main/poll_read_page.rs (`PollReadPage`, variant "read" — the
 // participant flow: overview step + the client-side ABE encrypted-vote UI)
@@ -66,11 +66,8 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
     isParticipationOpen(space),
   );
 
-  const flow = useMemo(() => evaluateFlow(poll.questions, answers), [poll.questions, answers]);
-  const visibleIndices = useMemo(
-    () => poll.questions.map((_, i) => i).filter((i) => flow.visible[i]),
-    [poll.questions, flow],
-  );
+  const nav = useMemo(() => resolveNavigation(poll.questions, answers, questionIndex), [poll.questions, answers, questionIndex]);
+  const { visibleIndices, currentIdx, prevIdx, nextIdx } = nav;
 
   const allAnswered = useMemo(() => {
     if (visibleIndices.length === 0) return false;
@@ -83,18 +80,12 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
   const canSubmit = canRespond && canExecuteAction && acceptsResponses && !hasResponse;
   const canUpdate = canRespond && canExecuteAction && acceptsResponses && hasResponse && poll.response_editable;
   const total = poll.questions.length;
-  const clampedIdx = Math.min(questionIndex, Math.max(total - 1, 0));
-  const currentIdx = flow.visible[clampedIdx]
-    ? clampedIdx
-    : ([...visibleIndices].reverse().find((i) => i < clampedIdx) ?? visibleIndices[0] ?? 0);
   const currentQuestion = poll.questions[currentIdx];
   const currentAnswer = answers[currentIdx];
   const hasCurrentAnswer = currentQuestion !== undefined ? hasAnswerForQuestion(currentQuestion, currentAnswer) : false;
-  const prevIdx = [...visibleIndices].reverse().find((i) => i < currentIdx);
-  const nextIdx = visibleIndices.find((i) => i > currentIdx);
-  const visiblePosition = visibleIndices.indexOf(currentIdx) + 1;
-  const isFirstQuestion = total === 0 || prevIdx === undefined;
-  const isLastQuestion = total === 0 || nextIdx === undefined;
+  const visiblePosition = nav.position;
+  const isFirstQuestion = nav.isFirst;
+  const isLastQuestion = nav.isLast;
   const pollNextDisabled = canSubmit && !hasCurrentAnswer;
   const showSubmitButton = canRespond && (canSubmit || canUpdate);
 
@@ -174,11 +165,7 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
   }, [needsSecret]);
 
   const buildSubmitResponse = (current: Record<number, Answer> = answers) => {
-    const submitFlow = evaluateFlow(poll.questions, current);
-    const payload: Answer[] = poll.questions.map((q, i) => {
-      const ans = current[i];
-      return submitFlow.visible[i] && ans !== undefined ? ans : emptyAnswerFor(q);
-    });
+    const payload: Answer[] = submissionAnswers(poll.questions, current);
 
     return async () => {
       let clientCiphertextJson: string | null = null;
@@ -237,21 +224,14 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
   };
 
   const onAnswerChange = (ans: Answer) => {
-    const updated: Record<number, Answer> = { ...answers, [currentIdx]: ans };
-    const nextFlow = evaluateFlow(poll.questions, updated);
-    const kept: Record<number, Answer> = {};
-    Object.entries(updated).forEach(([k, v]) => {
-      const i = Number(k);
-      if (nextFlow.visible[i]) kept[i] = v;
-    });
-    setAnswers(kept);
-    if (nextFlow.terminatedAt === currentIdx && (canSubmit || canUpdate)) {
-      onSubmit(kept);
+    const change = applyAnswerChange(poll.questions, answers, currentIdx, ans);
+    setAnswers(change.answers);
+    if (change.terminated && (canSubmit || canUpdate)) {
+      onSubmit(change.answers);
       return;
     }
-    const upcoming = poll.questions.findIndex((_, i) => i > currentIdx && nextFlow.visible[i]);
-    if (canSubmit && upcoming !== -1 && shouldAutoNext(currentQuestion!, ans)) {
-      setQuestionIndex(upcoming);
+    if (canSubmit && change.upcomingIdx !== undefined && shouldAutoNext(currentQuestion!, ans)) {
+      setQuestionIndex(change.upcomingIdx);
     }
   };
 
