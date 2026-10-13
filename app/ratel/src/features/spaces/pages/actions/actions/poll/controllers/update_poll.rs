@@ -45,7 +45,8 @@ pub async fn update_poll(
             poll.title = title.clone();
             action_title = Some(title);
         }
-        UpdatePollRequest::Question { questions } => {
+        UpdatePollRequest::Question { mut questions } => {
+            questions.iter_mut().for_each(Question::normalize_title);
             if questions.is_empty() {
                 return Err(SpacePollError::QuestionsEmpty.into());
             }

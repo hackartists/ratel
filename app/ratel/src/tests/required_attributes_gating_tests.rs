@@ -58,6 +58,7 @@ async fn seed_gated_space(ctx: &TestContext) -> (String, String, String) {
         .0
         .push(Question::SingleChoice(ChoiceQuestion {
             title: "Do you agree?".to_string(),
+            html_title: None,
             description: None,
             image_url: None,
             options: vec!["Yes".to_string(), "No".to_string()],

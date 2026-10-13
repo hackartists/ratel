@@ -7,6 +7,7 @@ import {
   goto,
   publishAction,
   waitPopup,
+  fillQuestionTitle,
 } from "../utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,10 +85,7 @@ test.describe.serial("Poll privacy-consent question", () => {
     await block.getByText("Privacy Consent", { exact: true }).click();
     await page.waitForLoadState("load");
 
-    const titleInput = block.locator("input.input").first();
-    await titleInput.fill("Prize draw contact consent");
-    await titleInput.press("Tab");
-    await page.waitForLoadState("load");
+    await fillQuestionTitle(page, "poll-question-0-title", "Prize draw contact consent");
 
     const termsTitleInput = page.getByTestId("poll-question-0-terms-title");
     await expect(termsTitleInput).toBeVisible();

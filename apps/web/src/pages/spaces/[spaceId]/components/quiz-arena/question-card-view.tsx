@@ -28,7 +28,7 @@ export function QuestionCardView({
   if (question.answer_type !== "single_choice" && question.answer_type !== "multiple_choice") {
     return null;
   }
-  const { title, description, options, is_required: isRequired } = question;
+  const { title, html_title: htmlTitle, description, options, is_required: isRequired } = question;
   const isMulti = question.answer_type === "multiple_choice";
 
   const useSingleCol = options.length > 4;
@@ -42,7 +42,11 @@ export function QuestionCardView({
         {(isRequired ?? false) && <span className="question-required">{tr.requiredLabel}</span>}
       </div>
 
-      <div className="question-title">{title}</div>
+      {htmlTitle ? (
+        <div className="question-title re-content" dangerouslySetInnerHTML={{ __html: htmlTitle }} />
+      ) : (
+        <div className="question-title">{title}</div>
+      )}
       {hasCustomDesc ? <div className="question-desc">{description}</div> : <div className="question-desc">{hint}</div>}
 
       <div className={useSingleCol ? "option-grid option-grid--single" : "option-grid"}>

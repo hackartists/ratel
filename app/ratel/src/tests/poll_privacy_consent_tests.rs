@@ -10,6 +10,7 @@ use crate::features::spaces::pages::actions::actions::poll::types::{
 fn validate_answers_accepts_agreed_privacy_consent() {
     let questions = vec![Question::PrivacyConsent(PrivacyConsentQuestion {
         title: "Prize draw consent".to_string(),
+        html_title: None,
         description: None,
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
@@ -29,6 +30,7 @@ fn validate_answers_accepts_agreed_privacy_consent() {
 fn validate_answers_rejects_unagreed_when_required() {
     let questions = vec![Question::PrivacyConsent(PrivacyConsentQuestion {
         title: "Prize draw consent".to_string(),
+        html_title: None,
         description: None,
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
@@ -48,6 +50,7 @@ fn validate_answers_rejects_unagreed_when_required() {
 fn validate_answers_rejects_missing_phone_when_required() {
     let questions = vec![Question::PrivacyConsent(PrivacyConsentQuestion {
         title: "Prize draw consent".to_string(),
+        html_title: None,
         description: None,
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
@@ -67,6 +70,7 @@ fn validate_answers_rejects_missing_phone_when_required() {
 fn validate_answers_allows_empty_when_not_required() {
     let questions = vec![Question::PrivacyConsent(PrivacyConsentQuestion {
         title: "Optional consent".to_string(),
+        html_title: None,
         description: None,
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),
@@ -87,6 +91,7 @@ fn validate_answers_allows_empty_when_not_required() {
 fn validate_answers_rejects_mismatched_answer_variant() {
     let questions = vec![Question::PrivacyConsent(PrivacyConsentQuestion {
         title: "Prize draw consent".to_string(),
+        html_title: None,
         description: None,
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),

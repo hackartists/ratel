@@ -2,6 +2,8 @@ import type { Question, QuizCorrectAnswer, UpdateQuizRequest } from "@ratel/ts-b
 import { useUpdateQuiz } from "@ratel/ts-bridges/hooks";
 import { useQuizCreatorI18n } from "./quiz-creator.i18n";
 import { useToast } from "@/lib/toast";
+import { Editor } from "@/components/editor";
+import { htmlToPlainText } from "@/lib/content-body";
 import { useQuiz } from "../hooks/use-quiz";
 
 // quiz/views/main/creator/questions_card/component.rs (`QuestionsCard`) —
@@ -26,17 +28,18 @@ function optionsOf(q: Question): string[] {
   }
 }
 
-function withTitle(q: Question, title: string): Question {
-  return { ...q, title } as Question;
+function withHtmlTitle(q: Question, html_title: string): Question {
+  return { ...q, html_title, title: htmlToPlainText(html_title) } as Question;
 }
 
 function convertToQtype(existing: Question, target: QType): Question {
   const title = existing.title;
+  const html_title = existing.html_title ?? null;
   const options = optionsOf(existing);
   const opts = options.length === 0 ? ["", ""] : options;
   return target === "multi"
-    ? { answer_type: "multiple_choice", title, description: null, image_url: null, options: opts, is_required: null, allow_other: null, terminate_on: [], display_condition: null }
-    : { answer_type: "single_choice", title, description: null, image_url: null, options: opts, is_required: null, allow_other: null, terminate_on: [], display_condition: null };
+    ? { answer_type: "multiple_choice", title, html_title, description: null, image_url: null, options: opts, is_required: null, allow_other: null, terminate_on: [], display_condition: null }
+    : { answer_type: "single_choice", title, html_title, description: null, image_url: null, options: opts, is_required: null, allow_other: null, terminate_on: [], display_condition: null };
 }
 
 function correctAnswerForQuestion(q: Question): QuizCorrectAnswer {
@@ -84,12 +87,16 @@ export function QuizQuestionsCard() {
 
           {questions.map((question, idx) => (
             <QuestionBlock
-              key={`q-${idx}`}
+              key={`q-${idx}-${questions.length}`}
               idx={idx}
               question={question}
               answer={answers[idx] ?? { answer_type: "single", answer: null }}
               tr={tr}
-              onTitleChange={(i, value) => setQuestions((qs) => qs.map((q, qi) => (qi === i ? withTitle(q, value) : q)))}
+              onTitleChange={(i, html) => {
+                const nextQuestions = questions.map((q, qi) => (qi === i ? withHtmlTitle(q, html) : q));
+                setQuestions(nextQuestions);
+                save(nextQuestions, answers);
+              }}
               onTypeChange={(i, target) => {
                 const newQ = convertToQtype(questions[i], target);
                 const newA = correctAnswerForQuestion(newQ);
@@ -176,7 +183,7 @@ export function QuizQuestionsCard() {
             type="button"
             data-testid="quiz-question-add"
             onClick={() => {
-              const newQ: Question = { answer_type: "single_choice", title: "", description: null, image_url: null, options: ["", ""], is_required: null, allow_other: null, terminate_on: [], display_condition: null };
+              const newQ: Question = { answer_type: "single_choice", title: "", html_title: null, description: null, image_url: null, options: ["", ""], is_required: null, allow_other: null, terminate_on: [], display_condition: null };
               const newA = correctAnswerForQuestion(newQ);
               const nextQuestions = [...questions, newQ];
               const nextAnswers = [...answers, newA];
@@ -255,7 +262,14 @@ function QuestionBlock({
         </button>
       </div>
 
-      <input className="input" value={question.title} onChange={(e) => onTitleChange(idx, e.target.value)} onBlur={onBlurSave} />
+      <div data-testid={`quiz-question-${idx}-title`}>
+        <Editor
+          className="[&_.re-toolbar]:border-b [&_.re-toolbar]:border-[rgba(255,255,255,0.06)] [&_.re-content]:min-h-[48px] [&_.re-content]:px-[14px] [&_.re-content]:py-[10px] [&_.re-content]:outline-none"
+          content={question.html_title ?? question.title}
+          placeholder={tr.questionTitlePlaceholder}
+          onContentChange={(html) => onTitleChange(idx, html)}
+        />
+      </div>
 
       <div className={bodyClass}>
         {options.map((opt, i) => {

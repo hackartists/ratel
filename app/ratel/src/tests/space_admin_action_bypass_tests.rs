@@ -12,6 +12,7 @@ use crate::features::spaces::pages::actions::types::{SpaceActionStatus, SpaceAct
 fn yes_no_question() -> Question {
     Question::SingleChoice(ChoiceQuestion {
         title: "Do you agree?".to_string(),
+        html_title: None,
         description: None,
         image_url: None,
         options: vec!["Yes".to_string(), "No".to_string()],

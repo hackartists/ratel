@@ -137,6 +137,12 @@ export function toHtml(body: ContentBody): string {
   return contentBodyToHtml(body);
 }
 
+/** Plain text of an HTML fragment with entities decoded, mirroring the server's `strip_html` used to derive a question's `title` from its `html_title`. */
+export function htmlToPlainText(html: string): string {
+  if (html === "") return "";
+  return (new DOMParser().parseFromString(html, "text/html").body.textContent ?? "").trim();
+}
+
 /** Strips tags, leaving plain text — the private `strip_html` helper duplicated in post_edit and the compose sidebar. */
 export function stripHtml(html: string): string {
   let result = "";

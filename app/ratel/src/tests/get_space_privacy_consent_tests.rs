@@ -65,6 +65,7 @@ async fn get_space_reports_true_when_a_poll_has_a_privacy_consent_question() {
     let mut poll = SpacePoll::try_from(space_pk).expect("default poll");
     poll.questions.0.push(Question::PrivacyConsent(PrivacyConsentQuestion {
         title: "Prize draw consent".to_string(),
+        html_title: None,
         description: None,
         terms_title: "Terms".to_string(),
         terms_body_html: "<p>Terms body</p>".to_string(),

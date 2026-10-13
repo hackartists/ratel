@@ -30,6 +30,7 @@ const en = {
   qtype_privacy_consent: "Privacy Consent",
   remove_question: "Remove question",
   add_question: "Add question",
+  question_title_placeholder: "Enter the question...",
   add_option: "Add option",
   remove_option: "Remove option",
   option_placeholder: "Option text",
@@ -90,6 +91,7 @@ const ko: Record<keyof typeof en, string> = {
   qtype_privacy_consent: "개인정보 동의",
   remove_question: "질문 삭제",
   add_question: "질문 추가",
+  question_title_placeholder: "질문을 입력하세요...",
   add_option: "선지 추가",
   remove_option: "선지 삭제",
   option_placeholder: "선지 내용",
@@ -152,6 +154,7 @@ export interface PollCreatorI18n {
   qtypePrivacyConsent: string;
   removeQuestion: string;
   addQuestion: string;
+  questionTitlePlaceholder: string;
   addOption: string;
   removeOption: string;
   optionPlaceholder: string;
@@ -214,6 +217,7 @@ export function usePollCreatorI18n(): PollCreatorI18n {
     qtypePrivacyConsent: t("qtype_privacy_consent"),
     removeQuestion: t("remove_question"),
     addQuestion: t("add_question"),
+    questionTitlePlaceholder: t("question_title_placeholder"),
     addOption: t("add_option"),
     removeOption: t("remove_option"),
     optionPlaceholder: t("option_placeholder"),

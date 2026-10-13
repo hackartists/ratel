@@ -15,6 +15,7 @@ import {
   fillPollQuestion,
   togglePrerequisite,
   commitAutosave,
+  fillQuestionTitle,
   transitionSpace,
 } from "../utils";
 
@@ -408,11 +409,9 @@ test.describe.serial("Space governance scenario", () => {
 
     const q0 = page.getByTestId("quiz-question-0");
     const q0Inputs = q0.locator("input.input");
-    await q0Inputs
-      .nth(0)
-      .fill("What is the primary goal of decentralized governance?");
-    await q0Inputs.nth(1).fill("Centralize all decisions in one authority");
-    await q0Inputs.nth(2).fill("Enable transparent collective decision-making");
+    await fillQuestionTitle(page, "quiz-question-0-title", "What is the primary goal of decentralized governance?");
+    await q0Inputs.nth(0).fill("Centralize all decisions in one authority");
+    await q0Inputs.nth(1).fill("Enable transparent collective decision-making");
 
     // Mark option 2 as the correct answer via the radio dot
     await page.getByTestId("quiz-question-0-opt-1").locator(".q-opt__radio").click();
