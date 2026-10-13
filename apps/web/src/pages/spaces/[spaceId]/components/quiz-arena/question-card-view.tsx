@@ -5,6 +5,7 @@ import type { Answer, Question, QuizCorrectAnswer } from "@ratel/ts-bridges";
 import { useQuizArenaI18n } from "./i18n";
 import { dataBool } from "@/lib/dom";
 import { LETTERS, checkCorrect, checkSelected, toggleMulti, toggleSingle } from "./quiz-helpers";
+import { RichQuestionTitle } from "@/components/space-actions/rich-question-title";
 
 export function QuestionCardView({
   index,
@@ -43,7 +44,7 @@ export function QuestionCardView({
       </div>
 
       {htmlTitle ? (
-        <div className="question-title re-content" dangerouslySetInnerHTML={{ __html: htmlTitle }} />
+        <RichQuestionTitle html={htmlTitle} />
       ) : (
         <div className="question-title">{title}</div>
       )}

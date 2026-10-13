@@ -28,6 +28,7 @@ import {
   saveStoredVoterKey,
 } from "@/lib/poll-encryption";
 import { useToast } from "@/lib/toast";
+import { RichQuestionTitle } from "@/components/space-actions/rich-question-title";
 
 type PollStep = "Overview" | "Poll";
 
@@ -873,7 +874,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
               {isRequired(currentQuestion) && <span className="question-card__required">{tr.required}</span>}
             </div>
             {currentQuestion.html_title ? (
-              <div className="question-card__title re-content" dangerouslySetInnerHTML={{ __html: currentQuestion.html_title }} />
+              <RichQuestionTitle html={currentQuestion.html_title} />
             ) : (
               <h2 className="question-card__title">{currentQuestion.title}</h2>
             )}

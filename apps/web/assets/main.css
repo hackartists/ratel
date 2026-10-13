@@ -2893,6 +2893,16 @@ html.kb-open .ratel-editor .re-modal-mask[data-modal="image"] .re-modal__divider
   padding: 0;
 }
 
+/* Rich-text question titles (poll / quiz viewers) render read-only editor
+   HTML inside cards that already space their children, so the outer block
+   margins of the first/last element are trimmed. */
+.ratel-editor.question-rich-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ratel-editor.question-rich-title .re-content > :first-child { margin-top: 0; }
+.ratel-editor.question-rich-title .re-content > :last-child { margin-bottom: 0; }
+
 /* ─── Tiptap legacy YouTube embed compatibility ───────────────
    Older posts stored Tiptap's `<div data-youtube-video><iframe/></div>`
    wrapper. The new editor emits `<div class="yt-wrap">`, but existing

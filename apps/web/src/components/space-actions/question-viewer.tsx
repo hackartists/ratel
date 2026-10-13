@@ -7,6 +7,7 @@ import { Input, InputVariant } from "@/components/ui/input";
 import { PhoneInput, type PhoneInputValue } from "@/components/ui/phone-input";
 import { TextArea } from "@/components/ui/textarea";
 import { useQuestionViewerI18n } from "./question-viewer.i18n";
+import { RichQuestionTitle } from "./rich-question-title";
 
 // app/ratel/src/features/spaces/pages/actions/actions/poll/components/question_viewer —
 // shared by the poll and quiz response flows. Renders one question per call;
@@ -173,13 +174,9 @@ function QuestionTitle({
 }) {
   return (
     <div className="mb-3 flex flex-col gap-1" data-question-title-wrap="true">
-      <div className="flex items-center gap-1">
+      <div className={htmlTitle ? "flex items-start gap-1" : "flex items-center gap-1"}>
         {htmlTitle ? (
-          <div
-            className="re-content text-lg font-semibold text-poll-question-title"
-            data-question-title="true"
-            dangerouslySetInnerHTML={{ __html: htmlTitle }}
-          />
+          <RichQuestionTitle html={htmlTitle} className="min-w-0 flex-1" />
         ) : (
           <span className="text-lg font-semibold text-poll-question-title" data-question-title="true">
             {title}
