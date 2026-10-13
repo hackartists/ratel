@@ -903,12 +903,27 @@ test.describe.serial("Space announcement", () => {
       await page.addStyleTag({
         content: "*, *::before, *::after { animation-play-state: paused !important; }",
       });
+      await expect(page.getByTestId("portal-header")).toBeVisible();
       await clickNoNav(page, { testId: "btn-participate" });
 
       const notice = page.getByTestId("card-announcement");
       await expect(notice).toBeVisible();
+      await expect(page.getByTestId("portal-header")).toHaveCount(0);
+      await expect(page.getByTestId("portal-status")).toHaveCount(0);
+      await expect(notice.getByTestId("announcement-title")).toHaveCount(1);
       await expect(notice.getByTestId("announcement-title")).toHaveText(announcementTitle);
-      await expect(notice.getByTestId("announcement-body")).toContainText(announcementBody);
+      const noticeBody = notice.getByTestId("announcement-body");
+      await expect(noticeBody).toContainText(announcementBody);
+      await expect(noticeBody.getByRole("heading", { level: 2, name: announcementHeading })).toBeVisible();
+      const noticeItem = noticeBody.getByRole("listitem").filter({ hasText: announcementListItem });
+      await expect(noticeItem).toBeVisible();
+      expect(await noticeBody.locator("ul").first().evaluate((el) => getComputedStyle(el).listStyleType)).toBe(
+        "disc",
+      );
+      const viewport = page.viewportSize();
+      const box = await notice.boundingBox();
+      expect(box, "announcement card should have a bounding box").not.toBeNull();
+      expect(box.width).toBeGreaterThanOrEqual(viewport.width - 64);
 
       await clickNoNav(page, { testId: "btn-announcement-continue" });
       await expect(notice).toBeHidden({ timeout: 30000 });
