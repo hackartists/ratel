@@ -10,7 +10,7 @@ import type { Answer } from "@ratel/ts-bridges";
 import { useRespondQuiz } from "@ratel/ts-bridges/hooks";
 import { canExecuteSpaceAction, isParticipationOpen } from "@/components/space/access";
 import { useActionOverlay, useCompletedActionCard } from "@/components/space/action-overlay";
-import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
+import { useActionExecuteRole, useSpace, useSpaceContext } from "@/components/space/space-context";
 import { useQuizArenaI18n } from "./i18n";
 import { useToast } from "@/lib/toast";
 import { useQuiz } from "./hooks/use-quiz";
@@ -23,7 +23,7 @@ export function QuizArenaPage({ spaceId, quizId }: { spaceId: string; quizId: st
   const tr = useQuizArenaI18n();
   const toast = useToast();
   const spaceCtx = useSpaceContext();
-  const role = useSpaceRole();
+  const role = useActionExecuteRole();
   const space = useSpace();
 
   const { quiz, restart: restartQuiz } = useQuiz(spaceId, quizId);
@@ -47,12 +47,13 @@ export function QuizArenaPage({ spaceId, quizId }: { spaceId: string; quizId: st
     true,
     isParticipationOpen(space),
   );
-  const canSubmit = canRespond && canExecute && isInProgress && !hasPassed && quiz.attempt_count < totalAllowed;
   // "Not started yet" — same condition that drives the `quiz_not_started`
   // banner. The begin/review button is disabled in this state; it stays
   // enabled when ended/passed so users can still review a completed quiz.
   const isFinished = actionStatus === "Finish";
   const isNotStarted = !isInProgress && !isFinished;
+  const acceptsResponses = isInProgress || (role === "Creator" && isNotStarted);
+  const canSubmit = canRespond && canExecute && acceptsResponses && !hasPassed && quiz.attempt_count < totalAllowed;
   const passPct = totalQuestions > 0 ? Math.trunc((quiz.pass_score / totalQuestions) * 100.0) : 0;
 
   const [step, setStep] = useState<QuizStep>("Overview");
@@ -264,7 +265,7 @@ export function QuizArenaPage({ spaceId, quizId }: { spaceId: string; quizId: st
             <button
               className="quiz-begin-btn"
               data-testid="quiz-arena-begin"
-              disabled={totalQuestions === 0 || isNotStarted}
+              disabled={totalQuestions === 0 || (isNotStarted && !acceptsResponses)}
               onClick={() => {
                 setQuestionIndex(0);
                 setStep("Quiz");

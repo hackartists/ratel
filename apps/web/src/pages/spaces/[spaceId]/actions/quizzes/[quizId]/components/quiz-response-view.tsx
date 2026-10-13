@@ -6,7 +6,7 @@ import { canExecuteSpaceAction, isParticipationOpen } from "@/components/space-a
 import { FileCard } from "@/components/space-actions/file-card";
 import { FullActionLayover } from "@/components/space-actions/full-action-layover";
 import { hasAnswerForQuestion, QuestionViewer, shouldAutoNext } from "@/components/space-actions/question-viewer";
-import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
+import { useActionExecuteRole, useSpace, useSpaceContext } from "@/components/space/space-context";
 import { Button, ButtonShape, ButtonStyle } from "@/components/ui/button";
 import { useQuizReadI18n } from "./quiz-read.i18n";
 import { timeAgo } from "@/lib/time";
@@ -44,7 +44,7 @@ export function QuizResponseView({ spaceId, quizId, canRespond }: { spaceId: str
   const navigate = useNavigate();
   const { quiz, refreshQuiz } = useQuizProvider(spaceId, quizId, false);
   const space = useSpace();
-  const role = useSpaceRole();
+  const role = useActionExecuteRole();
   const { restartRanking, restartMyScore } = useSpaceContext();
   const refreshScores = () => {
     void restartRanking();
@@ -61,6 +61,7 @@ export function QuizResponseView({ spaceId, quizId, canRespond }: { spaceId: str
   }, [quiz.questions, answers]);
 
   const isInProgress = quiz.space_action.status === "Ongoing";
+  const acceptsResponses = isInProgress || (role === "Creator" && quiz.space_action.status !== "Finish");
   const canExecuteAction = canExecuteSpaceAction(
     role,
     quiz.space_action.prerequisite,
@@ -71,7 +72,7 @@ export function QuizResponseView({ spaceId, quizId, canRespond }: { spaceId: str
   );
   const hasPassed = quiz.passed ?? false;
   const totalAllowed = quiz.retry_count + 1;
-  const canSubmit = canRespond && canExecuteAction && isInProgress && !hasPassed && quiz.attempt_count < totalAllowed;
+  const canSubmit = canRespond && canExecuteAction && acceptsResponses && !hasPassed && quiz.attempt_count < totalAllowed;
   const remainingSubmissions = Math.max(0, totalAllowed - quiz.attempt_count);
   const totalQuestions = quiz.questions.length;
   const currentIdx = Math.min(questionIndex, Math.max(totalQuestions - 1, 0));
@@ -229,7 +230,7 @@ export function QuizResponseView({ spaceId, quizId, canRespond }: { spaceId: str
                 total={totalQuestions}
                 question={currentQuestion!}
                 answer={currentAnswer}
-                disabled={!canRespond || !canExecuteAction || !isInProgress || !canSubmit}
+                disabled={!canRespond || !canExecuteAction || !acceptsResponses || !canSubmit}
                 onChange={(next) => {
                   setAnswers((prev) => {
                     const nextArr = prev.slice();
