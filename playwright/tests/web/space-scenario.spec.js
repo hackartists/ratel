@@ -193,6 +193,13 @@ async function signUpAndParticipate(browser, user, spaceUrl) {
       timeout: 30000,
     });
 
+    // The rich-text question title renders with the editor's body typography,
+    // not the card's 22px bold plain-title style.
+    const richTitle = overlay.getByTestId("question-rich-title");
+    await expect(richTitle).toBeVisible();
+    await expect(richTitle).toHaveCSS("font-size", "15px");
+    await expect(richTitle).toHaveCSS("font-weight", "400");
+
     // Select the first poll option inside the overlay
     await overlay.locator(".option-single").first().click();
 
