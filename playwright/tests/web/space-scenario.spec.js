@@ -920,11 +920,10 @@ test.describe.serial("Space announcement", () => {
       expect(await noticeBody.locator("ul").first().evaluate((el) => getComputedStyle(el).listStyleType)).toBe(
         "disc",
       );
-      const viewerBox = await page.getByTestId("arena-viewer").boundingBox();
-      expect(viewerBox, "arena viewer should have a bounding box").not.toBeNull();
-      const box = await notice.boundingBox();
-      expect(box, "announcement card should have a bounding box").not.toBeNull();
-      expect(box.width).toBeGreaterThanOrEqual(viewerBox.width - 64);
+      const viewerWidth = await page.getByTestId("arena-viewer").evaluate((el) => el.clientWidth);
+      const cardWidth = await notice.evaluate((el) => el.offsetWidth);
+      expect(cardWidth).toBeGreaterThanOrEqual(viewerWidth - 64);
+      expect(cardWidth).toBeGreaterThanOrEqual(page.viewportSize().width - 64);
 
       await clickNoNav(page, { testId: "btn-announcement-continue" });
       await expect(notice).toBeHidden({ timeout: 30000 });
