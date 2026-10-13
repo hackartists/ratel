@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { SpaceActionStatus, SpaceActionSummary, UpdateSpaceActionRequest } from "@ratel/ts-bridges";
-import { useUpdateSpaceAction } from "@ratel/ts-bridges/hooks";
+import { useReadSpaceAnnouncement, useUpdateSpaceAction } from "@ratel/ts-bridges/hooks";
 import { Editor } from "@/components/editor";
 import { ActionEditTopbar } from "@/components/space-actions/action-edit-topbar";
 import { useSpace, useSpaceContext, useSpaceRole } from "@/components/space/space-context";
@@ -111,18 +111,42 @@ function AnnouncementEditor({ action }: { action: SpaceActionSummary }) {
   );
 }
 
-/** Read-only announcement for participants; the confirm button returns to the space home. */
+/**
+ * Read-only announcement for participants. The confirm button records the read for joined
+ * participants, so the dashboard archives the announcement, then returns to the space home.
+ */
 function AnnouncementViewer({ action }: { action: SpaceActionSummary }) {
   const tr = useSpaceViewerI18n();
   const navigate = useNavigate();
-  const spaceId = useSpaceContext().spaceId;
+  const ctx = useSpaceContext();
+  const role = useSpaceRole();
+  const toast = useToast();
+  const readAnnouncement = useReadSpaceAnnouncement();
+  const [confirming, setConfirming] = useState(false);
+
+  const confirm = async () => {
+    if (confirming) return;
+    const joined = role === "Participant" || role === "Candidate";
+    if (joined && !action.user_participated) {
+      setConfirming(true);
+      try {
+        await readAnnouncement.mutateAsync({ spaceId: ctx.spaceId, actionId: action.action_id });
+        await ctx.restartActions();
+      } catch (e) {
+        toast.error(e);
+        setConfirming(false);
+        return;
+      }
+    }
+    navigate(`/spaces/${ctx.spaceId}`);
+  };
 
   return (
     <div className="flex flex-col gap-4" data-testid="announcement-viewer-view">
       <SeoMeta title={action.title} />
       <AnnouncementContent action={action} />
       <div className="flex justify-start pt-2">
-        <Button data-testid="btn-announcement-confirm" onClick={() => navigate(`/spaces/${spaceId}`)}>
+        <Button data-testid="btn-announcement-confirm" disabled={confirming} onClick={() => void confirm()}>
           {tr.announcementConfirm}
         </Button>
       </div>
