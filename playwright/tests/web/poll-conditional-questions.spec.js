@@ -17,6 +17,9 @@ import { createAction, fill, fillQuestionTitle, goto, publishAction, signUpViaAp
 //   B  Yes path end-to-end; Q5 appears through the multiple-choice OR rule.
 //   C  Picks "Skip survey" on Q1: submitted at once, stored, action not completed.
 //   D  Q1 = No, Q3 = "Never": submitted at once, action completed.
+//   F  Space-page poll overlay: "Skip survey" on Q1 submits at once.
+//   G  Space-page poll overlay: Yes path (Q2 answered), back to Q1, switches
+//      to No and ends on Q3 = "Never"; the Q2 answer is dropped.
 // ─────────────────────────────────────────────────────────────────────────────
 
 test.describe.serial("Poll conditional questions and termination", () => {
@@ -96,6 +99,29 @@ test.describe.serial("Poll conditional questions and termination", () => {
   }
 
   const current = (page) => page.getByTestId("poll-current-question");
+
+  async function openPollOverlay(page) {
+    await goto(page, spaceUrl);
+    await page.getByTestId(`quest-card-${pollActionId}`).click();
+    await expect(page.getByTestId("poll-arena-overlay")).toBeVisible({ timeout: 20000 });
+    await page.getByTestId("poll-arena-begin").click();
+    await expect(page.getByTestId("poll-arena-question")).toBeVisible({ timeout: 20000 });
+  }
+
+  async function expectOverlayAt(page, idx) {
+    await expect(page.getByTestId("poll-arena-question")).toHaveAttribute("data-question-index", String(idx));
+  }
+
+  async function pickInOverlay(page, optIdx) {
+    await page.getByTestId("poll-arena-question").getByTestId(`poll-arena-option-${optIdx}`).click();
+  }
+
+  async function confirmOverlaySubmit(page) {
+    const confirm = page.getByTestId("poll-confirm-submit");
+    await expect(confirm).toBeVisible({ timeout: 10000 });
+    await confirm.click();
+    await expect(page.getByTestId("poll-arena-overlay")).toBeHidden({ timeout: 30000 });
+  }
 
   async function expectAt(page, idx) {
     await expect(current(page)).toHaveAttribute("data-question-index", String(idx));
@@ -321,6 +347,49 @@ test.describe.serial("Poll conditional questions and termination", () => {
       await expectAt(page, 2);
       await pick(page, 1);
       await confirmSubmit(page);
+
+      const ans = (await getPoll(page)).my_response;
+      expect(ans.map((a) => a.answer)).toEqual([1, null, 1, null, null]);
+      expect((await pollAction(page)).user_participated).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Participant F: space overlay ends the poll on a Q1 termination option", async ({ browser }) => {
+    const { context, page } = await joinAsNewUser(browser, "f");
+    try {
+      await openPollOverlay(page);
+      await expectOverlayAt(page, 0);
+      await pickInOverlay(page, 2);
+      await confirmOverlaySubmit(page);
+
+      const ans = (await getPoll(page)).my_response;
+      expect(ans).not.toBeNull();
+      expect(ans.map((a) => a.answer)).toEqual([2, null, null, null, null]);
+      expect((await pollAction(page)).user_participated).toBe(false);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Participant G: space overlay skips hidden questions and drops their answers", async ({ browser }) => {
+    const { context, page } = await joinAsNewUser(browser, "g");
+    try {
+      await openPollOverlay(page);
+      await pickInOverlay(page, 0);
+      await expectOverlayAt(page, 1);
+      await expect(page.getByTestId("poll-arena-progress")).toHaveText("2/3");
+      await pickInOverlay(page, 0);
+      await expectOverlayAt(page, 3);
+      await page.getByTestId("poll-arena-prev").click();
+      await expectOverlayAt(page, 1);
+      await page.getByTestId("poll-arena-prev").click();
+      await expectOverlayAt(page, 0);
+      await pickInOverlay(page, 1);
+      await expectOverlayAt(page, 2);
+      await pickInOverlay(page, 1);
+      await confirmOverlaySubmit(page);
 
       const ans = (await getPoll(page)).my_response;
       expect(ans.map((a) => a.answer)).toEqual([1, null, 1, null, null]);
