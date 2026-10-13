@@ -11,24 +11,22 @@ export function AnnouncementBody({ action }: { action: SpaceActionSummary }) {
   );
 }
 
-/** Announcement title and body. */
-export function AnnouncementContent({ action }: { action: SpaceActionSummary }) {
-  return (
-    <>
-      <h1 className="font-bold text-[1.75rem]/[1.2] text-text-primary" data-testid="announcement-title">
-        {action.title}
-      </h1>
-      <AnnouncementBody action={action} />
-    </>
-  );
-}
-
 /**
  * The step shown by `ParticipateCard` before the participate request: a near
  * full-screen card headed by the announcement title, its formatted body and a
- * continue button. `ArenaViewer` hides the portal header while it is shown.
+ * continue button. `ArenaViewer` hides the portal header while it is shown; the
+ * dashboard announcement page renders the same card inside the same arena stage.
  */
-export function AnnouncementNotice({ action, onContinue }: { action: SpaceActionSummary; onContinue: () => void }) {
+export function AnnouncementNotice({
+  action,
+  onContinue,
+  busy = false,
+}: {
+  action: SpaceActionSummary;
+  onContinue: () => void;
+  /** Disables the continue button while the caller's continue handler is in flight. */
+  busy?: boolean;
+}) {
   const tr = useSpaceViewerI18n();
   return (
     <div className="participate-card announcement-notice" data-testid="card-announcement">
@@ -38,7 +36,7 @@ export function AnnouncementNotice({ action, onContinue }: { action: SpaceAction
       <div className="announcement-notice__body">
         <AnnouncementBody action={action} />
       </div>
-      <button className="cta-participate" data-testid="btn-announcement-continue" onClick={onContinue}>
+      <button className="cta-participate" data-testid="btn-announcement-continue" disabled={busy} onClick={onContinue}>
         {tr.announcementContinue}
       </button>
     </div>

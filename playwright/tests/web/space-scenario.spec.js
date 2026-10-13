@@ -17,6 +17,7 @@ import {
   commitAutosave,
   fillQuestionTitle,
   transitionSpace,
+  signUpViaApi,
 } from "../utils";
 
 /**
@@ -742,6 +743,7 @@ test.describe.serial("Space announcement", () => {
   let spaceId;
   let announcementId;
   let memberState;
+  let lateReaderState;
 
   const uniqueId = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
   const announcementTitle = `Read before joining ${uniqueId}`;
@@ -896,12 +898,18 @@ test.describe.serial("Space announcement", () => {
       await page.waitForURL(/\/actions\/announcements\//, { timeout: 30000 });
       const viewer = page.getByTestId("announcement-viewer-view");
       await expect(viewer).toBeVisible();
-      const body = viewer.getByTestId("announcement-body");
+      const viewerCard = viewer.getByTestId("card-announcement");
+      await expect(viewerCard).toBeVisible();
+      await expect(viewerCard.getByTestId("announcement-title")).toHaveText(announcementTitle);
+      const body = viewerCard.getByTestId("announcement-body");
       await expect(body).toContainText(announcementBody);
       await expect(body.getByRole("heading", { level: 2, name: announcementHeading })).toBeVisible();
       await expect(body.getByRole("listitem").filter({ hasText: announcementListItem })).toBeVisible();
+      expect(await viewerCard.evaluate((el) => el.offsetWidth)).toBeGreaterThanOrEqual(
+        page.viewportSize().width - 64,
+      );
 
-      await click(page, { testId: "btn-announcement-confirm" });
+      await click(page, { testId: "btn-announcement-continue" });
       await page.waitForURL(new RegExp(`/spaces/${spaceId}/?$`), { timeout: 30000 });
       await expect(page.getByTestId("announcement-viewer-view")).toBeHidden();
       memberState = await context.storageState();
@@ -910,8 +918,86 @@ test.describe.serial("Space announcement", () => {
     }
   });
 
+  test("Late reader: joins without reading the announcement", async ({ browser }) => {
+    const { context, page } = await signUpViaApi(browser, "anlate");
+    try {
+      const join = await page.request.post(`/api/spaces/${spaceId}/participate`, {
+        data: { body: { informed_agreed: true } },
+      });
+      expect(join.ok(), `participate: ${await join.text()}`).toBeTruthy();
+      const res = await page.request.get(`/api/spaces/${spaceId}/actions`);
+      const actions = await res.json();
+      expect(actions.find((x) => x.action_id === announcementId)?.user_participated).toBe(false);
+      lateReaderState = await context.storageState();
+    } finally {
+      await context.close();
+    }
+  });
+
   test("Creator: start the space", async ({ page }) => {
     await transitionSpace(page, spaceUrl, "start");
+  });
+
+  test("Late reader: Continue on the dashboard announcement records the read and archives it", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ storageState: lateReaderState });
+    const page = await context.newPage();
+    try {
+      await goto(page, spaceUrl);
+      await page.addStyleTag({
+        content: "*, *::before, *::after { animation-play-state: paused !important; }",
+      });
+      const entry = page.getByTestId("action-card-announcement");
+      await expect(entry).toBeVisible({ timeout: 30000 });
+      await entry.click();
+      await page.waitForURL(/\/actions\/announcements\//, { timeout: 30000 });
+      const card = page.getByTestId("announcement-viewer-view").getByTestId("card-announcement");
+      await expect(card).toBeVisible();
+      await expect(card.getByTestId("announcement-title")).toHaveText(announcementTitle);
+
+      await click(page, { testId: "btn-announcement-continue" });
+      await page.waitForURL(new RegExp(`/spaces/${spaceId}/?$`), { timeout: 30000 });
+
+      await expect
+        .poll(async () => {
+          const res = await page.request.get(`/api/spaces/${spaceId}/actions`);
+          const actions = await res.json();
+          return actions.find((x) => x.action_id === announcementId)?.user_participated ?? null;
+        })
+        .toBe(true);
+      await expect(page.getByTestId("btn-archive")).toBeVisible({ timeout: 30000 });
+      await expect(page.getByTestId("action-card-announcement")).toHaveCount(0);
+      await clickNoNav(page, { testId: "btn-archive" });
+      const panel = page.getByTestId("archive-panel");
+      await expect(panel).toHaveAttribute("data-open", "true");
+      await expect(panel.locator(".archive-item").filter({ hasText: announcementTitle })).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Creator: Continue in the participant view records the creator's read", async ({ page }) => {
+    await goto(page, spaceUrl);
+    await page.addStyleTag({
+      content: "*, *::before, *::after { animation-play-state: paused !important; }",
+    });
+    const entry = page.getByTestId("action-card-announcement");
+    await expect(entry).toBeVisible({ timeout: 30000 });
+    await entry.click();
+    await page.waitForURL(/\/actions\/announcements\//, { timeout: 30000 });
+    await expect(page.getByTestId("announcement-viewer-view").getByTestId("card-announcement")).toBeVisible();
+    await click(page, { testId: "btn-announcement-continue" });
+    await page.waitForURL(new RegExp(`/spaces/${spaceId}/?$`), { timeout: 30000 });
+
+    await expect
+      .poll(async () => {
+        const res = await page.request.get(`/api/spaces/${spaceId}/actions`);
+        const actions = await res.json();
+        return actions.find((x) => x.action_id === announcementId)?.user_participated ?? null;
+      })
+      .toBe(true);
+    await expect(page.getByTestId("action-card-announcement")).toHaveCount(0);
   });
 
   test("Member: the read announcement sits in the archive, not the active quests", async ({ browser }) => {

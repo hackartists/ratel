@@ -10,13 +10,17 @@ pub struct ReadSpaceAnnouncementResponse {}
 
 /// Records that the caller confirmed the published space announcement, so
 /// `list_actions` reports it as participated and the dashboard archives it.
-/// Idempotent. Joined participants (Participant/Candidate) only.
+/// Idempotent. Joined participants (Participant/Candidate) and the space
+/// Creator only; viewers and anonymous callers are rejected.
 #[post("/api/spaces/{space_pk}/announcements/{action_id}/read", role: SpaceUserRole, user: crate::features::auth::User)]
 pub async fn read_space_announcement(
     space_pk: SpacePartition,
     action_id: String,
 ) -> Result<ReadSpaceAnnouncementResponse> {
-    if !matches!(role, SpaceUserRole::Participant | SpaceUserRole::Candidate) {
+    if !matches!(
+        role,
+        SpaceUserRole::Creator | SpaceUserRole::Participant | SpaceUserRole::Candidate
+    ) {
         return Err(Error::NoPermission);
     }
 
