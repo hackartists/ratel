@@ -836,6 +836,7 @@ test.describe.serial("Space announcement", () => {
     const editor = await getEditor(page);
     await editor.fill(announcementBody);
     await commitAutosave(page);
+    await page.waitForTimeout(500);
     await click(page, { testId: "announcement-save-btn" });
 
     await expect
