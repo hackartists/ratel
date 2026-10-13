@@ -9,6 +9,7 @@ import { useSpaceContext } from "@/components/space/space-context";
 import { Button } from "@/components/ui/button";
 import { useMeetActionI18n } from "@/pages/spaces/[spaceId]/i18n";
 import { dataBool } from "@/lib/dom";
+import { QuestCardDesc } from "./quest-card-desc";
 
 type MeetPhase = "Draft" | "Live" | "Ended";
 
@@ -98,9 +99,7 @@ export function MeetActionCard({ action, isAdmin: _isAdmin = false }: { action: 
 
       <div className="quest-card__body">
         <div className="quest-card__title">{titleDisplay}</div>
-        {action.description !== "" && (
-          <div className="quest-card__desc" dangerouslySetInnerHTML={{ __html: action.description }} />
-        )}
+        <QuestCardDesc html={action.description} />
       </div>
 
       <div className="quest-card__footer">
