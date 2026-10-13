@@ -28905,6 +28905,7 @@ body.comments-panel-resizing {
   width: 100%;
   min-height: 0;
   padding: 16px;
+  animation: none;
 }
 .participate-card.announcement-notice {
   width: 100%;
