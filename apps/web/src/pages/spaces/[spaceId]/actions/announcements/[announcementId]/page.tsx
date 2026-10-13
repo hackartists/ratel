@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import type { SpaceActionSummary, UpdateSpaceActionRequest } from "@ratel/ts-bridges";
 import { useUpdateSpaceAction } from "@ratel/ts-bridges/hooks";
 import { Editor } from "@/components/editor";
 import { ActionStatusControl } from "@/components/space-actions/action-status-control";
 import { useSpaceContext, useSpaceRole } from "@/components/space/space-context";
+import { Button } from "@/components/ui/button";
 import { SeoMeta } from "@/components/ui/seo-meta";
 import { AnnouncementContent } from "@/pages/spaces/[spaceId]/components/announcement-notice";
 import { useSpaceViewerI18n } from "@/pages/spaces/[spaceId]/components/space-viewer.i18n";
@@ -68,12 +69,21 @@ function AnnouncementEditor({ action }: { action: SpaceActionSummary }) {
   );
 }
 
-/** Read-only announcement for participants. */
+/** Read-only announcement for participants; the confirm button returns to the space home. */
 function AnnouncementViewer({ action }: { action: SpaceActionSummary }) {
+  const tr = useSpaceViewerI18n();
+  const navigate = useNavigate();
+  const spaceId = useSpaceContext().spaceId;
+
   return (
     <div className="flex flex-col gap-4" data-testid="announcement-viewer-view">
       <SeoMeta title={action.title} />
       <AnnouncementContent action={action} />
+      <div className="flex justify-start pt-2">
+        <Button data-testid="btn-announcement-confirm" onClick={() => navigate(`/spaces/${spaceId}`)}>
+          {tr.announcementConfirm}
+        </Button>
+      </div>
     </div>
   );
 }

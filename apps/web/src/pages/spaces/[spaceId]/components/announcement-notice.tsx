@@ -1,18 +1,17 @@
 import type { SpaceActionSummary } from "@ratel/ts-bridges";
+import { Editor } from "@/components/editor";
 import { useSpaceViewerI18n } from "./space-viewer.i18n";
 
-/** Announcement title and body; the body HTML is rendered the same way the post detail page renders a post body. */
+/** Announcement title and body; the body HTML is rendered by the read-only `Editor` so it keeps the authored formatting. */
 export function AnnouncementContent({ action }: { action: SpaceActionSummary }) {
   return (
     <>
       <h1 className="font-bold text-[1.75rem]/[1.2] text-text-primary" data-testid="announcement-title">
         {action.title}
       </h1>
-      <div
-        className="post-hero__body text-text-primary"
-        data-testid="announcement-body"
-        dangerouslySetInnerHTML={{ __html: action.description }}
-      />
+      <div data-testid="announcement-body">
+        <Editor key={action.description} className="w-full" content={action.description} editable={false} />
+      </div>
     </>
   );
 }

@@ -792,6 +792,9 @@ test.describe.serial("Space announcement", () => {
   const uniqueId = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
   const announcementTitle = `Read before joining ${uniqueId}`;
   const announcementBody = "Please be respectful. Answers are anonymous.";
+  const announcementHeading = "House rules";
+  const announcementListItem = "One answer per member";
+  const announcementHtml = `<h2>${announcementHeading}</h2><p>${announcementBody}</p><ul><li>${announcementListItem}</li></ul>`;
   const member = {
     email: `e2e_an_${uniqueId}@biyard.co`,
     username: `an${uniqueId}`,
@@ -843,6 +846,12 @@ test.describe.serial("Space announcement", () => {
         return a ? `${a.title}|${a.description.includes(announcementBody)}` : "";
       })
       .toBe(`${announcementTitle}|true`);
+
+    const formattedRes = await page.request.post(
+      `/api/spaces/${spaceId}/actions/${announcementId}`,
+      { data: { req: { description: announcementHtml } } },
+    );
+    expect(formattedRes.ok(), `format announcement: ${await formattedRes.text()}`).toBeTruthy();
 
     const statusRes = await page.request.post(
       `/api/spaces/${spaceId}/actions/${announcementId}`,
@@ -912,7 +921,14 @@ test.describe.serial("Space announcement", () => {
       await page.waitForURL(/\/actions\/announcements\//, { timeout: 30000 });
       const viewer = page.getByTestId("announcement-viewer-view");
       await expect(viewer).toBeVisible();
-      await expect(viewer.getByTestId("announcement-body")).toContainText(announcementBody);
+      const body = viewer.getByTestId("announcement-body");
+      await expect(body).toContainText(announcementBody);
+      await expect(body.getByRole("heading", { level: 2, name: announcementHeading })).toBeVisible();
+      await expect(body.getByRole("listitem").filter({ hasText: announcementListItem })).toBeVisible();
+
+      await click(page, { testId: "btn-announcement-confirm" });
+      await page.waitForURL(new RegExp(`/spaces/${spaceId}/?$`), { timeout: 30000 });
+      await expect(page.getByTestId("announcement-viewer-view")).toBeHidden();
     } finally {
       await context.close();
     }
