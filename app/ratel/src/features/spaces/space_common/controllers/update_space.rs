@@ -62,6 +62,12 @@ pub enum UpdateSpaceRequest {
     Logo {
         logo: String,
     },
+    /// Waiting-screen greeting (HTML). Declared before `StartTime`, whose
+    /// all-optional fields would otherwise match `{"greeting": "..."}` under
+    /// `untagged`.
+    Greeting {
+        greeting: String,
+    },
     StartTime {
         started_at: Option<i64>,
     },
@@ -86,6 +92,8 @@ pub struct UpdateSpaceResponse {
     #[serde(default)]
     pub logo: String,
     pub started_at: Option<i64>,
+    #[serde(default)]
+    pub greeting: String,
 }
 
 #[cfg(feature = "server")]
@@ -106,6 +114,7 @@ impl From<SpaceCommon> for UpdateSpaceResponse {
             remains: s.remains,
             logo: s.logo,
             started_at: s.started_at,
+            greeting: s.greeting,
         }
     }
 }
@@ -115,7 +124,7 @@ impl From<SpaceCommon> for UpdateSpaceResponse {
 pub async fn update_space(
     #[mcp(description = "Space partition key")]
     space_id: SpacePartition,
-    #[mcp(description = "Update data as JSON. Supported variants: {\"visibility\": \"Public\"}, {\"anonymous_participation\": true}, {\"join_anytime\": true}, {\"start\": true}, {\"finished\": true}, {\"sampling\": true} (Open → Sampling, Sampling app only), {\"quotas\": 100}, {\"title\": \"...\"}, {\"content\": \"...\"}, {\"publish\": true, \"visibility\": \"Public\"}, {\"logo\": \"url\"}")]
+    #[mcp(description = "Update data as JSON. Supported variants: {\"visibility\": \"Public\"}, {\"anonymous_participation\": true}, {\"join_anytime\": true}, {\"start\": true}, {\"finished\": true}, {\"sampling\": true} (Open → Sampling, Sampling app only), {\"quotas\": 100}, {\"title\": \"...\"}, {\"content\": \"...\"}, {\"publish\": true, \"visibility\": \"Public\"}, {\"logo\": \"url\"}, {\"greeting\": \"<p>...</p>\"} (HTML, only before the space starts)")]
     req: UpdateSpaceRequest,
 ) -> Result<UpdateSpaceResponse> {
     if role != SpaceUserRole::Creator {
@@ -255,6 +264,12 @@ pub async fn update_space(
         }
         UpdateSpaceRequest::Logo { logo } => {
             updated_space.logo = logo;
+        }
+        UpdateSpaceRequest::Greeting { greeting } => {
+            if !updated_space.is_greeting_editable() {
+                return Err(SpaceError::GreetingLocked.into());
+            }
+            updated_space.greeting = strip_color_styles(&greeting);
         }
         UpdateSpaceRequest::StartTime { started_at } => {
             // Mirrors the pre-migration `su.with_started_at(ts)` guard: a

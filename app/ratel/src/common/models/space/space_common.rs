@@ -115,6 +115,14 @@ pub struct SpaceCommon {
     #[serde(default)]
     #[cfg_attr(feature = "server", postgres(version = 2, sql_default = "FALSE"))]
     pub sampling_recruit_open: bool,
+
+    /// Rich-text (HTML) greeting shown to Candidates on the waiting and
+    /// Sampling cards once they have finished the prerequisites. Empty means
+    /// no greeting. Editable only before the space starts; see
+    /// [`SpaceCommon::is_greeting_editable`].
+    #[serde(default)]
+    #[cfg_attr(feature = "server", postgres(version = 3))]
+    pub greeting: String,
 }
 
 fn default_true() -> bool {
@@ -184,6 +192,16 @@ impl SpaceCommon {
         )
     }
 
+    /// Whether admins may still change the waiting-screen greeting: only
+    /// before the space starts (`Designing` / `Open` / `Sampling`, or not
+    /// yet published).
+    pub fn is_greeting_editable(&self) -> bool {
+        !matches!(
+            self.status,
+            Some(SpaceStatus::Ongoing | SpaceStatus::Processing | SpaceStatus::Finished)
+        )
+    }
+
     /// Whether a new participant may join and Candidates may run
     /// prerequisite actions right now.
     ///
@@ -235,6 +253,25 @@ mod participation_tests {
         assert!(!space(SpaceStatus::Designing, true, true).is_participation_open());
         assert!(!space(SpaceStatus::Finished, true, true).is_participation_open());
         assert!(!SpaceCommon::default().is_participation_open());
+    }
+
+    #[test]
+    fn greeting_editable_only_before_start() {
+        assert!(SpaceCommon::default().is_greeting_editable());
+        for status in [
+            SpaceStatus::Designing,
+            SpaceStatus::Open,
+            SpaceStatus::Sampling,
+        ] {
+            assert!(space(status, false, false).is_greeting_editable());
+        }
+        for status in [
+            SpaceStatus::Ongoing,
+            SpaceStatus::Processing,
+            SpaceStatus::Finished,
+        ] {
+            assert!(!space(status, false, false).is_greeting_editable());
+        }
     }
 
     #[test]

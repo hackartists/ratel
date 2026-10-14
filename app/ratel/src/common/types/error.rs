@@ -506,6 +506,7 @@ impl dioxus::fullstack::axum::response::IntoResponse for Error {
             | Error::InvalidFormat
             | Error::InvalidTeamContext => StatusCode::BAD_REQUEST,
             Error::NotFound(_) | Error::InvitationNotFound => StatusCode::NOT_FOUND,
+            Error::Space(e) => e.status_code(),
             Error::Follow(e) => e.status_code(),
             Error::SpaceReward(e) => e.status_code(),
             Error::SpaceActionQuiz(e) => e.status_code(),
@@ -643,6 +644,7 @@ impl dioxus::fullstack::AsStatusCode for Error {
             | Error::InvalidFormat
             | Error::InvalidTeamContext => StatusCode::BAD_REQUEST,
             Error::NotFound(_) | Error::InvitationNotFound => StatusCode::NOT_FOUND,
+            Error::Space(e) => e.status_code(),
             Error::Follow(e) => e.status_code(),
             Error::SpaceReward(e) => e.status_code(),
             Error::SpaceActionQuiz(e) => e.status_code(),
