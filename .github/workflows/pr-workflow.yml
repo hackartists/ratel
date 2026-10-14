@@ -183,7 +183,7 @@ jobs:
               libssl-dev \
               pigz
           elif command -v dnf >/dev/null 2>&1; then
-            $SUDO dnf install -y -q pigz || true
+            $SUDO dnf install -y pigz >/dev/null || true # microdnf: no -q
           fi
 
       # MinIO instead of actions/cache: the old restore-only step never had
