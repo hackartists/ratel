@@ -70,6 +70,24 @@ test.describe.serial("Sampling app settings and status flow", () => {
     await expect(page.getByTestId("sampling-dash-total-population")).toHaveText("0");
   });
 
+  test("A4b: the sampling page scrolls on a desktop viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 640 });
+    await goto(page, `${space.spaceUrl}/apps/sampling`);
+    await expect(page.getByTestId("sampling-dashboard")).toBeVisible();
+
+    const arena = page.getByTestId("sampling-arena");
+    const { scrollHeight, clientHeight } = await arena.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    }));
+    expect(scrollHeight).toBeGreaterThan(clientHeight);
+
+    await page.mouse.move(720, 400);
+    await page.mouse.wheel(0, 600);
+    await expect.poll(() => arena.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await expect(page.getByTestId("topbar-back")).toBeInViewport();
+  });
+
   test("A5: an unconfigured Sampling space cannot start or sample", async ({ page }) => {
     unconfigured = await createSpaceWithEntryPoll(page, { title: `Sampling unconfigured ${stamp}` });
     await installSamplingApp(page, unconfigured.spaceUrl);

@@ -34,7 +34,7 @@ function CreatorArena() {
   };
 
   return (
-    <div className="space-panels-arena sampling-arena">
+    <div className="space-panels-arena sampling-arena" data-testid="sampling-arena">
       <header className="spa-topbar" role="banner">
         <div className="spa-topbar__left">
           <button type="button" className="spa-back-btn" aria-label={tr.backAria} data-testid="topbar-back" onClick={() => navigate(-1)}>
