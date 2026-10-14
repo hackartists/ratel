@@ -29,14 +29,12 @@ import {
 } from "@/lib/poll-encryption";
 import { useToast } from "@/lib/toast";
 import { RichQuestionTitle } from "@/components/space-actions/rich-question-title";
+import { applyAnswerChange, emptyAnswerFor, resolveNavigation, submissionAnswers } from "../../actions/polls/[pollId]/components/poll-flow";
 import {
-  applyAnswerChange,
-  emptyAnswerFor,
-  pickedTerminationOption,
-  resolveNavigation,
-  submissionAnswers,
-} from "../../actions/polls/[pollId]/components/poll-flow";
-import { usePollTerminationI18n } from "../../actions/polls/[pollId]/components/poll-termination.i18n";
+  resolveTerminationCopy,
+  usePollTerminationI18n,
+  type TerminationCopy,
+} from "../../actions/polls/[pollId]/components/poll-termination.i18n";
 
 type PollStep = "Overview" | "Poll";
 
@@ -71,9 +69,8 @@ function hasAnswerForQuestion(question: Question, answer: Answer | undefined): b
     case "linear_scale":
       return answer.answer_type === "linear_scale" && answer.answer !== null;
     case "privacy_consent":
-      return (
-        answer.answer_type === "privacy_consent" && answer.agreed === true && answer.phone !== null && answer.phone.trim() !== ""
-      );
+      if (answer.answer_type !== "privacy_consent") return false;
+      return answer.declined || (answer.agreed && answer.phone !== null && answer.phone.trim() !== "");
   }
 }
 
@@ -458,7 +455,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   const [step, setStep] = React.useState<PollStep>("Overview");
   const [questionIndex, setQuestionIndex] = React.useState(0);
   const [showConfirm, setShowConfirm] = React.useState(false);
-  const [pendingTermination, setPendingTermination] = React.useState<{ option: string; answers: Record<number, Answer> } | null>(
+  const [pendingTermination, setPendingTermination] = React.useState<{ copy: TerminationCopy; answers: Record<number, Answer> } | null>(
     null,
   );
   const [answers, setAnswers] = React.useState<Record<number, Answer>>({});
@@ -597,7 +594,10 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   const onAnswerChange = (idx: number, question: Question, ans: Answer) => {
     const change = applyAnswerChange(questions, answers, idx, ans);
     if (change.terminated && (canSubmit || canUpdate)) {
-      setPendingTermination({ option: pickedTerminationOption(question, ans) ?? "", answers: change.answers });
+      setPendingTermination({
+        copy: resolveTerminationCopy(trTermination, question, ans, poll.response_editable),
+        answers: change.answers,
+      });
       return;
     }
     setAnswers(change.answers);
@@ -912,14 +912,17 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
               </svg>
             </div>
             <h3 className="poll-confirm-modal__title">{trTermination.title}</h3>
-            <p className="poll-confirm-modal__desc">{(poll.response_editable ? trTermination.descriptionEditable : trTermination.description)({ option: pendingTermination.option })}</p>
+            <p className="poll-confirm-modal__desc whitespace-pre-line" data-testid="poll-terminate-description">
+              {pendingTermination.copy.description}
+            </p>
             <div className="poll-confirm-modal__actions">
               <button className="poll-btn poll-btn--back" data-testid="poll-terminate-cancel" onClick={() => setPendingTermination(null)}>
                 {trTermination.cancel}
               </button>
               <button
-                className="poll-btn poll-btn--submit"
+                className={pendingTermination.copy.destructive ? "poll-btn poll-btn--danger" : "poll-btn poll-btn--submit"}
                 data-testid="poll-terminate-confirm"
+                data-destructive={pendingTermination.copy.destructive ? "true" : "false"}
                 onClick={() => {
                   const terminated = pendingTermination.answers;
                   setPendingTermination(null);
@@ -927,7 +930,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
                   void doSubmit(terminated);
                 }}
               >
-                {trTermination.confirm}
+                {pendingTermination.copy.confirmLabel}
               </button>
             </div>
           </div>

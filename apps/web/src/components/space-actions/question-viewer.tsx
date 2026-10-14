@@ -50,9 +50,8 @@ export function hasAnswerForQuestion(question: Question, answer: Answer | undefi
     case "linear_scale":
       return answer.answer_type === "linear_scale" && answer.answer !== null;
     case "privacy_consent":
-      return (
-        answer.answer_type === "privacy_consent" && answer.agreed === true && answer.phone !== null && answer.phone.trim() !== ""
-      );
+      if (answer.answer_type !== "privacy_consent") return false;
+      return answer.declined || (answer.agreed && answer.phone !== null && answer.phone.trim() !== "");
   }
 }
 
@@ -548,9 +547,11 @@ interface PrivacyConsentQuestionShape {
 }
 
 /** `respondent_from_panel_attributes`/`PrivacyConsentQuestion` flow — terms →
- * agree → phone input or prefilled-verified phone + "Change" → SMS verify.
- * The verified `code` rides in the `Answer` payload for `respond_poll`'s
- * server-side re-verification; it is never trusted on its own here. */
+ * "I agree" / "I do not agree". Agreeing reveals the phone input or the
+ * prefilled-verified phone + "Change" → SMS verify; disagreeing hides it and
+ * ends the poll through the caller's termination confirmation. The verified
+ * `code` rides in the `Answer` payload for `respond_poll`'s server-side
+ * re-verification; it is never trusted on its own here. */
 export function PrivacyConsentViewer({
   question,
   answer,
@@ -573,6 +574,7 @@ export function PrivacyConsentViewer({
   const verifyCode = useVerifyCode();
 
   const agreed = answer?.answer_type === "privacy_consent" ? answer.agreed : false;
+  const declined = answer?.answer_type === "privacy_consent" ? answer.declined : false;
   const phone = answer?.answer_type === "privacy_consent" ? answer.phone : null;
   const code = answer?.answer_type === "privacy_consent" ? answer.code : null;
 
@@ -586,17 +588,31 @@ export function PrivacyConsentViewer({
     onChange({
       answer_type: "privacy_consent",
       agreed: patch.agreed ?? agreed,
+      declined: false,
       phone: patch.phone !== undefined ? patch.phone : phone,
       code: patch.code !== undefined ? patch.code : code,
     });
   };
 
+  const verifiedPhone = myPhone.data?.phone_number ?? null;
+
+  const chooseAgree = () => {
+    if (mode === "prefilled" && phone === null && verifiedPhone) {
+      emit({ agreed: true, phone: verifiedPhone, code: "verified" });
+    } else {
+      emit({ agreed: true });
+    }
+  };
+
+  const chooseDisagree = () => {
+    onChange({ answer_type: "privacy_consent", agreed: false, declined: true, phone: null, code: null });
+  };
+
   useEffect(() => {
     if (initialized || myPhone.isLoading) return;
-    const verifiedPhone = myPhone.data?.phone_number ?? null;
     if (verifiedPhone) {
       setMode("prefilled");
-      if (phone === null) emit({ phone: verifiedPhone, code: "verified" });
+      if (phone === null && !declined) emit({ phone: verifiedPhone, code: "verified" });
     } else {
       setMode("entry");
     }
@@ -624,135 +640,171 @@ export function PrivacyConsentViewer({
         </div>
       </div>
 
-      <label className="flex items-start gap-2 rounded-xl border border-card-border bg-option-card-bg p-3 cursor-pointer">
-        <input
-          type="checkbox"
-          data-testid="pc-agree-checkbox"
-          checked={agreed}
+      <div className="grid grid-cols-2 gap-3" role="radiogroup" data-testid="pc-consent-choices">
+        <ConsentChoice
+          label={tr.privacyConsentAgreeOption}
+          selected={agreed}
           disabled={disabled}
-          onChange={(e) => emit({ agreed: e.target.checked })}
+          testId="pc-agree-option"
+          onSelect={chooseAgree}
         />
-        <span className="text-sm text-text-primary">{tr.privacyConsentAgreeLabel}</span>
-      </label>
-
-      <div
-        className={`flex flex-col gap-3 rounded-xl border p-4 transition-opacity ${
-          agreed ? "border-primary/40 bg-primary/5" : "border-card-border bg-option-card-bg opacity-40 pointer-events-none"
-        }`}
-        data-testid="pc-phone-section"
-        data-disabled={agreed ? "false" : "true"}
-      >
-        {mode === "prefilled" && phone !== null ? (
-          <div className="flex items-center justify-between gap-2" data-testid="pc-prefill-row">
-            <span className="font-semibold text-text-primary" data-testid="pc-prefill-number">
-              {phone}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-1 text-xs font-semibold text-green-400" data-testid="pc-verified-pill">
-              <Check className="size-3 [&>path]:stroke-green-400" />
-              {tr.privacyConsentVerifiedLabel}
-            </span>
-            <Button
-              buttonStyle={ButtonStyle.Outline}
-              shape={ButtonShape.Square}
-              disabled={disabled}
-              data-testid="pc-change-btn"
-              onClick={() => {
-                setMode("entry");
-                setPhoneDraft("");
-                setCodeDraft("");
-                emit({ phone: null, code: null });
-              }}
-            >
-              {tr.privacyConsentChangeBtn}
-            </Button>
-          </div>
-        ) : (
-          <>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold uppercase tracking-wide text-text-primary-muted">
-                {tr.privacyConsentPhoneLabel}
-              </span>
-              <div className="flex gap-2">
-                <PhoneInput
-                  placeholder={tr.privacyConsentPhonePlaceholder}
-                  data-testid="pc-phone-input"
-                  value={phoneDraft}
-                  disabled={disabled}
-                  onChange={setPhoneDraft}
-                />
-                <Button
-                  buttonStyle={ButtonStyle.Outline}
-                  shape={ButtonShape.Square}
-                  disabled={disabled || !phoneDraft}
-                  data-testid="pc-send-code-btn"
-                  onClick={() => {
-                    if (!phoneDraft) return;
-                    sendCode.mutate({ phone: phoneDraft });
-                    emit({ phone: phoneDraft, code: null });
-                  }}
-                >
-                  {tr.privacyConsentSendCodeBtn}
-                </Button>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-semibold uppercase tracking-wide text-text-primary-muted">
-                {tr.privacyConsentCodeLabel}
-              </span>
-              <div className="flex gap-2">
-                <Input
-                  variant={InputVariant.Plain}
-                  className="flex-1"
-                  placeholder={tr.privacyConsentCodePlaceholder}
-                  data-testid="pc-code-input"
-                  value={codeDraft}
-                  disabled={disabled}
-                  onChange={(e) => setCodeDraft(e.target.value)}
-                />
-                <Button
-                  buttonStyle={ButtonStyle.Outline}
-                  shape={ButtonShape.Square}
-                  disabled={disabled || codeDraft.trim() === "" || !phoneDraft}
-                  data-testid="pc-verify-btn"
-                  onClick={() => {
-                    if (!phoneDraft) return;
-                    verifyCode.mutate(
-                      { phone: phoneDraft, code: codeDraft },
-                      {
-                        onSuccess: () => {
-                          setVerifyError(false);
-                          emit({ phone: phoneDraft, code: codeDraft });
-                        },
-                        onError: () => {
-                          setVerifyError(true);
-                          emit({ phone: phoneDraft, code: null });
-                        },
-                      },
-                    );
-                  }}
-                >
-                  {tr.privacyConsentVerifyBtn}
-                </Button>
-              </div>
-              {verifyError && (
-                <span className="text-xs text-red-400" data-testid="pc-verify-error">
-                  {tr.privacyConsentVerifyError}
-                </span>
-              )}
-            </div>
-            <span
-              className={`self-start inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${
-                isVerified
-                  ? "border-green-500/30 bg-green-500/10 text-green-400"
-                  : "border-red-500/30 bg-red-500/10 text-red-400"
-              }`}
-              data-testid={isVerified ? "pc-verified-pill" : "pc-unverified-pill"}
-            >
-              {isVerified ? tr.privacyConsentVerifiedLabel : tr.privacyConsentNotVerifiedLabel}
-            </span>
-          </>
-        )}
+        <ConsentChoice
+          label={tr.privacyConsentDisagreeOption}
+          selected={declined}
+          disabled={disabled}
+          testId="pc-disagree-option"
+          onSelect={chooseDisagree}
+        />
       </div>
+
+      {agreed && (
+        <div className="flex flex-col gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4" data-testid="pc-phone-section">
+          {mode === "prefilled" && phone !== null ? (
+            <div className="flex items-center justify-between gap-2" data-testid="pc-prefill-row">
+              <span className="font-semibold text-text-primary" data-testid="pc-prefill-number">
+                {phone}
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-1 text-xs font-semibold text-green-400" data-testid="pc-verified-pill">
+                <Check className="size-3 [&>path]:stroke-green-400" />
+                {tr.privacyConsentVerifiedLabel}
+              </span>
+              <Button
+                buttonStyle={ButtonStyle.Outline}
+                shape={ButtonShape.Square}
+                disabled={disabled}
+                data-testid="pc-change-btn"
+                onClick={() => {
+                  setMode("entry");
+                  setPhoneDraft("");
+                  setCodeDraft("");
+                  emit({ phone: null, code: null });
+                }}
+              >
+                {tr.privacyConsentChangeBtn}
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-text-primary-muted">
+                  {tr.privacyConsentPhoneLabel}
+                </span>
+                <div className="flex gap-2">
+                  <PhoneInput
+                    placeholder={tr.privacyConsentPhonePlaceholder}
+                    data-testid="pc-phone-input"
+                    value={phoneDraft}
+                    disabled={disabled}
+                    onChange={setPhoneDraft}
+                  />
+                  <Button
+                    buttonStyle={ButtonStyle.Outline}
+                    shape={ButtonShape.Square}
+                    disabled={disabled || !phoneDraft}
+                    data-testid="pc-send-code-btn"
+                    onClick={() => {
+                      if (!phoneDraft) return;
+                      sendCode.mutate({ phone: phoneDraft });
+                      emit({ phone: phoneDraft, code: null });
+                    }}
+                  >
+                    {tr.privacyConsentSendCodeBtn}
+                  </Button>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-text-primary-muted">
+                  {tr.privacyConsentCodeLabel}
+                </span>
+                <div className="flex gap-2">
+                  <Input
+                    variant={InputVariant.Plain}
+                    className="flex-1"
+                    placeholder={tr.privacyConsentCodePlaceholder}
+                    data-testid="pc-code-input"
+                    value={codeDraft}
+                    disabled={disabled}
+                    onChange={(e) => setCodeDraft(e.target.value)}
+                  />
+                  <Button
+                    buttonStyle={ButtonStyle.Outline}
+                    shape={ButtonShape.Square}
+                    disabled={disabled || codeDraft.trim() === "" || !phoneDraft}
+                    data-testid="pc-verify-btn"
+                    onClick={() => {
+                      if (!phoneDraft) return;
+                      verifyCode.mutate(
+                        { phone: phoneDraft, code: codeDraft },
+                        {
+                          onSuccess: () => {
+                            setVerifyError(false);
+                            emit({ phone: phoneDraft, code: codeDraft });
+                          },
+                          onError: () => {
+                            setVerifyError(true);
+                            emit({ phone: phoneDraft, code: null });
+                          },
+                        },
+                      );
+                    }}
+                  >
+                    {tr.privacyConsentVerifyBtn}
+                  </Button>
+                </div>
+                {verifyError && (
+                  <span className="text-xs text-red-400" data-testid="pc-verify-error">
+                    {tr.privacyConsentVerifyError}
+                  </span>
+                )}
+              </div>
+              <span
+                className={`self-start inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${
+                  isVerified
+                    ? "border-green-500/30 bg-green-500/10 text-green-400"
+                    : "border-red-500/30 bg-red-500/10 text-red-400"
+                }`}
+                data-testid={isVerified ? "pc-verified-pill" : "pc-unverified-pill"}
+              >
+                {isVerified ? tr.privacyConsentVerifiedLabel : tr.privacyConsentNotVerifiedLabel}
+              </span>
+            </>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** One of the two consent answers, styled like a single-choice option card. */
+function ConsentChoice({
+  label,
+  selected,
+  disabled,
+  testId,
+  onSelect,
+}: {
+  label: string;
+  selected: boolean;
+  disabled: boolean;
+  testId: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      aria-selected={selected}
+      data-testid={testId}
+      disabled={disabled}
+      className={`flex min-h-[56px] items-center justify-center rounded-xl px-4 text-[15px] font-semibold transition-all ${
+        selected
+          ? "bg-gradient-to-r from-primary/80 to-primary text-white ring-2 ring-primary/90 shadow-[0_8px_20px_rgba(0,0,0,0.2)]"
+          : "bg-option-card-bg text-text-primary hover:bg-option-card-hover-bg"
+      } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+      onClick={onSelect}
+    >
+      {label}
+    </button>
   );
 }

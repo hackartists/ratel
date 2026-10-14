@@ -7,7 +7,8 @@ const en = {
   subjective_input_placeholder: "Write your answer...",
   other_option: "Other",
   other_placeholder: "Write your answer...",
-  privacy_consent_agree_label: "I have read the terms above and agree to provide my phone number for this purpose.",
+  privacy_consent_agree_option: "I agree",
+  privacy_consent_disagree_option: "I do not agree",
   privacy_consent_change_btn: "Change",
   privacy_consent_verified_label: "Verified",
   privacy_consent_not_verified_label: "Not verified yet",
@@ -27,7 +28,8 @@ const ko: Record<keyof typeof en, string> = {
   subjective_input_placeholder: "답변을 입력하세요...",
   other_option: "기타",
   other_placeholder: "응답을 입력하세요...",
-  privacy_consent_agree_label: "위 약관을 읽었으며 이 목적으로 휴대폰 번호를 제공하는 데 동의합니다.",
+  privacy_consent_agree_option: "동의함",
+  privacy_consent_disagree_option: "동의하지 않음",
   privacy_consent_change_btn: "변경하기",
   privacy_consent_verified_label: "인증됨",
   privacy_consent_not_verified_label: "아직 인증되지 않음",
@@ -49,7 +51,8 @@ export interface QuestionViewerI18n {
   subjectiveInputPlaceholder: string;
   otherOption: string;
   otherPlaceholder: string;
-  privacyConsentAgreeLabel: string;
+  privacyConsentAgreeOption: string;
+  privacyConsentDisagreeOption: string;
   privacyConsentChangeBtn: string;
   privacyConsentVerifiedLabel: string;
   privacyConsentNotVerifiedLabel: string;
@@ -71,7 +74,8 @@ export function useQuestionViewerI18n(): QuestionViewerI18n {
     subjectiveInputPlaceholder: t("subjective_input_placeholder"),
     otherOption: t("other_option"),
     otherPlaceholder: t("other_placeholder"),
-    privacyConsentAgreeLabel: t("privacy_consent_agree_label"),
+    privacyConsentAgreeOption: t("privacy_consent_agree_option"),
+    privacyConsentDisagreeOption: t("privacy_consent_disagree_option"),
     privacyConsentChangeBtn: t("privacy_consent_change_btn"),
     privacyConsentVerifiedLabel: t("privacy_consent_verified_label"),
     privacyConsentNotVerifiedLabel: t("privacy_consent_not_verified_label"),

@@ -130,11 +130,16 @@ export function EncryptedVoteVerificationPanel({ spaceId, pollId }: { spaceId: s
   );
 }
 
+/** Red confirm button for actions that end the participant's survey. */
+const DESTRUCTIVE_CONFIRM_CLASS =
+  "min-w-[120px] bg-red-500! border-red-500! text-white! hover:bg-red-600! hover:border-red-600!";
+
 export function PollSubmitConfirmPopup({
   cancelLabel,
   confirmLabel,
   testId,
   cancelTestId,
+  destructive = false,
   onCancel,
   onConfirm,
 }: {
@@ -142,6 +147,8 @@ export function PollSubmitConfirmPopup({
   confirmLabel: string;
   testId: string;
   cancelTestId?: string;
+  /** Renders the confirm button in red. */
+  destructive?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -158,9 +165,10 @@ export function PollSubmitConfirmPopup({
       </Button>
       <Button
         data-testid={testId}
+        data-destructive={destructive ? "true" : "false"}
         buttonStyle={ButtonStyle.Primary}
         shape={ButtonShape.Square}
-        className="min-w-[120px]"
+        className={destructive ? DESTRUCTIVE_CONFIRM_CLASS : "min-w-[120px]"}
         onClick={onConfirm}
       >
         {confirmLabel}

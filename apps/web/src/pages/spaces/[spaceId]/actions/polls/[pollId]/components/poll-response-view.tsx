@@ -21,8 +21,8 @@ import { timeAgo } from "@/lib/time";
 import { useToast } from "@/lib/toast";
 import { usePoll } from "../hooks/use-poll";
 import { EncryptedVoteVerificationPanel, PollSubmitConfirmPopup } from "./poll-encrypted-vote";
-import { applyAnswerChange, pickedTerminationOption, resolveNavigation, submissionAnswers } from "./poll-flow";
-import { usePollTerminationI18n } from "./poll-termination.i18n";
+import { applyAnswerChange, resolveNavigation, submissionAnswers } from "./poll-flow";
+import { resolveTerminationCopy, usePollTerminationI18n, type TerminationCopy } from "./poll-termination.i18n";
 
 // poll/views/main/poll_read_page.rs (`PollReadPage`, variant "read" — the
 // participant flow: overview step + the client-side ABE encrypted-vote UI)
@@ -225,11 +225,12 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
     }
   };
 
-  const confirmTermination = (option: string, terminated: Record<number, Answer>) => {
+  const confirmTermination = (copy: TerminationCopy, terminated: Record<number, Answer>) => {
     popup.open(
       <PollSubmitConfirmPopup
         cancelLabel={trTermination.cancel}
-        confirmLabel={trTermination.confirm}
+        confirmLabel={copy.confirmLabel}
+        destructive={copy.destructive}
         testId="poll-terminate-confirm"
         cancelTestId="poll-terminate-cancel"
         onCancel={() => popup.close()}
@@ -239,17 +240,14 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
           void buildSubmitResponse(terminated)();
         }}
       />,
-      {
-        title: trTermination.title,
-        description: (poll.response_editable ? trTermination.descriptionEditable : trTermination.description)({ option }),
-      },
+      { title: trTermination.title, description: copy.description },
     );
   };
 
   const onAnswerChange = (ans: Answer) => {
     const change = applyAnswerChange(poll.questions, answers, currentIdx, ans);
     if (change.terminated && (canSubmit || canUpdate)) {
-      confirmTermination(pickedTerminationOption(currentQuestion!, ans) ?? "", change.answers);
+      confirmTermination(resolveTerminationCopy(trTermination, currentQuestion!, ans, poll.response_editable), change.answers);
       return;
     }
     setAnswers(change.answers);

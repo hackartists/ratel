@@ -34,6 +34,8 @@ const en = {
   total_response_count_unit: "responses",
   no_text_responses: "No text responses",
   other_label: "Other",
+  consent_agreed_label: "Agreed",
+  consent_declined_label: "Did not agree",
   id: "ID",
   attribute: "Attribute",
   category: "Category",
@@ -243,6 +245,8 @@ const ko: Record<keyof typeof en, string> = {
   total_response_count_unit: "명 응답",
   no_text_responses: "주관식 응답이 없습니다",
   other_label: "기타",
+  consent_agreed_label: "동의함",
+  consent_declined_label: "동의하지 않음",
   id: "ID",
   attribute: "속성",
   category: "조사구분",
@@ -454,6 +458,10 @@ export interface SpaceAnalyzesAppI18n {
   totalResponseCountUnit: string;
   noTextResponses: string;
   otherLabel: string;
+  /** Privacy-consent result row for respondents who agreed. */
+  consentAgreedLabel: string;
+  /** Privacy-consent result row for respondents who declined and ended the poll. */
+  consentDeclinedLabel: string;
   id: string;
   attribute: string;
   category: string;
@@ -665,6 +673,8 @@ export function useSpaceAnalyzesAppI18n(): SpaceAnalyzesAppI18n {
     totalResponseCountUnit: t("total_response_count_unit"),
     noTextResponses: t("no_text_responses"),
     otherLabel: t("other_label"),
+    consentAgreedLabel: t("consent_agreed_label"),
+    consentDeclinedLabel: t("consent_declined_label"),
     id: t("id"),
     attribute: t("attribute"),
     category: t("category"),
