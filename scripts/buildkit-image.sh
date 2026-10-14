@@ -79,13 +79,53 @@ set -euo pipefail
 #                  k8s nodeAffinity/node-class, not by image platform — qdrant
 #                  (jemalloc) aborts on its 16K page-size kernel and that
 #                  problem has nothing to do with the image's CPU arch.
+#   HASH_TARGET    optional (PR workflow): an image-input-hash.sh target
+#                  (app-shell|events|web). IMAGE_TAG becomes the input
+#                  content hash and the build is skipped when that tag is
+#                  already in the registry.
+#   ALIAS_TAGS     optional, space-separated extra tags (e.g. pr-<num>)
+#                  pointed at IMAGE_TAG by manifest copy after build/skip.
 
 NAME="${NAME:?NAME is required (image repository name)}"
 DOCKERFILE="${DOCKERFILE:?DOCKERFILE is required}"
-IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG is required}"
 CONTEXT="${CONTEXT:-.}"
 PUSH_REGISTRY="${PUSH_REGISTRY:-registry.infra.svc.cluster.local:5000}"
 PLATFORM="${PLATFORM:-linux/amd64,linux/arm64}"
+
+if [ -n "${HASH_TARGET:-}" ]; then
+  IMAGE_TAG="$(bash "$(dirname "$0")/image-input-hash.sh" "${HASH_TARGET}")"
+  echo "content-addressed tag for ${HASH_TARGET}: ${IMAGE_TAG}"
+fi
+IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG is required (or set HASH_TARGET)}"
+
+MANIFEST_ACCEPT='application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json'
+manifest_url() { echo "http://${PUSH_REGISTRY}/v2/${NAME}/manifests/$1"; }
+tag_exists() { curl -sf -o /dev/null -H "Accept: ${MANIFEST_ACCEPT}" "$(manifest_url "$1")"; }
+
+# Re-PUT the manifest (index) bytes under another tag — no pull/push of layers.
+alias_tag() {
+  local alias="$1" tmp ctype
+  [ "${alias}" = "${IMAGE_TAG}" ] && return 0
+  tmp="$(mktemp)"
+  ctype=$(curl -sfI -H "Accept: ${MANIFEST_ACCEPT}" "$(manifest_url "${IMAGE_TAG}")" \
+    | tr -d '\r' | awk -F': ' 'tolower($1)=="content-type"{print $2}')
+  curl -sf -H "Accept: ${MANIFEST_ACCEPT}" -o "${tmp}" "$(manifest_url "${IMAGE_TAG}")"
+  curl -sf -X PUT -H "Content-Type: ${ctype}" --data-binary @"${tmp}" \
+    "$(manifest_url "${alias}")"
+  rm -f "${tmp}"
+  echo "aliased ${NAME}:${alias} -> ${IMAGE_TAG}"
+}
+
+image="${PUSH_REGISTRY}/${NAME}:${IMAGE_TAG}"
+
+if [ -n "${HASH_TARGET:-}" ] && tag_exists "${IMAGE_TAG}"; then
+  echo "skip build: ${image} already in registry (same build inputs)"
+  for alias in ${ALIAS_TAGS:-}; do
+    alias_tag "${alias}"
+  done
+  exit 0
+fi
+
 : "${BUILDKIT_HOST:?BUILDKIT_HOST is not set — run inside a runner pod or export it}"
 
 test -d "${CONTEXT}" || {
@@ -97,7 +137,6 @@ test -f "${DOCKERFILE}" || {
   exit 1
 }
 
-image="${PUSH_REGISTRY}/${NAME}:${IMAGE_TAG}"
 echo "building ${image} (${PLATFORM}, context=${CONTEXT}, buildkitd=${BUILDKIT_HOST})"
 
 # BUILD_ARGS: space-separated KEY=VALUE pairs, each forwarded as a
@@ -145,3 +184,7 @@ buildctl build \
   --output "type=image,name=${image},push=true,registry.insecure=true"
 
 echo "pushed ${image}"
+
+for alias in ${ALIAS_TAGS:-}; do
+  alias_tag "${alias}"
+done
