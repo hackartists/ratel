@@ -67,7 +67,7 @@ test.describe.serial("Space waiting greeting", () => {
     await editor.click();
     await editor.fill(greetingText);
     await expect(page.getByTestId("greeting-save")).toBeEnabled({ timeout: 10000 });
-    await section.screenshot({ path: test.info().outputPath("greeting-settings-section.png") });
+    await section.screenshot({ path: test.info().outputPath("greeting-settings-section.png"), animations: "disabled" });
     await clickNoNav(page, { testId: "greeting-save" });
     await expect(page.getByTestId("greeting-save")).toBeDisabled({ timeout: 15000 });
 
@@ -88,7 +88,7 @@ test.describe.serial("Space waiting greeting", () => {
     const greetingBox = await greeting.boundingBox();
     const headingBox = await card.locator(".waiting-card__heading").boundingBox();
     expect(greetingBox.y + greetingBox.height).toBeLessThanOrEqual(headingBox.y);
-    await card.screenshot({ path: test.info().outputPath("greeting-waiting-card.png") });
+    await card.screenshot({ path: test.info().outputPath("greeting-waiting-card.png"), animations: "disabled" });
   });
 
   test("Admin: the greeting is locked once the space has started", async ({ page }) => {
