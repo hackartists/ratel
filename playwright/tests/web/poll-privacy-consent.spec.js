@@ -14,7 +14,7 @@ import {
 // Poll privacy-consent question type — covers roadmap/poll-privacy-consent.md
 // acceptance criteria:
 //   - Designer can add a privacy_consent question, author terms.
-//   - Participant sees terms, must agree before the phone field activates.
+//   - Participant sees terms, must pick "I agree" before the phone field shows.
 //   - Participant can verify a phone number via SMS code (bypass "000000").
 //   - Submitting without agreement is rejected (submit stays disabled).
 //   - Submitting with a bad/unverified code is rejected server-side.
@@ -182,12 +182,11 @@ test.describe.serial("Poll privacy-consent question", () => {
 
     const submitBtn = page.getByRole("button", { name: /^(Submit|제출)$/ });
 
-    // Phone section should start disabled (agreement not yet checked).
-    await expect(page.getByTestId("pc-phone-section")).toHaveAttribute("data-disabled", "true");
-
-    // Check agreement — phone section activates.
-    await page.getByTestId("pc-agree-checkbox").check();
-    await expect(page.getByTestId("pc-phone-section")).toHaveAttribute("data-disabled", "false");
+    // The phone section stays hidden until the participant picks "I agree".
+    await expect(page.getByTestId("pc-phone-section")).toHaveCount(0);
+    await page.getByTestId("pc-agree-option").click();
+    await expect(page.getByTestId("pc-agree-option")).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("pc-phone-section")).toBeVisible();
 
     // Enter phone + send/verify code with the bypass test code.
     const phone = `+8210${Date.now().toString().slice(-8)}`;
