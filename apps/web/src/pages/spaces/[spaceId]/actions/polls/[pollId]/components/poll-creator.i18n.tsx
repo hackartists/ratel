@@ -60,6 +60,8 @@ const en = {
   condition_empty: "No earlier single or multiple choice question to branch on.",
   condition_add: "+ Add display condition",
   terminate_hint: "End the poll when this option is chosen:",
+  termination_message_label: "Termination notice (optional)",
+  termination_message_placeholder: "Shown in the confirmation when this answer ends the survey. Leave empty to use the default message.",
 };
 
 const ko: Record<keyof typeof en, string> = {
@@ -121,6 +123,8 @@ const ko: Record<keyof typeof en, string> = {
   condition_empty: "조건으로 사용할 앞선 단일/복수 선택 문항이 없습니다.",
   condition_add: "+ 노출 조건 추가",
   terminate_hint: "이 선택지를 고르면 설문 종료:",
+  termination_message_label: "종료 안내 문구 (선택)",
+  termination_message_placeholder: "이 응답으로 설문이 종료될 때 확인 창에 표시됩니다. 비워 두면 기본 문구가 사용됩니다.",
 };
 
 export const i18n = { en, ko };
@@ -184,6 +188,8 @@ export interface PollCreatorI18n {
   conditionEmpty: string;
   conditionAdd: string;
   terminateHint: string;
+  terminationMessageLabel: string;
+  terminationMessagePlaceholder: string;
 }
 
 export function usePollCreatorI18n(): PollCreatorI18n {
@@ -247,5 +253,7 @@ export function usePollCreatorI18n(): PollCreatorI18n {
     conditionEmpty: t("condition_empty"),
     conditionAdd: t("condition_add"),
     terminateHint: t("terminate_hint"),
+    terminationMessageLabel: t("termination_message_label"),
+    terminationMessagePlaceholder: t("termination_message_placeholder"),
   };
 }

@@ -61,6 +61,10 @@ function convertToQtype(existing: Question, target: QType): Question {
   const opts = options.length === 0 ? ["", ""] : options;
   const display_condition = existing.display_condition ?? null;
   const terminate_on = terminateOn(existing);
+  const termination_message =
+    existing.answer_type === "single_choice" || existing.answer_type === "multiple_choice" || existing.answer_type === "privacy_consent"
+      ? (existing.termination_message ?? null)
+      : null;
   switch (target) {
     case "single":
       return {
@@ -74,6 +78,7 @@ function convertToQtype(existing: Question, target: QType): Question {
         allow_other: null,
         terminate_on,
         display_condition,
+        termination_message,
       };
     case "multi":
       return {
@@ -87,6 +92,7 @@ function convertToQtype(existing: Question, target: QType): Question {
         allow_other: null,
         terminate_on,
         display_condition,
+        termination_message,
       };
     case "subjective":
       return { answer_type: "subjective", title, html_title, description: "", is_required: null, display_condition };
@@ -114,6 +120,7 @@ function convertToQtype(existing: Question, target: QType): Question {
         terms_body_html: "",
         is_required: null,
         display_condition,
+        termination_message,
       };
   }
 }
@@ -381,6 +388,17 @@ export function PollContentCard() {
                   return next;
                 });
               }}
+              onTerminationMessageChange={(i, value) => {
+                setQuestions((qs) =>
+                  qs.map((q, qi) => {
+                    if (qi !== i) return q;
+                    if (q.answer_type === "single_choice" || q.answer_type === "multiple_choice" || q.answer_type === "privacy_consent") {
+                      return { ...q, termination_message: value.trim() === "" ? null : value };
+                    }
+                    return q;
+                  }),
+                );
+              }}
               onBlurSave={() => saveQuestions(questionsRef.current)}
             />
           ))}
@@ -404,6 +422,7 @@ export function PollContentCard() {
                     allow_other: null,
                     terminate_on: [],
                     display_condition: null,
+                    termination_message: null,
                   } as Question,
                 ];
                 saveQuestions(next);
@@ -441,6 +460,7 @@ interface QuestionBlockProps {
   onSubjectiveChange: (idx: number, value: string) => void;
   onLinearChange: (idx: number, min: number, max: number) => void;
   onPrivacyConsentChange: (idx: number, patch: { terms_title?: string; terms_body_html?: string }) => void;
+  onTerminationMessageChange: (idx: number, value: string) => void;
   onBlurSave: () => void;
 }
 
@@ -462,6 +482,7 @@ function QuestionBlock({
   onSubjectiveChange,
   onLinearChange,
   onPrivacyConsentChange,
+  onTerminationMessageChange,
   onBlurSave,
 }: QuestionBlockProps) {
   const qtype = qtypeStr(question);
@@ -476,6 +497,11 @@ function QuestionBlock({
   const conditionRules = conditionToRules(condition, pollId);
   const choiceOpts = choiceOptions(question);
   const stops = terminateOn(question);
+  const canTerminate = isPrivacyConsent || stops.length > 0;
+  const customTerminationMessage =
+    question.answer_type === "single_choice" || question.answer_type === "multiple_choice" || question.answer_type === "privacy_consent"
+      ? (question.termination_message ?? "")
+      : "";
 
   return (
     <div className="q-block" data-qtype={qtype} data-testid={`poll-question-${idx}`}>
@@ -594,6 +620,16 @@ function QuestionBlock({
             )}
           </div>
         </div>
+      )}
+
+      {canTerminate && (
+        <TerminationMessageField
+          idx={idx}
+          value={customTerminationMessage}
+          tr={tr}
+          onChange={onTerminationMessageChange}
+          onBlurSave={onBlurSave}
+        />
       )}
 
       {idx > 0 && (
@@ -767,6 +803,43 @@ function LinearBody({
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Optional author copy shown in the termination confirmation instead of the
+ * default message. Kept as a local draft so typing spaces or line breaks is
+ * not swallowed by the blank-to-null normalization of the saved value.
+ */
+function TerminationMessageField({
+  idx,
+  value,
+  tr,
+  onChange,
+  onBlurSave,
+}: {
+  idx: number;
+  value: string;
+  tr: ReturnType<typeof usePollCreatorI18n>;
+  onChange: (idx: number, value: string) => void;
+  onBlurSave: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  return (
+    <div className="field w-full" data-testid={`poll-question-${idx}-termination`}>
+      <label className="field__label">{tr.terminationMessageLabel}</label>
+      <textarea
+        className="textarea"
+        data-testid={`poll-question-${idx}-termination-message`}
+        placeholder={tr.terminationMessagePlaceholder}
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          onChange(idx, e.target.value);
+        }}
+        onBlur={onBlurSave}
+      />
     </div>
   );
 }

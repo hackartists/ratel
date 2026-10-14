@@ -45,6 +45,8 @@ pub enum PollResultSummary {
     PrivacyConsent {
         total_count: i64,
         agreed_count: i64,
+        /// Respondents who declined the consent, which ended the poll for them.
+        declined_count: i64,
     },
 }
 
@@ -177,9 +179,11 @@ impl From<SpacePollSummary> for PollResultSummary {
             SpacePollSummary::PrivacyConsent {
                 total_count,
                 agreed_count,
+                declined_count,
             } => Self::PrivacyConsent {
                 total_count,
                 agreed_count,
+                declined_count,
             },
         }
     }

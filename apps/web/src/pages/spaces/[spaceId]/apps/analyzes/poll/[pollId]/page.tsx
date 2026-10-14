@@ -218,7 +218,7 @@ function QuestionCard({
     );
   }
 
-  const bars = buildChoiceStats(question, summary, tr.otherLabel);
+  const bars = buildChoiceStats(question, summary, tr);
   const pieGradient = buildPieGradient(bars);
   const total = summary.total_count;
   const hasPieData = bars.some((s) => s.count > 0);
@@ -353,8 +353,8 @@ function selectSummaries(result: PollResultResponse, key: string): PollResultSum
   return result.summaries;
 }
 
-function buildChoiceStats(question: Question, summary: PollResultSummary, otherLabel: string): AnalyzeChoiceStat[] {
-  const stats = buildChoiceStatsRaw(question, summary, otherLabel);
+function buildChoiceStats(question: Question, summary: PollResultSummary, tr: SpaceAnalyzesAppI18n): AnalyzeChoiceStat[] {
+  const stats = buildChoiceStatsRaw(question, summary, tr);
   const total = stats.reduce((sum, s) => sum + s.count, 0);
   for (const s of stats) s.percentage = total > 0 ? (s.count / total) * 100 : 0;
   const max = stats.reduce((m, s) => Math.max(m, s.count), 0);
@@ -377,7 +377,8 @@ function optionStats(options: string[], answers: Record<string, number | undefin
   return options.map((text, idx) => buildChoiceStat(String(idx + 1), text, answers[String(idx)] ?? 0, totalCount, idx));
 }
 
-function buildChoiceStatsRaw(question: Question, summary: PollResultSummary, otherLabel: string): AnalyzeChoiceStat[] {
+function buildChoiceStatsRaw(question: Question, summary: PollResultSummary, tr: SpaceAnalyzesAppI18n): AnalyzeChoiceStat[] {
+  const otherLabel = tr.otherLabel;
   const q = question.answer_type;
   const s = summary.answer_type;
   if (
@@ -405,6 +406,12 @@ function buildChoiceStatsRaw(question: Question, summary: PollResultSummary, oth
   }
   if (question.answer_type === "dropdown" && summary.answer_type === "dropdown") {
     return optionStats(question.options, summary.answers, summary.total_count);
+  }
+  if (question.answer_type === "privacy_consent" && summary.answer_type === "privacy_consent") {
+    return [
+      buildChoiceStat("1", tr.consentAgreedLabel, summary.agreed_count, summary.total_count, 0),
+      buildChoiceStat("2", tr.consentDeclinedLabel, summary.declined_count, summary.total_count, 1),
+    ];
   }
   if (question.answer_type === "linear_scale" && summary.answer_type === "linear_scale") {
     const out: AnalyzeChoiceStat[] = [];

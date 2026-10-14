@@ -12,7 +12,7 @@ import type { Answer, AnswerRule, Question, QuestionCondition } from "@ratel/ts-
 export interface PollFlow {
   /** `visible[i]` is true when question `i` is shown to the respondent. */
   visible: boolean[];
-  /** Index of the visible choice question whose answer ended the poll. */
+  /** Index of the visible question whose answer ended the poll. */
   terminatedAt: number | null;
 }
 
@@ -41,6 +41,28 @@ export function answerMatchesValues(question: Question, answer: Answer | undefin
     const value = options[idx];
     return value !== undefined && allowed.includes(value);
   });
+}
+
+/**
+ * Whether `answer` ends the poll at `question`: a choice answer picking a
+ * `terminate_on` option, or a declined privacy consent. Mirrors
+ * `answer_terminates` in `condition.rs`.
+ */
+export function answerTerminates(question: Question, answer: Answer | undefined): boolean {
+  if (question.answer_type === "privacy_consent") {
+    return answer?.answer_type === "privacy_consent" && answer.declined;
+  }
+  const stops = terminateOn(question);
+  return stops.length > 0 && answerMatchesValues(question, answer, stops);
+}
+
+/** The author's custom termination notice for `question`, or `null` when unset or blank. */
+export function terminationMessage(question: Question): string | null {
+  if (question.answer_type !== "single_choice" && question.answer_type !== "multiple_choice" && question.answer_type !== "privacy_consent") {
+    return null;
+  }
+  const message = question.termination_message ?? "";
+  return message.trim() === "" ? null : message;
 }
 
 /** Text of the first picked option that ends the poll, or `null` when the answer picks none. */
@@ -81,8 +103,7 @@ export function evaluateFlow(questions: Question[], answers: Record<number, Answ
     const shown = cond === null || conditionSatisfied(cond, questions, (j) => (j < i && visible[j] ? answers[j] : undefined));
     visible[i] = shown;
     if (!shown) continue;
-    const stops = terminateOn(q);
-    if (stops.length > 0 && answerMatchesValues(q, answers[i], stops)) {
+    if (answerTerminates(q, answers[i])) {
       terminatedAt = i;
       break;
     }
@@ -140,7 +161,7 @@ export function resolveNavigation(
 export interface AnswerChange {
   /** Answers with every question that became hidden dropped. */
   answers: Record<number, Answer>;
-  /** True when this answer picked a termination option, so the poll ends here. */
+  /** True when this answer picked a termination option or declined consent, so the poll ends here. */
   terminated: boolean;
   /** First visible question after the answered one, if any. */
   upcomingIdx: number | undefined;
@@ -191,7 +212,7 @@ export function emptyAnswerFor(question: Question): Answer {
     case "linear_scale":
       return { answer_type: "linear_scale", answer: null };
     case "privacy_consent":
-      return { answer_type: "privacy_consent", agreed: false, phone: null, code: null };
+      return { answer_type: "privacy_consent", agreed: false, declined: false, phone: null, code: null };
   }
 }
 

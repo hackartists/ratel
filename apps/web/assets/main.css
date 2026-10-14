@@ -27906,6 +27906,16 @@ body.comments-panel-resizing {
   transform: none;
   box-shadow: none;
 }
+.poll-btn--danger {
+  background: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 2px 16px rgba(239, 68, 68, 0.25);
+}
+.poll-btn--danger:hover {
+  background: #dc2626;
+  box-shadow: 0 4px 24px rgba(239, 68, 68, 0.4);
+  transform: translateY(-1px);
+}
 
 /* ── Banner ─────────────────────────────────────── */
 .poll-banner {

@@ -66,6 +66,7 @@ async fn seed_gated_space(ctx: &TestContext) -> (String, String, String) {
             allow_other: None,
             display_condition: None,
             terminate_on: vec![],
+            termination_message: None,
         }));
     SpacePoll::repository()
         .insert(&gating_poll)

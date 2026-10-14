@@ -122,13 +122,26 @@ impl QuestionCondition {
     }
 }
 
+/// Whether `answer` ends the poll at `question`: a single- or multiple-choice
+/// answer picking one of the question's `terminate_on` options, or a declined
+/// privacy consent. Mirrored by `answerTerminates` in the web `poll-flow.ts`.
+pub fn answer_terminates(question: &Question, answer: &Answer) -> bool {
+    match (question, answer) {
+        (Question::PrivacyConsent(_), Answer::PrivacyConsent { declined, .. }) => *declined,
+        _ => question.terminate_on().is_some_and(|terminate_on| {
+            !terminate_on.is_empty() && answer_matches_values(question, answer, terminate_on)
+        }),
+    }
+}
+
 /// Which questions a respondent is shown for a given set of answers.
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct PollFlow {
     /// `visible[i]` is true when question `i` is presented to the respondent.
     /// Questions after a termination are never visible.
     pub visible: Vec<bool>,
-    /// Index of the visible choice question whose answer ended the poll.
+    /// Index of the visible question whose answer ended the poll: a choice
+    /// question's termination option or a declined privacy consent.
     pub terminated_at: Option<usize>,
 }
 
@@ -152,11 +165,12 @@ pub fn evaluate_flow(questions: &[Question], answers: &[Answer]) -> PollFlow {
         if !shown {
             continue;
         }
-        if let (Some(terminate_on), Some(answer)) = (question.terminate_on(), answers.get(i)) {
-            if !terminate_on.is_empty() && answer_matches_values(question, answer, terminate_on) {
-                terminated_at = Some(i);
-                break;
-            }
+        if answers
+            .get(i)
+            .is_some_and(|answer| answer_terminates(question, answer))
+        {
+            terminated_at = Some(i);
+            break;
         }
     }
     PollFlow {
@@ -169,7 +183,8 @@ pub fn evaluate_flow(questions: &[Question], answers: &[Answer]) -> PollFlow {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PollAnswerOutcome {
     /// Answers to persist: hidden and post-termination questions are reset to
-    /// the empty answer of their type.
+    /// the empty answer of their type, and a declined privacy consent never
+    /// keeps a phone number or code.
     pub answers: Vec<Answer>,
     /// False only when a termination option ended the poll before any other
     /// question was answered.
@@ -193,7 +208,16 @@ pub fn evaluate_answers(questions: &[Question], answers: &[Answer]) -> Option<Po
             if !validate_answer(question, answer) {
                 return None;
             }
-            normalized.push(answer.clone());
+            let answer = match answer {
+                Answer::PrivacyConsent { declined: true, .. } => Answer::PrivacyConsent {
+                    agreed: false,
+                    declined: true,
+                    phone: None,
+                    code: None,
+                },
+                other => other.clone(),
+            };
+            normalized.push(answer);
         } else {
             if answer.is_answered() {
                 return None;
@@ -483,6 +507,106 @@ mod tests {
             ..single(&["Go", "Stop"])
         })];
         assert!(!validate_question_flow(&bad_terminate));
+    }
+
+    fn consent(required: bool) -> Question {
+        Question::PrivacyConsent(
+            crate::features::spaces::pages::actions::actions::poll::PrivacyConsentQuestion {
+                title: "consent".into(),
+                terms_title: "terms".into(),
+                terms_body_html: "<p>terms</p>".into(),
+                is_required: Some(required),
+                ..Default::default()
+            },
+        )
+    }
+
+    fn declined() -> Answer {
+        Answer::PrivacyConsent {
+            agreed: false,
+            declined: true,
+            phone: None,
+            code: None,
+        }
+    }
+
+    fn agreed(phone: Option<&str>) -> Answer {
+        Answer::PrivacyConsent {
+            agreed: true,
+            declined: false,
+            phone: phone.map(str::to_string),
+            code: Some("123456".into()),
+        }
+    }
+
+    #[test]
+    fn declined_privacy_consent_terminates_the_flow() {
+        let qs = vec![
+            consent(true),
+            subjective(true, None),
+            subjective(true, None),
+        ];
+        let flow = evaluate_flow(&qs, &[declined(), no_text(), no_text()]);
+        assert_eq!(flow.terminated_at, Some(0));
+        assert_eq!(flow.visible, vec![true, false, false]);
+        let out = evaluate_answers(&qs, &[declined(), no_text(), no_text()]).expect("valid");
+        assert!(!out.completed);
+        assert_eq!(out.answers[0], declined());
+    }
+
+    #[test]
+    fn declined_privacy_consent_mid_poll_is_complete() {
+        let qs = vec![
+            subjective(true, None),
+            consent(true),
+            subjective(true, None),
+        ];
+        let out = evaluate_answers(&qs, &[text("hi"), declined(), no_text()]).expect("valid");
+        assert!(out.completed);
+        assert!(evaluate_answers(&qs, &[text("hi"), declined(), text("late")]).is_none());
+    }
+
+    #[test]
+    fn declined_privacy_consent_drops_phone_and_code() {
+        let qs = vec![consent(true)];
+        let with_phone = Answer::PrivacyConsent {
+            agreed: false,
+            declined: true,
+            phone: Some("+821012345678".into()),
+            code: Some("123456".into()),
+        };
+        let out = evaluate_answers(&qs, &[with_phone]).expect("valid");
+        assert_eq!(out.answers[0], declined());
+    }
+
+    #[test]
+    fn privacy_consent_cannot_be_agreed_and_declined() {
+        let qs = vec![consent(false)];
+        let both = Answer::PrivacyConsent {
+            agreed: true,
+            declined: true,
+            phone: Some("+821012345678".into()),
+            code: None,
+        };
+        assert!(evaluate_answers(&qs, &[both]).is_none());
+    }
+
+    #[test]
+    fn unanswered_optional_privacy_consent_does_not_terminate() {
+        let qs = vec![consent(false), subjective(true, None)];
+        let flow = evaluate_flow(&qs, &[Answer::empty_for(&qs[0]), text("hi")]);
+        assert_eq!(flow.terminated_at, None);
+        assert!(evaluate_answers(&qs, &[Answer::empty_for(&qs[0]), text("hi")]).is_some());
+    }
+
+    #[test]
+    fn agreed_privacy_consent_still_requires_a_phone() {
+        let qs = vec![consent(true), subjective(false, None)];
+        assert!(evaluate_answers(&qs, &[agreed(None), no_text()]).is_none());
+        let out =
+            evaluate_answers(&qs, &[agreed(Some("+821012345678")), no_text()]).expect("valid");
+        assert!(out.completed);
+        assert_eq!(evaluate_flow(&qs, &out.answers).terminated_at, None);
     }
 
     #[test]

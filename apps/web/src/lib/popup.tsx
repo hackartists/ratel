@@ -104,7 +104,7 @@ export function PopupZone() {
           {config.title !== undefined && <div className="font-bold text-[20px] text-text-primary">{config.title}</div>}
           {config.description !== undefined && (
             // `.popup-description` caps the width (main.css).
-            <div className="popup-description text-text-primary-muted">{config.description}</div>
+            <div className="popup-description whitespace-pre-line text-text-primary-muted">{config.description}</div>
           )}
           {config.content}
         </div>

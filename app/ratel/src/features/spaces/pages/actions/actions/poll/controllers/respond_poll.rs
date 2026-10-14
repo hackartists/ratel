@@ -224,6 +224,7 @@ pub async fn respond_poll(
             agreed,
             phone,
             code,
+            ..
         } = answer
         {
             if *agreed {
