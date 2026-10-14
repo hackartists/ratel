@@ -56071,3 +56071,64 @@ html[data-theme="light"] .ff-home .featured-title {
   position: relative;
   z-index: 3;
 }
+
+.greeting-section__desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--panel-text);
+}
+.greeting-section__editor .ratel-editor {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.greeting-section__save {
+  align-self: flex-end;
+  padding: 8px 20px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+  background: var(--color-primary, #fcb300);
+  color: #000;
+  cursor: pointer;
+}
+.greeting-section__save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.waiting-greeting {
+  width: 100%;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--waiting-text-primary);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.waiting-greeting > :first-child { margin-top: 0; }
+.waiting-greeting > :last-child { margin-bottom: 0; }
+.waiting-greeting p { margin: 0 0 8px; }
+.waiting-greeting h1,
+.waiting-greeting h2,
+.waiting-greeting h3 {
+  margin: 0 0 8px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.waiting-greeting h1 { font-size: 20px; }
+.waiting-greeting h2 { font-size: 18px; }
+.waiting-greeting h3 { font-size: 16px; }
+.waiting-greeting ul,
+.waiting-greeting ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.waiting-greeting ul { list-style: disc; }
+.waiting-greeting ol { list-style: decimal; }
+.waiting-greeting a {
+  color: var(--color-primary, #fcb300);
+  text-decoration: underline;
+}
+.waiting-greeting img {
+  max-width: 100%;
+  border-radius: 8px;
+}

@@ -9,6 +9,7 @@ import { useLanguage } from "@/lib/language";
 import { usePopup } from "@/lib/popup";
 import { Theme, useTheme } from "@/lib/theme";
 import { AppsSection } from "./apps-section";
+import { GreetingSection } from "./greeting-section";
 import { ReportsSection } from "./reports-section";
 
 // app/ratel/src/features/spaces/pages/index/settings_panel/component.rs (`SettingsPanel`).
@@ -54,6 +55,7 @@ export function SettingsPanel({
         </button>
       </div>
       <div className="settings-panel__body">
+        {isAdmin && spaceId !== undefined && <GreetingSection spaceId={spaceId} />}
         {isAdmin && spaceId !== undefined && (
           <Suspense fallback={null}>
             <AppsSection spaceId={spaceId} />

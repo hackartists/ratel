@@ -51,6 +51,7 @@ import { i18n as followUserInvite } from "@/pages/spaces/[spaceId]/actions/follo
 import { i18n as followUserList } from "@/pages/spaces/[spaceId]/actions/follows/[followId]/components/follow-user-list.i18n";
 import { i18n as followViewer } from "@/pages/spaces/[spaceId]/actions/follows/[followId]/components/follow-viewer.i18n";
 import { i18n as general } from "@/pages/spaces/[spaceId]/apps/general/i18n";
+import { i18n as greetingSection } from "@/components/space/settings-panel/greeting-section.i18n";
 import { i18n as home } from "@/pages/[username]/components/team-home/i18n";
 import { i18n as homeArena } from "@/pages/components/i18n";
 import { i18n as incentivePool } from "@/pages/spaces/[spaceId]/apps/incentive-pool/i18n";
@@ -171,6 +172,7 @@ export const modules = {
   followUserList,
   followViewer,
   general,
+  greetingSection,
   home,
   homeArena,
   incentivePool,
