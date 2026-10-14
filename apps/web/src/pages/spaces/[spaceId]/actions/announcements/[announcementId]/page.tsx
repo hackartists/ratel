@@ -87,7 +87,7 @@ function AnnouncementEditor({ action }: { action: SpaceActionSummary }) {
         onBack={() => navigate(-1)}
         onCancel={() => navigate(-1)}
       />
-      <div className="flex flex-col gap-5 py-6 px-4 mx-auto w-full max-w-[760px]">
+      <div className="relative z-[1] flex flex-col gap-5 py-6 px-4 mx-auto w-full max-w-[760px]">
         <input
           className="title-input"
           data-testid="announcement-title-input"

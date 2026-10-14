@@ -791,8 +791,10 @@ test.describe.serial("Space announcement", () => {
     await expect(page.locator(".arena-topbar .back-btn")).toBeVisible();
     await expect(page.getByTestId("action-close")).toHaveCount(0);
     await expect(page.getByTestId("action-publish")).toHaveCount(0);
+    await clickNoNav(page, { testId: "announcement-title-input" });
     await fill(page, { testId: "announcement-title-input" }, announcementTitle);
     const editor = await getEditor(page);
+    await editor.click();
     await editor.fill(announcementBody);
     await commitAutosave(page);
     await page.waitForTimeout(500);
