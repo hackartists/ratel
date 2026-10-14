@@ -43,6 +43,13 @@ pub enum SpaceError {
         ko = "보상 분배에 실패했습니다."
     )]
     RewardDistributionFailed,
+
+    #[error("greeting is locked once the space has started")]
+    #[translate(
+        en = "The greeting can no longer be changed after the space has started",
+        ko = "스페이스가 시작된 후에는 인사말을 변경할 수 없습니다."
+    )]
+    GreetingLocked,
 }
 
 #[cfg(feature = "server")]

@@ -67,6 +67,7 @@ mod report_tests;
 mod required_attributes_gating_tests;
 mod sampling_tests;
 mod space_admin_action_bypass_tests;
+mod space_greeting_tests;
 mod space_action_notification_tests;
 mod space_member_tests;
 mod space_status_change_tests;

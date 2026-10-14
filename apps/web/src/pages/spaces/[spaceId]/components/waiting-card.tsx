@@ -4,6 +4,7 @@ import { useSpace } from "@/components/space/space-context";
 import { useEnumI18n } from "@/i18n/enums.i18n";
 import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { formatNumber } from "./format";
+import { WaitingGreeting } from "./waiting-greeting";
 
 // app/ratel/src/features/spaces/pages/index/waiting_card/component.rs (`WaitingCard`).
 
@@ -44,6 +45,7 @@ export function WaitingCard({ prereqs }: { prereqs: SpaceActionSummary[] }) {
 
   return (
     <div className="waiting-card" data-testid="card-waiting">
+      <WaitingGreeting />
       <div className="waiting-card__icon">
         <svg
           fill="none"

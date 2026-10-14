@@ -20,4 +20,9 @@ sampling_enabled: boolean,
  * Whether new participants may still join while the space is in
  * `Sampling`.
  */
-sampling_recruit_open: boolean, can_participate: boolean, participants: number, participated: boolean, participant_display_name: string | null, participant_profile_url: string | null, participant_username: string | null, remains: number, quota: number, is_report: boolean, logo: string, has_prerequisite: boolean, has_privacy_consent_question: boolean, started_at: number | null, };
+sampling_recruit_open: boolean, can_participate: boolean, participants: number, participated: boolean, participant_display_name: string | null, participant_profile_url: string | null, participant_username: string | null, remains: number, quota: number, is_report: boolean, logo: string, has_prerequisite: boolean, has_privacy_consent_question: boolean, started_at: number | null,
+/**
+ * Waiting-screen greeting (HTML) shown to Candidates who finished the
+ * prerequisites. Empty when the admin has not written one.
+ */
+greeting: string, };

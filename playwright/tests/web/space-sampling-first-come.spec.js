@@ -23,6 +23,7 @@ test.describe.serial("Sampling app — first come", () => {
   test.describe.configure({ timeout: 180000 });
 
   const stamp = Date.now();
+  const greeting = `Thanks for joining the sample ${stamp}`;
   let space;
   const users = {};
 
@@ -51,6 +52,10 @@ test.describe.serial("Sampling app — first come", () => {
     });
     const res = await page.request.patch(`/api/spaces/${space.spaceId}`, { data: { req: { join_anytime: false } } });
     expect(res.ok(), await res.text()).toBeTruthy();
+    const greetingRes = await page.request.patch(`/api/spaces/${space.spaceId}`, {
+      data: { req: { greeting: `<p>${greeting}</p>` } },
+    });
+    expect(greetingRes.ok(), await greetingRes.text()).toBeTruthy();
     await publishSpacePublic(page, space.spaceUrl);
 
     const answers = { u1: [0, 0, 0], u2: [1, 0, 0], u3: [1, 0, 0], u4: [0, 1, 1] };
@@ -64,6 +69,7 @@ test.describe.serial("Sampling app — first come", () => {
     const page = await openAs("u1");
     await expect(page.getByTestId("card-sampling")).toBeVisible({ timeout: 30000 });
     await expect(page.getByTestId("sampling-state-waiting")).toBeVisible();
+    await expect(page.getByTestId("card-sampling").getByTestId("waiting-greeting")).toHaveText(greeting);
   });
 
   test("B2: a respondent outside the population is told so", async () => {
@@ -72,6 +78,7 @@ test.describe.serial("Sampling app — first come", () => {
       "You do not meet the population conditions, so you cannot take part in this space.",
     );
     await expect(page.getByTestId("btn-sampling-enter")).toHaveCount(0);
+    await expect(page.getByTestId("card-sampling").getByTestId("waiting-greeting")).toHaveText(greeting);
   });
 
   test("B3: the open dashboard flags population shortages", async ({ page }) => {

@@ -190,6 +190,7 @@ pub async fn get_space(
         has_prerequisite,
         has_privacy_consent_question,
         started_at: space.started_at,
+        greeting: space.greeting,
     })
 }
 
@@ -250,10 +251,16 @@ pub struct SpaceResponse {
     #[serde(default)]
     pub has_privacy_consent_question: bool,
     pub started_at: Option<i64>,
+    /// Waiting-screen greeting (HTML) shown to Candidates who finished the
+    /// prerequisites. Empty when the admin has not written one.
+    #[serde(default)]
+    pub greeting: String,
 }
 
+/// Removes inline `color:` declarations so rich text authored in one theme
+/// stays readable in the other.
 #[cfg(feature = "server")]
-fn strip_color_styles(html: &str) -> String {
+pub(crate) fn strip_color_styles(html: &str) -> String {
     let re = regex::Regex::new(r"(?i)\s*color\s*:\s*[^;]+;?").unwrap();
     re.replace_all(html, "").to_string()
 }

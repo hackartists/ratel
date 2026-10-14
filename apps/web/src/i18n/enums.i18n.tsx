@@ -503,6 +503,7 @@ const en = {
     UpdateFailed: "Failed to update space",
     InvalidPanelQuota: "Invalid panel quota",
     RewardDistributionFailed: "Reward distribution failed",
+    GreetingLocked: "The greeting can no longer be changed after the space has started",
   },
   // app/ratel/src/features/spaces/pages/actions/actions/follow/types/error.rs `SpaceFollowError`
   SpaceFollowError: {
@@ -1116,6 +1117,7 @@ const ko: { [T in keyof typeof en]: Record<keyof (typeof en)[T], string> } = {
     UpdateFailed: "스페이스 업데이트에 실패했습니다.",
     InvalidPanelQuota: "유효하지 않은 패널 정원입니다.",
     RewardDistributionFailed: "보상 분배에 실패했습니다.",
+    GreetingLocked: "스페이스가 시작된 후에는 인사말을 변경할 수 없습니다.",
   },
   SpaceFollowError: {
     CannotFollowSelf: "자기 자신을 팔로우할 수 없습니다.",

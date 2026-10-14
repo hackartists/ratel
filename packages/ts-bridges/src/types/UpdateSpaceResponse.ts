@@ -5,4 +5,4 @@ import type { SpacePublishState } from "./SpacePublishState";
 import type { SpaceStatus } from "./SpaceStatus";
 import type { SpaceVisibility } from "./SpaceVisibility";
 
-export type UpdateSpaceResponse = { pk: Partition, sk: EntityType, created_at: number, updated_at: number, status: SpaceStatus | null, publish_state: SpacePublishState, visibility: SpaceVisibility, content: string, anonymous_participation: boolean, join_anytime: boolean, quota: number, remains: number, logo: string, started_at: number | null, };
+export type UpdateSpaceResponse = { pk: Partition, sk: EntityType, created_at: number, updated_at: number, status: SpaceStatus | null, publish_state: SpacePublishState, visibility: SpaceVisibility, content: string, anonymous_participation: boolean, join_anytime: boolean, quota: number, remains: number, logo: string, started_at: number | null, greeting: string, };
