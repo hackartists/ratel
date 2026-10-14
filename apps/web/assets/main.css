@@ -30769,7 +30769,7 @@ a.file-item { text-decoration: none; color: inherit; cursor: pointer; }
   --waiting-text-primary: var(--dark, #f0f0f5) var(--light, #12121a);
   --waiting-shadow: var(--dark, rgba(0,0,0,0.4)) var(--light, rgba(0,0,0,0.08));
 
-  width: 380px;
+  width: 420px;
   padding: 36px 28px 28px;
   background: var(--waiting-bg);
   backdrop-filter: blur(24px);
@@ -30939,11 +30939,36 @@ a.file-item { text-decoration: none; color: inherit; cursor: pointer; }
   color: var(--waiting-text);
 }
 
+.waiting-card__footer {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.waiting-card__footer .waiting-card__participants {
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 24px;
+}
+
+.waiting-card__footer .waiting-card__participants-count {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.waiting-card__footer .waiting-card__participants-label {
+  font-size: 10px;
+  line-height: 1;
+}
+
 .waiting-card__status {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
+  padding: 8px 14px;
   border-radius: 24px;
   background: var(--dark, rgba(252,179,0,0.08)) var(--light, rgba(252,179,0,0.1));
   border: 1px solid rgba(252,179,0,0.2);
@@ -56084,34 +56109,77 @@ html[data-theme="light"] .ff-home .featured-title {
   z-index: 3;
 }
 
-.greeting-section__desc {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--panel-text);
+.greeting-settings__body {
+  max-width: 960px;
 }
-.greeting-section__editor .ratel-editor .re-toolbar {
-  position: static;
-  padding: 6px 8px;
-  gap: 2px;
+.greeting-settings__section {
+  flex: 1;
+  gap: 16px;
 }
-.greeting-section__editor .ratel-editor .re-content {
-  min-height: 140px;
-  max-height: 320px;
-  padding: 14px 16px;
-}
-.greeting-section__save {
-  align-self: flex-end;
-  padding: 8px 20px;
-  border-radius: 10px;
-  font-weight: 700;
+.greeting-settings__locked {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--dark, rgba(252, 179, 0, 0.06)) var(--light, rgba(252, 179, 0, 0.1));
+  border: 1px solid rgba(252, 179, 0, 0.24);
+  color: var(--arena-text-primary);
   font-size: 13px;
-  background: var(--color-primary, #fcb300);
-  color: #000;
-  cursor: pointer;
+  line-height: 1.5;
 }
-.greeting-section__save:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+.greeting-settings__editor .ratel-editor {
+  border-radius: 14px;
+}
+.greeting-settings__editor .ratel-editor .re-toolbar {
+  position: static;
+}
+.greeting-settings__editor .ratel-editor .re-content {
+  min-height: max(360px, calc(100vh - 420px));
+  padding: 24px 28px;
+  font-size: 15px;
+  line-height: 1.7;
+}
+.greeting-settings__footer {
+  justify-content: space-between;
+}
+.greeting-settings__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--arena-accent-teal);
+}
+.greeting-settings__dot[data-dirty="true"] {
+  background: var(--arena-accent-gold);
+}
+.greeting-settings__save {
+  padding: 10px 28px;
+  font-size: 11px;
+}
+.greeting-settings__no-access {
+  position: relative;
+  z-index: 10;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 64px 28px;
+  text-align: center;
+}
+.greeting-settings__no-access-title {
+  font-family: var(--arena-font-display);
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  color: var(--arena-text-muted);
+}
+@media (max-width: 760px) {
+  .greeting-settings__editor .ratel-editor .re-content {
+    min-height: max(280px, calc(100vh - 360px));
+    padding: 16px 18px;
+  }
+  .greeting-settings__footer {
+    padding: 12px 14px;
+  }
 }
 
 .waiting-greeting {

@@ -85,6 +85,14 @@ export function isSpaceAdmin(role: SpaceUserRole): boolean {
   return role === "Creator";
 }
 
+/**
+ * Whether the waiting greeting may still change: only before the space starts
+ * (Rust `SpaceCommon::is_greeting_editable`).
+ */
+export function isGreetingEditable(status: SpaceResponse["status"]): boolean {
+  return status !== SpaceStatus.Ongoing && status !== SpaceStatus.Processing && status !== SpaceStatus.Finished;
+}
+
 export const spaceQueryKeys = {
   space: (spaceId: SpacePartition) => ["getSpace", spaceId] as const,
   role: (spaceId: SpacePartition) => ["getUserRole", spaceId] as const,
