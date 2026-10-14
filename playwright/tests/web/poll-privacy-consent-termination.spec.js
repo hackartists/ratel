@@ -91,8 +91,14 @@ test.describe.serial("Poll privacy-consent disagreement ends the survey", () => 
     const confirm = page.getByTestId("poll-terminate-confirm");
     await expect(confirm).toHaveText(label);
     await expect(confirm).toHaveAttribute("data-destructive", "true");
-    const bg = await confirm.evaluate((el) => getComputedStyle(el).backgroundColor);
-    const [r, g, b] = bg.match(/\d+(\.\d+)?/g).map(Number);
+    const { bg, rgb } = await confirm.evaluate((el) => {
+      const color = getComputedStyle(el).backgroundColor;
+      const ctx = document.createElement("canvas").getContext("2d");
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, 1, 1);
+      return { bg: color, rgb: Array.from(ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)) };
+    });
+    const [r, g, b] = rgb;
     expect(r, `confirm background ${bg} should be red`).toBeGreaterThan(180);
     expect(g, `confirm background ${bg} should be red`).toBeLessThan(120);
     expect(b, `confirm background ${bg} should be red`).toBeLessThan(120);
