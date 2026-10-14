@@ -123,8 +123,8 @@ jobs:
       #
       # Pointing RUSTUP_HOME inside the workspace puts toolchains/ and tmp/ on
       # one filesystem, so the rename stays within a device. The cost is a
-      # fresh toolchain download per run (~1 min); the cache above only holds
-      # ~/.cargo/bin and target/, so nothing else changes. Rustup proxies in
+      # fresh toolchain download per run (~1 min); the MinIO cache below only
+      # holds the cargo registry and target/, so nothing else changes. Rustup proxies in
       # CARGO_HOME read this variable, so cargo resolves the same toolchain.
       #
       # rust-check is the only self-hosted job that still calls
@@ -141,28 +141,35 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Restore cache
-        id: dx-check-cache
-        uses: actions/cache/restore@v5
-        with:
-          key: app-shell-build-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            app-shell-build-${{ runner.os }}-rust-
-          path: |
-            ~/.cargo/bin
-            target
+      # Same inputs already passed on an earlier run (any PR) → nothing to
+      # re-check. The hash covers the app/ratel crate closure, Cargo.lock,
+      # ts-bridges and this workflow file (scripts/image-input-hash.sh).
+      - name: Skip if these inputs already passed
+        id: pass
+        working-directory: ${{ github.workspace }}
+        run: |
+          hash=$(bash scripts/image-input-hash.sh rust-check)
+          echo "rust-check input hash: ${hash}"
+          echo "hash=${hash}" >> "$GITHUB_OUTPUT"
+          if bash scripts/ci-rust-cache.sh has-pass rust-check "${hash}"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        if: steps.pass.outputs.skip != 'true'
         with:
           components: clippy, rustfmt
           toolchain: stable
           cache: false
 
       - uses: cargo-bins/cargo-binstall@main
+        if: steps.pass.outputs.skip != 'true'
       - name: Install system dependencies
+        if: steps.pass.outputs.skip != 'true'
         # build-essential + pkg-config + openssl headers for openssl-sys.
         # No GTK/webkit/xdo/appindicator/rsvg/lld here — those existed only
         # for the Dioxus desktop/wasm checks this job used to run.
+        # pigz: parallel (de)compression for the MinIO target cache.
         run: |
           SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO="sudo"
           if command -v apt-get >/dev/null 2>&1; then
@@ -173,10 +180,22 @@ jobs:
               wget \
               file \
               pkg-config \
-              libssl-dev
+              libssl-dev \
+              pigz
+          elif command -v dnf >/dev/null 2>&1; then
+            $SUDO dnf install -y -q pigz || true
           fi
 
+      # MinIO instead of actions/cache: the old restore-only step never had
+      # a matching save, so every run compiled cold. Keyed on rustc -V +
+      # Cargo.lock, falling back to the newest slot (scripts/ci-rust-cache.sh).
+      - name: Restore cargo target from MinIO
+        if: steps.pass.outputs.skip != 'true'
+        working-directory: ${{ github.workspace }}
+        run: bash scripts/ci-rust-cache.sh restore rust-check target Cargo.lock
+
       - name: cargo check --features server
+        if: steps.pass.outputs.skip != 'true'
         env:
           RUSTFLAGS: "-D warnings"
           DYNAMO_TABLE_PREFIX: ratel-dev
@@ -184,6 +203,7 @@ jobs:
           cargo check --features server
 
       - name: cargo check --no-default-features --features tauri-web
+        if: steps.pass.outputs.skip != 'true'
         env:
           RUSTFLAGS: "-D warnings"
           DYNAMO_TABLE_PREFIX: ratel-dev
@@ -196,17 +216,30 @@ jobs:
       # `make gen-ts` renders the TS client with node (packages/ts-bridges/
       # scripts/gen-handlers.mjs). The cargo checks above no longer need it.
       - name: Setup Node
+        if: steps.pass.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: gen-ts drift check
+        if: steps.pass.outputs.skip != 'true'
         env:
           DYNAMO_TABLE_PREFIX: ratel-dev
         run: |
           make gen-ts
           git diff --exit-code -- ../../packages/ts-bridges
           test -z "$(git status --porcelain -- ../../packages/ts-bridges)"
+
+      # Saved even when a check fails: the compiled deps are still valid.
+      - name: Save cargo target to MinIO
+        if: ${{ !cancelled() && steps.pass.outputs.skip != 'true' }}
+        working-directory: ${{ github.workspace }}
+        run: bash scripts/ci-rust-cache.sh save rust-check target Cargo.lock
+
+      - name: Mark these inputs as passed
+        if: steps.pass.outputs.skip != 'true'
+        working-directory: ${{ github.workspace }}
+        run: bash scripts/ci-rust-cache.sh mark-pass rust-check "${{ steps.pass.outputs.hash }}"
 
   # ────────────────────────────────────────────────────────────────────────
   # build-image: cross-compile the app-shell image (amd64+arm64) via the
@@ -231,6 +264,11 @@ jobs:
   # through --secret for consistency with dev/prod-workflow.yml).
   #
   # PR-only: the image tag needs github.event.number.
+  #
+  # Content-addressed: the image is pushed as ratel-app-shell:<input-hash>
+  # (scripts/image-input-hash.sh — crate closure, Dockerfile, BUILD_ARGS,
+  # SECRETS) and pr-<num> is aliased to it. A PR that leaves those inputs
+  # untouched skips the ~9 min cross-compile and only re-tags.
   # ────────────────────────────────────────────────────────────────────────
   build-image:
     runs-on: [self-hosted, linux, amd64]
@@ -244,7 +282,8 @@ jobs:
         env:
           NAME: ratel-app-shell
           DOCKERFILE: app/ratel/Dockerfile
-          IMAGE_TAG: pr-${{ github.event.number }}
+          HASH_TARGET: app-shell
+          ALIAS_TAGS: pr-${{ github.event.number }}
           # Fixed test values (not real secrets) — the SECRETS= list below
           # looks these up by name via shell indirection, so they must be
           # ordinary env vars here (not inlined into the SECRETS string:
@@ -278,18 +317,34 @@ jobs:
     runs-on: [self-hosted, linux, amd64]
     timeout-minutes: 30
     if: github.event_name == 'pull_request'
+    env:
+      # Job-level so the input hash (which reads VITE_*) sees it in both steps.
+      VITE_BYPASS: "true"
 
     steps:
       - uses: actions/checkout@v6
 
+      # Content-addressed like build-image; also skips the pnpm build when
+      # ratel-web:<input-hash> already exists.
+      - name: Check whether the web image already exists (content hash)
+        id: hash
+        run: |
+          tag=$(bash scripts/image-input-hash.sh web)
+          echo "content-hash tag for web: ${tag}"
+          if curl -sf -o /dev/null \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "http://registry.infra.svc.cluster.local:5000/v2/ratel-web/manifests/${tag}"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup Node
+        if: steps.hash.outputs.exists != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Build web (React static site)
-        env:
-          VITE_BYPASS: "true"
+        if: steps.hash.outputs.exists != 'true'
         run: |
           corepack enable
           pnpm install --frozen-lockfile
@@ -300,7 +355,8 @@ jobs:
           NAME: ratel-web
           CONTEXT: apps/web
           DOCKERFILE: apps/web/Dockerfile
-          IMAGE_TAG: pr-${{ github.event.number }}
+          HASH_TARGET: web
+          ALIAS_TAGS: pr-${{ github.event.number }}
         run: bash scripts/buildkit-image.sh
 
   # ────────────────────────────────────────────────────────────────────────
@@ -323,7 +379,10 @@ jobs:
         env:
           NAME: ratel-events
           DOCKERFILE: deploy/dev/Dockerfile.events
-          IMAGE_TAG: pr-${{ github.event.number }}
+          # Content-addressed like build-image. DYNAMO_TABLE_PREFIX is baked
+          # in per PR, so this hash only repeats within one PR.
+          HASH_TARGET: events
+          ALIAS_TAGS: pr-${{ github.event.number }}
           # See build-image's identical comment above.
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
