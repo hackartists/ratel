@@ -134,18 +134,26 @@ export function PollSubmitConfirmPopup({
   cancelLabel,
   confirmLabel,
   testId,
+  cancelTestId,
   onCancel,
   onConfirm,
 }: {
   cancelLabel: string;
   confirmLabel: string;
   testId: string;
+  cancelTestId?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   return (
     <div className="flex gap-3 justify-end w-full">
-      <Button buttonStyle={ButtonStyle.Outline} shape={ButtonShape.Square} className="min-w-[120px]" onClick={onCancel}>
+      <Button
+        data-testid={cancelTestId}
+        buttonStyle={ButtonStyle.Outline}
+        shape={ButtonShape.Square}
+        className="min-w-[120px]"
+        onClick={onCancel}
+      >
         {cancelLabel}
       </Button>
       <Button

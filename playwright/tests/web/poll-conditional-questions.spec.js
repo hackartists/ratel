@@ -15,9 +15,12 @@ import { createAction, fill, fillQuestionTitle, goto, publishAction, signUpViaAp
 //   A  Yes path (Q2 shown, Q3 hidden) then switches Q1 to No: the Q2 answer is
 //      dropped and the No path (Q3 → Q4 → Q5) is submitted.
 //   B  Yes path end-to-end; Q5 appears through the multiple-choice OR rule.
-//   C  Picks "Skip survey" on Q1: submitted at once, stored, action not completed.
-//   D  Q1 = No, Q3 = "Never": submitted at once, action completed.
-//   F  Space-page poll overlay: "Skip survey" on Q1 submits at once.
+//   C  Picks "Skip survey" on Q1: the termination warning appears; Cancel keeps
+//      the poll going with nothing selected, "End survey" submits at once
+//      (stored, action not completed) and the participant cannot respond again.
+//   D  Q1 = No, Q3 = "Never": confirmed termination submits, action completed.
+//   F  Space-page poll overlay: "Skip survey" on Q1 warns first; Cancel keeps
+//      the poll going, "End survey" submits at once.
 //   G  Space-page poll overlay: Yes path (Q2 answered), back to Q1, switches
 //      to No and ends on Q3 = "Never"; the Q2 answer is dropped.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,10 +119,26 @@ test.describe.serial("Poll conditional questions and termination", () => {
     await page.getByTestId("poll-arena-question").getByTestId(`poll-arena-option-${optIdx}`).click();
   }
 
-  async function confirmOverlaySubmit(page) {
-    const confirm = page.getByTestId("poll-confirm-submit");
-    await expect(confirm).toBeVisible({ timeout: 10000 });
-    await confirm.click();
+  async function expectTerminationWarning(page, option) {
+    await expect(page.getByText("This will end the survey", { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.getByText(
+        `Selecting '${option}' will end the survey immediately, and you won't be able to participate again. ` +
+          "To continue, press 'Cancel' and choose a different option.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(page.getByTestId("poll-terminate-cancel")).toHaveText("Cancel");
+    await expect(page.getByTestId("poll-terminate-confirm")).toHaveText("End survey");
+  }
+
+  async function cancelTermination(page) {
+    await page.getByTestId("poll-terminate-cancel").click();
+    await expect(page.getByTestId("poll-terminate-confirm")).toHaveCount(0);
+  }
+
+  async function confirmOverlayTermination(page) {
+    await page.getByTestId("poll-terminate-confirm").click();
     await expect(page.getByTestId("poll-arena-overlay")).toBeHidden({ timeout: 30000 });
   }
 
@@ -129,6 +148,11 @@ test.describe.serial("Poll conditional questions and termination", () => {
 
   async function pick(page, optIdx) {
     await current(page).getByTestId(`question-option-${optIdx}`).click();
+  }
+
+  async function confirmTermination(page) {
+    await page.getByTestId("poll-terminate-confirm").click();
+    await page.waitForURL(/\/spaces\/[^/]+\/actions\/?$/, { timeout: 30000 });
   }
 
   async function confirmSubmit(page) {
@@ -319,17 +343,41 @@ test.describe.serial("Poll conditional questions and termination", () => {
     }
   });
 
-  test("Participant C: termination on Q1 submits at once and leaves the action incomplete", async ({ browser }) => {
+  test("Participant C: termination on Q1 warns first, then submits and blocks re-participation", async ({ browser }) => {
     const { context, page } = await joinAsNewUser(browser, "c");
     try {
       await openPollAsParticipant(page);
       await pick(page, 2);
-      await confirmSubmit(page);
+      await expectTerminationWarning(page, "Skip survey");
+      await cancelTermination(page);
+      await expectAt(page, 0);
+      await expect(current(page).getByTestId("question-option-2")).toHaveAttribute("aria-selected", "false");
+      expect((await getPoll(page)).my_response).toBeNull();
+
+      await pick(page, 2);
+      await expectTerminationWarning(page, "Skip survey");
+      await confirmTermination(page);
 
       const ans = (await getPoll(page)).my_response;
       expect(ans).not.toBeNull();
       expect(ans.map((a) => a.answer)).toEqual([2, null, null, null, null]);
       expect((await pollAction(page)).user_participated).toBe(false);
+
+      const retry = await page.request.post(`/api/spaces/${spaceId}/polls/${pollId}/respond`, {
+        data: {
+          req: {
+            answers: [
+              { answer_type: "single_choice", answer: 1, other: null },
+              { answer_type: "single_choice", answer: null, other: null },
+              { answer_type: "single_choice", answer: 0, other: null },
+              { answer_type: "multiple_choice", answer: [1], other: null },
+              { answer_type: "single_choice", answer: 0, other: null },
+            ],
+          },
+        },
+      });
+      expect(retry.ok(), "a terminated participant must not respond again").toBeFalsy();
+      expect((await getPoll(page)).my_response.map((a) => a.answer)).toEqual([2, null, null, null, null]);
 
       await goto(page, spaceUrl);
       await expect(page.getByTestId(`quest-card-${pollActionId}`)).toBeVisible({ timeout: 20000 });
@@ -346,7 +394,8 @@ test.describe.serial("Poll conditional questions and termination", () => {
       await pick(page, 1);
       await expectAt(page, 2);
       await pick(page, 1);
-      await confirmSubmit(page);
+      await expectTerminationWarning(page, "Never");
+      await confirmTermination(page);
 
       const ans = (await getPoll(page)).my_response;
       expect(ans.map((a) => a.answer)).toEqual([1, null, 1, null, null]);
@@ -362,7 +411,14 @@ test.describe.serial("Poll conditional questions and termination", () => {
       await openPollOverlay(page);
       await expectOverlayAt(page, 0);
       await pickInOverlay(page, 2);
-      await confirmOverlaySubmit(page);
+      await expectTerminationWarning(page, "Skip survey");
+      await cancelTermination(page);
+      await expectOverlayAt(page, 0);
+      await expect(page.getByTestId("poll-arena-option-2")).toHaveAttribute("data-selected", "false");
+      expect((await getPoll(page)).my_response).toBeNull();
+
+      await pickInOverlay(page, 2);
+      await confirmOverlayTermination(page);
 
       const ans = (await getPoll(page)).my_response;
       expect(ans).not.toBeNull();
@@ -389,7 +445,8 @@ test.describe.serial("Poll conditional questions and termination", () => {
       await pickInOverlay(page, 1);
       await expectOverlayAt(page, 2);
       await pickInOverlay(page, 1);
-      await confirmOverlaySubmit(page);
+      await expectTerminationWarning(page, "Never");
+      await confirmOverlayTermination(page);
 
       const ans = (await getPoll(page)).my_response;
       expect(ans.map((a) => a.answer)).toEqual([1, null, 1, null, null]);

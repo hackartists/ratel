@@ -43,6 +43,21 @@ export function answerMatchesValues(question: Question, answer: Answer | undefin
   });
 }
 
+/** Text of the first picked option that ends the poll, or `null` when the answer picks none. */
+export function pickedTerminationOption(question: Question, answer: Answer | undefined): string | null {
+  const options = choiceOptions(question);
+  const stops = terminateOn(question);
+  if (!answer || options === null || stops.length === 0) return null;
+  let picked: number[] = [];
+  if (question.answer_type === "single_choice" && answer.answer_type === "single_choice" && answer.answer !== null) {
+    picked = [answer.answer];
+  } else if (question.answer_type === "multiple_choice" && answer.answer_type === "multiple_choice") {
+    picked = answer.answer ?? [];
+  }
+  const hit = picked.map((idx) => options[idx]).find((value) => value !== undefined && stops.includes(value));
+  return hit ?? null;
+}
+
 function conditionSatisfied(
   condition: QuestionCondition,
   questions: Question[],

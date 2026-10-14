@@ -76,6 +76,7 @@ import { i18n as participantActionPage } from "@/pages/spaces/[spaceId]/actions/
 import { i18n as pollCreator } from "@/pages/spaces/[spaceId]/actions/polls/[pollId]/components/poll-creator.i18n";
 import { i18n as pollParticipant } from "@/pages/spaces/[spaceId]/actions/polls/[pollId]/components/poll-participant.i18n";
 import { i18n as pollRead } from "@/pages/spaces/[spaceId]/actions/polls/[pollId]/components/poll-read.i18n";
+import { i18n as pollTermination } from "@/pages/spaces/[spaceId]/actions/polls/[pollId]/components/poll-termination.i18n";
 import { i18n as postDetailSyndicated } from "@/pages/posts/[postId]/i18n";
 import { i18n as postEdit } from "@/pages/posts/[postId]/edit/i18n";
 import { i18n as premiumUnlock } from "@/components/ui/i18n";
@@ -195,6 +196,7 @@ export const modules = {
   pollCreator,
   pollParticipant,
   pollRead,
+  pollTermination,
   postDetailSyndicated,
   postEdit,
   premiumUnlock,
