@@ -23722,7 +23722,9 @@ html[data-theme="light"] .sga-modal__confirm-danger,
   --spa-font-body: 'Outfit', sans-serif;
 
   position: relative;
-  min-height: 100vh;
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   isolation: isolate;
@@ -23732,7 +23734,7 @@ html[data-theme="light"] .sga-modal__confirm-danger,
 }
 .space-panels-arena::before {
   content: '';
-  position: absolute;
+  position: fixed;
   inset: 0;
   background:
     radial-gradient(ellipse 80% 60% at 50% 20%, var(--spa-glow-aura-a), transparent 60%),
