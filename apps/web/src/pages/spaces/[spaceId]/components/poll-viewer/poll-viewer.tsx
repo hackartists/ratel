@@ -29,7 +29,14 @@ import {
 } from "@/lib/poll-encryption";
 import { useToast } from "@/lib/toast";
 import { RichQuestionTitle } from "@/components/space-actions/rich-question-title";
-import { applyAnswerChange, emptyAnswerFor, resolveNavigation, submissionAnswers } from "../../actions/polls/[pollId]/components/poll-flow";
+import {
+  applyAnswerChange,
+  emptyAnswerFor,
+  pickedTerminationOption,
+  resolveNavigation,
+  submissionAnswers,
+} from "../../actions/polls/[pollId]/components/poll-flow";
+import { usePollTerminationI18n } from "../../actions/polls/[pollId]/components/poll-termination.i18n";
 
 type PollStep = "Overview" | "Poll";
 
@@ -435,6 +442,7 @@ export interface ActionPollViewerProps {
 
 export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollViewerProps) {
   const tr = useActionPollI18n();
+  const trTermination = usePollTerminationI18n();
   const toast = useToast();
   const spaceCtx = useSpaceContext();
   const role = useActionExecuteRole();
@@ -450,6 +458,9 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
   const [step, setStep] = React.useState<PollStep>("Overview");
   const [questionIndex, setQuestionIndex] = React.useState(0);
   const [showConfirm, setShowConfirm] = React.useState(false);
+  const [pendingTermination, setPendingTermination] = React.useState<{ option: string; answers: Record<number, Answer> } | null>(
+    null,
+  );
   const [answers, setAnswers] = React.useState<Record<number, Answer>>({});
 
   React.useEffect(() => {
@@ -585,11 +596,11 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
 
   const onAnswerChange = (idx: number, question: Question, ans: Answer) => {
     const change = applyAnswerChange(questions, answers, idx, ans);
-    setAnswers(change.answers);
     if (change.terminated && (canSubmit || canUpdate)) {
-      onSubmitClick(change.answers);
+      setPendingTermination({ option: pickedTerminationOption(question, ans) ?? "", answers: change.answers });
       return;
     }
+    setAnswers(change.answers);
     if (canSubmit && change.upcomingIdx !== undefined && shouldAutoNext(question, ans)) {
       setQuestionIndex(change.upcomingIdx);
     }
@@ -884,6 +895,39 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
                 }}
               >
                 {tr.submitConfirmAction}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingTermination && (
+        <div className="poll-confirm-overlay" data-testid="poll-terminate-dialog" onClick={() => setPendingTermination(null)}>
+          <div className="poll-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="poll-confirm-modal__icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </div>
+            <h3 className="poll-confirm-modal__title">{trTermination.title}</h3>
+            <p className="poll-confirm-modal__desc">{(poll.response_editable ? trTermination.descriptionEditable : trTermination.description)({ option: pendingTermination.option })}</p>
+            <div className="poll-confirm-modal__actions">
+              <button className="poll-btn poll-btn--back" data-testid="poll-terminate-cancel" onClick={() => setPendingTermination(null)}>
+                {trTermination.cancel}
+              </button>
+              <button
+                className="poll-btn poll-btn--submit"
+                data-testid="poll-terminate-confirm"
+                onClick={() => {
+                  const terminated = pendingTermination.answers;
+                  setPendingTermination(null);
+                  setAnswers(terminated);
+                  void doSubmit(terminated);
+                }}
+              >
+                {trTermination.confirm}
               </button>
             </div>
           </div>

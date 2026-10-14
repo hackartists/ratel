@@ -21,7 +21,8 @@ import { timeAgo } from "@/lib/time";
 import { useToast } from "@/lib/toast";
 import { usePoll } from "../hooks/use-poll";
 import { EncryptedVoteVerificationPanel, PollSubmitConfirmPopup } from "./poll-encrypted-vote";
-import { applyAnswerChange, resolveNavigation, submissionAnswers } from "./poll-flow";
+import { applyAnswerChange, pickedTerminationOption, resolveNavigation, submissionAnswers } from "./poll-flow";
+import { usePollTerminationI18n } from "./poll-termination.i18n";
 
 // poll/views/main/poll_read_page.rs (`PollReadPage`, variant "read" — the
 // participant flow: overview step + the client-side ABE encrypted-vote UI)
@@ -34,6 +35,7 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
   // Rust: PollReadPage uses PollReadTranslate; PollContent uses
   // PollParticipantTranslate. Both expose the same key set used here.
   const tr = variant === "read" ? trRead : trContent;
+  const trTermination = usePollTerminationI18n();
 
   const toast = useToast();
   const popup = usePopup();
@@ -223,13 +225,34 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
     }
   };
 
+  const confirmTermination = (option: string, terminated: Record<number, Answer>) => {
+    popup.open(
+      <PollSubmitConfirmPopup
+        cancelLabel={trTermination.cancel}
+        confirmLabel={trTermination.confirm}
+        testId="poll-terminate-confirm"
+        cancelTestId="poll-terminate-cancel"
+        onCancel={() => popup.close()}
+        onConfirm={() => {
+          popup.close();
+          setAnswers(terminated);
+          void buildSubmitResponse(terminated)();
+        }}
+      />,
+      {
+        title: trTermination.title,
+        description: (poll.response_editable ? trTermination.descriptionEditable : trTermination.description)({ option }),
+      },
+    );
+  };
+
   const onAnswerChange = (ans: Answer) => {
     const change = applyAnswerChange(poll.questions, answers, currentIdx, ans);
-    setAnswers(change.answers);
     if (change.terminated && (canSubmit || canUpdate)) {
-      onSubmit(change.answers);
+      confirmTermination(pickedTerminationOption(currentQuestion!, ans) ?? "", change.answers);
       return;
     }
+    setAnswers(change.answers);
     if (canSubmit && change.upcomingIdx !== undefined && shouldAutoNext(currentQuestion!, ans)) {
       setQuestionIndex(change.upcomingIdx);
     }
