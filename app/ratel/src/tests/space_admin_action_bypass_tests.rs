@@ -20,6 +20,7 @@ fn yes_no_question() -> Question {
         allow_other: None,
         display_condition: None,
         terminate_on: vec![],
+        termination_message: None,
     })
 }
 

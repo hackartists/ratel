@@ -59,6 +59,7 @@ async fn seed_consent_poll(ctx: &TestContext) -> (String, String) {
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
         display_condition: None,
+        termination_message: None,
     }));
     SpacePoll::repository().insert(&poll).await.expect("save poll");
 
@@ -163,4 +164,58 @@ async fn respond_poll_rejects_wrong_otp_for_unlinked_phone() {
         }
     };
     assert_ne!(status, 200, "wrong OTP for an unlinked phone must still be rejected");
+}
+
+/// Declining the consent ends the poll: `respond_poll` accepts it without a
+/// phone or code and persists `agreed: false` with no phone.
+#[by_macros::pg_test]
+async fn respond_poll_accepts_declined_privacy_consent_without_phone() {
+    let ctx = TestContext::setup().await;
+    let (space_id, poll_id) = seed_consent_poll(&ctx).await;
+
+    let (status, _, body) = crate::test_post! {
+        app: ctx.app.clone(),
+        path: &format!("/api/spaces/{}/polls/{}/respond", space_id, poll_id),
+        headers: ctx.test_user.1.clone(),
+        body: {
+            "req": {
+                "answers": [
+                    { "answer_type": "privacy_consent", "agreed": false, "declined": true, "phone": null }
+                ]
+            }
+        }
+    };
+    assert_eq!(status, 200, "a declined consent must be accepted: {body:?}");
+
+    let (status, _, body) = crate::test_get! {
+        app: ctx.app.clone(),
+        path: &format!("/api/spaces/{}/polls/{}", space_id, poll_id),
+        headers: ctx.test_user.1.clone(),
+    };
+    assert_eq!(status, 200, "{body:?}");
+    let stored = &body["my_response"][0];
+    assert_eq!(stored["agreed"], false, "{body:?}");
+    assert_eq!(stored["declined"], true, "{body:?}");
+    assert!(stored["phone"].is_null(), "{body:?}");
+}
+
+/// Agreeing without a phone is still rejected.
+#[by_macros::pg_test]
+async fn respond_poll_rejects_agreed_privacy_consent_without_phone() {
+    let ctx = TestContext::setup().await;
+    let (space_id, poll_id) = seed_consent_poll(&ctx).await;
+
+    let (status, _, _) = crate::test_post! {
+        app: ctx.app.clone(),
+        path: &format!("/api/spaces/{}/polls/{}/respond", space_id, poll_id),
+        headers: ctx.test_user.1.clone(),
+        body: {
+            "req": {
+                "answers": [
+                    { "answer_type": "privacy_consent", "agreed": true, "phone": null }
+                ]
+            }
+        }
+    };
+    assert_ne!(status, 200, "agreeing without a phone must be rejected");
 }

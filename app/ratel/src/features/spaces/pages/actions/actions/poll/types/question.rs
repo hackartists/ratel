@@ -85,6 +85,20 @@ impl Question {
         }
     }
 
+    /// Author-written notice shown in the termination confirmation instead of
+    /// the default copy. Only choice and privacy-consent questions can end the
+    /// poll; blank text counts as unset.
+    pub fn termination_message(&self) -> Option<&str> {
+        let message = match self {
+            Question::SingleChoice(q) | Question::MultipleChoice(q) => {
+                q.termination_message.as_deref()
+            }
+            Question::PrivacyConsent(q) => q.termination_message.as_deref(),
+            _ => None,
+        };
+        message.filter(|m| !m.trim().is_empty())
+    }
+
     /// Option texts of single- and multiple-choice questions, the only kinds a
     /// display condition can reference.
     pub fn choice_options(&self) -> Option<&[String]> {
@@ -193,9 +207,10 @@ pub struct SubjectiveQuestion {
     pub display_condition: Option<QuestionCondition>,
 }
 
-/// A consent question: shows rich-text terms the respondent must agree to,
-/// then collects a phone number verified via SMS code. Phone collection is
-/// always on for this question type — there is no per-question toggle.
+/// A consent question: shows rich-text terms the respondent agrees or
+/// disagrees to. Agreeing collects a phone number verified via SMS code;
+/// disagreeing always ends the poll. Phone collection is always on for this
+/// question type — there is no per-question toggle.
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 #[cfg_attr(
@@ -220,6 +235,10 @@ pub struct PrivacyConsentQuestion {
     /// `None` means always shown.
     #[serde(default)]
     pub display_condition: Option<QuestionCondition>,
+    /// Notice shown when a respondent disagrees, which ends the poll; `None`
+    /// uses the default copy.
+    #[serde(default)]
+    pub termination_message: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -249,6 +268,10 @@ pub struct ChoiceQuestion {
     /// `None` means always shown.
     #[serde(default)]
     pub display_condition: Option<QuestionCondition>,
+    /// Notice shown when a `terminate_on` option is picked; `None` uses the
+    /// default copy.
+    #[serde(default)]
+    pub termination_message: Option<String>,
 }
 
 #[cfg(all(test, feature = "server"))]
@@ -316,6 +339,34 @@ mod tests {
             q.normalize_title();
             assert_eq!(q.title(), "Plain title");
         }
+    }
+
+    #[test]
+    fn termination_message_defaults_to_none_for_legacy_data() {
+        let q: Question = serde_json::from_str(
+            r#"{"answer_type":"privacy_consent","title":"Consent","description":null,"terms_title":"t","terms_body_html":"<p>b</p>","is_required":true}"#,
+        )
+        .unwrap();
+        assert_eq!(q.termination_message(), None);
+        let q: Question = serde_json::from_str(
+            r#"{"answer_type":"single_choice","title":"Legacy","description":null,"image_url":null,"options":["a"],"is_required":null,"allow_other":null}"#,
+        )
+        .unwrap();
+        assert_eq!(q.termination_message(), None);
+    }
+
+    #[test]
+    fn blank_termination_message_counts_as_unset() {
+        let q = Question::MultipleChoice(ChoiceQuestion {
+            termination_message: Some("  ".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(q.termination_message(), None);
+        let q = Question::PrivacyConsent(PrivacyConsentQuestion {
+            termination_message: Some("Thanks for your time.".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(q.termination_message(), Some("Thanks for your time."));
     }
 
     #[test]

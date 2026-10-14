@@ -17,4 +17,9 @@ terminate_on: Array<string>,
  * Shows this question only when earlier answers satisfy the condition;
  * `None` means always shown.
  */
-display_condition: QuestionCondition | null, };
+display_condition: QuestionCondition | null,
+/**
+ * Notice shown when a `terminate_on` option is picked; `None` uses the
+ * default copy.
+ */
+termination_message: string | null, };

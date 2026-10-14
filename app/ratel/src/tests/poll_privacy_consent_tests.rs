@@ -1,7 +1,8 @@
 use crate::features::auth::controllers::verify_phone_code;
 use crate::features::auth::models::PhoneVerification;
 use crate::features::spaces::pages::actions::actions::poll::types::{
-    Answer, PrivacyConsentQuestion, Question, validate_answers,
+    Answer, PrivacyConsentQuestion, Question, SubjectiveQuestion, evaluate_answers, evaluate_flow,
+    validate_answers,
 };
 
 /// `validate_answers` accepts a fully agreed + phone-present answer for a
@@ -16,9 +17,11 @@ fn validate_answers_accepts_agreed_privacy_consent() {
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
         display_condition: None,
+        termination_message: None,
     })];
     let answers = vec![Answer::PrivacyConsent {
         agreed: true,
+        declined: false,
         phone: Some("+821012345678".to_string()),
         code: Some("123456".to_string()),
     }];
@@ -36,9 +39,11 @@ fn validate_answers_rejects_unagreed_when_required() {
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
         display_condition: None,
+        termination_message: None,
     })];
     let answers = vec![Answer::PrivacyConsent {
         agreed: false,
+        declined: false,
         phone: Some("+821012345678".to_string()),
         code: None,
     }];
@@ -56,9 +61,11 @@ fn validate_answers_rejects_missing_phone_when_required() {
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
         display_condition: None,
+        termination_message: None,
     })];
     let answers = vec![Answer::PrivacyConsent {
         agreed: true,
+        declined: false,
         phone: None,
         code: None,
     }];
@@ -76,9 +83,11 @@ fn validate_answers_allows_empty_when_not_required() {
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(false),
         display_condition: None,
+        termination_message: None,
     })];
     let answers = vec![Answer::PrivacyConsent {
         agreed: false,
+        declined: false,
         phone: None,
         code: None,
     }];
@@ -97,11 +106,132 @@ fn validate_answers_rejects_mismatched_answer_variant() {
         terms_body_html: "<p>Terms body</p>".to_string(),
         is_required: Some(true),
         display_condition: None,
+        termination_message: None,
     })];
     let answers = vec![Answer::ShortAnswer {
         answer: Some("wrong type".to_string()),
     }];
     assert!(!validate_answers(questions, answers));
+}
+
+/// A poll whose required consent question is followed by two required
+/// free-text questions.
+fn consent_then_required_questions() -> Vec<Question> {
+    let required_text = || {
+        Question::Subjective(SubjectiveQuestion {
+            title: "Why?".to_string(),
+            is_required: Some(true),
+            ..Default::default()
+        })
+    };
+    vec![
+        Question::PrivacyConsent(PrivacyConsentQuestion {
+            title: "Research consent".to_string(),
+            terms_title: "Terms".to_string(),
+            terms_body_html: "<p>Terms body</p>".to_string(),
+            is_required: Some(true),
+            ..Default::default()
+        }),
+        required_text(),
+        required_text(),
+    ]
+}
+
+fn declined_answer() -> Answer {
+    Answer::PrivacyConsent {
+        agreed: false,
+        declined: true,
+        phone: None,
+        code: None,
+    }
+}
+
+/// Declining ends the poll: no phone or code is needed and the required
+/// questions after it are skipped.
+#[test]
+fn validate_answers_accepts_declined_privacy_consent_that_terminates() {
+    let questions = consent_then_required_questions();
+    let answers = vec![
+        declined_answer(),
+        Answer::Subjective { answer: None },
+        Answer::Subjective { answer: None },
+    ];
+    let flow = evaluate_flow(&questions, &answers);
+    assert_eq!(flow.terminated_at, Some(0));
+    assert_eq!(flow.visible, vec![true, false, false]);
+    assert!(validate_answers(questions, answers));
+}
+
+/// Questions after a declined consent are treated as hidden, so answering
+/// them is rejected just like after a choice termination.
+#[test]
+fn validate_answers_rejects_answers_after_declined_privacy_consent() {
+    let questions = consent_then_required_questions();
+    let answers = vec![
+        declined_answer(),
+        Answer::Subjective {
+            answer: Some("late".to_string()),
+        },
+        Answer::Subjective { answer: None },
+    ];
+    assert!(!validate_answers(questions, answers));
+}
+
+/// Agreeing still requires a phone, and does not end the poll.
+#[test]
+fn validate_answers_rejects_agreed_without_phone_when_flow_continues() {
+    let questions = consent_then_required_questions();
+    let no_phone = vec![
+        Answer::PrivacyConsent {
+            agreed: true,
+            declined: false,
+            phone: None,
+            code: None,
+        },
+        Answer::Subjective {
+            answer: Some("a".to_string()),
+        },
+        Answer::Subjective {
+            answer: Some("b".to_string()),
+        },
+    ];
+    assert!(!validate_answers(questions.clone(), no_phone));
+    let with_phone = vec![
+        Answer::PrivacyConsent {
+            agreed: true,
+            declined: false,
+            phone: Some("+821****5678".to_string()),
+            code: Some("123456".to_string()),
+        },
+        Answer::Subjective {
+            answer: Some("a".to_string()),
+        },
+        Answer::Subjective {
+            answer: Some("b".to_string()),
+        },
+    ];
+    let outcome = evaluate_answers(&questions, &with_phone).expect("valid");
+    assert!(outcome.completed);
+}
+
+/// A declined answer is persisted without any phone number or code, even if
+/// the client sent one.
+#[test]
+fn evaluate_answers_strips_phone_from_declined_privacy_consent() {
+    let questions = consent_then_required_questions();
+    let answers = vec![
+        Answer::PrivacyConsent {
+            agreed: false,
+            declined: true,
+            phone: Some("+821****5678".to_string()),
+            code: Some("123456".to_string()),
+        },
+        Answer::Subjective { answer: None },
+        Answer::Subjective { answer: None },
+    ];
+    let outcome = evaluate_answers(&questions, &answers).expect("valid");
+    assert_eq!(outcome.answers[0], declined_answer());
+    assert!(!outcome.completed);
 }
 
 /// Server-side re-verification (requirement 6): the shared `verify_phone_code`

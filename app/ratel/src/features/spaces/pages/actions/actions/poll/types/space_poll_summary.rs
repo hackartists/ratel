@@ -45,11 +45,16 @@ pub enum SpacePollSummary {
         answers: HashMap<i32, i64>,
     },
     PrivacyConsent {
+        /// Respondents who either agreed or declined; questions left
+        /// unanswered (hidden, skipped after a termination, or optional) are
+        /// not counted.
         total_count: i64,
-        /// Count of agreed-and-verified responses only (answers that failed
-        /// server verification are never persisted, so this always equals
-        /// `total_count` once summarized).
+        /// Agreed-and-verified responses. Answers that failed server
+        /// verification are never persisted.
         agreed_count: i64,
+        /// Responses that declined the consent and thereby ended the poll.
+        #[serde(default)]
+        declined_count: i64,
     },
 }
 
@@ -168,10 +173,20 @@ impl SpacePollSummary {
             SpacePollSummary::PrivacyConsent {
                 total_count,
                 agreed_count,
+                declined_count,
             } => {
-                if let Answer::PrivacyConsent { agreed, phone, .. } = answer {
-                    *total_count += 1;
-                    if agreed && phone.is_some() {
+                if let Answer::PrivacyConsent {
+                    agreed,
+                    declined,
+                    phone,
+                    ..
+                } = answer
+                {
+                    if declined {
+                        *total_count += 1;
+                        *declined_count += 1;
+                    } else if agreed && phone.is_some() {
+                        *total_count += 1;
                         *agreed_count += 1;
                     }
                 }
@@ -216,7 +231,57 @@ impl From<Question> for SpacePollSummary {
             Question::PrivacyConsent(_) => SpacePollSummary::PrivacyConsent {
                 total_count: 0,
                 agreed_count: 0,
+                declined_count: 0,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::features::spaces::pages::actions::actions::poll::PrivacyConsentQuestion;
+
+    fn consent_answer(agreed: bool, declined: bool, phone: Option<&str>) -> Answer {
+        Answer::PrivacyConsent {
+            agreed,
+            declined,
+            phone: phone.map(str::to_string),
+            code: None,
+        }
+    }
+
+    #[test]
+    fn privacy_consent_summary_counts_agreed_and_declined() {
+        let mut summary =
+            SpacePollSummary::from(Question::PrivacyConsent(PrivacyConsentQuestion::default()));
+        summary.aggregate_answer(consent_answer(true, false, Some("+821012345678")));
+        summary.aggregate_answer(consent_answer(false, true, None));
+        summary.aggregate_answer(consent_answer(false, true, None));
+        summary.aggregate_answer(consent_answer(false, false, None));
+        assert_eq!(
+            summary,
+            SpacePollSummary::PrivacyConsent {
+                total_count: 3,
+                agreed_count: 1,
+                declined_count: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn privacy_consent_summary_deserializes_without_declined_count() {
+        let summary: SpacePollSummary = serde_json::from_str(
+            r#"{"answer_type":"privacy_consent","total_count":4,"agreed_count":4}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            summary,
+            SpacePollSummary::PrivacyConsent {
+                total_count: 4,
+                agreed_count: 4,
+                declined_count: 0,
+            }
+        );
     }
 }

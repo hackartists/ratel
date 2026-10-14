@@ -45,6 +45,11 @@ pub enum Answer {
     },
     PrivacyConsent {
         agreed: bool,
+        /// True when the respondent picked "I do not agree". A declined
+        /// consent ends the poll, carries `agreed: false` and never a phone.
+        /// `false` together with `agreed: false` means not answered yet.
+        #[serde(default)]
+        declined: bool,
         #[serde(default)]
         phone: Option<String>,
         /// The SMS code submitted at response time. Carried only in the
@@ -96,6 +101,7 @@ impl Answer {
             Question::LinearScale(_) => Answer::LinearScale { answer: None },
             Question::PrivacyConsent(_) => Answer::PrivacyConsent {
                 agreed: false,
+                declined: false,
                 phone: None,
                 code: None,
             },
@@ -103,7 +109,7 @@ impl Answer {
     }
 
     /// Whether the respondent actually answered: an option picked, non-blank
-    /// text entered, or consent given.
+    /// text entered, or consent given or declined.
     pub fn is_answered(&self) -> bool {
         let has_text = |v: &Option<String>| v.as_ref().is_some_and(|t| !t.trim().is_empty());
         match self {
@@ -114,7 +120,9 @@ impl Answer {
             Answer::ShortAnswer { answer } | Answer::Subjective { answer } => has_text(answer),
             Answer::Checkbox { answer } => answer.as_ref().is_some_and(|v| !v.is_empty()),
             Answer::Dropdown { answer } | Answer::LinearScale { answer } => answer.is_some(),
-            Answer::PrivacyConsent { agreed, .. } => *agreed,
+            Answer::PrivacyConsent {
+                agreed, declined, ..
+            } => *agreed || *declined,
         }
     }
 }
@@ -264,8 +272,16 @@ pub fn validate_answer(question: &Question, answer: &Answer) -> bool {
         }
         (
             Question::PrivacyConsent(PrivacyConsentQuestion { is_required, .. }),
-            Answer::PrivacyConsent { agreed, phone, .. },
+            Answer::PrivacyConsent {
+                agreed,
+                declined,
+                phone,
+                ..
+            },
         ) => {
+            if declined {
+                return !agreed;
+            }
             if is_required.unwrap_or_default() && (!agreed || phone.is_none()) {
                 return false;
             }
