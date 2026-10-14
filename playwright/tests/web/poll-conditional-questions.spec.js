@@ -23,6 +23,8 @@ import { createAction, fill, fillQuestionTitle, goto, publishAction, signUpViaAp
 //      the poll going, "End survey" submits at once.
 //   G  Space-page poll overlay: Yes path (Q2 answered), back to Q1, switches
 //      to No and ends on Q3 = "Never"; the Q2 answer is dropped.
+//   H  After the creator makes responses editable: the warning drops the
+//      "cannot participate again" clause and the participant can respond again.
 // ─────────────────────────────────────────────────────────────────────────────
 
 test.describe.serial("Poll conditional questions and termination", () => {
@@ -119,14 +121,13 @@ test.describe.serial("Poll conditional questions and termination", () => {
     await page.getByTestId("poll-arena-question").getByTestId(`poll-arena-option-${optIdx}`).click();
   }
 
-  async function expectTerminationWarning(page, option) {
+  async function expectTerminationWarning(page, option, { editable = false } = {}) {
+    const ending = editable
+      ? `Selecting '${option}' will end the survey immediately. `
+      : `Selecting '${option}' will end the survey immediately, and you won't be able to participate again. `;
     await expect(page.getByText("This will end the survey", { exact: true })).toBeVisible({ timeout: 10000 });
     await expect(
-      page.getByText(
-        `Selecting '${option}' will end the survey immediately, and you won't be able to participate again. ` +
-          "To continue, press 'Cancel' and choose a different option.",
-        { exact: true },
-      ),
+      page.getByText(`${ending}To continue, press 'Cancel' and choose a different option.`, { exact: true }),
     ).toBeVisible();
     await expect(page.getByTestId("poll-terminate-cancel")).toHaveText("Cancel");
     await expect(page.getByTestId("poll-terminate-confirm")).toHaveText("End survey");
@@ -473,6 +474,48 @@ test.describe.serial("Poll conditional questions and termination", () => {
         },
       });
       expect(res.ok(), "an answer to hidden Q3 must be rejected").toBeFalsy();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Participant H: editable responses warn without the re-participation clause and allow responding again", async ({
+    page: creator,
+    browser,
+  }) => {
+    const editableRes = await creator.request.post(`/api/spaces/${spaceId}/polls/${pollId}`, {
+      data: { req: { response_editable: true } },
+    });
+    expect(editableRes.ok(), `set response_editable: ${await editableRes.text()}`).toBeTruthy();
+
+    const { context, page } = await joinAsNewUser(browser, "h");
+    try {
+      await openPollAsParticipant(page);
+      await pick(page, 2);
+      await expectTerminationWarning(page, "Skip survey", { editable: true });
+      await cancelTermination(page);
+      await expect(current(page).getByTestId("question-option-2")).toHaveAttribute("aria-selected", "false");
+
+      await pick(page, 2);
+      await expectTerminationWarning(page, "Skip survey", { editable: true });
+      await confirmTermination(page);
+      expect((await getPoll(page)).my_response.map((a) => a.answer)).toEqual([2, null, null, null, null]);
+
+      const again = await page.request.post(`/api/spaces/${spaceId}/polls/${pollId}/respond`, {
+        data: {
+          req: {
+            answers: [
+              { answer_type: "single_choice", answer: 1, other: null },
+              { answer_type: "single_choice", answer: null, other: null },
+              { answer_type: "single_choice", answer: 0, other: null },
+              { answer_type: "multiple_choice", answer: [1], other: null },
+              { answer_type: "single_choice", answer: 0, other: null },
+            ],
+          },
+        },
+      });
+      expect(again.ok(), `editable poll must accept a new response: ${await again.text()}`).toBeTruthy();
+      expect((await getPoll(page)).my_response.map((a) => a.answer)).toEqual([1, null, 0, [1], 0]);
     } finally {
       await context.close();
     }

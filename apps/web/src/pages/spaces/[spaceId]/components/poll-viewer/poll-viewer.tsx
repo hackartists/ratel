@@ -912,7 +912,7 @@ export function ActionPollViewer({ spaceId, pollId, canRespond }: ActionPollView
               </svg>
             </div>
             <h3 className="poll-confirm-modal__title">{trTermination.title}</h3>
-            <p className="poll-confirm-modal__desc">{trTermination.description({ option: pendingTermination.option })}</p>
+            <p className="poll-confirm-modal__desc">{(poll.response_editable ? trTermination.descriptionEditable : trTermination.description)({ option: pendingTermination.option })}</p>
             <div className="poll-confirm-modal__actions">
               <button className="poll-btn poll-btn--back" data-testid="poll-terminate-cancel" onClick={() => setPendingTermination(null)}>
                 {trTermination.cancel}

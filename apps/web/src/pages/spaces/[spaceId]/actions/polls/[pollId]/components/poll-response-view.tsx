@@ -239,7 +239,10 @@ export function PollResponseView({ canRespond, variant }: { canRespond: boolean;
           void buildSubmitResponse(terminated)();
         }}
       />,
-      { title: trTermination.title, description: trTermination.description({ option }) },
+      {
+        title: trTermination.title,
+        description: (poll.response_editable ? trTermination.descriptionEditable : trTermination.description)({ option }),
+      },
     );
   };
 
