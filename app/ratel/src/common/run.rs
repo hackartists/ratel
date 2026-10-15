@@ -342,24 +342,19 @@ fn serve() {
     }
 }
 
-/// Axum middleware that logs every incoming request as a single string,
-/// including the request body (buffered into memory, UTF-8 decoded when
-/// possible). Authorization / Cookie are reported as flags only to keep
-/// secrets out of logs.
-///
-/// Body is buffered up to 1 MiB; anything bigger is replaced with a
-/// length-only summary. The buffered bytes are then rewrapped into a new
-/// `Body` so the downstream handler still sees the original payload.
+/// Axum middleware that logs every incoming request as a single line:
+/// method, URI, status, latency and selected headers. The request body is
+/// never read or logged, so payloads stream to the handler untouched and
+/// sensitive content stays out of logs. Authorization / Cookie are reported
+/// as flags only.
 #[cfg(feature = "server")]
 async fn log_request(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    const MAX_BODY_LOG: usize = 1024 * 1024;
-
     let method = req.method().clone();
     let uri = req.uri().clone();
-    let headers = req.headers().clone();
+    let headers = req.headers();
 
     let origin = headers
         .get(axum::http::header::ORIGIN)
@@ -384,32 +379,13 @@ async fn log_request(
     let has_auth = headers.contains_key(axum::http::header::AUTHORIZATION);
     let has_cookie = headers.contains_key(axum::http::header::COOKIE);
 
-    let (parts, body) = req.into_parts();
-    let body_bytes = match axum::body::to_bytes(body, MAX_BODY_LOG).await {
-        Ok(b) => b,
-        Err(e) => {
-            tracing::warn!(target: "http", "failed to buffer request body: {e}");
-            axum::body::Bytes::new()
-        }
-    };
-    let body_summary = if body_bytes.is_empty() {
-        "<empty>".to_string()
-    } else {
-        match std::str::from_utf8(&body_bytes) {
-            Ok(s) if s.len() <= 2048 => s.to_string(),
-            Ok(s) => format!("{}...({} bytes total)", &s[..2048], s.len()),
-            Err(_) => format!("<binary {} bytes>", body_bytes.len()),
-        }
-    };
-    let req = axum::extract::Request::from_parts(parts, axum::body::Body::from(body_bytes));
-
     let start = std::time::Instant::now();
     let response = next.run(req).await;
     let elapsed = start.elapsed();
 
     tracing::info!(
         target: "http",
-        "{method} {uri} -> {status} {elapsed:.2?} origin={origin} ua={user_agent} ct={content_type} cl={content_length} auth={auth} cookie={cookie} body={body_summary}",
+        "{method} {uri} -> {status} {elapsed:.2?} origin={origin} ua={user_agent} ct={content_type} cl={content_length} auth={auth} cookie={cookie}",
         method = method,
         uri = uri,
         status = response.status().as_u16(),
@@ -420,7 +396,6 @@ async fn log_request(
         content_length = content_length,
         auth = if has_auth { "yes" } else { "no" },
         cookie = if has_cookie { "yes" } else { "no" },
-        body_summary = body_summary,
     );
 
     response
