@@ -16,14 +16,26 @@ import {
  * leads to a full-page rich-text editor. Candidates who finished the
  * prerequisites see the greeting in place of the waiting card's icon and
  * heading; while it is empty the card keeps them. The participants count sits
- * on the same row as the waiting status either way. Once the space has started
- * the greeting page is read-only and the API rejects edits.
+ * on the same row as the waiting status either way. The greeting is typed as
+ * rich text the way an admin would (markdown shortcuts for the heading and the
+ * list, Cmd/Ctrl+B and Cmd/Ctrl+I for inline marks) and the card renders those
+ * elements. Once the space has started the greeting page is read-only and the
+ * API rejects edits.
  */
 test.describe.serial("Space waiting greeting", () => {
   test.describe.configure({ timeout: 180000 });
 
   const stamp = Date.now();
-  const greetingText = `Welcome aboard ${stamp}, the space opens soon.`;
+  const greeting = {
+    heading: "환영합니다!",
+    lead: `스페이스 ${stamp} 에 참여해 주셔서 감사합니다. `,
+    bold: "시작 10분 전",
+    middle: "까지 입장해 주시고, ",
+    italic: "아래 안내",
+    tail: "를 확인해 주세요.",
+    items: ["시작 일시: 10월 20일 오후 2시", "준비물: 노트북과 이어폰", "문의: support@ratel.foundation"],
+  };
+  const greetingText = `${greeting.lead}${greeting.bold}${greeting.middle}${greeting.italic}${greeting.tail}`;
   let space;
   let candidate;
 
@@ -48,6 +60,34 @@ test.describe.serial("Space waiting greeting", () => {
     await clickNoNav(page, { testId: "settings-greeting" });
     await expect(page).toHaveURL(/\/settings\/greeting$/, { timeout: 15000 });
     await expect(page.getByTestId("greeting-settings-page")).toBeVisible({ timeout: 15000 });
+  }
+
+  async function typeRichGreeting(page, editor) {
+    await editor.click();
+    await page.keyboard.type(`## ${greeting.heading}`);
+    await page.keyboard.press("Enter");
+    await page.keyboard.type(greeting.lead);
+    await page.keyboard.press("ControlOrMeta+b");
+    await page.keyboard.type(greeting.bold);
+    await page.keyboard.press("ControlOrMeta+b");
+    await page.keyboard.type(greeting.middle);
+    await page.keyboard.press("ControlOrMeta+i");
+    await page.keyboard.type(greeting.italic);
+    await page.keyboard.press("ControlOrMeta+i");
+    await page.keyboard.type(greeting.tail);
+    await page.keyboard.press("Enter");
+    await page.keyboard.type(`- ${greeting.items[0]}`);
+    for (const item of greeting.items.slice(1)) {
+      await page.keyboard.press("Enter");
+      await page.keyboard.type(item);
+    }
+  }
+
+  async function expectRichGreeting(root) {
+    await expect(root.locator("h2")).toHaveText(greeting.heading);
+    await expect(root.locator(":is(strong, b)")).toHaveText(greeting.bold);
+    await expect(root.locator(":is(em, i)")).toHaveText(greeting.italic);
+    await expect(root.locator("ul > li")).toHaveText(greeting.items);
   }
 
   async function expectParticipantsInlineWithStatus(card) {
@@ -95,8 +135,8 @@ test.describe.serial("Space waiting greeting", () => {
     expect(box.width).toBeGreaterThanOrEqual(640);
     expect(box.height).toBeGreaterThanOrEqual(320);
 
-    await editor.click();
-    await editor.fill(greetingText);
+    await typeRichGreeting(page, editor);
+    await expectRichGreeting(editor);
     await expect(page.getByTestId("greeting-save")).toBeEnabled({ timeout: 10000 });
     await expect(page.getByTestId("greeting-status")).toHaveAttribute("data-dirty", "true");
     await page.screenshot({ path: test.info().outputPath("greeting-settings-page.png"), animations: "disabled" });
@@ -109,14 +149,22 @@ test.describe.serial("Space waiting greeting", () => {
         const res = await page.request.get(`/api/spaces/${space.spaceId}`);
         return (await res.json()).greeting;
       })
-      .toContain(greetingText);
+      .toMatch(/<h2[^>]*>[\s\S]*<ul[^>]*>[\s\S]*<li/);
   });
 
   test("Candidate: the greeting replaces the waiting card icon and heading", async () => {
     const page = await openAsCandidate();
     const card = page.getByTestId("card-waiting");
     await expect(card).toBeVisible({ timeout: 30000 });
-    await expect(card.getByTestId("waiting-greeting")).toContainText(greetingText);
+    const rendered = card.getByTestId("waiting-greeting");
+    await expect(rendered).toContainText(greetingText);
+    await expectRichGreeting(rendered);
+    const headingSize = await rendered.locator("h2").evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+    const bodySize = await rendered.locator("li").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+    expect(headingSize).toBeGreaterThan(bodySize);
+    const boldWeight = await rendered.locator(":is(strong, b)").evaluate((el) => Number(getComputedStyle(el).fontWeight));
+    expect(boldWeight).toBeGreaterThanOrEqual(600);
+    await expect(rendered.locator("ul")).toHaveCSS("list-style-type", "disc");
     await expect(card.getByTestId("waiting-icon")).toHaveCount(0);
     await expect(card.getByTestId("waiting-heading")).toHaveCount(0);
     await expectParticipantsInlineWithStatus(card);
@@ -137,5 +185,6 @@ test.describe.serial("Space waiting greeting", () => {
     await expect(page.getByTestId("greeting-editor")).toHaveAttribute("data-editable", "false");
     await expect(page.getByTestId("greeting-save")).toHaveCount(0);
     await expect(page.getByTestId("greeting-editor")).toContainText(greetingText);
+    await expectRichGreeting(page.getByTestId("greeting-editor"));
   });
 });
