@@ -2,9 +2,10 @@ import * as React from "react";
 import type { SpaceActionSummary } from "@ratel/ts-bridges";
 import { useSpace } from "@/components/space/space-context";
 import { useEnumI18n } from "@/i18n/enums.i18n";
+import { dataBool } from "@/lib/dom";
 import { useSpaceViewerI18n } from "./space-viewer.i18n";
 import { formatNumber } from "./format";
-import { WaitingGreeting } from "./waiting-greeting";
+import { WaitingGreeting, hasGreeting } from "./waiting-greeting";
 
 // app/ratel/src/features/spaces/pages/index/waiting_card/component.rs (`WaitingCard`).
 
@@ -44,24 +45,31 @@ export function WaitingCard({ prereqs }: { prereqs: SpaceActionSummary[] }) {
   const seconds = remainingSecs % 60;
 
   return (
-    <div className="waiting-card" data-testid="card-waiting">
-      <WaitingGreeting />
-      <div className="waiting-card__icon">
-        <svg
-          fill="none"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2"
-          viewBox="0 0 24 24"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-          <polyline points="22 4 12 14.01 9 11.01" />
-        </svg>
-      </div>
+    <div className="waiting-card" data-testid="card-waiting" data-has-greeting={dataBool(hasGreeting(space.greeting))}>
+      {hasGreeting(space.greeting) ? (
+        <WaitingGreeting />
+      ) : (
+        <>
+          <div className="waiting-card__icon" data-testid="waiting-icon">
+            <svg
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+          </div>
 
-      <span className="waiting-card__heading">{tr.waitingHeading}</span>
+          <span className="waiting-card__heading" data-testid="waiting-heading">
+            {tr.waitingHeading}
+          </span>
+        </>
+      )}
 
       {startedAt !== null && remainingSecs > 0 && (
         <div className="waiting-card__countdown">
@@ -88,11 +96,6 @@ export function WaitingCard({ prereqs }: { prereqs: SpaceActionSummary[] }) {
           </div>
         </div>
       )}
-
-      <div className="waiting-card__participants">
-        <span className="waiting-card__participants-count">{participants}</span>
-        <span className="waiting-card__participants-label">{tr.waitingParticipants}</span>
-      </div>
 
       {prereqs.length > 0 && (
         <div className="waiting-card__list">
@@ -121,9 +124,15 @@ export function WaitingCard({ prereqs }: { prereqs: SpaceActionSummary[] }) {
         </div>
       )}
 
-      <div className="waiting-card__status">
-        <div className="waiting-card__pulse" />
-        {tr.waitingStatus}
+      <div className="waiting-card__footer" data-testid="waiting-footer">
+        <div className="waiting-card__status" data-testid="waiting-status">
+          <div className="waiting-card__pulse" />
+          {tr.waitingStatus}
+        </div>
+        <div className="waiting-card__participants" data-testid="waiting-participants">
+          <span className="waiting-card__participants-count">{participants}</span>
+          <span className="waiting-card__participants-label">{tr.waitingParticipants}</span>
+        </div>
       </div>
     </div>
   );

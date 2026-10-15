@@ -146,6 +146,7 @@ export const routeTree: RouteNode = {
             index("SpaceIndexPage"),
             page("report", "SpaceReportPage"),
             page("report/:reportId", "ReportDetailPage"),
+            page("settings/greeting", "SpaceGreetingSettingsPage"),
             page("discussions/:discussionId", "SpaceDiscussionPage"),
             page("discussions/:discussionId/comments/:commentId", "SpaceDiscussionCommentPage"),
             {
