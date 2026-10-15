@@ -51,6 +51,7 @@ test.describe.serial("Space waiting greeting", () => {
   }
 
   async function expectParticipantsInlineWithStatus(card) {
+    await card.page().evaluate(() => document.fonts.ready);
     const status = await card.getByTestId("waiting-status").boundingBox();
     const participants = await card.getByTestId("waiting-participants").boundingBox();
     const statusMid = status.y + status.height / 2;
