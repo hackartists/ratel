@@ -342,24 +342,19 @@ fn serve() {
     }
 }
 
-/// Axum middleware that logs every incoming request as a single string,
-/// including the request body (buffered into memory, UTF-8 decoded when
-/// possible). Authorization / Cookie are reported as flags only to keep
-/// secrets out of logs.
-///
-/// Body is buffered up to 1 MiB; anything bigger is replaced with a
-/// length-only summary. The buffered bytes are then rewrapped into a new
-/// `Body` so the downstream handler still sees the original payload.
+/// Axum middleware that logs every incoming request as a single line:
+/// method, URI, status, latency and selected headers. The request body is
+/// never read or logged, so payloads stream to the handler untouched and
+/// sensitive content stays out of logs. Authorization / Cookie are reported
+/// as flags only.
 #[cfg(feature = "server")]
 async fn log_request(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    const MAX_BODY_LOG: usize = 1024 * 1024;
-
     let method = req.method().clone();
     let uri = req.uri().clone();
-    let headers = req.headers().clone();
+    let headers = req.headers();
 
     let origin = headers
         .get(axum::http::header::ORIGIN)
@@ -384,24 +379,13 @@ async fn log_request(
     let has_auth = headers.contains_key(axum::http::header::AUTHORIZATION);
     let has_cookie = headers.contains_key(axum::http::header::COOKIE);
 
-    let (parts, body) = req.into_parts();
-    let body_bytes = match axum::body::to_bytes(body, MAX_BODY_LOG).await {
-        Ok(b) => b,
-        Err(e) => {
-            tracing::warn!(target: "http", "failed to buffer request body: {e}");
-            axum::body::Bytes::new()
-        }
-    };
-    let body_summary = summarize_body(&body_bytes);
-    let req = axum::extract::Request::from_parts(parts, axum::body::Body::from(body_bytes));
-
     let start = std::time::Instant::now();
     let response = next.run(req).await;
     let elapsed = start.elapsed();
 
     tracing::info!(
         target: "http",
-        "{method} {uri} -> {status} {elapsed:.2?} origin={origin} ua={user_agent} ct={content_type} cl={content_length} auth={auth} cookie={cookie} body={body_summary}",
+        "{method} {uri} -> {status} {elapsed:.2?} origin={origin} ua={user_agent} ct={content_type} cl={content_length} auth={auth} cookie={cookie}",
         method = method,
         uri = uri,
         status = response.status().as_u16(),
@@ -412,66 +396,7 @@ async fn log_request(
         content_length = content_length,
         auth = if has_auth { "yes" } else { "no" },
         cookie = if has_cookie { "yes" } else { "no" },
-        body_summary = body_summary,
     );
 
     response
-}
-
-/// Longest request-body prefix, in bytes, that [`summarize_body`] keeps.
-#[cfg(feature = "server")]
-const BODY_LOG_PREFIX: usize = 2048;
-
-/// Renders a request body for the access log: the full text when it fits in
-/// [`BODY_LOG_PREFIX`] bytes, otherwise a prefix cut on a UTF-8 character
-/// boundary followed by the total size, and a size-only marker for non-UTF-8
-/// bodies.
-///
-/// ```ignore
-/// assert_eq!(summarize_body(b""), "<empty>");
-/// assert_eq!(
-///     summarize_body("가".repeat(700).as_bytes()),
-///     format!("{}...(2100 bytes total)", "가".repeat(682)),
-/// );
-/// ```
-#[cfg(feature = "server")]
-fn summarize_body(body: &[u8]) -> String {
-    if body.is_empty() {
-        return "<empty>".to_string();
-    }
-    match std::str::from_utf8(body) {
-        Ok(s) if s.len() <= BODY_LOG_PREFIX => s.to_string(),
-        Ok(s) => format!(
-            "{}...({} bytes total)",
-            &s[..s.floor_char_boundary(BODY_LOG_PREFIX)],
-            s.len()
-        ),
-        Err(_) => format!("<binary {} bytes>", body.len()),
-    }
-}
-
-#[cfg(all(test, feature = "server"))]
-mod summarize_body_tests {
-    use super::{BODY_LOG_PREFIX, summarize_body};
-
-    #[test]
-    fn multibyte_char_across_the_prefix_limit_does_not_panic() {
-        let body = format!("a{}", "하".repeat(1000));
-        assert!(!body.is_char_boundary(BODY_LOG_PREFIX));
-
-        let summary = summarize_body(body.as_bytes());
-
-        let expected_prefix = format!("a{}", "하".repeat(682));
-        assert_eq!(
-            summary,
-            format!("{expected_prefix}...({} bytes total)", body.len())
-        );
-    }
-
-    #[test]
-    fn short_and_binary_bodies_are_summarized_unchanged() {
-        assert_eq!(summarize_body(b""), "<empty>");
-        assert_eq!(summarize_body("공지".as_bytes()), "공지");
-        assert_eq!(summarize_body(&[0xff, 0xfe]), "<binary 2 bytes>");
-    }
 }
