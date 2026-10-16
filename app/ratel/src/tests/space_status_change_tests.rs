@@ -442,6 +442,166 @@ async fn test_handle_dedupes_duplicate_emails() {
     );
 }
 
+/// Insert a user with the given email domain and optional phone.
+async fn create_user_with_contact(
+    email_domain: &str,
+    phone: Option<String>,
+) -> crate::common::models::auth::User {
+    let username = create_user_name();
+    let mut user = crate::common::models::auth::User::new(
+        "contactUser".to_string(),
+        format!("{username}@{email_domain}"),
+        String::new(),
+        true,
+        false,
+        crate::common::types::UserType::Individual,
+        username,
+        None,
+    );
+    user.phone = phone;
+    user.create().await.unwrap();
+    user
+}
+
+fn random_phone() -> String {
+    let digits: String = uuid::Uuid::new_v4()
+        .as_u128()
+        .to_string()
+        .chars()
+        .take(8)
+        .collect();
+    format!("+8210{digits}")
+}
+
+fn sms_phones_in(rows: &[Notification]) -> Vec<String> {
+    rows.iter()
+        .flat_map(|n| match &n.data {
+            NotificationData::SendSpaceStatusSms { phones, .. } => phones.clone(),
+            _ => vec![],
+        })
+        .collect()
+}
+
+fn status_emails_in(rows: &[Notification]) -> Vec<String> {
+    rows.iter()
+        .flat_map(|n| match &n.data {
+            NotificationData::SendSpaceStatusUpdate { emails, .. } => emails.clone(),
+            _ => vec![],
+        })
+        .collect()
+}
+
+#[by_macros::pg_test]
+async fn test_handle_ongoing_routes_phone_signups_to_sms() {
+    let ctx = TestContext::setup().await;
+    let space =
+        insert_user_space(&ctx, ctx.test_user.0.pk(), Some(SpaceStatus::Open)).await;
+
+    let email_user_phone = random_phone();
+    let email_user = create_user_with_contact("example.com", Some(email_user_phone.clone())).await;
+    let sms_phone = random_phone();
+    let sms_user = create_user_with_contact("phone.placeholder", Some(sms_phone.clone())).await;
+    let unreachable_user = create_user_with_contact("phone.placeholder", None).await;
+
+    for u in [&email_user, &sms_user, &unreachable_user] {
+        insert_participant_for(&ctx, &space.partition(), u).await;
+    }
+
+    handle_space_status_change(SpaceStatusChangeEvent::new(
+        space.partition(),
+        Some(SpaceStatus::Open),
+        SpaceStatus::Ongoing,
+    ))
+    .await
+    .expect("handler failed");
+
+    let rows = notifications_matching(&ctx, |_| true).await;
+    let phones = sms_phones_in(&rows);
+    let emails = status_emails_in(&rows);
+
+    assert!(phones.contains(&sms_phone), "phones={:?}", phones);
+    assert!(!phones.contains(&email_user_phone), "phones={:?}", phones);
+    assert!(emails.contains(&email_user.email), "emails={:?}", emails);
+    assert!(
+        !emails.iter().any(|e| e.ends_with(".placeholder")),
+        "emails={:?}",
+        emails
+    );
+
+    let sms_message = rows
+        .iter()
+        .find_map(|n| match &n.data {
+            NotificationData::SendSpaceStatusSms { phones, message } if phones.contains(&sms_phone) => {
+                Some(message.clone())
+            }
+            _ => None,
+        })
+        .expect("sms row for phone user");
+    assert!(sms_message.starts_with("[Ratel] "), "{sms_message}");
+    assert!(sms_message.contains("시작됐어요"), "{sms_message}");
+}
+
+#[by_macros::pg_test]
+async fn test_handle_phone_only_audience_still_creates_inbox_rows() {
+    let ctx = TestContext::setup().await;
+    let space =
+        insert_user_space(&ctx, ctx.test_user.0.pk(), Some(SpaceStatus::Open)).await;
+
+    let sms_user = create_user_with_contact("phone.placeholder", Some(random_phone())).await;
+    insert_participant_for(&ctx, &space.partition(), &sms_user).await;
+
+    handle_space_status_change(SpaceStatusChangeEvent::new(
+        space.partition(),
+        Some(SpaceStatus::Open),
+        SpaceStatus::Ongoing,
+    ))
+    .await
+    .expect("handler failed");
+
+    let user_id = match sms_user.pk() {
+        Partition::User(id) => id,
+        other => other.to_string(),
+    };
+    let inbox = crate::common::models::notification::UserInboxNotification::find_for_user(
+        &user_id, false, 1, 1000,
+    )
+    .await
+    .expect("query inbox rows failed")
+    .items;
+    assert!(
+        inbox
+            .iter()
+            .any(|r| r.kind == crate::common::types::InboxKind::SpaceStatusChanged),
+        "inbox={:?}",
+        inbox
+    );
+}
+
+#[by_macros::pg_test]
+async fn test_handle_finished_sends_no_sms() {
+    let ctx = TestContext::setup().await;
+    let space =
+        insert_user_space(&ctx, ctx.test_user.0.pk(), Some(SpaceStatus::Ongoing)).await;
+
+    let sms_phone = random_phone();
+    let sms_user = create_user_with_contact("phone.placeholder", Some(sms_phone.clone())).await;
+    insert_participant_for(&ctx, &space.partition(), &sms_user).await;
+
+    handle_space_status_change(SpaceStatusChangeEvent::new(
+        space.partition(),
+        Some(SpaceStatus::Ongoing),
+        SpaceStatus::Finished,
+    ))
+    .await
+    .expect("handler failed");
+
+    let rows = notifications_matching(&ctx, |_| true).await;
+    assert!(
+        !sms_phones_in(&rows).contains(&sms_phone),
+        "finished transition must not send sms"
+    );
+}
+
 // ── Tasks 16 + 18: Controller integration tests ─────────────────────────────
 
 /// Create a draft space via the HTTP API. Returns (post_pk_str, space_id_str).
