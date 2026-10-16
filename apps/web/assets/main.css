@@ -56243,6 +56243,7 @@ html[data-theme="light"] .ff-home .featured-title {
 }
 .portal:has(> .waiting-card[data-has-greeting="true"]) > .portal-header,
 .portal:has(> .waiting-card[data-has-greeting="true"]) > .portal-status,
+.portal:has(> .waiting-card[data-has-greeting="true"]) > .candidate-announcement-link,
 .arena-viewer:has(> .portal > .waiting-card[data-has-greeting="true"]) > .portal-author {
   display: none;
 }
