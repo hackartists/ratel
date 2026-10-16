@@ -19,9 +19,11 @@ import {
  * on the same row as the waiting status either way. The greeting is typed as
  * rich text the way an admin would (markdown shortcuts for the heading and the
  * list, Cmd/Ctrl+B and Cmd/Ctrl+I for inline marks) and the card renders those
- * elements. A long greeting keeps the card inside the viewport: the space
- * logo, title and status step aside, the card spans at least half the
- * viewport and only the greeting scrolls. Once the space has started the
+ * elements. The space also carries an announcement, linked above the waiting
+ * card while the greeting is empty and hidden once a greeting is shown. A long
+ * greeting keeps the card inside the viewport: the space logo, title and
+ * status step aside, the card spans at least half the viewport and only the
+ * greeting scrolls. Once the space has started the
  * greeting page is read-only and the API rejects edits.
  */
 test.describe.serial("Space waiting greeting", () => {
@@ -37,6 +39,7 @@ test.describe.serial("Space waiting greeting", () => {
     tail: "를 확인해 주세요.",
     items: ["시작 일시: 10월 20일 오후 2시", "준비물: 노트북과 이어폰", "문의: support@ratel.foundation"],
   };
+  const announcementTitle = `연구대상자를 위한 설명서 ${stamp}`;
   const greetingText = `${greeting.lead}${greeting.bold}${greeting.middle}${greeting.italic}${greeting.tail}`;
   let space;
   let candidate;
@@ -106,8 +109,15 @@ test.describe.serial("Space waiting greeting", () => {
     if (candidate) await candidate.context.close();
   });
 
-  test("Setup: space with a prerequisite poll, published", async ({ page }) => {
+  test("Setup: space with a prerequisite poll and an announcement, published", async ({ page }) => {
     space = await createSpaceWithEntryPoll(page, { title: `Waiting greeting ${stamp}` });
+    const created = await page.request.post(`/api/spaces/${space.spaceId}/announcements`);
+    expect(created.ok(), `create announcement: ${await created.text()}`).toBeTruthy();
+    const { action_id } = await created.json();
+    for (const req of [{ title: announcementTitle }, { status: "Ongoing" }]) {
+      const res = await page.request.post(`/api/spaces/${space.spaceId}/actions/${action_id}`, { data: { req } });
+      expect(res.ok(), `update announcement: ${await res.text()}`).toBeTruthy();
+    }
     await publishSpacePublic(page, space.spaceUrl);
   });
 
@@ -118,6 +128,8 @@ test.describe.serial("Space waiting greeting", () => {
     const card = page.getByTestId("card-waiting");
     await expect(card).toBeVisible({ timeout: 30000 });
     await expect(card.getByTestId("waiting-greeting")).toHaveCount(0);
+    await expect(page.getByTestId("candidate-announcement-link")).toContainText(announcementTitle);
+    await expect(page.getByTestId("candidate-announcement-link")).toBeVisible();
     await expect(card.getByTestId("waiting-icon")).toBeVisible();
     await expect(card.getByTestId("waiting-heading")).toBeVisible();
     await expectParticipantsInlineWithStatus(card);
@@ -161,6 +173,7 @@ test.describe.serial("Space waiting greeting", () => {
     const rendered = card.getByTestId("waiting-greeting");
     await expect(rendered).toContainText(greetingText);
     await expectRichGreeting(rendered);
+    await expect(page.getByTestId("candidate-announcement-link")).toBeHidden();
     const headingSize = await rendered.locator("h2").evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
     const bodySize = await rendered.locator("li").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
     expect(headingSize).toBeGreaterThan(bodySize);
@@ -189,6 +202,7 @@ test.describe.serial("Space waiting greeting", () => {
       await expect(rendered).toContainText("안내 문단 60", { timeout: 30000 });
       await expect(view.getByTestId("portal-header")).toBeHidden();
       await expect(view.getByTestId("portal-status")).toBeHidden();
+      await expect(view.getByTestId("candidate-announcement-link")).toBeHidden();
 
       const viewport = view.viewportSize();
       const viewer = await view.getByTestId("arena-viewer").boundingBox();
