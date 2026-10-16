@@ -332,7 +332,7 @@ async fn test_handle_ongoing_to_finished_notifies_participants() {
                 emails, headline, ..
             } = &n.data
             {
-                if headline.contains("has ended") {
+                if headline.contains("스페이스가 종료되었습니다") {
                     emails.clone()
                 } else {
                     vec![]
@@ -416,7 +416,7 @@ async fn test_handle_dedupes_duplicate_emails() {
 
     let rows = notifications_matching(&ctx, |n| {
         if let NotificationData::SendSpaceStatusUpdate { headline, .. } = &n.data {
-            headline.contains("is starting now")
+            headline.contains("스페이스가 시작되었습니다")
         } else {
             false
         }

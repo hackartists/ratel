@@ -231,24 +231,24 @@ pub(crate) async fn resolve_emails(user_pks: Vec<Partition>) -> Result<Vec<Strin
 fn status_change_copy(new_status: &SpaceStatus, space_title: &str) -> (String, String) {
     match new_status {
         SpaceStatus::Open => (
-            format!("{space_title} is now live"),
-            "Your team just published this space. You can invite participants and track activity from the dashboard.".to_string(),
+            format!("{space_title} 스페이스가 공개되었습니다"),
+            "팀에서 이 스페이스를 공개했습니다. 대시보드에서 참여자를 초대하고 활동을 확인할 수 있습니다.".to_string(),
         ),
         SpaceStatus::Sampling => (
-            format!("{space_title} is now sampling"),
-            "Sampling has started for the space you joined. Head in to check whether you can enter.".to_string(),
+            format!("{space_title} 샘플링이 시작되었습니다"),
+            "참여하신 스페이스의 샘플링이 시작되었습니다. 스페이스에 들어가 입장 가능 여부를 확인해 주세요.".to_string(),
         ),
         SpaceStatus::Ongoing => (
-            format!("{space_title} is starting now"),
-            "The space you joined has started. Head in to participate.".to_string(),
+            format!("{space_title} 스페이스가 시작되었습니다"),
+            "참여하신 스페이스가 시작되었습니다. 지금 바로 참여해 보세요.".to_string(),
         ),
         SpaceStatus::Finished => (
-            format!("{space_title} has ended"),
-            "This space is now closed. Thank you for participating — you can still view results on the dashboard.".to_string(),
+            format!("{space_title} 스페이스가 종료되었습니다"),
+            "이 스페이스는 종료되었습니다. 참여해 주셔서 감사합니다. 결과는 대시보드에서 계속 확인하실 수 있습니다.".to_string(),
         ),
         _ => (
-            format!("{space_title} status updated"),
-            "The space's status has changed.".to_string(),
+            format!("{space_title} 스페이스 상태가 변경되었습니다"),
+            "스페이스 상태가 변경되었습니다.".to_string(),
         ),
     }
 }
