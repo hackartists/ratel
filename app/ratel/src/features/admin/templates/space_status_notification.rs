@@ -6,11 +6,11 @@
 pub const SUBJECT: &str = "{{headline}} — {{space_title}}";
 
 #[allow(dead_code)]
-pub const TEXT: &str = "{{headline}}\n\n{{body}}\n\nSpace: {{space_title}}\nView: {{cta_url}}\n\n— Ratel";
+pub const TEXT: &str = "{{headline}}\n\n{{body}}\n\n스페이스: {{space_title}}\n바로가기: {{cta_url}}\n\n— Ratel";
 
 #[allow(dead_code)]
 pub const HTML: &str = r#"<!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="utf-8">
     <meta name="color-scheme" content="light only">
@@ -57,12 +57,12 @@ pub const HTML: &str = r#"<!doctype html>
                      style="display:inline-block;padding:12px 20px;border-radius:10px;
                             background:#F7B300;color:#000 !important;text-decoration:none !important;
                             font-weight:700;font-size:14px;">
-                    <span style="color:#000 !important;">Open Space</span>
+                    <span style="color:#000 !important;">스페이스 열기</span>
                   </a>
                 </p>
 
                 <p style="margin:16px 0 0 0;color:#8C8C8C;font-size:11px;text-align:center;">
-                  If the button doesn’t work, use this link:
+                  버튼이 동작하지 않으면 아래 링크를 이용해 주세요:
                   <a href="{{cta_url}}" style="color:#8C8C8C;">{{cta_url}}</a>
                 </p>
               </td>

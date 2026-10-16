@@ -56104,6 +56104,58 @@ html[data-theme="light"] .ff-home .featured-title {
   line-height: 1.5;
   text-align: center;
 }
+.sampling-entry-card__result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  animation: sampling-result-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.sampling-entry-card__result .waiting-card__heading {
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+  text-transform: none;
+}
+.sampling-entry-card__result--closed .waiting-card__heading {
+  color: var(--waiting-text-primary);
+}
+.sampling-entry-card__icon {
+  width: 56px;
+  height: 56px;
+}
+.sampling-entry-card__icon svg {
+  width: 100%;
+  height: 100%;
+}
+.sampling-entry-card__icon--selected {
+  color: #22c55e;
+  filter: drop-shadow(0 0 12px rgba(34, 197, 94, 0.45));
+}
+.sampling-entry-card__icon--closed {
+  color: var(--waiting-text);
+}
+.sampling-entry-card[data-outcome="selected"] {
+  border-color: rgba(34, 197, 94, 0.45);
+  box-shadow:
+    0 8px 60px var(--waiting-shadow),
+    0 0 80px rgba(34, 197, 94, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.sampling-entry-card[data-outcome="selected"] .sampling-entry-card__state {
+  color: var(--waiting-text-primary);
+  font-weight: 600;
+}
+.sampling-entry-card[data-outcome="closed"] .sampling-entry-card__state {
+  color: var(--waiting-text);
+}
+@keyframes sampling-result-pop {
+  0% { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
 .sampling-section--raised {
   position: relative;
   z-index: 3;
@@ -56243,6 +56295,7 @@ html[data-theme="light"] .ff-home .featured-title {
 }
 .portal:has(> .waiting-card[data-has-greeting="true"]) > .portal-header,
 .portal:has(> .waiting-card[data-has-greeting="true"]) > .portal-status,
+.portal:has(> .waiting-card[data-has-greeting="true"]) > .candidate-announcement-link,
 .arena-viewer:has(> .portal > .waiting-card[data-has-greeting="true"]) > .portal-author {
   display: none;
 }

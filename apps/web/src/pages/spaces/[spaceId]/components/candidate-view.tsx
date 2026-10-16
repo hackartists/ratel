@@ -36,7 +36,7 @@ export function CandidateView() {
     <>
       {announcement && (
         <div
-          className="prereq-item"
+          className="prereq-item candidate-announcement-link"
           data-testid="candidate-announcement-link"
           onClick={() => navigate(`/spaces/${ctx.spaceId}/actions/announcements/${announcement.action_id}`)}
         >
