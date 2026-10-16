@@ -44,7 +44,9 @@ test.describe.serial("Space waiting greeting", () => {
   async function openAsCandidate() {
     const { page } = candidate;
     await goto(page, space.spaceUrl);
-    await page.addStyleTag({ content: "*, *::before, *::after { animation-play-state: paused !important; }" });
+    await page.addStyleTag({
+      content: "*, *::before, *::after { animation-play-state: paused !important; } .portal { animation: none !important; }",
+    });
     return page;
   }
 
