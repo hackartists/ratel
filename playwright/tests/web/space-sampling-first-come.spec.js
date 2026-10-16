@@ -103,13 +103,22 @@ test.describe.serial("Sampling app — first come", () => {
   test("B5: the first member of a group takes its seat", async () => {
     const page = await openAs("u2");
     await expect(page.getByTestId("sampling-state-can-enter")).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId("card-sampling").getByTestId("waiting-greeting")).toHaveText(greeting);
     await clickNoNav(page, { testId: "btn-sampling-enter" });
-    await expect(page.getByTestId("sampling-state-entered")).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId("sampling-state-entered")).toHaveText("You can take part once the space starts.", {
+      timeout: 30000,
+    });
+    await expect(page.getByTestId("sampling-outcome-selected")).toBeVisible();
+    await expect(page.getByTestId("sampling-outcome-heading")).toHaveText("Congratulations! You were selected for the sample.");
+    await expect(page.getByTestId("card-sampling").getByTestId("waiting-greeting")).toHaveCount(0);
+    await expect(page.getByTestId("btn-sampling-enter")).toHaveCount(0);
   });
 
   test("B6: the next member of a full group cannot enter", async () => {
     const page = await openAs("u3");
     await expect(page.getByTestId("sampling-state-cell-full")).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId("sampling-outcome-closed")).toBeVisible();
+    await expect(page.getByTestId("sampling-outcome-heading")).toHaveText("First-come seats are all taken");
     await expect(page.getByTestId("btn-sampling-enter")).toHaveCount(0);
     const res = await page.request.post(`/api/spaces/${space.spaceId}/sampling/enter`);
     expect(res.status()).toBe(400);
