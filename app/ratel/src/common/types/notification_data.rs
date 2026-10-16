@@ -34,6 +34,11 @@ pub enum NotificationData {
         cta_url: String,
         space_title: String,
     },
+    /// Space status SMS for phone-only signups, sent one-by-one through SNS.
+    SendSpaceStatusSms {
+        phones: Vec<String>,
+        message: String,
+    },
     /// Reply-on-comment notification. Only carries identifiers; the actual
     /// recipient resolution (parent author + thread participants → emails)
     /// happens at send time in
@@ -161,6 +166,14 @@ impl NotificationData {
                     operation,
                 };
                 template.send_email(ses).await?;
+            }
+            NotificationData::SendSpaceStatusSms { phones, message } => {
+                let sns = cfg.sns();
+                for phone in phones {
+                    if let Err(e) = sns.send_sms(phone, message).await {
+                        tracing::error!("space status sms failed: {e}");
+                    }
+                }
             }
             NotificationData::ReplyOnComment {
                 source,
