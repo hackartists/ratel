@@ -19,8 +19,10 @@ import {
  * on the same row as the waiting status either way. The greeting is typed as
  * rich text the way an admin would (markdown shortcuts for the heading and the
  * list, Cmd/Ctrl+B and Cmd/Ctrl+I for inline marks) and the card renders those
- * elements. Once the space has started the greeting page is read-only and the
- * API rejects edits.
+ * elements. A long greeting keeps the card inside the viewport: the space
+ * logo, title and status step aside, the card spans at least half the
+ * viewport and only the greeting scrolls. Once the space has started the
+ * greeting page is read-only and the API rejects edits.
  */
 test.describe.serial("Space waiting greeting", () => {
   test.describe.configure({ timeout: 180000 });
@@ -169,6 +171,45 @@ test.describe.serial("Space waiting greeting", () => {
     await expect(card.getByTestId("waiting-heading")).toHaveCount(0);
     await expectParticipantsInlineWithStatus(card);
     await card.screenshot({ path: test.info().outputPath("greeting-waiting-card.png"), animations: "disabled" });
+  });
+
+  test("Candidate: a long greeting scrolls inside a wide card that fits the viewport", async ({ page }) => {
+    const current = await page.request.get(`/api/spaces/${space.spaceId}`);
+    const original = (await current.json()).greeting;
+    const paragraphs = Array.from({ length: 60 }, (_, i) => `<p>안내 문단 ${i + 1}: 조사 참여 전 반드시 확인해 주세요.</p>`);
+    const longGreeting = `<h2>${greeting.heading}</h2>${paragraphs.join("")}`;
+    const patch = (value) => page.request.patch(`/api/spaces/${space.spaceId}`, { data: { req: { greeting: value } } });
+
+    const res = await patch(longGreeting);
+    expect(res.ok(), await res.text()).toBeTruthy();
+    try {
+      const view = await openAsCandidate();
+      const card = view.getByTestId("card-waiting");
+      const rendered = card.getByTestId("waiting-greeting");
+      await expect(rendered).toContainText("안내 문단 60", { timeout: 30000 });
+      await expect(view.getByTestId("portal-header")).toBeHidden();
+      await expect(view.getByTestId("portal-status")).toBeHidden();
+
+      const viewport = view.viewportSize();
+      const viewer = await view.getByTestId("arena-viewer").boundingBox();
+      const box = await card.boundingBox();
+      expect(box.width).toBeGreaterThanOrEqual(Math.min(viewport.width * 0.5, viewer.width - 32) - 1);
+      expect(box.height).toBeLessThanOrEqual(viewport.height);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+
+      await expect(rendered).toHaveCSS("overflow-y", "auto");
+      const scroll = await rendered.evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }));
+      expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+      await expect(card.getByTestId("waiting-status")).toBeInViewport();
+
+      await rendered.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+      await expect(rendered.getByText("안내 문단 60")).toBeInViewport();
+      await view.screenshot({ path: test.info().outputPath("greeting-waiting-card-long.png"), animations: "disabled" });
+    } finally {
+      const restore = await patch(original);
+      expect(restore.ok(), await restore.text()).toBeTruthy();
+    }
   });
 
   test("Admin: the greeting is read-only once the space has started", async ({ page }) => {

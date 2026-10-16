@@ -3,8 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { enterSampling, getMySamplingStatus } from "@ratel/ts-bridges";
 import type { MySamplingState } from "@ratel/ts-bridges";
 import { useSpaceContext } from "@/components/space/space-context";
+import { dataBool } from "@/lib/dom";
 import { useToast } from "@/lib/toast";
-import { WaitingGreeting } from "./waiting-greeting";
+import { WaitingGreeting, hasGreeting } from "./waiting-greeting";
 import { useSamplingEntryCardI18n, type SamplingEntryCardI18n } from "./sampling-entry-card.i18n";
 
 /** `MySamplingState` → kebab-case suffix of the `sampling-state-*` test id. */
@@ -73,7 +74,11 @@ export function SamplingEntryCard() {
   };
 
   return (
-    <div className="waiting-card sampling-entry-card" data-testid="card-sampling">
+    <div
+      className="waiting-card sampling-entry-card"
+      data-testid="card-sampling"
+      data-has-greeting={dataBool(hasGreeting(ctx.space.greeting))}
+    >
       <WaitingGreeting />
       <span className="waiting-card__heading">{tr.title}</span>
       {cell_labels.length > 0 && (

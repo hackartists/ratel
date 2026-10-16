@@ -56233,3 +56233,37 @@ html[data-theme="light"] .ff-home .featured-title {
   max-width: 100%;
   border-radius: 8px;
 }
+
+.portal:has(> .waiting-card[data-has-greeting="true"]) {
+  align-self: stretch;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+  padding: 24px 16px;
+}
+.portal:has(> .waiting-card[data-has-greeting="true"]) > .portal-header,
+.portal:has(> .waiting-card[data-has-greeting="true"]) > .portal-status,
+.arena-viewer:has(> .portal > .waiting-card[data-has-greeting="true"]) > .portal-author {
+  display: none;
+}
+.portal:has(> .waiting-card[data-has-greeting="true"]) > :not(.waiting-card) {
+  flex-shrink: 0;
+}
+.waiting-card[data-has-greeting="true"] {
+  width: max(440px, 50vw);
+  max-width: 100%;
+  max-height: 100vh;
+  max-height: 100dvh;
+  min-height: 0;
+  flex: 0 1 auto;
+  animation: none;
+}
+.waiting-card[data-has-greeting="true"] > * {
+  flex-shrink: 0;
+}
+.waiting-card[data-has-greeting="true"] > .waiting-greeting {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
