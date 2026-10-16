@@ -203,6 +203,7 @@ test.describe.serial("Space waiting greeting", () => {
       await expect(view.getByTestId("portal-header")).toBeHidden();
       await expect(view.getByTestId("portal-status")).toBeHidden();
       await expect(view.getByTestId("candidate-announcement-link")).toBeHidden();
+      await view.getByTestId("portal").evaluate((el) => el.getAnimations().forEach((a) => a.finish()));
 
       const viewport = view.viewportSize();
       const viewer = await view.getByTestId("arena-viewer").boundingBox();
