@@ -28896,6 +28896,30 @@ body.comments-panel-resizing {
   .participate-card { width: calc(100vw - 32px); padding: 28px 20px 24px; }
   .arena-ring { display: none; }
   .portal-author { bottom: 20px; }
+  .arena-viewer:has(> .portal-author):not(:has(> .portal > .waiting-card[data-has-greeting="true"])) {
+    flex-direction: column;
+    justify-content: flex-start;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 16px 0 20px;
+  }
+  .arena-viewer:has(> .portal-author):not(:has(> .portal > .waiting-card[data-has-greeting="true"])) > .portal {
+    margin-block: auto;
+    flex-shrink: 0;
+  }
+  .arena-viewer:has(> .portal-author):not(:has(> .portal > .waiting-card[data-has-greeting="true"])) > .portal-author {
+    position: relative;
+    bottom: auto;
+    left: auto;
+    flex-shrink: 0;
+    margin-top: 16px;
+    animation-name: fade-up-in-flow;
+  }
+}
+
+@keyframes fade-up-in-flow {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* ── Join-time Announcement ──────────────────────── */
