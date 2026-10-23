@@ -33,3 +33,6 @@ pub use list_analyze_reports::*;
 
 mod preview_analyze_report;
 pub use preview_analyze_report::*;
+
+mod reanalyze_analyze_report;
+pub use reanalyze_analyze_report::*;

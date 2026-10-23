@@ -258,6 +258,7 @@ export { previewSamplingCells } from "./previewSamplingCells";
 export { publishAnnouncementHandler } from "./publishAnnouncementHandler";
 export { publishSubjectHandler } from "./publishSubjectHandler";
 export { readSpaceAnnouncement } from "./readSpaceAnnouncement";
+export { reanalyzeAnalyzeReport } from "./reanalyzeAnalyzeReport";
 export { redeemChipHandler } from "./redeemChipHandler";
 export { refreshSessionHandler } from "./refreshSessionHandler";
 export { refreshSpaceIncentiveTokens } from "./refreshSpaceIncentiveTokens";

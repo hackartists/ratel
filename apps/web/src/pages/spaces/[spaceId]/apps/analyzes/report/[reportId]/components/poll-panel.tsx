@@ -1,6 +1,7 @@
 import type { PollQuestionAggregate } from "@ratel/ts-bridges";
 import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { useAnalyzeReportDetailContext } from "../hooks/use-analyze-report-detail";
+import { ReanalyzeButton } from "./reanalyze-button";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/report/poll_panel/component.rs
 
@@ -42,8 +43,10 @@ export function PollPanel() {
   return (
     <section className="panel" data-panel="poll" data-active="true">
       <div className="panel-toolbar">
+        <ReanalyzeButton className="panel-toolbar__action" />
         <button
-          className="btn btn--primary panel-toolbar__action"
+          className="btn btn--primary"
+          data-testid="report-export-excel-btn"
           type="button"
           disabled={exportDisabled}
           onClick={() => {

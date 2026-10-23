@@ -51,6 +51,13 @@ pub enum SpaceAppError {
     )]
     AnalyzeQuotaExceeded,
 
+    #[error("analyze report already running")]
+    #[translate(
+        en = "This analysis is already running. Please wait until it finishes.",
+        ko = "이미 분석이 진행 중입니다. 완료된 후 다시 시도해 주세요."
+    )]
+    AnalyzeReportAlreadyRunning,
+
     #[error("copy text failed")]
     #[translate(en = "Failed to copy text", ko = "텍스트 복사에 실패했습니다.")]
     CopyTextFailed,
@@ -122,6 +129,8 @@ impl SpaceAppError {
             | SpaceAppError::UnsupportedOnServer => StatusCode::BAD_REQUEST,
 
             SpaceAppError::AnalyzeQuotaExceeded => StatusCode::FORBIDDEN,
+
+            SpaceAppError::AnalyzeReportAlreadyRunning => StatusCode::CONFLICT,
 
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
