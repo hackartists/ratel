@@ -15,8 +15,11 @@
 //!   by follower-count-among-matched are surfaced; the rest dropped.
 //!
 //! The result row is written FIRST, then `AnalyzeReport.status` is
-//! flipped to `Finish`. If the Lambda crashes mid-write, a retry would
-//! find the result already exists; the upsert path overwrites cleanly.
+//! flipped to `Finish`. The result row is upserted on its unique
+//! `report_id`, so both a retry after a mid-write crash and a
+//! user-triggered re-analysis (`reanalyze_analyze_report`) overwrite the
+//! previous aggregates in place. Any pipeline error flips the report to
+//! `Failed` so the detail page stops waiting and the user can re-run.
 
 use crate::common::utils::time::get_now_timestamp_millis;
 use crate::features::spaces::pages::apps::apps::analyzes::*;
@@ -26,7 +29,34 @@ use std::collections::HashSet;
 
 const TOP_N_FOLLOW: usize = 30;
 
+/// Runs the aggregation pipeline for `report`; on failure stamps
+/// `status = Failed` (best-effort) before returning the error so the
+/// outbox can still retry it.
 pub async fn process_analyze_report(
+    cli: &aws_sdk_dynamodb::Client,
+    report: &SpaceAnalyzeReport,
+) -> Result<()> {
+    match try_process_analyze_report(cli, report).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            crate::error!(
+                "auto_analysis failed for report={}: {e}",
+                report.report_id()
+            );
+            let _ = SpaceAnalyzeReport::repository()
+                .update(
+                    report.id,
+                    SpaceAnalyzeReport::update()
+                        .status(AnalyzeReportStatus::Failed)
+                        .updated_at(get_now_timestamp_millis()),
+                )
+                .await;
+            Err(e)
+        }
+    }
+}
+
+async fn try_process_analyze_report(
     cli: &aws_sdk_dynamodb::Client,
     report: &SpaceAnalyzeReport,
 ) -> Result<()> {
@@ -63,7 +93,7 @@ pub async fn process_analyze_report(
     result.quiz_aggregates = QuizAggregates(quiz_aggregates);
     result.follow_aggregates = FollowAggregates(follow_aggregates);
     SpaceAnalyzeReportResult::repository()
-        .insert(&result)
+        .upsert_on(&["report_id"], &result)
         .await?;
 
     // 4. Flip the parent report's status. Any consumers gated on

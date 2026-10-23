@@ -1,6 +1,7 @@
 import type { FollowTargetAggregate } from "@ratel/ts-bridges";
 import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { useAnalyzeReportDetailContext } from "../hooks/use-analyze-report-detail";
+import { ReanalyzeButton } from "./reanalyze-button";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/report/follow_panel/component.rs
 
@@ -13,6 +14,9 @@ export function FollowPanel() {
 
   return (
     <section className="panel" data-panel="follow" data-active="false">
+      <div className="panel-toolbar">
+        <ReanalyzeButton className="panel-toolbar__action" />
+      </div>
       <h1 className="main-title">
         <span className="main-title__chip main-title__chip--follow">
           <svg

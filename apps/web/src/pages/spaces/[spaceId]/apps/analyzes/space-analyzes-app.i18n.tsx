@@ -17,6 +17,15 @@ const en = {
   back_to_list: "Back to Polls",
   download_excel: "Download Excel",
   download_started: "Download started",
+  reanalyze: "Re-analyze",
+  reanalyze_running: "Re-analyzing…",
+  reanalyze_confirm_title: "Re-analyze with current data?",
+  reanalyze_confirm_desc: "Poll, quiz and follow results will be recomputed from the latest responses and the current results will be replaced. Discussion analyses are kept and can be re-run separately.",
+  reanalyze_confirm_ok: "Re-analyze",
+  reanalyze_cancel: "Cancel",
+  reanalyze_started: "Re-analysis started",
+  reanalyze_finished: "Re-analysis finished",
+  reanalyze_failed: "Re-analysis failed. Please try again.",
   responses_count: "Responses",
   remaining_days: "Remaining",
   survey_period: "Survey Period",
@@ -228,6 +237,15 @@ const ko: Record<keyof typeof en, string> = {
   back_to_list: "설문 목록으로",
   download_excel: "엑셀 다운로드",
   download_started: "다운로드를 시작했습니다",
+  reanalyze: "재분석",
+  reanalyze_running: "재분석 중…",
+  reanalyze_confirm_title: "현재 데이터로 재분석할까요?",
+  reanalyze_confirm_desc: "설문·퀴즈·팔로우 결과를 최신 응답 기준으로 다시 계산하며, 기존 결과는 새 결과로 대체됩니다. 토론 분석 결과는 유지되며 별도로 다시 실행할 수 있습니다.",
+  reanalyze_confirm_ok: "재분석",
+  reanalyze_cancel: "취소",
+  reanalyze_started: "재분석을 시작했습니다",
+  reanalyze_finished: "재분석이 완료되었습니다",
+  reanalyze_failed: "재분석에 실패했습니다. 다시 시도해 주세요.",
   responses_count: "참여자",
   remaining_days: "남은 일시",
   survey_period: "설문 기간",
@@ -441,6 +459,15 @@ export interface SpaceAnalyzesAppI18n {
   backToList: string;
   downloadExcel: string;
   downloadStarted: string;
+  reanalyze: string;
+  reanalyzeRunning: string;
+  reanalyzeConfirmTitle: string;
+  reanalyzeConfirmDesc: string;
+  reanalyzeConfirmOk: string;
+  reanalyzeCancel: string;
+  reanalyzeStarted: string;
+  reanalyzeFinished: string;
+  reanalyzeFailed: string;
   responsesCount: string;
   remainingDays: string;
   surveyPeriod: string;
@@ -656,6 +683,15 @@ export function useSpaceAnalyzesAppI18n(): SpaceAnalyzesAppI18n {
     backToList: t("back_to_list"),
     downloadExcel: t("download_excel"),
     downloadStarted: t("download_started"),
+    reanalyze: t("reanalyze"),
+    reanalyzeRunning: t("reanalyze_running"),
+    reanalyzeConfirmTitle: t("reanalyze_confirm_title"),
+    reanalyzeConfirmDesc: t("reanalyze_confirm_desc"),
+    reanalyzeConfirmOk: t("reanalyze_confirm_ok"),
+    reanalyzeCancel: t("reanalyze_cancel"),
+    reanalyzeStarted: t("reanalyze_started"),
+    reanalyzeFinished: t("reanalyze_finished"),
+    reanalyzeFailed: t("reanalyze_failed"),
     responsesCount: t("responses_count"),
     remainingDays: t("remaining_days"),
     surveyPeriod: t("survey_period"),

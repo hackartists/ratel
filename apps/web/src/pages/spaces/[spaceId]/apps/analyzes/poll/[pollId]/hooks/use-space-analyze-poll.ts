@@ -22,6 +22,10 @@ export interface UseSpaceAnalyzePoll {
   /** `handle_export_excel.pending()` */
   exportPending: boolean;
   handleExportExcel: () => void;
+  /** `true` while the poll, result and panel loaders are being re-fetched. */
+  reanalyzing: boolean;
+  /** Re-reads the poll result (computed live from current responses) and panels. */
+  handleReanalyze: () => void;
 }
 
 export function useSpaceAnalyzePoll(spaceId: string, pollId: string): UseSpaceAnalyzePoll {
@@ -39,6 +43,24 @@ export function useSpaceAnalyzePoll(spaceId: string, pollId: string): UseSpaceAn
   const [selectedFilterGroup, setSelectedFilterGroup] = useState("overall");
   const [selectedFilterValue, setSelectedFilterValue] = useState("");
   const [exportPending, setExportPending] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
+
+  const handleReanalyze = () => {
+    if (reanalyzing) return;
+    setReanalyzing(true);
+    void (async () => {
+      try {
+        const settled = await Promise.all([panels.refetch(), poll.refetch(), result.refetch()]);
+        const failed = settled.find((r) => r.isError);
+        if (failed) toast.error(failed.error);
+        else toast.info(tr.reanalyzeFinished);
+      } catch (err) {
+        toast.error(err);
+      } finally {
+        setReanalyzing(false);
+      }
+    })();
+  };
 
   const handleExportExcel = () => {
     if (exportPending) return;
@@ -70,5 +92,7 @@ export function useSpaceAnalyzePoll(spaceId: string, pollId: string): UseSpaceAn
     setSelectedFilterValue,
     exportPending,
     handleExportExcel,
+    reanalyzing,
+    handleReanalyze,
   };
 }

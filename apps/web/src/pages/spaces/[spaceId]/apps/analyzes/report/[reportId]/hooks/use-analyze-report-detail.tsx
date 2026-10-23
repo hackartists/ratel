@@ -1,5 +1,5 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { createContext, useContext, useState, useTransition } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useTransition } from "react";
 import {
   analyzeDiscussion,
   getAnalyzeReport,
@@ -8,6 +8,7 @@ import {
   getPollResult,
   listAnalyzeDiscussionResults,
   listPanels,
+  reanalyzeAnalyzeReport,
   updateDiscussionTopics,
 } from "@ratel/ts-bridges";
 import type {
@@ -57,6 +58,10 @@ export interface UseAnalyzeReportDetail {
   handleRunDiscussion: (params: DiscussionAnalysisParams) => void;
   exportPending: boolean;
   handleExportExcel: (pollId: string) => void;
+  /** `true` while the re-analyze request is in flight or the report is back in `in_progress`. */
+  reanalyzing: boolean;
+  /** Re-runs the report's poll/quiz/follow aggregation against the current data and polls until it settles. */
+  handleReanalyze: () => void;
   saveTopicsPending: boolean;
   /** LdaCard `save_action`. */
   saveTopics: (row: SpaceAnalyzeDiscussionResult, topics: AnalyzesResultTopicRow[]) => void;
@@ -73,6 +78,9 @@ export function useAnalyzeReportDetailContext(): UseAnalyzeReportDetail {
 
 const EMPTY_RESULTS: ListResponse<SpaceAnalyzeDiscussionResult> = { items: [], bookmark: null };
 
+/** How often the detail payload is refetched while the report is `in_progress`. */
+export const REANALYZE_POLL_INTERVAL_MS = 3000;
+
 export function useAnalyzeReportDetail(spaceId: string, reportId: string): UseAnalyzeReportDetail {
   const tr = useSpaceAnalyzesAppI18n();
   const enumText = useEnumI18n();
@@ -86,6 +94,8 @@ export function useAnalyzeReportDetail(spaceId: string, reportId: string): UseAn
   const detail = useSuspenseQuery({
     queryKey: ["getAnalyzeReport", spaceId, reportId],
     queryFn: () => getAnalyzeReport(spaceId, reportId),
+    refetchInterval: (query) =>
+      query.state.data?.report.status === "in_progress" ? REANALYZE_POLL_INTERVAL_MS : false,
   });
 
   const [selectedPoll, setSelectedPoll] = useState<string | null>(null);
@@ -108,6 +118,37 @@ export function useAnalyzeReportDetail(spaceId: string, reportId: string): UseAn
   const [runDiscussionPending, setRunDiscussionPending] = useState(false);
   const [exportPending, setExportPending] = useState(false);
   const [saveTopicsPending, setSaveTopicsPending] = useState(false);
+  const [reanalyzePending, setReanalyzePending] = useState(false);
+  const reportStatus = detail.data.report.status;
+  const awaitingReanalyze = useRef(false);
+
+  useEffect(() => {
+    if (!awaitingReanalyze.current || reportStatus === "in_progress") return;
+    awaitingReanalyze.current = false;
+    if (reportStatus === "finish") toast.info(tr.reanalyzeFinished);
+    else toast.error(tr.reanalyzeFailed);
+  }, [reportStatus, toast, tr.reanalyzeFinished, tr.reanalyzeFailed]);
+
+  const reanalyzing = reanalyzePending || reportStatus === "in_progress";
+
+  const handleReanalyze = () => {
+    if (reanalyzing) return;
+    setReanalyzePending(true);
+    void (async () => {
+      try {
+        await reanalyzeAnalyzeReport(spaceId, reportId);
+        awaitingReanalyze.current = true;
+        toast.info(tr.reanalyzeStarted);
+        await queryClient.refetchQueries({ queryKey: ["getAnalyzeReport", spaceId, reportId] });
+        void queryClient.invalidateQueries({ queryKey: ["listAnalyzeReports", spaceId] });
+      } catch (err) {
+        console.error(`reanalyze_analyze_report failed: ${err}`);
+        toast.error(err);
+      } finally {
+        setReanalyzePending(false);
+      }
+    })();
+  };
 
   const restartDiscussionResults = () => {
     void discussionResults.refetch();
@@ -233,6 +274,8 @@ export function useAnalyzeReportDetail(spaceId: string, reportId: string): UseAn
     handleRunDiscussion,
     exportPending,
     handleExportExcel,
+    reanalyzing,
+    handleReanalyze,
     saveTopicsPending,
     saveTopics,
   };

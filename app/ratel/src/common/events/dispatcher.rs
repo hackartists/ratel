@@ -369,7 +369,7 @@ static RULES: &[Rule] = &[
         name: "AnalyzeReportInProgress",
         class: EventClass::Analyze,
         filter: |e| {
-            is_insert(e)
+            is_upsert(e)
                 && new_sk_starts(e, "SPACE_ANALYZE_REPORT#")
                 && new_str(e, "status") == Some("in_progress")
         },
@@ -1015,6 +1015,32 @@ mod tests {
             None,
         );
         assert!(!names(&finished).contains(&"AnalyzeReportInProgress"));
+
+        let reanalyze = event(
+            "MODIFY",
+            Some(image(&[
+                ("sk", s("SPACE_ANALYZE_REPORT#r1")),
+                ("status", s("in_progress")),
+            ])),
+            Some(image(&[
+                ("sk", s("SPACE_ANALYZE_REPORT#r1")),
+                ("status", s("finish")),
+            ])),
+        );
+        assert!(names(&reanalyze).contains(&"AnalyzeReportInProgress"));
+
+        let finished_modify = event(
+            "MODIFY",
+            Some(image(&[
+                ("sk", s("SPACE_ANALYZE_REPORT#r1")),
+                ("status", s("finish")),
+            ])),
+            Some(image(&[
+                ("sk", s("SPACE_ANALYZE_REPORT#r1")),
+                ("status", s("in_progress")),
+            ])),
+        );
+        assert!(!names(&finished_modify).contains(&"AnalyzeReportInProgress"));
 
         // Analyze rules are excluded from the default worker role.
         let default_role = RoleSet::from_worker_role("default");

@@ -21373,6 +21373,9 @@ html[data-theme="light"] .team-arena .arena-topbar__status::before,
   padding: 10px 20px;
   font-size: 11px;
 }
+.sap-btn[data-running="true"] .reanalyze-btn__icon {
+  animation: reanalyze-spin 1s linear infinite;
+}
 
 @media (max-width: 760px) {
   .sap-topbar {
@@ -46376,6 +46379,18 @@ a.file-item { text-decoration: none; color: inherit; cursor: pointer; }
 .analyze-arena.analyze-arena--detail .btn--primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(252, 179, 0, 0.4);
+}
+.analyze-arena.analyze-arena--detail .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.analyze-arena.analyze-arena--detail .btn[data-running="true"] .reanalyze-btn__icon {
+  animation: reanalyze-spin 1s linear infinite;
+}
+@keyframes reanalyze-spin {
+  to { transform: rotate(360deg); }
 }
 
 .analyze-arena.analyze-arena--detail .bar-chart {

@@ -1,6 +1,7 @@
 import type { QuizQuestionAggregate } from "@ratel/ts-bridges";
 import { useSpaceAnalyzesAppI18n } from "@/pages/spaces/[spaceId]/apps/analyzes/space-analyzes-app.i18n";
 import { useAnalyzeReportDetailContext } from "../hooks/use-analyze-report-detail";
+import { ReanalyzeButton } from "./reanalyze-button";
 import { BAR_COLORS, BarRow, type BarItem } from "./poll-panel";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/report/quiz_panel/component.rs
@@ -25,6 +26,9 @@ export function QuizPanel() {
 
   return (
     <section className="panel" data-panel="quiz" data-active="false">
+      <div className="panel-toolbar">
+        <ReanalyzeButton className="panel-toolbar__action" />
+      </div>
       <h1 className="main-title">
         <span className="main-title__chip main-title__chip--quiz">
           <svg
