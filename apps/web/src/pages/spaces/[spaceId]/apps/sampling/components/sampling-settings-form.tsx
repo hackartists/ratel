@@ -6,8 +6,9 @@ import type { UseSpaceSampling } from "../hooks/use-space-sampling";
 
 /**
  * Sampling settings inputs, top to bottom: entry poll, population
- * conditions, sampling items, sample size, allocation (equal only),
- * selection method and the recruit-during-sampling option.
+ * conditions, sampling items, duplicate-prevention questions, sample size,
+ * allocation (equal only), selection method and the
+ * recruit-during-sampling option.
  */
 export function SamplingSettingsForm({ sampling }: { sampling: UseSpaceSampling }) {
   const tr = useSpaceSamplingI18n();
@@ -19,6 +20,14 @@ export function SamplingSettingsForm({ sampling }: { sampling: UseSpaceSampling 
     const next = form.dimensions.includes(index) ? form.dimensions.filter((d) => d !== index) : [...form.dimensions, index];
     setForm({ dimensions: next });
   };
+
+  const toggleUnique = (index: number) => {
+    const next = form.uniqueQuestions.includes(index)
+      ? form.uniqueQuestions.filter((d) => d !== index)
+      : [...form.uniqueQuestions, index];
+    setForm({ uniqueQuestions: next });
+  };
+  const hasShortAnswer = questions.some((q) => q.answer_type === "short_answer");
 
   const methods: { value: SamplingMethod; testId: string; hint: string }[] = [
     { value: "FirstCome", testId: "sampling-method-first-come", hint: tr.methodFirstComeHint },
@@ -48,7 +57,7 @@ export function SamplingSettingsForm({ sampling }: { sampling: UseSpaceSampling 
             data-testid="sampling-entry-poll-select"
             value={form.entryPollId}
             disabled={locked}
-            onChange={(e) => setForm({ entryPollId: e.currentTarget.value, rules: [], dimensions: [] })}
+            onChange={(e) => setForm({ entryPollId: e.currentTarget.value, rules: [], dimensions: [], uniqueQuestions: [] })}
           >
             <option value="" disabled>
               {tr.entryPollLabel}
@@ -97,6 +106,37 @@ export function SamplingSettingsForm({ sampling }: { sampling: UseSpaceSampling 
                     checked={form.dimensions.includes(qi)}
                     disabled={locked}
                     onChange={() => toggleDimension(qi)}
+                  />
+                  <span>{q.title}</span>
+                </label>
+              ) : null,
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="spa-section" data-testid="sampling-section-unique">
+        <div className="spa-section__head">
+          <div className="spa-section__title">
+            <span className="spa-section__label">{tr.uniqueLabel}</span>
+          </div>
+          <span className="spa-section__hint">{tr.uniqueHint}</span>
+        </div>
+        {!hasShortAnswer ? (
+          <span className="spa-section__hint" data-testid="sampling-no-short-answer">
+            {tr.noShortAnswer}
+          </span>
+        ) : (
+          <div className="sampling-options">
+            {questions.map((q, qi) =>
+              q.answer_type === "short_answer" ? (
+                <label key={qi} className="sampling-option">
+                  <input
+                    type="checkbox"
+                    data-testid={`sampling-unique-question-${qi}`}
+                    checked={form.uniqueQuestions.includes(qi)}
+                    disabled={locked}
+                    onChange={() => toggleUnique(qi)}
                   />
                   <span>{q.title}</span>
                 </label>

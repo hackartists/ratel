@@ -8,15 +8,16 @@ use crate::features::spaces::pages::actions::actions::poll::{
 };
 use crate::features::spaces::pages::apps::apps::sampling::services::admission::sampling_space_id;
 use crate::features::spaces::pages::apps::apps::sampling::services::cells::classify;
+use crate::features::spaces::pages::apps::apps::sampling::services::unique_keys::unique_keys_for;
 use crate::features::spaces::pages::apps::apps::sampling::*;
 
 /// Keeps the population in sync after a user answers the entry poll.
 ///
 /// No-op unless the Sampling app is configured, the answered poll is the
 /// entry poll and the space is `Open` or `Sampling`. Members already
-/// `Selected` or `Entered` keep their cell. Otherwise the member row is
-/// created, moved to the new cell, or removed when the answers no longer
-/// satisfy the population rules.
+/// `Selected` or `Entered` keep their cell and unique keys. Otherwise the
+/// member row is created, moved to the new cell with refreshed unique keys,
+/// or removed when the answers no longer satisfy the population rules.
 pub async fn on_entry_poll_answered(
     space: &SpaceCommon,
     poll: &SpacePoll,
@@ -59,26 +60,33 @@ pub async fn on_entry_poll_answered(
         _ => None,
     };
 
+    let unique_keys = unique_keys_for(&space_id, &config.unique_questions.0, answers);
+
     match (cell_key, existing) {
         (None, Some(member)) => SpaceSamplingMember::delete(member.id).await,
         (None, None) => Ok(()),
         (Some(key), Some(mut member)) => {
             member.cell_key = key;
+            member.unique_keys = SamplingUniqueKeys(unique_keys);
             member.save().await.map(|_| ())
         }
-        (Some(key), None) => {
-            SpaceSamplingMember::new(&space_id, &user_pk, &key, get_now_timestamp_millis())
-                .save()
-                .await
-                .map(|_| ())
-        }
+        (Some(key), None) => SpaceSamplingMember::new(
+            &space_id,
+            &user_pk,
+            &key,
+            unique_keys,
+            get_now_timestamp_millis(),
+        )
+        .save()
+        .await
+        .map(|_| ()),
     }
 }
 
 /// Rebuilds the whole population of a space inside `tx` from the current
 /// entry-poll answers of its participants. Called when the settings are
 /// saved, which is only allowed before sampling starts, so every member is
-/// still a plain `Population` row.
+/// still a plain `Population` row and no unique key has been claimed yet.
 pub async fn rebuild_population_tx(
     tx: &postgres::Tx,
     space: &SpaceCommon,
@@ -88,6 +96,7 @@ pub async fn rebuild_population_tx(
 ) -> Result<usize> {
     let space_id = sampling_space_id(space);
     let space_pk = space.partition();
+    SpaceSamplingEntryKey::delete_by_space_tx(tx, &space_id).await?;
     SpaceSamplingMember::delete_by_space_tx(tx, &space_id).await?;
 
     let participants: HashSet<String> = SpaceParticipant::find_by_space(&space_pk)
@@ -114,9 +123,16 @@ pub async fn rebuild_population_tx(
         if !cell_keys.contains(&key) {
             continue;
         }
-        SpaceSamplingMember::new(&space_id, &answer.actor_pk, &key, answer.created_at)
-            .insert_tx(tx)
-            .await?;
+        let unique_keys = unique_keys_for(&space_id, &config.unique_questions.0, &answer.answers.0);
+        SpaceSamplingMember::new(
+            &space_id,
+            &answer.actor_pk,
+            &key,
+            unique_keys,
+            answer.created_at,
+        )
+        .insert_tx(tx)
+        .await?;
         inserted += 1;
     }
     Ok(inserted)

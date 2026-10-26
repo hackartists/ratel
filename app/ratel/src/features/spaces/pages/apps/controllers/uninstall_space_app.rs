@@ -15,7 +15,8 @@ pub async fn uninstall_space_app(
 ) -> Result<SpaceApp> {
     use crate::features::spaces::pages::apps::apps::sampling::services::sampling_space_id;
     use crate::features::spaces::pages::apps::apps::sampling::{
-        SpaceSamplingCell, SpaceSamplingConfig, SpaceSamplingError, SpaceSamplingMember,
+        SpaceSamplingCell, SpaceSamplingConfig, SpaceSamplingEntryKey, SpaceSamplingError,
+        SpaceSamplingMember,
     };
     use postgres::PostgresEntity;
 
@@ -49,6 +50,7 @@ pub async fn uninstall_space_app(
         if let Some(existing) = existing {
             SpaceApp::repository().with_tx(&tx).delete(existing.id).await?;
         }
+        SpaceSamplingEntryKey::delete_by_space_tx(&tx, &sid).await?;
         SpaceSamplingMember::delete_by_space_tx(&tx, &sid).await?;
         SpaceSamplingCell::delete_by_space_tx(&tx, &sid).await?;
         SpaceSamplingConfig::delete_by_space_tx(&tx, &sid).await?;

@@ -61,6 +61,13 @@ pub enum SpaceSamplingError {
     )]
     InvalidRule,
 
+    #[error("invalid unique question")]
+    #[translate(
+        en = "Duplicate-prevention questions must be distinct short-answer questions of the entry poll.",
+        ko = "중복 참여 방지 문항은 엔트리 폴의 서로 다른 단답형 문항이어야 합니다."
+    )]
+    InvalidUniqueQuestion,
+
     #[error("invalid total samples")]
     #[translate(
         en = "The sample size must be at least 1.",
@@ -102,6 +109,13 @@ pub enum SpaceSamplingError {
         ko = "표본으로 선정되지 않아 입장할 수 없습니다."
     )]
     NotSelected,
+
+    #[error("unique answer already entered")]
+    #[translate(
+        en = "This information has already been used to join the sample.",
+        ko = "이미 참여한 정보입니다."
+    )]
+    AlreadyEntered,
 
     #[error("sampling save failed")]
     #[translate(

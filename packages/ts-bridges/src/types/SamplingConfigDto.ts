@@ -6,4 +6,9 @@ import type { SamplingMethod } from "./SamplingMethod";
 /**
  * Saved Sampling settings for a space.
  */
-export type SamplingConfigDto = { entry_poll_id: string, population_rules: Array<RequiredAttributeRule>, dimensions: Array<number>, total_samples: number, allocation: SamplingAllocation, method: SamplingMethod, allow_recruit_during_sampling: boolean, sampling_started_at: number | null, };
+export type SamplingConfigDto = { entry_poll_id: string, population_rules: Array<RequiredAttributeRule>, dimensions: Array<number>, total_samples: number, allocation: SamplingAllocation, method: SamplingMethod, allow_recruit_during_sampling: boolean, sampling_started_at: number | null,
+/**
+ * Short-answer question indices whose answers may not repeat among
+ * admitted members; empty when duplicate prevention is off.
+ */
+unique_questions: Array<number>, };

@@ -1,7 +1,8 @@
 //! Integration coverage for the Sampling space app: settings validation,
 //! cell and population building, the `Open → Sampling → Ongoing`
-//! transitions, first-come and random entry, and the role checks that keep
-//! non-sampled users out once the space is ongoing.
+//! transitions, first-come and random entry, duplicate prevention through
+//! unique questions, and the role checks that keep non-sampled users out
+//! once the space is ongoing.
 use super::*;
 use crate::common::models::space::{SpaceCommon, SpaceParticipant, SpaceStatusChangeEvent};
 use crate::common::types::{Partition, SpacePublishState, SpaceStatus, SpaceVisibility};
@@ -11,7 +12,8 @@ use crate::features::spaces::pages::actions::actions::poll::types::{ChoiceQuesti
 use crate::features::spaces::pages::actions::models::SpaceAction;
 use crate::features::spaces::pages::actions::types::{SpaceActionStatus, SpaceActionType};
 use crate::features::spaces::pages::apps::apps::sampling::{
-    SamplingMemberStatus, SpaceSamplingCell, SpaceSamplingConfig, SpaceSamplingMember,
+    SamplingMemberStatus, SpaceSamplingCell, SpaceSamplingConfig, SpaceSamplingEntryKey,
+    SpaceSamplingMember,
 };
 use axum::http::HeaderMap;
 use postgres::PostgresEntity;
@@ -805,4 +807,338 @@ async fn test_uninstall_cleans_up() {
 
     let (status, body) = patch_space(&ctx, &s.space_id, json!({ "start": true })).await;
     assert_eq!(status, 200, "{body}");
+}
+
+fn short_answer(title: &str) -> Question {
+    Question::ShortAnswer(
+        crate::features::spaces::pages::actions::actions::poll::types::SubjectiveQuestion {
+            title: title.to_string(),
+            ..Default::default()
+        },
+    )
+}
+
+/// Seeds a Sampling space whose entry poll also carries two short-answer
+/// questions: Q3 phone and Q4 email.
+async fn seed_unique_space(ctx: &TestContext, editable: bool) -> Seeded {
+    let s = seed_sampling_space(ctx, false, editable).await;
+    let space_partition = crate::common::types::SpacePartition(s.space_id.clone());
+    let mut poll = SpacePoll::get_one(
+        &space_partition,
+        &crate::SpacePollEntityType(s.poll_id.clone()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    poll.questions.0.push(short_answer("Phone"));
+    poll.questions.0.push(short_answer("Email"));
+    SpacePoll::repository()
+        .update(
+            poll.id,
+            SpacePoll::update().questions(poll.questions.clone()),
+        )
+        .await
+        .unwrap();
+    s
+}
+
+async fn put_unique_config(
+    ctx: &TestContext,
+    s: &Seeded,
+    dims: Value,
+    total: i64,
+    method: &str,
+    unique: Value,
+) -> (axum::http::StatusCode, Value) {
+    let (status, _, body) = crate::test_put! {
+        app: ctx.app.clone(),
+        path: &format!("/api/spaces/{}/sampling", s.space_id),
+        headers: ctx.test_user.1.clone(),
+        body: {
+            "req": {
+                "entry_poll_id": s.poll_id,
+                "population_rules": [],
+                "dimensions": dims,
+                "total_samples": total,
+                "allocation": "Equal",
+                "method": method,
+                "allow_recruit_during_sampling": false,
+                "unique_questions": unique
+            }
+        }
+    };
+    (status, body)
+}
+
+async fn answer_unique(
+    ctx: &TestContext,
+    s: &Seeded,
+    headers: &HeaderMap,
+    picks: [i32; 3],
+    phone: &str,
+    email: &str,
+) -> (axum::http::StatusCode, Value) {
+    let (status, _, body) = crate::test_post! {
+        app: ctx.app.clone(),
+        path: &format!("/api/spaces/{}/polls/{}/respond", s.space_id, s.poll_id),
+        headers: headers.clone(),
+        body: {
+            "req": {
+                "answers": [
+                    { "answer_type": "single_choice", "answer": picks[0] },
+                    { "answer_type": "single_choice", "answer": picks[1] },
+                    { "answer_type": "single_choice", "answer": picks[2] },
+                    { "answer_type": "short_answer", "answer": phone },
+                    { "answer_type": "short_answer", "answer": email }
+                ]
+            }
+        }
+    };
+    (status, body)
+}
+
+async fn join_unique(
+    ctx: &TestContext,
+    s: &Seeded,
+    picks: [i32; 3],
+    phone: &str,
+    email: &str,
+) -> (User, HeaderMap) {
+    let (user, headers) = ctx.create_another_user().await;
+    SpaceParticipant::new(Partition::Space(s.space_id.clone()), user.pk())
+        .create()
+        .await
+        .expect("create participant");
+    let (status, body) = answer_unique(ctx, s, &headers, picks, phone, email).await;
+    assert_eq!(status, 200, "respond entry poll: {:?}", body);
+    (user, headers)
+}
+
+async fn member_of(s: &Seeded, user: &User) -> SpaceSamplingMember {
+    SpaceSamplingMember::get_for(&s.space_id, &user.pk().to_string())
+        .await
+        .expect("member lookup")
+        .expect("member exists")
+}
+
+async fn remains(s: &Seeded) -> Vec<i64> {
+    SpaceSamplingCell::list_by_space(&s.space_id)
+        .await
+        .unwrap()
+        .iter()
+        .map(|c| c.remains)
+        .collect()
+}
+
+#[by_macros::pg_test]
+async fn test_unique_questions_validation() {
+    let ctx = TestContext::setup().await;
+    let s = seed_unique_space(&ctx, false).await;
+
+    for bad in [json!([0]), json!([3, 3]), json!([9])] {
+        let (status, body) = put_unique_config(&ctx, &s, json!([0]), 2, "FirstCome", bad).await;
+        assert_eq!(status, 400, "{body}");
+        assert!(
+            error_text(&body).contains("InvalidUniqueQuestion"),
+            "{body}"
+        );
+    }
+
+    let (status, body) =
+        put_unique_config(&ctx, &s, json!([0]), 2, "FirstCome", json!([3, 4])).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["config"]["unique_questions"], json!([3, 4]));
+
+    let (status, _, body) = crate::test_get! {
+        app: ctx.app.clone(),
+        path: &format!("/api/spaces/{}/sampling", s.space_id),
+        headers: ctx.test_user.1.clone(),
+    };
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["config"]["unique_questions"], json!([3, 4]));
+}
+
+#[by_macros::pg_test]
+async fn test_unique_keys_are_hashed_and_follow_population_edits() {
+    let ctx = TestContext::setup().await;
+    let s = seed_unique_space(&ctx, true).await;
+    let (status, body) = put_unique_config(&ctx, &s, json!([0]), 2, "FirstCome", json!([3])).await;
+    assert_eq!(status, 200, "{body}");
+
+    let (u, h) = join_unique(&ctx, &s, [0, 0, 0], "010-1234-5678", "a@x.io").await;
+    let first = member_of(&s, &u).await.unique_keys.0;
+    assert_eq!(first.len(), 1);
+    assert!(!first[0].contains("1234"), "raw answers must not be stored");
+
+    let (status, body) = answer_unique(&ctx, &s, &h, [0, 0, 0], "010 9999 0000", "a@x.io").await;
+    assert_eq!(status, 200, "{body}");
+    let edited = member_of(&s, &u).await.unique_keys.0;
+    assert_eq!(edited.len(), 1);
+    assert_ne!(edited, first, "a population member follows answer edits");
+
+    let (status, body) = answer_unique(&ctx, &s, &h, [0, 0, 0], "  ", "a@x.io").await;
+    assert_eq!(status, 200, "{body}");
+    assert!(member_of(&s, &u).await.unique_keys.0.is_empty());
+}
+
+#[by_macros::pg_test]
+async fn test_first_come_rejects_duplicate_unique_answer() {
+    let ctx = TestContext::setup().await;
+    let s = seed_unique_space(&ctx, false).await;
+    let (status, body) = put_unique_config(&ctx, &s, json!([0]), 4, "FirstCome", json!([3])).await;
+    assert_eq!(status, 200, "{body}");
+
+    let (_, first) = join_unique(&ctx, &s, [0, 0, 0], "010-1234-5678", "").await;
+    let (dup_user, dup) = join_unique(&ctx, &s, [1, 0, 0], "01012345678", "").await;
+    let (_, blank_a) = join_unique(&ctx, &s, [1, 0, 0], "", "").await;
+    let (_, blank_b) = join_unique(&ctx, &s, [1, 0, 0], " - ", "").await;
+    let (status, body) = patch_space(&ctx, &s.space_id, json!({ "sampling": true })).await;
+    assert_eq!(status, 200, "{body}");
+
+    let (st, body) = enter(&ctx, &s, &first).await;
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(remains(&s).await, vec![1, 2]);
+
+    let (st, body) = enter(&ctx, &s, &dup).await;
+    assert_eq!(st, 400, "{body}");
+    assert!(error_text(&body).contains("AlreadyEntered"), "{body}");
+    assert_eq!(
+        remains(&s).await,
+        vec![1, 2],
+        "the claimed seat must be restored"
+    );
+    assert_eq!(
+        member_status(&s, &dup_user).await,
+        Some(SamplingMemberStatus::Population)
+    );
+
+    let (st, body) = enter(&ctx, &s, &first).await;
+    assert_eq!(st, 200, "re-entering stays a no-op: {body}");
+
+    for h in [&blank_a, &blank_b] {
+        let (st, body) = enter(&ctx, &s, h).await;
+        assert_eq!(st, 200, "blank answers are not restricted: {body}");
+    }
+    assert_eq!(remains(&s).await, vec![1, 0]);
+    let keys = SpaceSamplingEntryKey::list_by_space(&s.space_id)
+        .await
+        .unwrap();
+    assert_eq!(keys.len(), 1);
+}
+
+#[by_macros::pg_test]
+async fn test_first_come_concurrent_duplicate_unique_answer() {
+    let ctx = TestContext::setup().await;
+    let s = seed_unique_space(&ctx, false).await;
+    let (status, body) =
+        put_unique_config(&ctx, &s, json!([0, 1]), 8, "FirstCome", json!([3])).await;
+    assert_eq!(status, 200, "{body}");
+
+    let phones = [
+        "010-1234-5678",
+        "01012345678",
+        "010 1234 5678",
+        " 010-1234-5678 ",
+    ];
+    let picks = [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]];
+    let mut users = Vec::new();
+    for (p, phone) in picks.iter().zip(phones) {
+        users.push(join_unique(&ctx, &s, *p, phone, "").await);
+    }
+    let (status, body) = patch_space(&ctx, &s.space_id, json!({ "sampling": true })).await;
+    assert_eq!(status, 200, "{body}");
+
+    let results = futures::future::join_all(users.iter().map(|(_, h)| enter(&ctx, &s, h))).await;
+    let ok = results.iter().filter(|(st, _)| *st == 200).count();
+    assert_eq!(ok, 1, "exactly one holder of the phone number: {results:?}");
+    for (st, body) in results.iter().filter(|(st, _)| *st != 200) {
+        assert_eq!(*st, 400);
+        assert!(error_text(body).contains("AlreadyEntered"), "{body}");
+    }
+    assert_eq!(remains(&s).await.iter().sum::<i64>(), 7);
+    let mut entered = 0;
+    for (u, _) in &users {
+        if member_status(&s, u).await == Some(SamplingMemberStatus::Entered) {
+            entered += 1;
+        }
+    }
+    assert_eq!(entered, 1);
+}
+
+#[by_macros::pg_test]
+async fn test_random_draw_has_no_duplicate_unique_answers() {
+    let ctx = TestContext::setup().await;
+    let s = seed_unique_space(&ctx, false).await;
+    let (status, body) = put_unique_config(&ctx, &s, json!([0]), 6, "Random", json!([3, 4])).await;
+    assert_eq!(status, 200, "{body}");
+
+    let (a, _) = join_unique(&ctx, &s, [0, 0, 0], "010-1111-1111", "a@x.io").await;
+    let (b, _) = join_unique(&ctx, &s, [0, 0, 0], "01011111111", "b@x.io").await;
+    let (c, _) = join_unique(&ctx, &s, [0, 0, 0], "010-2222-2222", "c@x.io").await;
+    let (d, _) = join_unique(&ctx, &s, [1, 0, 0], "010 1111 1111", "d@x.io").await;
+    let (e, _) = join_unique(&ctx, &s, [1, 0, 0], "010-3333-3333", "Same@x.io").await;
+    let (f, _) = join_unique(&ctx, &s, [1, 0, 0], "010-4444-4444", "same@X.io").await;
+    let (g, _) = join_unique(&ctx, &s, [1, 0, 0], "", "").await;
+
+    let (status, body) = patch_space(&ctx, &s.space_id, json!({ "sampling": true })).await;
+    assert_eq!(status, 200, "{body}");
+
+    let mut selected = Vec::new();
+    for u in [&a, &b, &c, &d, &e, &f, &g] {
+        let m = member_of(&s, u).await;
+        if m.status == SamplingMemberStatus::Selected {
+            selected.push(m);
+        }
+    }
+    let is_selected = |u: &User| selected.iter().any(|m| m.user_pk == u.pk().to_string());
+    assert_eq!(
+        [&a, &b, &d].iter().filter(|u| is_selected(u)).count(),
+        1,
+        "one phone number is drawn once"
+    );
+    assert_eq!(
+        [&e, &f].iter().filter(|u| is_selected(u)).count(),
+        1,
+        "any shared unique answer blocks the draw"
+    );
+    assert!(is_selected(&c) && is_selected(&g));
+    assert_eq!(selected.len(), 4);
+
+    let mut seen = std::collections::HashSet::new();
+    for m in &selected {
+        for k in &m.unique_keys.0 {
+            assert!(seen.insert(k.clone()), "duplicate key among selected");
+        }
+    }
+    let claimed = SpaceSamplingEntryKey::list_by_space(&s.space_id)
+        .await
+        .unwrap();
+    assert_eq!(claimed.len(), seen.len());
+
+    let selected_20s = selected.iter().filter(|m| m.cell_key == "0").count() as i64;
+    let selected_30s = selected.iter().filter(|m| m.cell_key == "1").count() as i64;
+    assert_eq!(remains(&s).await, vec![3 - selected_20s, 3 - selected_30s]);
+}
+
+#[by_macros::pg_test]
+async fn test_random_selected_member_enters_with_claimed_keys() {
+    let ctx = TestContext::setup().await;
+    let s = seed_unique_space(&ctx, false).await;
+    let (status, body) = put_unique_config(&ctx, &s, json!([0]), 2, "Random", json!([3])).await;
+    assert_eq!(status, 200, "{body}");
+    let (u, h) = join_unique(&ctx, &s, [0, 0, 0], "010-5555-5555", "").await;
+    let (status, body) = patch_space(&ctx, &s.space_id, json!({ "sampling": true })).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        member_status(&s, &u).await,
+        Some(SamplingMemberStatus::Selected)
+    );
+
+    let (st, body) = enter(&ctx, &s, &h).await;
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(body["state"], "Entered");
+    let claimed = SpaceSamplingEntryKey::list_by_space(&s.space_id)
+        .await
+        .unwrap();
+    assert_eq!(claimed.len(), 1);
 }

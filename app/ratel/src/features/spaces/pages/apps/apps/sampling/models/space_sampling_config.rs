@@ -10,6 +10,12 @@ use uuid::Uuid;
 #[serde(transparent)]
 pub struct SamplingDimensions(pub Vec<usize>);
 
+/// Entry-poll short-answer question indices whose answers must be unique
+/// among the members admitted to the sample. Empty turns the check off.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, postgres::PostgresJson)]
+#[serde(transparent)]
+pub struct SamplingUniqueQuestions(pub Vec<usize>);
+
 /// Sampling settings of one space (at most one row per space).
 ///
 /// `population_rules` reuse the Required Attributes rule shape and must all
@@ -34,6 +40,11 @@ pub struct SpaceSamplingConfig {
 
     pub created_at: i64,
     pub updated_at: i64,
+
+    /// Questions whose normalized answers may not repeat among admitted
+    /// members; two members collide when any one of them matches.
+    #[postgres(version = 1, sql_default = "'[]'::jsonb")]
+    pub unique_questions: SamplingUniqueQuestions,
 }
 
 impl SpaceSamplingConfig {
@@ -53,6 +64,7 @@ impl SpaceSamplingConfig {
             sampling_started_at: None,
             created_at: now,
             updated_at: now,
+            unique_questions: SamplingUniqueQuestions(req.unique_questions.clone()),
         }
     }
 
@@ -89,11 +101,12 @@ impl SpaceSamplingConfig {
             method: self.method,
             allow_recruit_during_sampling: self.allow_recruit_during_sampling,
             sampling_started_at: self.sampling_started_at,
+            unique_questions: self.unique_questions.0.clone(),
         }
     }
 }
 
-/// Builds `DELETE FROM "<table>" WHERE space_id = $1`; shared by the three
+/// Builds `DELETE FROM "<table>" WHERE space_id = $1`; shared by the
 /// Sampling tables, which all key rows by the bare space id.
 pub(crate) fn delete_by_space_query(
     table: &str,

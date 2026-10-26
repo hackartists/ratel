@@ -8,10 +8,13 @@ import {
   addRequiredAttribute,
   publishSpacePublic,
   transitionSpace,
+  signUpViaApi,
+  joinAndAnswerViaApi,
 } from "../utils";
 
 /**
- * Sampling app — settings, cell target preview, start gating and the
+ * Sampling app — settings, cell target preview, duplicate prevention
+ * through a unique short-answer question, start gating and the
  * Open → Sampling → Ongoing status buttons.
  *
  * Creator: hi+user1@biyard.co (user.json). Requires a `bypass` backend.
@@ -22,6 +25,13 @@ test.describe.serial("Sampling app settings and status flow", () => {
   const stamp = Date.now();
   let space;
   let unconfigured;
+  const users = {};
+
+  test.afterAll(async () => {
+    for (const { context } of Object.values(users)) {
+      await context.close();
+    }
+  });
 
   test("A1: install the Sampling app and open its settings", async ({ page }) => {
     space = await createSpaceWithEntryPoll(page, { title: `Sampling settings ${stamp}` });
@@ -88,6 +98,34 @@ test.describe.serial("Sampling app settings and status flow", () => {
     await expect(page.getByTestId("topbar-back")).toBeInViewport();
   });
 
+  test("A4c: a short-answer question can be picked for duplicate prevention", async ({ page }) => {
+    await goto(page, `${space.spaceUrl}/apps/sampling`);
+    await expect(page.getByTestId("sampling-no-short-answer")).toBeVisible();
+
+    const pollRes = await page.request.get(`/api/spaces/${space.spaceId}/polls/${space.pollId}`);
+    expect(pollRes.ok(), await pollRes.text()).toBeTruthy();
+    const { questions } = await pollRes.json();
+    const phone = { answer_type: "short_answer", title: "Phone", html_title: null, description: "", is_required: null, display_condition: null };
+    const updateRes = await page.request.post(`/api/spaces/${space.spaceId}/polls/${space.pollId}`, {
+      data: { req: { questions: [...questions, phone] } },
+    });
+    expect(updateRes.ok(), await updateRes.text()).toBeTruthy();
+
+    await page.reload({ waitUntil: "load" });
+    await expect(page.getByTestId("sampling-section-unique")).toContainText("Duplicate prevention");
+    await expect(page.getByTestId("sampling-no-short-answer")).toHaveCount(0);
+    await expect(page.getByTestId("sampling-unique-question-0")).toHaveCount(0);
+    const unique = page.getByTestId("sampling-unique-question-3");
+    await expect(unique).not.toBeChecked();
+    await unique.check();
+    await clickNoNav(page, { testId: "sampling-save" });
+    await expect(page.getByTestId("sampling-dashboard")).toBeVisible({ timeout: 30000 });
+
+    await page.reload({ waitUntil: "load" });
+    await expect(page.getByTestId("sampling-unique-question-3")).toBeChecked();
+    await expect(page.getByTestId("sampling-total-input")).toHaveValue("6");
+  });
+
   test("A5: an unconfigured Sampling space cannot start or sample", async ({ page }) => {
     unconfigured = await createSpaceWithEntryPoll(page, { title: `Sampling unconfigured ${stamp}` });
     await installSamplingApp(page, unconfigured.spaceUrl);
@@ -105,11 +143,36 @@ test.describe.serial("Sampling app settings and status flow", () => {
     expect(res.status()).toBe(400);
   });
 
-  test("A6: Open → Sampling swaps the Sampling button for Start", async ({ page }) => {
+  test("A6: Open → Sampling swaps the Sampling button for Start", async ({ page, browser }) => {
     await publishSpacePublic(page, space.spaceUrl);
+    const phones = { u1: "010-1234-5678", u2: "01012345678" };
+    const picks = { u1: [0, 0, 0], u2: [1, 0, 0] };
+    for (const key of Object.keys(phones)) {
+      users[key] = await signUpViaApi(browser, key);
+      await joinAndAnswerViaApi(users[key].page, space.spaceId, space.pollId, picks[key], [
+        { answer_type: "short_answer", answer: phones[key] },
+      ]);
+    }
     await transitionSpace(page, space.spaceUrl, "sampling");
     await expect(page.getByTestId("btn-sampling")).toHaveCount(0);
     await expect(page.getByTestId("arena-topbar-status")).toHaveText("Sampling");
+  });
+
+  test("A6b: the same phone number in another format cannot enter twice", async () => {
+    const first = users.u1.page;
+    await goto(first, space.spaceUrl);
+    await expect(first.getByTestId("sampling-state-can-enter")).toBeVisible({ timeout: 30000 });
+    await clickNoNav(first, { testId: "btn-sampling-enter" });
+    await expect(first.getByTestId("sampling-state-entered")).toBeVisible({ timeout: 30000 });
+
+    const second = users.u2.page;
+    await goto(second, space.spaceUrl);
+    await expect(second.getByTestId("sampling-state-can-enter")).toBeVisible({ timeout: 30000 });
+    await clickNoNav(second, { testId: "btn-sampling-enter" });
+    await expect(second.getByText("This information has already been used to join the sample.")).toBeVisible({
+      timeout: 30000,
+    });
+    await expect(second.getByTestId("sampling-state-can-enter")).toBeVisible();
   });
 
   test("A7: settings are locked once sampling started", async ({ page }) => {
