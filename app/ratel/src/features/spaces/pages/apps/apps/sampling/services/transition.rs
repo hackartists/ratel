@@ -9,7 +9,10 @@ use crate::features::spaces::pages::actions::types::SpaceActionType;
 use crate::features::spaces::pages::apps::apps::sampling::services::cells::{
     build_cells, validate_rules,
 };
-use crate::features::spaces::pages::apps::apps::sampling::services::selection::pick_random;
+use crate::features::spaces::pages::apps::apps::sampling::services::selection::{
+    DrawCandidate, draw_unique,
+};
+use crate::features::spaces::pages::apps::apps::sampling::services::unique_keys::validate_unique_questions;
 use crate::features::spaces::pages::apps::apps::sampling::*;
 
 /// Loads the entry poll of a space after checking that its action is still
@@ -30,8 +33,9 @@ pub async fn load_entry_poll(space_id: &str, entry_poll_id: &str) -> Result<Opti
 }
 
 /// Confirms a saved config can start sampling: the entry poll is still a
-/// prerequisite poll, the population rules still match its questions, and
-/// the cells rebuilt from it equal the saved cells. Returns the saved cells.
+/// prerequisite poll, the population rules and unique questions still match
+/// its questions, and the cells rebuilt from it equal the saved cells.
+/// Returns the saved cells.
 pub async fn validate_ready(
     space_id: &str,
     config: &SpaceSamplingConfig,
@@ -40,6 +44,8 @@ pub async fn validate_ready(
         .await?
         .ok_or(SpaceSamplingError::ConfigOutdated)?;
     validate_rules(&poll, &config.entry_poll_id, &config.population_rules.0)
+        .map_err(|_| SpaceSamplingError::ConfigOutdated)?;
+    validate_unique_questions(&poll, &config.unique_questions.0)
         .map_err(|_| SpaceSamplingError::ConfigOutdated)?;
     let specs =
         build_cells(&poll, &config.dimensions.0).map_err(|_| SpaceSamplingError::ConfigOutdated)?;
@@ -58,10 +64,12 @@ pub async fn validate_ready(
 
 /// Starts sampling inside the status-change transaction.
 ///
-/// Stamps `sampling_started_at`. For the random method it draws up to
-/// `target` members per cell from the current population, marks them
-/// `Selected` and lowers each cell's free seats accordingly. Members who
-/// join the population afterwards are counted but never drawn.
+/// Stamps `sampling_started_at`. For the random method it draws the sample
+/// from the current population in one random order, taking a member while
+/// their cell has a seat and none of their unique keys is already drawn,
+/// marks them `Selected`, claims their unique keys and lowers each cell's
+/// free seats accordingly. Members who join the population afterwards are
+/// counted but never drawn.
 pub async fn begin_sampling_tx(
     tx: &postgres::Tx,
     config: &SpaceSamplingConfig,
@@ -83,28 +91,51 @@ pub async fn begin_sampling_tx(
         return Ok(());
     }
 
-    let mut by_cell: HashMap<String, Vec<uuid::Uuid>> = HashMap::new();
-    for member in SpaceSamplingMember::list_by_space(&config.space_id).await? {
-        if member.status == SamplingMemberStatus::Population {
-            by_cell.entry(member.cell_key).or_default().push(member.id);
+    let candidates: Vec<DrawCandidate> = SpaceSamplingMember::list_by_space(&config.space_id)
+        .await?
+        .into_iter()
+        .filter(|m| m.status == SamplingMemberStatus::Population)
+        .map(|m| DrawCandidate {
+            id: m.id,
+            cell_key: m.cell_key,
+            unique_keys: m.unique_keys.0,
+        })
+        .collect();
+    let seats: HashMap<String, usize> = cells
+        .iter()
+        .map(|c| (c.cell_key.clone(), usize::try_from(c.target).unwrap_or(0)))
+        .collect();
+    let drawn = {
+        let mut rng = rand::rng();
+        draw_unique(candidates, &seats, &mut rng)
+    };
+
+    let ids: Vec<uuid::Uuid> = drawn.iter().map(|c| c.id).collect();
+    SpaceSamplingMember::mark_selected_tx(tx, &ids, now).await?;
+    for member in &drawn {
+        if !SpaceSamplingEntryKey::claim_all_tx(
+            tx,
+            &config.space_id,
+            member.id,
+            &member.unique_keys,
+            now,
+        )
+        .await?
+        {
+            return Err(SpaceSamplingError::SaveFailed.into());
         }
     }
 
-    let draws: Vec<(uuid::Uuid, i64, Vec<uuid::Uuid>)> = {
-        let mut rng = rand::rng();
-        cells
-            .iter()
-            .map(|cell| {
-                let pool = by_cell.remove(&cell.cell_key).unwrap_or_default();
-                let k = usize::try_from(cell.target).unwrap_or(0);
-                (cell.id, cell.target, pick_random(pool, k, &mut rng))
-            })
-            .collect()
-    };
-
-    for (cell_id, target, picked) in draws {
-        SpaceSamplingMember::mark_selected_tx(tx, &picked, now).await?;
-        SpaceSamplingCell::set_remains_tx(tx, cell_id, target - picked.len() as i64).await?;
+    let mut picked_per_cell: HashMap<&str, i64> = HashMap::new();
+    for member in &drawn {
+        *picked_per_cell.entry(member.cell_key.as_str()).or_default() += 1;
+    }
+    for cell in cells {
+        let picked = picked_per_cell
+            .get(cell.cell_key.as_str())
+            .copied()
+            .unwrap_or(0);
+        SpaceSamplingCell::set_remains_tx(tx, cell.id, cell.target - picked).await?;
     }
     Ok(())
 }

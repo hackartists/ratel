@@ -2,11 +2,17 @@ use crate::features::spaces::pages::apps::apps::sampling::*;
 use postgres::PostgresEntity;
 use uuid::Uuid;
 
+/// Hashed unique-answer keys of a member, one per answered unique question.
+/// Stored as a bare jsonb array; raw answers are never kept.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, postgres::PostgresJson)]
+#[serde(transparent)]
+pub struct SamplingUniqueKeys(pub Vec<String>);
+
 /// One population member of a Sampling space.
 ///
 /// A row exists only while the user's entry-poll answers satisfy the
-/// population rules. `cell_key` is fixed once the member is `Selected` or
-/// `Entered`; a `Population` member follows answer edits.
+/// population rules. `cell_key` and `unique_keys` are fixed once the member
+/// is `Selected` or `Entered`; a `Population` member follows answer edits.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, PostgresEntity)]
 #[postgres(table = "space_sampling_members", unique(space_id, user_pk))]
 pub struct SpaceSamplingMember {
@@ -23,11 +29,20 @@ pub struct SpaceSamplingMember {
     pub joined_at: i64,
     pub selected_at: Option<i64>,
     pub entered_at: Option<i64>,
+
+    #[postgres(version = 1, sql_default = "'[]'::jsonb")]
+    pub unique_keys: SamplingUniqueKeys,
 }
 
 impl SpaceSamplingMember {
     /// Builds an unsaved `Population` member.
-    pub fn new(space_id: &str, user_pk: &str, cell_key: &str, now: i64) -> Self {
+    pub fn new(
+        space_id: &str,
+        user_pk: &str,
+        cell_key: &str,
+        unique_keys: Vec<String>,
+        now: i64,
+    ) -> Self {
         Self {
             id: Uuid::now_v7(),
             space_id: space_id.to_string(),
@@ -37,6 +52,7 @@ impl SpaceSamplingMember {
             joined_at: now,
             selected_at: None,
             entered_at: None,
+            unique_keys: SamplingUniqueKeys(unique_keys),
         }
     }
 

@@ -17,6 +17,9 @@ pub struct SamplingConfigDto {
     pub method: SamplingMethod,
     pub allow_recruit_during_sampling: bool,
     pub sampling_started_at: Option<i64>,
+    /// Short-answer question indices whose answers may not repeat among
+    /// admitted members; empty when duplicate prevention is off.
+    pub unique_questions: Vec<usize>,
 }
 
 /// One cell: a combination of options of the sampling questions plus its
@@ -68,6 +71,10 @@ pub struct UpsertSamplingConfigRequest {
     pub method: SamplingMethod,
     #[serde(default)]
     pub allow_recruit_during_sampling: bool,
+    /// Short-answer question indices of the entry poll used for duplicate
+    /// prevention; empty turns it off.
+    #[serde(default)]
+    pub unique_questions: Vec<usize>,
 }
 
 /// Unsaved inputs for the cell target preview.

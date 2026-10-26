@@ -25,6 +25,7 @@ export interface SamplingFormState {
   entryPollId: string;
   rules: RequiredAttributeRule[];
   dimensions: number[];
+  uniqueQuestions: number[];
   total: string;
   method: SamplingMethod;
   recruit: boolean;
@@ -63,6 +64,7 @@ function initialForm(settings: SamplingSettingsResponse, entryPolls: SpaceAction
       entryPollId: config.entry_poll_id,
       rules: config.population_rules,
       dimensions: config.dimensions,
+      uniqueQuestions: config.unique_questions,
       total: String(config.total_samples),
       method: config.method,
       recruit: config.allow_recruit_during_sampling,
@@ -72,6 +74,7 @@ function initialForm(settings: SamplingSettingsResponse, entryPolls: SpaceAction
     entryPollId: entryPolls.length === 1 ? entryPolls[0].action_id : "",
     rules: [],
     dimensions: [],
+    uniqueQuestions: [],
     total: "",
     method: "FirstCome",
     recruit: false,
@@ -147,6 +150,7 @@ export function useSpaceSampling(spaceId: string, spaceStatus: string | null): U
         allocation: "Equal",
         method: form.method,
         allow_recruit_during_sampling: form.recruit,
+        unique_questions: form.uniqueQuestions,
       });
       queryClient.setQueryData(settingsKey, saved);
       await Promise.all([

@@ -14,7 +14,7 @@ pub async fn upsert_sampling_config(
     use crate::common::utils::time::get_now_timestamp_millis;
     use crate::features::spaces::pages::apps::apps::sampling::services::{
         build_cells, equal_allocation, load_entry_poll, rebuild_population_tx, sampling_space_id,
-        validate_rules,
+        validate_rules, validate_unique_questions,
     };
     use postgres::PostgresEntity;
 
@@ -40,6 +40,7 @@ pub async fn upsert_sampling_config(
         .await?
         .ok_or(SpaceSamplingError::InvalidEntryPoll)?;
     validate_rules(&poll, &req.entry_poll_id, &req.population_rules)?;
+    validate_unique_questions(&poll, &req.unique_questions)?;
     let specs = build_cells(&poll, &req.dimensions)?;
     let targets = equal_allocation(req.total_samples, specs.len());
 

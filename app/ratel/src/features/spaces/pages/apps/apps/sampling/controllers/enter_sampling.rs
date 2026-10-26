@@ -6,7 +6,10 @@ use crate::features::spaces::pages::apps::apps::sampling::*;
 ///
 /// First come: claims a free seat of the member's cell atomically and fails
 /// with `CellFull` when none is left. Random: only drawn members may enter.
-/// Entering twice is a no-op that returns the current state.
+/// Either way the member's unique keys are claimed together with the seat;
+/// when another admitted member already holds one of them nothing changes
+/// and the call fails with `AlreadyEntered`. Entering twice is a no-op that
+/// returns the current state.
 #[post("/api/spaces/{space_id}/sampling/enter", space: SpaceCommon, user: User)]
 pub async fn enter_sampling(
     space_id: SpacePartition,
@@ -39,13 +42,25 @@ pub async fn enter_sampling(
             let tx = postgres::Tx::begin()
                 .await
                 .map_err(crate::common::Error::from)?;
-            SpaceSamplingMember::mark_entered_tx(
+            if SpaceSamplingMember::mark_entered_tx(
                 &tx,
                 member.id,
                 SamplingMemberStatus::Selected,
                 now,
             )
-            .await?;
+            .await?
+                && !SpaceSamplingEntryKey::claim_all_tx(
+                    &tx,
+                    &sid,
+                    member.id,
+                    &member.unique_keys.0,
+                    now,
+                )
+                .await?
+            {
+                tx.rollback().await.map_err(crate::common::Error::from)?;
+                return Err(SpaceSamplingError::AlreadyEntered.into());
+            }
             tx.commit().await.map_err(crate::common::Error::from)?;
         }
         (SamplingMemberStatus::Population, SamplingMethod::Random) => {
@@ -59,7 +74,7 @@ pub async fn enter_sampling(
                 tx.rollback().await.map_err(crate::common::Error::from)?;
                 return Err(SpaceSamplingError::CellFull.into());
             }
-            if SpaceSamplingMember::mark_entered_tx(
+            if !SpaceSamplingMember::mark_entered_tx(
                 &tx,
                 member.id,
                 SamplingMemberStatus::Population,
@@ -67,9 +82,20 @@ pub async fn enter_sampling(
             )
             .await?
             {
+                tx.rollback().await.map_err(crate::common::Error::from)?;
+            } else if SpaceSamplingEntryKey::claim_all_tx(
+                &tx,
+                &sid,
+                member.id,
+                &member.unique_keys.0,
+                now,
+            )
+            .await?
+            {
                 tx.commit().await.map_err(crate::common::Error::from)?;
             } else {
                 tx.rollback().await.map_err(crate::common::Error::from)?;
+                return Err(SpaceSamplingError::AlreadyEntered.into());
             }
         }
     }

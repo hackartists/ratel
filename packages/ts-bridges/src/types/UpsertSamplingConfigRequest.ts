@@ -6,4 +6,9 @@ import type { SamplingMethod } from "./SamplingMethod";
 /**
  * Full Sampling settings submitted from the settings screen.
  */
-export type UpsertSamplingConfigRequest = { entry_poll_id: string, population_rules: Array<RequiredAttributeRule>, dimensions: Array<number>, total_samples: number, allocation: SamplingAllocation, method: SamplingMethod, allow_recruit_during_sampling: boolean, };
+export type UpsertSamplingConfigRequest = { entry_poll_id: string, population_rules: Array<RequiredAttributeRule>, dimensions: Array<number>, total_samples: number, allocation: SamplingAllocation, method: SamplingMethod, allow_recruit_during_sampling: boolean,
+/**
+ * Short-answer question indices of the entry poll used for duplicate
+ * prevention; empty turns it off.
+ */
+unique_questions: Array<number>, };

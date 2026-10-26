@@ -816,14 +816,17 @@ export async function signUpViaApi(browser, tag) {
   return { context, page };
 }
 
-/** Participate in the space and answer the entry poll with option indices `picks`. */
-export async function joinAndAnswerViaApi(page, spaceId, pollId, picks) {
+/**
+ * Participate in the space and answer the entry poll with option indices
+ * `picks`, followed by the raw answer objects in `extra` (e.g. short answers).
+ */
+export async function joinAndAnswerViaApi(page, spaceId, pollId, picks, extra = []) {
   const join = await page.request.post(`/api/spaces/${spaceId}/participate`, {
     data: { body: { informed_agreed: true } },
   });
   expect(join.ok(), `participate: ${await join.text()}`).toBeTruthy();
   const res = await page.request.post(`/api/spaces/${spaceId}/polls/${pollId}/respond`, {
-    data: { req: { answers: picks.map((answer) => ({ answer_type: "single_choice", answer })) } },
+    data: { req: { answers: [...picks.map((answer) => ({ answer_type: "single_choice", answer })), ...extra] } },
   });
   expect(res.ok(), `respond entry poll: ${await res.text()}`).toBeTruthy();
 }
