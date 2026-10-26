@@ -27,6 +27,13 @@ test.describe.serial("Sampling app settings and status flow", () => {
   let unconfigured;
   const users = {};
 
+  async function openAs(key) {
+    const { page } = users[key];
+    await goto(page, space.spaceUrl);
+    await page.addStyleTag({ content: "*, *::before, *::after { animation-play-state: paused !important; }" });
+    return page;
+  }
+
   test.afterAll(async () => {
     for (const { context } of Object.values(users)) {
       await context.close();
@@ -159,14 +166,12 @@ test.describe.serial("Sampling app settings and status flow", () => {
   });
 
   test("A6b: the same phone number in another format cannot enter twice", async () => {
-    const first = users.u1.page;
-    await goto(first, space.spaceUrl);
+    const first = await openAs("u1");
     await expect(first.getByTestId("sampling-state-can-enter")).toBeVisible({ timeout: 30000 });
     await clickNoNav(first, { testId: "btn-sampling-enter" });
     await expect(first.getByTestId("sampling-state-entered")).toBeVisible({ timeout: 30000 });
 
-    const second = users.u2.page;
-    await goto(second, space.spaceUrl);
+    const second = await openAs("u2");
     await expect(second.getByTestId("sampling-state-can-enter")).toBeVisible({ timeout: 30000 });
     await clickNoNav(second, { testId: "btn-sampling-enter" });
     await expect(second.getByText("This information has already been used to join the sample.")).toBeVisible({
