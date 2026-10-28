@@ -63,8 +63,8 @@ pub enum SpaceSamplingError {
 
     #[error("invalid unique question")]
     #[translate(
-        en = "Duplicate-prevention questions must be distinct short-answer questions of the entry poll.",
-        ko = "중복 참여 방지 문항은 엔트리 폴의 서로 다른 단답형 문항이어야 합니다."
+        en = "Duplicate-prevention questions must be distinct short-answer or privacy-consent questions of the entry poll.",
+        ko = "중복 참여 방지 문항은 엔트리 폴의 서로 다른 단답형 또는 개인정보 동의 문항이어야 합니다."
     )]
     InvalidUniqueQuestion,
 

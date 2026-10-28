@@ -19,8 +19,8 @@ const en = {
   dimensions_hint: "Each combination of the selected questions' options becomes a sample group.",
   no_single_choice: "The entry poll has no single-choice questions.",
   unique_label: "Duplicate prevention",
-  unique_hint: "Members whose answer to any selected question matches an admitted member cannot enter. Spaces, hyphens and letter case are ignored; blank answers are not checked.",
-  no_short_answer: "The entry poll has no short-answer questions.",
+  unique_hint: "Members whose answer to any selected question matches an admitted member cannot enter. Spaces, hyphens and letter case are ignored; blank answers are not checked. Privacy-consent questions compare the verified phone number.",
+  no_unique_question: "The entry poll has no short-answer or privacy-consent questions.",
   total_label: "Sample size",
   total_hint: "Total number of participants to sample.",
   allocation_label: "Allocation: Equal allocation",
@@ -69,8 +69,8 @@ const ko: Record<keyof typeof en, string> = {
   dimensions_hint: "선택한 문항의 선택지 조합마다 하나의 표본 그룹이 됩니다.",
   no_single_choice: "엔트리 폴에 단일 선택 문항이 없습니다.",
   unique_label: "중복 참여 방지",
-  unique_hint: "선택한 문항 중 하나라도 이미 참여한 사람과 답이 같으면 입장할 수 없습니다. 공백, 하이픈, 대소문자는 구분하지 않으며 빈 답은 검사하지 않습니다.",
-  no_short_answer: "엔트리 폴에 단답형 문항이 없습니다.",
+  unique_hint: "선택한 문항 중 하나라도 이미 참여한 사람과 답이 같으면 입장할 수 없습니다. 공백, 하이픈, 대소문자는 구분하지 않으며 빈 답은 검사하지 않습니다. 개인정보 동의 문항은 인증된 전화번호로 비교합니다.",
+  no_unique_question: "엔트리 폴에 단답형 또는 개인정보 동의 문항이 없습니다.",
   total_label: "표본 수",
   total_hint: "추출할 전체 참여자 수입니다.",
   allocation_label: "표본 배분 방식: 균등 배분",
@@ -122,7 +122,7 @@ export interface SpaceSamplingI18n {
   noSingleChoice: string;
   uniqueLabel: string;
   uniqueHint: string;
-  noShortAnswer: string;
+  noUniqueQuestion: string;
   totalLabel: string;
   totalHint: string;
   allocationLabel: string;
@@ -174,7 +174,7 @@ export function useSpaceSamplingI18n(): SpaceSamplingI18n {
     noSingleChoice: t("no_single_choice"),
     uniqueLabel: t("unique_label"),
     uniqueHint: t("unique_hint"),
-    noShortAnswer: t("no_short_answer"),
+    noUniqueQuestion: t("no_unique_question"),
     totalLabel: t("total_label"),
     totalHint: t("total_hint"),
     allocationLabel: t("allocation_label"),

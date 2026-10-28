@@ -14,6 +14,24 @@ pub fn normalize_unique_answer(raw: &str) -> String {
         .collect()
 }
 
+/// Canonical form of a privacy-consent phone. On top of
+/// [`normalize_unique_answer`] it drops `(`, `)` and `.` and folds the
+/// Korean country code into the domestic trunk prefix, so the E.164
+/// `+821012345678` the web phone input submits, `+82 010-1234-5678` and the
+/// domestic `010-1234-5678` all compare equal. Other country codes keep
+/// their E.164 form.
+pub fn normalize_unique_phone(raw: &str) -> String {
+    let compact: String = normalize_unique_answer(raw)
+        .chars()
+        .filter(|c| !matches!(c, '(' | ')' | '.'))
+        .collect();
+    match compact.strip_prefix("+82") {
+        Some(national) if national.starts_with('0') => national.to_string(),
+        Some(national) if !national.is_empty() => format!("0{national}"),
+        _ => compact,
+    }
+}
+
 /// Hex SHA-256 of a normalized answer, scoped to the space and the
 /// question so equal answers only collide within the same question.
 pub fn unique_key_hash(space_id: &str, question_index: usize, normalized: &str) -> String {
@@ -27,19 +45,28 @@ pub fn unique_key_hash(space_id: &str, question_index: usize, normalized: &str) 
 }
 
 /// Sorted keys of a respondent for the configured unique questions. A
-/// question left blank (or blank after normalization) yields no key and is
-/// exempt from the duplicate check.
+/// short answer is keyed by its [`normalize_unique_answer`] form and an
+/// agreed privacy consent by its SMS-verified phone in
+/// [`normalize_unique_phone`] form. A blank answer, a declined consent or a
+/// consent without a phone yields no key and is exempt from the duplicate
+/// check.
 pub fn unique_keys_for(space_id: &str, questions: &[usize], answers: &[Answer]) -> Vec<String> {
     let mut keys: Vec<String> = questions
         .iter()
-        .filter_map(|index| match answers.get(*index) {
-            Some(Answer::ShortAnswer {
-                answer: Some(raw), ..
-            }) => {
-                let normalized = normalize_unique_answer(raw);
-                (!normalized.is_empty()).then(|| unique_key_hash(space_id, *index, &normalized))
+        .filter_map(|index| {
+            match answers.get(*index) {
+                Some(Answer::ShortAnswer {
+                    answer: Some(raw), ..
+                }) => Some(normalize_unique_answer(raw)),
+                Some(Answer::PrivacyConsent {
+                    agreed: true,
+                    phone: Some(phone),
+                    ..
+                }) => Some(normalize_unique_phone(phone)),
+                _ => None,
             }
-            _ => None,
+            .filter(|normalized| !normalized.is_empty())
+            .map(|normalized| unique_key_hash(space_id, *index, &normalized))
         })
         .collect();
     keys.sort();
@@ -47,8 +74,8 @@ pub fn unique_keys_for(space_id: &str, questions: &[usize], answers: &[Answer]) 
     keys
 }
 
-/// Checks that every unique question is a distinct short-answer question of
-/// the entry poll.
+/// Checks that every unique question is a distinct short-answer or
+/// privacy-consent question of the entry poll.
 pub fn validate_unique_questions(
     poll: &SpacePoll,
     questions: &[usize],
@@ -57,7 +84,10 @@ pub fn validate_unique_questions(
         if questions[..i].contains(index) {
             return Err(SpaceSamplingError::InvalidUniqueQuestion);
         }
-        if !matches!(poll.questions.0.get(*index), Some(Question::ShortAnswer(_))) {
+        if !matches!(
+            poll.questions.0.get(*index),
+            Some(Question::ShortAnswer(_) | Question::PrivacyConsent(_))
+        ) {
             return Err(SpaceSamplingError::InvalidUniqueQuestion);
         }
     }
@@ -68,8 +98,17 @@ pub fn validate_unique_questions(
 mod tests {
     use super::*;
     use crate::features::spaces::pages::actions::actions::poll::{
-        ChoiceQuestion, PollQuestions, SubjectiveQuestion,
+        ChoiceQuestion, PollQuestions, PrivacyConsentQuestion, SubjectiveQuestion,
     };
+
+    fn consent(agreed: bool, declined: bool, phone: Option<&str>) -> Answer {
+        Answer::PrivacyConsent {
+            agreed,
+            declined,
+            phone: phone.map(|p| p.to_string()),
+            code: None,
+        }
+    }
 
     fn short(text: Option<&str>) -> Answer {
         Answer::ShortAnswer {
@@ -96,6 +135,10 @@ mod tests {
                 }),
                 Question::ShortAnswer(SubjectiveQuestion {
                     title: "Email".to_string(),
+                    ..Default::default()
+                }),
+                Question::PrivacyConsent(PrivacyConsentQuestion {
+                    title: "Consent".to_string(),
                     ..Default::default()
                 }),
             ]),
@@ -166,12 +209,87 @@ mod tests {
     fn only_distinct_short_answer_questions_are_valid() {
         assert_eq!(validate_unique_questions(&poll(), &[]), Ok(()));
         assert_eq!(validate_unique_questions(&poll(), &[1, 3]), Ok(()));
-        for bad in [vec![0], vec![2], vec![9], vec![1, 1]] {
+        assert_eq!(validate_unique_questions(&poll(), &[4]), Ok(()));
+        assert_eq!(validate_unique_questions(&poll(), &[1, 3, 4]), Ok(()));
+        for bad in [
+            vec![0],
+            vec![2],
+            vec![9],
+            vec![1, 1],
+            vec![4, 4],
+            vec![4, 0],
+        ] {
             assert_eq!(
                 validate_unique_questions(&poll(), &bad),
                 Err(SpaceSamplingError::InvalidUniqueQuestion),
                 "{bad:?}"
             );
         }
+    }
+
+    #[test]
+    fn korean_phone_variants_normalize_to_the_domestic_form() {
+        for raw in [
+            "+821012345678",
+            "+82 10-1234-5678",
+            "+82 010 1234 5678",
+            "010-1234-5678",
+            "(010) 1234.5678",
+        ] {
+            assert_eq!(normalize_unique_phone(raw), "01012345678", "{raw}");
+        }
+        assert_eq!(normalize_unique_phone("+1 415-555-0100"), "+14155550100");
+        assert_eq!(normalize_unique_phone("+82"), "+82");
+        assert_eq!(normalize_unique_phone(" - "), "");
+    }
+
+    #[test]
+    fn agreed_consent_is_keyed_by_its_phone() {
+        let answers = |phone: &str| {
+            vec![
+                short(None),
+                short(None),
+                short(None),
+                short(None),
+                consent(true, false, Some(phone)),
+            ]
+        };
+        let e164 = unique_keys_for("s", &[4], &answers("+821012345678"));
+        let domestic = unique_keys_for("s", &[4], &answers("010-1234-5678"));
+        assert_eq!(e164.len(), 1);
+        assert_eq!(e164, domestic);
+        assert_eq!(e164, vec![unique_key_hash("s", 4, "01012345678")]);
+        assert_ne!(e164, unique_keys_for("s", &[4], &answers("+821087654321")));
+    }
+
+    #[test]
+    fn declined_or_phoneless_consent_yields_no_key() {
+        for answer in [
+            consent(false, true, None),
+            consent(false, false, None),
+            consent(true, false, None),
+            consent(true, false, Some("  ")),
+            consent(false, false, Some("+821012345678")),
+        ] {
+            assert!(
+                unique_keys_for("s", &[0], &[answer.clone()]).is_empty(),
+                "{answer:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn short_answer_and_consent_keys_combine() {
+        let answers = vec![
+            short(None),
+            short(Some("010-1234-5678")),
+            short(None),
+            short(None),
+            consent(true, false, Some("+821012345678")),
+        ];
+        let keys = unique_keys_for("s", &[1, 4], &answers);
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains(&unique_key_hash("s", 1, "01012345678")));
+        assert!(keys.contains(&unique_key_hash("s", 4, "01012345678")));
     }
 }
