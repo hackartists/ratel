@@ -842,6 +842,74 @@ async fn seed_unique_space(ctx: &TestContext, editable: bool) -> Seeded {
     s
 }
 
+/// Seeds [`seed_unique_space`] plus a Q5 privacy-consent question.
+async fn seed_consent_space(ctx: &TestContext) -> Seeded {
+    let s = seed_unique_space(ctx, false).await;
+    let space_partition = crate::common::types::SpacePartition(s.space_id.clone());
+    let mut poll = SpacePoll::get_one(
+        &space_partition,
+        &crate::SpacePollEntityType(s.poll_id.clone()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    poll.questions.0.push(Question::PrivacyConsent(
+        crate::features::spaces::pages::actions::actions::poll::types::PrivacyConsentQuestion {
+            title: "Consent".to_string(),
+            terms_title: "Terms".to_string(),
+            terms_body_html: "<p>Terms</p>".to_string(),
+            ..Default::default()
+        },
+    ));
+    SpacePoll::repository()
+        .update(
+            poll.id,
+            SpacePoll::update().questions(poll.questions.clone()),
+        )
+        .await
+        .unwrap();
+    s
+}
+
+/// Joins a new user who agrees to the Q5 consent with `phone` (bypass code).
+async fn join_consent(
+    ctx: &TestContext,
+    s: &Seeded,
+    picks: [i32; 3],
+    phone: &str,
+) -> (User, HeaderMap) {
+    let (user, headers) = ctx.create_another_user().await;
+    SpaceParticipant::new(Partition::Space(s.space_id.clone()), user.pk())
+        .create()
+        .await
+        .expect("create participant");
+    let (status, _, body) = crate::test_post! {
+        app: ctx.app.clone(),
+        path: &format!("/api/spaces/{}/polls/{}/respond", s.space_id, s.poll_id),
+        headers: headers.clone(),
+        body: {
+            "req": {
+                "answers": [
+                    { "answer_type": "single_choice", "answer": picks[0] },
+                    { "answer_type": "single_choice", "answer": picks[1] },
+                    { "answer_type": "single_choice", "answer": picks[2] },
+                    { "answer_type": "short_answer", "answer": "" },
+                    { "answer_type": "short_answer", "answer": "" },
+                    {
+                        "answer_type": "privacy_consent",
+                        "agreed": true,
+                        "declined": false,
+                        "phone": phone,
+                        "code": "000000"
+                    }
+                ]
+            }
+        }
+    };
+    assert_eq!(status, 200, "respond entry poll: {:?}", body);
+    (user, headers)
+}
+
 async fn put_unique_config(
     ctx: &TestContext,
     s: &Seeded,
@@ -1141,4 +1209,52 @@ async fn test_random_selected_member_enters_with_claimed_keys() {
         .await
         .unwrap();
     assert_eq!(claimed.len(), 1);
+}
+
+#[by_macros::pg_test]
+async fn test_privacy_consent_phone_prevents_duplicate_entry() {
+    let ctx = TestContext::setup().await;
+    let s = seed_consent_space(&ctx).await;
+
+    for good in [json!([5]), json!([3, 5])] {
+        let (status, body) =
+            put_unique_config(&ctx, &s, json!([0]), 4, "FirstCome", good.clone()).await;
+        assert_eq!(status, 200, "{body}");
+        assert_eq!(body["config"]["unique_questions"], good);
+    }
+    let (status, body) =
+        put_unique_config(&ctx, &s, json!([0]), 4, "FirstCome", json!([5, 5])).await;
+    assert_eq!(status, 400, "{body}");
+    assert!(
+        error_text(&body).contains("InvalidUniqueQuestion"),
+        "{body}"
+    );
+    let (status, body) = put_unique_config(&ctx, &s, json!([0]), 4, "FirstCome", json!([5])).await;
+    assert_eq!(status, 200, "{body}");
+
+    let (first_user, first) = join_consent(&ctx, &s, [0, 0, 0], "+821012345678").await;
+    let first_keys = member_of(&s, &first_user).await.unique_keys.0;
+    assert_eq!(first_keys.len(), 1);
+    assert!(
+        !first_keys[0].contains("1234"),
+        "raw phones must not be stored"
+    );
+    let (dup_user, dup) = join_consent(&ctx, &s, [1, 0, 0], "010-1234-5678").await;
+    assert_eq!(member_of(&s, &dup_user).await.unique_keys.0, first_keys);
+    let (_, other) = join_consent(&ctx, &s, [1, 0, 0], "+821087654321").await;
+    let (status, body) = patch_space(&ctx, &s.space_id, json!({ "sampling": true })).await;
+    assert_eq!(status, 200, "{body}");
+
+    let (st, body) = enter(&ctx, &s, &first).await;
+    assert_eq!(st, 200, "{body}");
+    let (st, body) = enter(&ctx, &s, &dup).await;
+    assert_eq!(st, 400, "{body}");
+    assert!(error_text(&body).contains("AlreadyEntered"), "{body}");
+    assert_eq!(
+        member_status(&s, &dup_user).await,
+        Some(SamplingMemberStatus::Population)
+    );
+    let (st, body) = enter(&ctx, &s, &other).await;
+    assert_eq!(st, 200, "a different phone may enter: {body}");
+    assert_eq!(remains(&s).await, vec![1, 1]);
 }

@@ -14,7 +14,8 @@ import {
 
 /**
  * Sampling app — settings, cell target preview, duplicate prevention
- * through a unique short-answer question, start gating and the
+ * through a unique short-answer question and a unique privacy-consent
+ * (verified phone) question, start gating and the
  * Open → Sampling → Ongoing status buttons.
  *
  * Creator: hi+user1@biyard.co (user.json). Requires a `bypass` backend.
@@ -107,7 +108,10 @@ test.describe.serial("Sampling app settings and status flow", () => {
 
   test("A4c: a short-answer question can be picked for duplicate prevention", async ({ page }) => {
     await goto(page, `${space.spaceUrl}/apps/sampling`);
-    await expect(page.getByTestId("sampling-no-short-answer")).toBeVisible();
+    await expect(page.getByTestId("sampling-no-unique-question")).toBeVisible();
+    await expect(page.getByTestId("sampling-no-unique-question")).toHaveText(
+      "The entry poll has no short-answer or privacy-consent questions.",
+    );
 
     const pollRes = await page.request.get(`/api/spaces/${space.spaceId}/polls/${space.pollId}`);
     expect(pollRes.ok(), await pollRes.text()).toBeTruthy();
@@ -120,7 +124,7 @@ test.describe.serial("Sampling app settings and status flow", () => {
 
     await page.reload({ waitUntil: "load" });
     await expect(page.getByTestId("sampling-section-unique")).toContainText("Duplicate prevention");
-    await expect(page.getByTestId("sampling-no-short-answer")).toHaveCount(0);
+    await expect(page.getByTestId("sampling-no-unique-question")).toHaveCount(0);
     await expect(page.getByTestId("sampling-unique-question-0")).toHaveCount(0);
     const unique = page.getByTestId("sampling-unique-question-3");
     await expect(unique).not.toBeChecked();
@@ -131,6 +135,41 @@ test.describe.serial("Sampling app settings and status flow", () => {
     await page.reload({ waitUntil: "load" });
     await expect(page.getByTestId("sampling-unique-question-3")).toBeChecked();
     await expect(page.getByTestId("sampling-total-input")).toHaveValue("6");
+  });
+
+  test("A4d: a privacy-consent question can be picked for duplicate prevention", async ({ page }) => {
+    const pollRes = await page.request.get(`/api/spaces/${space.spaceId}/polls/${space.pollId}`);
+    expect(pollRes.ok(), await pollRes.text()).toBeTruthy();
+    const { questions } = await pollRes.json();
+    const consent = {
+      answer_type: "privacy_consent",
+      title: "Consent",
+      html_title: null,
+      description: null,
+      terms_title: "Personal data terms",
+      terms_body_html: "<p>We keep your phone number for this survey.</p>",
+      is_required: null,
+      display_condition: null,
+      termination_message: null,
+    };
+    const updateRes = await page.request.post(`/api/spaces/${space.spaceId}/polls/${space.pollId}`, {
+      data: { req: { questions: [...questions, consent] } },
+    });
+    expect(updateRes.ok(), await updateRes.text()).toBeTruthy();
+
+    await goto(page, `${space.spaceUrl}/apps/sampling`);
+    const unique = page.getByTestId("sampling-unique-question-4");
+    await expect(unique).toBeVisible();
+    await expect(page.getByTestId("sampling-section-unique")).toContainText("Consent");
+    await expect(unique).not.toBeChecked();
+    await expect(page.getByTestId("sampling-unique-question-3")).toBeChecked();
+    await unique.check();
+    await clickNoNav(page, { testId: "sampling-save" });
+    await expect(page.getByTestId("sampling-dashboard")).toBeVisible({ timeout: 30000 });
+
+    await page.reload({ waitUntil: "load" });
+    await expect(page.getByTestId("sampling-unique-question-3")).toBeChecked();
+    await expect(page.getByTestId("sampling-unique-question-4")).toBeChecked();
   });
 
   test("A5: an unconfigured Sampling space cannot start or sample", async ({ page }) => {
@@ -152,12 +191,14 @@ test.describe.serial("Sampling app settings and status flow", () => {
 
   test("A6: Open → Sampling swaps the Sampling button for Start", async ({ page, browser }) => {
     await publishSpacePublic(page, space.spaceUrl);
-    const phones = { u1: "010-1234-5678", u2: "01012345678" };
-    const picks = { u1: [0, 0, 0], u2: [1, 0, 0] };
+    const phones = { u1: "010-1234-5678", u2: "01012345678", u3: "010-5555-6666" };
+    const verified = { u1: "+821011112222", u2: "+821033334444", u3: "010-1111-2222" };
+    const picks = { u1: [0, 0, 0], u2: [1, 0, 0], u3: [0, 1, 0] };
     for (const key of Object.keys(phones)) {
       users[key] = await signUpViaApi(browser, key);
       await joinAndAnswerViaApi(users[key].page, space.spaceId, space.pollId, picks[key], [
         { answer_type: "short_answer", answer: phones[key] },
+        { answer_type: "privacy_consent", agreed: true, declined: false, phone: verified[key], code: "000000" },
       ]);
     }
     await transitionSpace(page, space.spaceUrl, "sampling");
@@ -178,6 +219,16 @@ test.describe.serial("Sampling app settings and status flow", () => {
       timeout: 30000,
     });
     await expect(second.getByTestId("sampling-state-can-enter")).toBeVisible();
+  });
+
+  test("A6c: the same verified phone in another format cannot enter twice", async () => {
+    const third = await openAs("u3");
+    await expect(third.getByTestId("sampling-state-can-enter")).toBeVisible({ timeout: 30000 });
+    await clickNoNav(third, { testId: "btn-sampling-enter" });
+    await expect(third.getByText("This information has already been used to join the sample.")).toBeVisible({
+      timeout: 30000,
+    });
+    await expect(third.getByTestId("sampling-state-can-enter")).toBeVisible();
   });
 
   test("A7: settings are locked once sampling started", async ({ page }) => {

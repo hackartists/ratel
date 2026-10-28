@@ -27,7 +27,8 @@ export function SamplingSettingsForm({ sampling }: { sampling: UseSpaceSampling 
       : [...form.uniqueQuestions, index];
     setForm({ uniqueQuestions: next });
   };
-  const hasShortAnswer = questions.some((q) => q.answer_type === "short_answer");
+  const isUniqueCandidate = (answerType: string) => answerType === "short_answer" || answerType === "privacy_consent";
+  const hasUniqueCandidate = questions.some((q) => isUniqueCandidate(q.answer_type));
 
   const methods: { value: SamplingMethod; testId: string; hint: string }[] = [
     { value: "FirstCome", testId: "sampling-method-first-come", hint: tr.methodFirstComeHint },
@@ -122,14 +123,14 @@ export function SamplingSettingsForm({ sampling }: { sampling: UseSpaceSampling 
           </div>
           <span className="spa-section__hint">{tr.uniqueHint}</span>
         </div>
-        {!hasShortAnswer ? (
-          <span className="spa-section__hint" data-testid="sampling-no-short-answer">
-            {tr.noShortAnswer}
+        {!hasUniqueCandidate ? (
+          <span className="spa-section__hint" data-testid="sampling-no-unique-question">
+            {tr.noUniqueQuestion}
           </span>
         ) : (
           <div className="sampling-options">
             {questions.map((q, qi) =>
-              q.answer_type === "short_answer" ? (
+              isUniqueCandidate(q.answer_type) ? (
                 <label key={qi} className="sampling-option">
                   <input
                     type="checkbox"
