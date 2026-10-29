@@ -4,6 +4,9 @@ pub use analyze_discussion::*;
 mod create_analyze_report;
 pub use create_analyze_report::*;
 
+mod delete_analyze_report;
+pub use delete_analyze_report::*;
+
 mod get_analyze_report;
 pub use get_analyze_report::*;
 

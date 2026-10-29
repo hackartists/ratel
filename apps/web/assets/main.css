@@ -40672,6 +40672,33 @@ a.file-item { text-decoration: none; color: inherit; cursor: pointer; }
   background: rgba(252, 179, 0, 0.10);
   border-color: rgba(252, 179, 0, 0.32);
 }
+.analyze-arena .report-card-large__frame {
+  position: relative;
+  width: 100%;
+}
+.analyze-arena .report-card-large__delete {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.analyze-arena .report-card-large__delete:hover,
+.analyze-arena .report-card-large__delete:focus-visible {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+}
 .analyze-arena .report-card-large__status-dot {
   width: 8px;
   height: 8px;
@@ -46379,6 +46406,12 @@ a.file-item { text-decoration: none; color: inherit; cursor: pointer; }
 .analyze-arena.analyze-arena--detail .btn--primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(252, 179, 0, 0.4);
+}
+.analyze-arena.analyze-arena--detail .btn--danger:hover,
+.analyze-arena.analyze-arena--detail .btn--danger:focus-visible {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
 }
 .analyze-arena.analyze-arena--detail .btn:disabled {
   opacity: 0.5;
