@@ -6,6 +6,8 @@ import { useSpaceAppsContext } from "@/layouts/space-apps-layout";
 import { useSpaceAnalyzesAppI18n } from "./space-analyzes-app.i18n";
 import { useLegacyScript } from "@/lib/legacy-scripts";
 import { useToast } from "@/lib/toast";
+import { Trash2 } from "@/components/icons/lucide";
+import { useDeleteAnalyzeReport } from "./hooks/use-delete-analyze-report";
 import homeScript from "../../../../../legacy-scripts/features/spaces/pages/apps/apps/analyzes/views/home/script.js?url&no-inline";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/home/mod.rs
@@ -49,6 +51,7 @@ function AnalyzesListArena({ spaceId }: { spaceId: string }) {
   const { space } = useSpaceAppsContext();
   const navigate = useNavigate();
   const toast = useToast();
+  const openDeleteReport = useDeleteAnalyzeReport(spaceId);
   useLegacyScript(homeScript);
 
   const reports = useAnalyzeReports(spaceId).data.items;
@@ -145,16 +148,28 @@ function AnalyzesListArena({ spaceId }: { spaceId: string }) {
                     <div className="report-carousel__track" id="report-track">
                       {reports.map((rep) => (
                         <div key={rep.id} className="report-carousel__slide" data-card-type="saved">
-                          <SavedReportCard
-                            report={rep}
-                            onClick={() => {
-                              if (rep.status === "finish") {
-                                navigate(`/spaces/${spaceId}/apps/analyzes/report/${rep.id}`);
-                              } else {
-                                toast.info(tr.listCardPendingToast);
-                              }
-                            }}
-                          />
+                          <div className="report-card-large__frame">
+                            <SavedReportCard
+                              report={rep}
+                              onClick={() => {
+                                if (rep.status === "finish") {
+                                  navigate(`/spaces/${spaceId}/apps/analyzes/report/${rep.id}`);
+                                } else {
+                                  toast.info(tr.listCardPendingToast);
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="report-card-large__delete"
+                              data-testid={`report-delete-${rep.id}`}
+                              aria-label={tr.deleteReportAria}
+                              title={tr.deleteReportAria}
+                              onClick={() => openDeleteReport(rep.id)}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                       <div key="plus" className="report-carousel__slide" data-card-type="new">

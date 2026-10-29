@@ -10,6 +10,8 @@ import { QuizPanel } from "./components/quiz-panel";
 import { ReportBanner } from "./components/report-banner";
 import { ReportSidebar } from "./components/report-sidebar";
 import { AnalyzeReportDetailProvider, useAnalyzeReportDetail } from "./hooks/use-analyze-report-detail";
+import { Trash2 } from "@/components/icons/lucide";
+import { useDeleteAnalyzeReport } from "../../hooks/use-delete-analyze-report";
 
 // app/ratel/src/features/spaces/pages/apps/apps/analyzes/views/report/mod.rs
 // (`SpaceAnalyzeReportPage`). Read-only split-panel result view of a saved
@@ -25,6 +27,7 @@ export function Component() {
   const { space } = useSpaceAppsContext();
   const navigate = useNavigate();
   const ctrl = useAnalyzeReportDetail(spaceId, reportId);
+  const openDeleteReport = useDeleteAnalyzeReport(spaceId);
   useLegacyScript(reportScript);
 
   const report = ctrl.detail.report;
@@ -80,6 +83,20 @@ export function Component() {
               <span className="topbar-title" id="arena-title" data-testid="arena-title">
                 {report.name}
               </span>
+            </div>
+            <div className="arena-topbar__right">
+              <button
+                type="button"
+                className="btn btn--ghost btn--danger"
+                data-testid="report-delete-btn"
+                aria-label={tr.deleteReportAria}
+                onClick={() =>
+                  openDeleteReport(reportId, () => navigate(`/spaces/${spaceId}/apps/analyzes`, { replace: true }))
+                }
+              >
+                <Trash2 size={14} />
+                {tr.deleteReport}
+              </button>
             </div>
           </header>
 

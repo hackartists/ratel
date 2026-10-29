@@ -58,6 +58,13 @@ pub enum SpaceAppError {
     )]
     AnalyzeReportAlreadyRunning,
 
+    #[error("analyze report delete while running")]
+    #[translate(
+        en = "This report is still being analyzed. Please delete it after the analysis finishes.",
+        ko = "분석이 진행 중인 보고서는 삭제할 수 없습니다. 분석이 끝난 뒤 다시 시도해 주세요."
+    )]
+    AnalyzeReportDeleteWhileRunning,
+
     #[error("copy text failed")]
     #[translate(en = "Failed to copy text", ko = "텍스트 복사에 실패했습니다.")]
     CopyTextFailed,
@@ -130,7 +137,8 @@ impl SpaceAppError {
 
             SpaceAppError::AnalyzeQuotaExceeded => StatusCode::FORBIDDEN,
 
-            SpaceAppError::AnalyzeReportAlreadyRunning => StatusCode::CONFLICT,
+            SpaceAppError::AnalyzeReportAlreadyRunning
+            | SpaceAppError::AnalyzeReportDeleteWhileRunning => StatusCode::CONFLICT,
 
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }

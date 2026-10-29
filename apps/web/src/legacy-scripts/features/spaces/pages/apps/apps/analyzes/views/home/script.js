@@ -116,12 +116,14 @@
         scrollToCard(activeIndex + 1, "smooth");
       });
     }
-    // Bind dot clicks — index matches DOM order.
-    getDots().forEach(function (dot, i) {
-      dot.addEventListener("click", function () {
-        scrollToCard(i, "smooth");
+    if (dotsContainer) {
+      dotsContainer.addEventListener("click", function (e) {
+        var dot = e.target.closest(".report-carousel__dot");
+        if (!dot) return;
+        var i = getDots().indexOf(dot);
+        if (i >= 0) scrollToCard(i, "smooth");
       });
-    });
+    }
 
     // Scroll-driven active highlight.
     track.addEventListener("scroll", updateActive, { passive: true });

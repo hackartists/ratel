@@ -63,7 +63,8 @@ async fn try_process_discussion_analysis(
                 "discussion_analysis: parent report {} missing — marking failed",
                 row.report_id
             );
-            return mark_failed(cli, row).await;
+            let _ = mark_failed(cli, row).await;
+            return Ok(());
         }
     };
 

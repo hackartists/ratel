@@ -85,6 +85,15 @@ async fn try_process_analyze_report(
     )
     .await?;
 
+    if SpaceAnalyzeReport::repository()
+        .get(report.id)
+        .await?
+        .is_none()
+    {
+        crate::warn!("auto_analysis: report={report_id} was deleted mid-run, dropping result");
+        return Ok(());
+    }
+
     // 3. Persist the result row. Error::Aws from the underlying SDK
     //    converts via `#[from]` so `?` is enough.
     let mut result = SpaceAnalyzeReportResult::new(space_pk.clone(), report_id.clone());

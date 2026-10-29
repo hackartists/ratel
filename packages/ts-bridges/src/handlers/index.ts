@@ -46,6 +46,7 @@ export { createSubjectHandler } from "./createSubjectHandler";
 export { createTeamHandler } from "./createTeamHandler";
 export { createTestAccount } from "./createTestAccount";
 export { deleteAccountHandler } from "./deleteAccountHandler";
+export { deleteAnalyzeReport } from "./deleteAnalyzeReport";
 export { deleteAnnouncementHandler } from "./deleteAnnouncementHandler";
 export { deleteCategoryHandler } from "./deleteCategoryHandler";
 export { deleteComment } from "./deleteComment";

@@ -26,6 +26,13 @@ const en = {
   reanalyze_started: "Re-analysis started",
   reanalyze_finished: "Re-analysis finished",
   reanalyze_failed: "Re-analysis failed. Please try again.",
+  delete_report: "Delete",
+  delete_report_aria: "Delete report",
+  delete_report_confirm_title: "Delete this analysis report?",
+  delete_report_confirm_desc: "The report and its poll, quiz, follow and discussion analysis results will be permanently deleted. This cannot be undone.",
+  delete_report_confirm_ok: "Delete",
+  delete_report_cancel: "Cancel",
+  delete_report_success: "Analysis report deleted",
   responses_count: "Responses",
   remaining_days: "Remaining",
   survey_period: "Survey Period",
@@ -246,6 +253,13 @@ const ko: Record<keyof typeof en, string> = {
   reanalyze_started: "재분석을 시작했습니다",
   reanalyze_finished: "재분석이 완료되었습니다",
   reanalyze_failed: "재분석에 실패했습니다. 다시 시도해 주세요.",
+  delete_report: "삭제",
+  delete_report_aria: "보고서 삭제",
+  delete_report_confirm_title: "분석 보고서를 삭제할까요?",
+  delete_report_confirm_desc: "보고서와 설문·퀴즈·팔로우·토론 분석 결과가 모두 영구 삭제되며 되돌릴 수 없습니다.",
+  delete_report_confirm_ok: "삭제",
+  delete_report_cancel: "취소",
+  delete_report_success: "분석 보고서를 삭제했습니다",
   responses_count: "참여자",
   remaining_days: "남은 일시",
   survey_period: "설문 기간",
@@ -468,6 +482,13 @@ export interface SpaceAnalyzesAppI18n {
   reanalyzeStarted: string;
   reanalyzeFinished: string;
   reanalyzeFailed: string;
+  deleteReport: string;
+  deleteReportAria: string;
+  deleteReportConfirmTitle: string;
+  deleteReportConfirmDesc: string;
+  deleteReportConfirmOk: string;
+  deleteReportCancel: string;
+  deleteReportSuccess: string;
   responsesCount: string;
   remainingDays: string;
   surveyPeriod: string;
@@ -692,6 +713,13 @@ export function useSpaceAnalyzesAppI18n(): SpaceAnalyzesAppI18n {
     reanalyzeStarted: t("reanalyze_started"),
     reanalyzeFinished: t("reanalyze_finished"),
     reanalyzeFailed: t("reanalyze_failed"),
+    deleteReport: t("delete_report"),
+    deleteReportAria: t("delete_report_aria"),
+    deleteReportConfirmTitle: t("delete_report_confirm_title"),
+    deleteReportConfirmDesc: t("delete_report_confirm_desc"),
+    deleteReportConfirmOk: t("delete_report_confirm_ok"),
+    deleteReportCancel: t("delete_report_cancel"),
+    deleteReportSuccess: t("delete_report_success"),
     responsesCount: t("responses_count"),
     remainingDays: t("remaining_days"),
     surveyPeriod: t("survey_period"),
