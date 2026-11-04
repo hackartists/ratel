@@ -25,15 +25,15 @@ name: PR preview cleanup
 # anything that still slips past — e.g. a run cancelled so late that its own
 # teardown step never got a turn.
 #
-# Shared-infra note: since the shared-infra migration, the PR preview no
-# longer runs its own LocalStack/Postgres/Qdrant inside the namespace — it
-# uses the SAME shared infra postgres/qdrant/redpanda dev/prod use
-# (postgres.infra.svc.cluster.local, qdrant.infra.svc.cluster.local,
-# redpanda-0.redpanda.infra.svc.cluster.local). This workflow now ALSO drops
-# this PR's Postgres database (ratel_pr_<num>), deletes its qdrant collection
-# (ratel_pr_<num>_main), and deletes its Kafka topic + consumer groups
-# (pr-<num>.* / pr-<num>-ratel-worker-*) — mirrors biyard/dataroom's
-# pr-preview-cleanup.yml pattern.
+# Shared-infra note: the PR preview uses the SAME shared qdrant/redpanda
+# dev/prod use (qdrant.infra.svc.cluster.local,
+# redpanda-0.redpanda.infra.svc.cluster.local), so this workflow deletes its
+# qdrant collection (ratel_pr_<num>_main) and its Kafka topic + consumer
+# groups (pr-<num>.* / pr-<num>-ratel-worker-*). Postgres is NOT in that
+# list: the preview runs its own `ephemeral-postgres` pod inside the
+# namespace (deploy/pr-preview/10-postgres.yaml), so deleting the namespace
+# deletes the database — and this workflow no longer needs the shared
+# cluster's superuser `asset` to drop anything.
 #
 # Registry note: the ratel-app-shell:pr-<num>, ratel-web:pr-<num>, and
 # ratel-events:pr-<num> tags in the in-cluster registry are NOT deleted here
@@ -161,20 +161,20 @@ jobs:
           fi
           echo "cleaned up PR ${PR_NUM} preview leftovers"
 
-      - name: Tear down this PR's shared-infra resources (Postgres DB, qdrant collection, Kafka topic+groups)
+      - name: Tear down this PR's shared-infra resources (qdrant collection, Kafka topic+groups)
         if: always()
         # Runs even if the namespace teardown above failed — these shared
         # infra resources are independent of the namespace and should still
         # be torn down (and are each individually idempotent / safe to
         # retry via pr-preview-sweeper if this step itself fails).
+        # Postgres is absent from this list on purpose: the preview's
+        # database lives in an `ephemeral-postgres` pod inside the namespace
+        # (deploy/pr-preview/10-postgres.yaml), so the namespace delete above
+        # already took it. Dropping a per-PR database on the shared infra
+        # Postgres is what forced this workflow to use the cluster superuser
+        # `asset`, which is being removed.
         run: |
           set -uo pipefail
-          pg() { kubectl -n infra exec postgres-0 -- psql -U asset -d asset -tA -c "$1"; }
-
-          echo "dropping Postgres database ratel_pr_${PR_NUM} (if present)"
-          pg "DROP DATABASE IF EXISTS ratel_pr_${PR_NUM} WITH (FORCE)" \
-            && echo "dropped ratel_pr_${PR_NUM}" \
-            || echo "::warning::failed to drop database ratel_pr_${PR_NUM} (non-fatal, sweeper will retry)"
 
           echo "deleting qdrant collection ratel_pr_${PR_NUM}_main (if present)"
           curl -sf -X DELETE "http://qdrant.infra.svc.cluster.local:6333/collections/ratel_pr_${PR_NUM}_main" >/dev/null 2>&1 \

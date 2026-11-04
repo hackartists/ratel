@@ -401,24 +401,25 @@ jobs:
 
   # ────────────────────────────────────────────────────────────────────────
   # e2e: PR-isolated Playwright run on the home k3s cluster — full rationale
-  # in the file header. SHARED-INFRA MIGRATION: the preview no longer runs
-  # its own localstack/qdrant/postgres — it creates a per-PR database/
-  # collection/topic on the SAME shared infra dev/prod use
-  # (postgres.infra.svc.cluster.local, qdrant.infra.svc.cluster.local,
-  # redpanda-0.redpanda.infra.svc.cluster.local — mirrors biyard/dataroom's
-  # ci.yml deploy-pr job), deploys deploy/pr-preview/*.yaml (app-shell + web +
+  # in the file header. The preview shares qdrant and redpanda with dev/prod
+  # (qdrant.infra.svc.cluster.local, redpanda-0.redpanda.infra.svc.cluster.local
+  # — a per-PR collection/topic on each), but runs its OWN Postgres inside the
+  # namespace (deploy/pr-preview/10-postgres.yaml): nothing is created on the
+  # shared infra Postgres any more, which is what removed this workflow's need
+  # for the cluster superuser `asset`. It deploys deploy/pr-preview/*.yaml
+  # (app-shell + web + its postgres +
   # the new ratel-events tier + Ingress) into namespace ratel-pr-<num>, waits
   # for the stack, runs the suite in a k8s pod from the official Playwright
   # image (kubectl cp in / exec / cp out — the runner pods have no docker CLI
   # and no browser OS deps), publishes the HTML report to the pr-webroot,
   # then TEARS THE NAMESPACE DOWN — per project policy the preview exists
   # only for the duration of the test run (unlike asset/dataroom, which keep
-  # it for the PR's lifetime). The per-PR Postgres database / qdrant
-  # collection / Kafka topic are NOT torn down here on purpose — a re-run
-  # (push to the same PR) reuses and resets them (qdrant-init-job RESET=true;
-  # postgres keeps its data, re-seeded data-only each run); only the report
-  # webroot and the namespace end this run. pr-preview-cleanup.yml does the
-  # FINAL teardown of the database/collection/topic when the PR closes, and
+  # it for the PR's lifetime). Postgres dies with the namespace (emptyDir),
+  # so a re-run always starts from a freshly migrated+seeded database. The
+  # shared qdrant collection / Kafka topic are NOT torn down here on purpose
+  # — a re-run reuses and resets them (qdrant-init-job RESET=true); only the
+  # report webroot and the namespace end this run. pr-preview-cleanup.yml
+  # does the FINAL teardown of the collection/topic when the PR closes, and
   # catches namespaces left behind by cancelled/crashed runs.
   #
   # NON-BLOCKING (`continue-on-error: true`) while the new infra path
@@ -446,9 +447,6 @@ jobs:
       PR_NUM: "${{ github.event.number }}"
       NS: "ratel-pr-${{ github.event.number }}"
       HOST: "ratel-${{ github.event.number }}.pr.biyard.co"
-      DB_ROLE: ratel
-      DB_PASSWORD: ratel
-      DB_NAME: "ratel_pr_${{ github.event.number }}"
 
     steps:
       - uses: actions/checkout@v6
@@ -456,40 +454,15 @@ jobs:
       - name: Recreate the per-PR namespace (clean state)
         # Every run starts EMPTY: deleting the previous namespace first
         # guarantees this run's pods pull the freshly pushed :pr-<num>
-        # image. The per-PR Postgres database / qdrant collection / Kafka
-        # topic on shared infra are NOT deleted here — they are reset by
-        # the steps below (qdrant RESET=true; postgres is re-seeded
-        # data-only) and only fully torn down by pr-preview-cleanup.yml
-        # when the PR closes.
+        # image. It also takes the preview's own Postgres with it, so every
+        # run gets an empty database. The shared qdrant collection / Kafka
+        # topic are NOT deleted here — they are reset by the steps below
+        # (qdrant RESET=true) and only fully torn down by
+        # pr-preview-cleanup.yml when the PR closes.
         run: |
           set -euo pipefail
           kubectl delete namespace "${NS}" --ignore-not-found --wait --timeout=180s || true
           kubectl create namespace "${NS}"
-
-      - name: Ensure the per-PR database and its owner exist on shared infra Postgres (create-if-absent, never drop)
-        # Mirrors biyard/dataroom's ci.yml deploy-pr job. The role is shared
-        # across every PR/dev/prod database (created once, left alone after);
-        # the per-PR database itself is dropped only by pr-preview-cleanup.yml.
-        run: |
-          set -euo pipefail
-          pg() { kubectl -n infra exec postgres-0 -- psql -U asset -d asset -tA -c "$1"; }
-          if [ "$(pg "SELECT 1 FROM pg_roles WHERE rolname = '${DB_ROLE}'")" != "1" ]; then
-            pg "CREATE ROLE ${DB_ROLE} LOGIN PASSWORD '${DB_PASSWORD}'"
-            echo "created role ${DB_ROLE}"
-          else
-            # The role may already exist from dev/prod with a DIFFERENT
-            # password (e.g. created before this PR-preview path existed, or
-            # rotated independently) — force it to the password every
-            # workload in this file expects, so app-shell's DATABASE_URL
-            # never hits "password authentication failed" on an otherwise
-            # pre-existing role.
-            pg "ALTER ROLE ${DB_ROLE} LOGIN PASSWORD '${DB_PASSWORD}'"
-            echo "role ${DB_ROLE} already existed — password reset to the expected value"
-          fi
-          if [ "$(pg "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'")" != "1" ]; then
-            pg "CREATE DATABASE ${DB_NAME} OWNER ${DB_ROLE}"
-            echo "created database ${DB_NAME}"
-          fi
 
       - name: Create the postgres-seed ConfigMap
         # localstack/qdrant init-script ConfigMaps are gone (no more
@@ -530,8 +503,8 @@ jobs:
       - name: Wait for the stack to answer through ingress-nginx
         # Ordered waits so a failure names its culprit: init Jobs first
         # (qdrant collection reset+recreated, postgres schema+seed), then
-        # rollouts (app-shell's initContainer gates on shared-infra Postgres
-        # having this PR's database ready — the generic `get deploy` loop
+        # rollouts (app-shell's initContainer gates on the in-namespace
+        # Postgres having this PR's database ready — the generic `get deploy` loop
         # also covers web and the 4 ratel-events Deployments), then prove
         # BOTH backends through the ingress split (docs/superpower/
         # 2026-09-14-react-frontend-migration.md § 5.1): "/" now answers

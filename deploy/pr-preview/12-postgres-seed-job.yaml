@@ -1,12 +1,8 @@
 # postgres-seed — one-shot Job that loads the Playwright fixtures into this
-# PR's database on the SHARED infra postgres
-# (postgres.infra.svc.cluster.local:5432), replacing the PR preview's former
-# private postgres Deployment (deleted; see the shared-infra migration).
-# Database is namespaced per PR (ratel_pr_${PR_NUM}); role/database creation
-# itself happens in pr-workflow.yml's e2e job BEFORE this Job is applied
-# (mirrors dataroom's ci.yml deploy-pr "Ensure the per-PR database and its
-# owner exist" step) — this Job only loads data into a database that must
-# already exist.
+# PR's database on the preview's OWN Postgres (ephemeral-postgres:5432, see
+# 10-postgres.yaml). The database (ratel_pr_${PR_NUM}) is created by that
+# pod's POSTGRES_DB on first boot, so no CI step creates anything on shared
+# infra any more — this Job only loads data.
 #
 # Source of truth: scripts/postgres-seed.sql — a data-only, schema-independent
 # dump (column-inserts, --disable-triggers) generated from the
@@ -64,7 +60,7 @@ spec:
             - sh
             - -c
             - |
-              until psql -h postgres.infra.svc.cluster.local -U ratel -d ratel_pr_${PR_NUM} -tAc "select to_regclass('public.users')" 2>/dev/null | grep -q '^users$'; do
+              until psql -h ephemeral-postgres -U ratel -d ratel_pr_${PR_NUM} -tAc "select to_regclass('public.users')" 2>/dev/null | grep -q '^users$'; do
                 echo "waiting for app-shell to migrate the schema (users table)..."
                 sleep 3
               done
@@ -82,7 +78,7 @@ spec:
             - sh
             - -c
             - |
-              psql -h postgres.infra.svc.cluster.local -U ratel -d ratel_pr_${PR_NUM} -v ON_ERROR_STOP=1 -f /seed/postgres-seed.sql
+              psql -h ephemeral-postgres -U ratel -d ratel_pr_${PR_NUM} -v ON_ERROR_STOP=1 -f /seed/postgres-seed.sql
               echo "postgres seed loaded"
           volumeMounts:
             - name: seed

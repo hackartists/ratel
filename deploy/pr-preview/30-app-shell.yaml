@@ -5,13 +5,12 @@
 # cross-compile rationale) with FEATURES=server,bypass,design-preview, and
 # pushed to the in-cluster registry as ratel-app-shell:pr-<num>.
 #
-# Backing services are no longer private per-PR Deployments (localstack,
-# qdrant, postgres were deleted from this directory) — app-shell now talks
-# to the SAME shared infra namespace dev/prod use:
-#   - postgres.infra.svc.cluster.local:5432, database ratel_pr_${PR_NUM}
-#     (role/database created by the e2e workflow before this manifest is
-#     applied; see pr-workflow.yml's "Ensure the per-PR database ... exist"
-#     step, mirroring dataroom's ci.yml deploy-pr job)
+# Backing services are mostly the SAME shared infra namespace dev/prod use;
+# Postgres is the exception and runs inside this namespace:
+#   - ephemeral-postgres:5432, database ratel_pr_${PR_NUM} — the preview's
+#     own throwaway Postgres (10-postgres.yaml), created by this same apply.
+#     Previously a per-PR database on postgres.infra.svc.cluster.local, which
+#     needed the cluster superuser `asset` in CI to create and drop it.
 #   - qdrant.infra.svc.cluster.local:6333/6334, collection
 #     ratel_pr_${PR_NUM}_main (created by 21-qdrant-init-job.yaml)
 #   - redpanda-0.redpanda.infra.svc.cluster.local:9093, topic
@@ -59,9 +58,9 @@ spec:
           effect: NoSchedule
       initContainers:
         # Postgres migration: the app connects to Postgres and migrates its
-        # schema on startup, so gate the app on the shared infra Postgres
-        # being reachable AND this PR's database already existing (created
-        # by the e2e workflow before this manifest is applied).
+        # schema on startup, so gate the app on the in-namespace
+        # ephemeral-postgres (10-postgres.yaml) being up with its database
+        # ready — POSTGRES_DB creates it on first boot, no CI step needed.
         - name: wait-for-postgres
           image: postgres:16-alpine
           env:
@@ -71,8 +70,8 @@ spec:
             - sh
             - -c
             - |
-              until pg_isready -h postgres.infra.svc.cluster.local -p 5432 -U ratel -d ratel_pr_${PR_NUM} >/dev/null 2>&1; do
-                echo "waiting for postgres.infra.svc.cluster.local / ratel_pr_${PR_NUM}..."
+              until pg_isready -h ephemeral-postgres -p 5432 -U ratel -d ratel_pr_${PR_NUM} >/dev/null 2>&1; do
+                echo "waiting for ephemeral-postgres / ratel_pr_${PR_NUM}..."
                 sleep 3
               done
               echo "postgres ready — starting app-shell"
@@ -92,9 +91,9 @@ spec:
               value: "8080"
             # Postgres migration: the app resolves its pool from DATABASE_URL
             # and migrates the inventory schema on startup (common/run.rs).
-            # Shared infra postgres — dedicated per-PR database.
+            # In-namespace throwaway Postgres (10-postgres.yaml).
             - name: DATABASE_URL
-              value: postgres://ratel:ratel@postgres.infra.svc.cluster.local:5432/ratel_pr_${PR_NUM}
+              value: postgres://ratel:ratel@ephemeral-postgres:5432/ratel_pr_${PR_NUM}
             # Per-instance sqlx POOL max (client side), NOT postgres server
             # max_connections. Small (10) to mirror production sizing
             # (replicas × pool ≤ server max_connections) and to keep the pool a
