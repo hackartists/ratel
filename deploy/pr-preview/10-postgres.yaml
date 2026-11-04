@@ -1,0 +1,107 @@
+# ephemeral-postgres — this PR preview's OWN Postgres, inside the per-PR
+# namespace. It replaces the previous arrangement where every preview carved a
+# `ratel_pr_<num>` database out of the shared infra Postgres
+# (postgres.infra.svc.cluster.local), which required the cluster superuser
+# `asset` in CI to CREATE/DROP role+database. That superuser is being removed,
+# and a throwaway database that lives and dies with its namespace is the
+# simpler contract anyway: namespace delete == database gone, so neither
+# pr-preview-cleanup.yml nor the sweeper has anything left to drop on shared
+# infra.
+#
+# Storage is an emptyDir on purpose — preview data is disposable, and the e2e
+# job recreates the namespace on every run, so a re-push always starts from an
+# empty database that app-shell migrates (PostgresEntity inventory) and
+# postgres-seed then fills with the Playwright fixtures.
+#
+# Credentials/database name are deliberately unchanged from the shared-infra
+# era (role `ratel`, database `ratel_pr_${PR_NUM}`) so only the HOST moves;
+# they are throwaway values for a pod reachable only inside this namespace.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ephemeral-postgres
+  namespace: ratel-pr-${PR_NUM}
+  labels:
+    app: ephemeral-postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ephemeral-postgres
+  template:
+    metadata:
+      labels:
+        app: ephemeral-postgres
+    spec:
+      # Same placement rule as app-shell (deploy/pr-preview/30-app-shell.yaml):
+      # the Pi node's 16K page-size kernel is excluded, main and the tainted
+      # amd64 node are both fine.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: biyard.io/node-class
+                    operator: In
+                    values: ["main", "amd64"]
+      tolerations:
+        - key: biyard.io/arch
+          operator: Equal
+          value: amd64
+          effect: NoSchedule
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          # app-shell's sqlx pool is capped at 10 and the seed Job takes one
+          # more; 50 leaves headroom without reserving real memory.
+          args: ["-c", "max_connections=50"]
+          env:
+            - name: POSTGRES_USER
+              value: ratel
+            - name: POSTGRES_PASSWORD
+              value: ratel
+            - name: POSTGRES_DB
+              value: ratel_pr_${PR_NUM}
+            # emptyDir mounts at the data dir root; initdb refuses a non-empty
+            # directory, so put the cluster in a subdirectory.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+              name: postgres
+          readinessProbe:
+            exec:
+              command:
+                ["pg_isready", "-h", "127.0.0.1", "-U", "ratel", "-d", "ratel_pr_${PR_NUM}"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ephemeral-postgres
+  namespace: ratel-pr-${PR_NUM}
+  labels:
+    app: ephemeral-postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: ephemeral-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

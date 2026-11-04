@@ -152,8 +152,14 @@ MIG_NDJSON     ?= $(MIG_EXPORT_DIR)/all-items.ndjson
 
 PG_HOST       ?= postgres.infra.svc.cluster.local
 PG_PORT       ?= 5432
-PG_SUPER_USER ?= asset
-PG_SUPER_PASS ?= asset
+# `migrate-db` (CREATE DATABASE) needs an admin role on the target server.
+# Those credentials are NOT stored in this repo — inject them per invocation:
+#   PGUSER=<admin> PGPASSWORD=<...> make migrate-db DB=ratel-dev
+# (the cluster superuser `asset` that used to be hard-coded here is being
+# removed). Every other migrate-* target uses the app role below and needs
+# no admin access, so skip migrate-db entirely when the database exists.
+PG_SUPER_USER ?= $(PGUSER)
+PG_SUPER_PASS ?= $(PGPASSWORD)
 PG_APP_USER   ?= ratel
 PG_APP_PASS   ?= ratel
 DB            ?= ratel-migration        # safe rehearsal target; set DB=ratel (prod) / ratel-dev
@@ -162,7 +168,9 @@ PSQL          ?= psql
 ETL_BIN       ?= target/debug/etl_migrate
 MIG_RUST_LOG  ?= warn
 MIG_APP_DSN    = postgres://$(PG_APP_USER):$(PG_APP_PASS)@$(PG_HOST):$(PG_PORT)/$(DB)
-MIG_SUPER_DSN  = postgres://$(PG_SUPER_USER):$(PG_SUPER_PASS)@$(PG_HOST):$(PG_PORT)/postgres
+# Admin connection: credentials ride PGUSER/PGPASSWORD (above), never a DSN
+# literal, so nothing secret ends up in this file.
+MIG_SUPER_PSQL = $(PSQL) -h $(PG_HOST) -p $(PG_PORT) -U "$(PG_SUPER_USER)" -d postgres
 
 .PHONY: migrate migrate-export migrate-fetch migrate-build migrate-db migrate-load migrate-dry-run migrate-verify
 
@@ -198,10 +206,12 @@ migrate-build:
 	cd app/ratel && DYNAMO_TABLE_PREFIX=ratel-dev cargo build --bin etl_migrate --features server
 
 # 3b. Create the target database, owned by the app role (idempotent guard).
+#     Needs an admin role: PGUSER=<admin> PGPASSWORD=<...> make migrate-db.
 migrate-db:
-	@PGPASSWORD=$(PG_SUPER_PASS) $(PSQL) "$(MIG_SUPER_DSN)" -tAc \
+	@test -n "$(PG_SUPER_USER)" || (echo "PGUSER=<admin role> (and PGPASSWORD) required for migrate-db — see the PG_SUPER_USER comment in this Makefile"; exit 1)
+	@PGPASSWORD="$(PG_SUPER_PASS)" $(MIG_SUPER_PSQL) -tAc \
 		"SELECT 1 FROM pg_database WHERE datname='$(DB)'" | grep -q 1 || \
-	PGPASSWORD=$(PG_SUPER_PASS) $(PSQL) "$(MIG_SUPER_DSN)" -c \
+	PGPASSWORD="$(PG_SUPER_PASS)" $(MIG_SUPER_PSQL) -c \
 		"CREATE DATABASE \"$(DB)\" OWNER $(PG_APP_USER)"
 	@echo "database '$(DB)' ready (owner $(PG_APP_USER))"
 
