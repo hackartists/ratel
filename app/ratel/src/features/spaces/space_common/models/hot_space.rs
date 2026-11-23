@@ -68,8 +68,10 @@ pub struct HotSpace {
 
     /// `WindowedRankKey` Display: `W{window:04}{score:020}` (base-62,
     /// descending by quality). Ascending scan returns best-first within each
-    /// window.
-    #[postgres(order)]
+    /// window. Indexed (`index(version = 1)` so already-provisioned tables get
+    /// it through the versioned migration) so `ORDER BY rank_key LIMIT n` is
+    /// an index scan instead of a full-table sort.
+    #[postgres(order, index(version = 1))]
     pub rank_key: String,
 
     /// Cross-feature reference to the space's post/feed (bare id).
