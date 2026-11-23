@@ -226,6 +226,39 @@ impl SpaceAction {
             .map_err(crate::common::Error::from)
     }
 
+    /// Action counts per type for many spaces in one grouped query
+    /// (`GROUP BY space_id, space_action_type`), keyed by bare `space_id`.
+    /// Spaces without actions are absent from the map.
+    pub async fn count_by_type_for_spaces(
+        space_ids: &[String],
+    ) -> crate::common::Result<std::collections::HashMap<String, Vec<(SpaceActionType, i64)>>> {
+        use postgres::sqlx::{QueryBuilder, Row};
+        let mut out: std::collections::HashMap<String, Vec<(SpaceActionType, i64)>> =
+            Default::default();
+        if space_ids.is_empty() {
+            return Ok(out);
+        }
+        let mut qb = QueryBuilder::<postgres::sqlx::Postgres>::new(
+            "SELECT space_id, space_action_type, COUNT(*) AS n FROM space_actions WHERE space_id = ANY(",
+        );
+        qb.push_bind(space_ids.to_vec());
+        qb.push(") GROUP BY space_id, space_action_type");
+        let rows = Self::repository()
+            .db()
+            .fetch_all(qb)
+            .await
+            .map_err(crate::common::Error::from)?;
+        for row in rows {
+            let space_id: String = row.try_get("space_id").map_err(postgres::Error::from)?;
+            let kind: SpaceActionType = row
+                .try_get("space_action_type")
+                .map_err(postgres::Error::from)?;
+            let n: i64 = row.try_get("n").map_err(postgres::Error::from)?;
+            out.entry(space_id).or_default().push((kind, n));
+        }
+        Ok(out)
+    }
+
     /// Persist all in-memory field changes (upsert on the surrogate `id`).
     pub async fn save(&self) -> crate::common::Result<Self> {
         Self::repository()

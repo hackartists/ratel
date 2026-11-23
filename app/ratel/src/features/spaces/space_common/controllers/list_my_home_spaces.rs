@@ -1,7 +1,3 @@
-// TODO(hot-spaces-ranking): `count_actions` below is an N+1 query.
-// The denormalized-count follow-up (SpaceActionCount entity) in
-// docs/superpowers/plans/2026-04-21-hot-spaces-ranking.md removes it.
-
 use super::list_hot_spaces::HotSpaceResponse;
 use crate::features::spaces::space_common::models::HotSpaceHeat;
 use crate::common::*;
@@ -64,7 +60,7 @@ pub async fn list_my_home_spaces_handler(
         .filter_map(|sp| sp.space_pk.parse::<Partition>().ok())
         .collect();
 
-    let fetched: Vec<SpaceCommon> = fetch_spaces(&space_pks).await;
+    let fetched: Vec<SpaceCommon> = fetch_spaces(&space_pks).await?;
 
     // Active (Ongoing/Open) spaces come first so the carousel leads with
     // what the user can still engage with; Finished/Designing/Draft still
@@ -84,10 +80,7 @@ pub async fn list_my_home_spaces_handler(
         })
     });
 
-    let mut items: Vec<HotSpaceResponse> = Vec::with_capacity(spaces.len());
-    for (idx, space) in spaces.into_iter().enumerate() {
-        items.push(build_hot_space_card(space, idx as i64 + 1).await);
-    }
+    let items = build_hot_space_cards(spaces).await?;
 
     Ok((items, next_bookmark).into())
 }
@@ -148,59 +141,89 @@ pub async fn list_my_invited_spaces_handler(
         .filter_map(|inv| inv.space_pk.parse::<Partition>().ok())
         .collect();
 
-    let spaces: Vec<SpaceCommon> = fetch_spaces(&space_pks).await;
+    let spaces: Vec<SpaceCommon> = fetch_spaces(&space_pks).await?;
 
-    let mut items: Vec<HotSpaceResponse> = Vec::with_capacity(spaces.len());
-    for (idx, space) in spaces.into_iter().enumerate() {
-        items.push(build_hot_space_card(space, idx as i64 + 1).await);
-    }
+    let items = build_hot_space_cards(spaces).await?;
 
     Ok((items, next_bookmark).into())
 }
 
-/// Fetch every `SpaceCommon` row for the given partitions. Missing rows are
-/// silently skipped — same semantics as the old DynamoDB `batch_get`, which
-/// also just omitted keys that didn't resolve to an item.
+/// Fetch the `SpaceCommon` rows for the given partitions with one `IN` query,
+/// returned in `space_pks` order. Missing rows are silently skipped — same
+/// semantics as the old DynamoDB `batch_get`, which also just omitted keys that
+/// didn't resolve to an item.
 #[cfg(feature = "server")]
-async fn fetch_spaces(space_pks: &[Partition]) -> Vec<SpaceCommon> {
-    let mut out = Vec::with_capacity(space_pks.len());
-    for pk in space_pks {
-        if let Ok(Some(space)) = SpaceCommon::get_by_partition(pk).await {
-            out.push(space);
-        }
-    }
-    out
+async fn fetch_spaces(space_pks: &[Partition]) -> Result<Vec<SpaceCommon>> {
+    let by_pk = SpaceCommon::get_many_by_partitions(space_pks).await?;
+    Ok(space_pks
+        .iter()
+        .filter_map(|pk| by_pk.get(&pk.to_string()).cloned())
+        .collect())
 }
 
-/// Build one home carousel card (`HotSpaceResponse`) from a `SpaceCommon`.
-/// Shared by the "my spaces" and "invited" home lists. `rank` is the 1-based
-/// position within its list.
+/// Build the home carousel cards (`HotSpaceResponse`) for `spaces`, shared by
+/// the "my spaces" and "invited" home lists. `rank` is the 1-based position in
+/// `spaces`. Backing posts and per-type action counts are loaded for the whole
+/// page at once (one query each) instead of per space.
 #[cfg(feature = "server")]
-async fn build_hot_space_card(space: SpaceCommon, rank: i64) -> HotSpaceResponse {
+async fn build_hot_space_cards(spaces: Vec<SpaceCommon>) -> Result<Vec<HotSpaceResponse>> {
+    let post_ids: Vec<uuid::Uuid> = spaces
+        .iter()
+        .filter_map(|space| post_uuid_of(&space.partition()))
+        .collect();
+    let space_ids: Vec<String> = spaces
+        .iter()
+        .map(|space| SpacePartition::from(space.partition()).0)
+        .collect();
+
+    let (posts, action_counts) = tokio::try_join!(
+        Post::get_many(post_ids),
+        SpaceAction::count_by_type_for_spaces(&space_ids),
+    )?;
+    let posts: HashMap<uuid::Uuid, Post> = posts.into_iter().map(|p| (p.id, p)).collect();
+
+    Ok(spaces
+        .into_iter()
+        .enumerate()
+        .map(|(idx, space)| {
+            let space_pk = space.partition();
+            let post = post_uuid_of(&space_pk).and_then(|id| posts.get(&id));
+            let space_id = SpacePartition::from(space_pk.clone()).0;
+            let counts = action_counts.get(&space_id).map(Vec::as_slice).unwrap_or(&[]);
+            build_hot_space_card(space, post, counts, idx as i64 + 1)
+        })
+        .collect())
+}
+
+#[cfg(feature = "server")]
+fn post_uuid_of(space_pk: &Partition) -> Option<uuid::Uuid> {
+    match space_pk.clone().to_post_key().ok()? {
+        Partition::Feed(id) => uuid::Uuid::parse_str(&id).ok(),
+        _ => None,
+    }
+}
+
+/// Build one home carousel card from a `SpaceCommon`, its backing Feed post
+/// (title/description live there, not on `SpaceCommon`) and its action counts.
+#[cfg(feature = "server")]
+fn build_hot_space_card(
+    space: SpaceCommon,
+    post: Option<&Post>,
+    action_counts: &[(SpaceActionType, i64)],
+    rank: i64,
+) -> HotSpaceResponse {
     let space_pk = space.partition();
     let post_pk = space_pk.clone().to_post_key().ok();
 
-    // Fetch the backing post per space (same path `list_hot_spaces`'s fan-out
-    // uses) — the title/description live on the Feed post, not SpaceCommon.
-    let post_uuid = post_pk.as_ref().and_then(|pk| match pk {
-        Partition::Feed(id) => uuid::Uuid::parse_str(id).ok(),
-        _ => None,
-    });
-    let post = match post_uuid {
-        Some(id) => Post::get_by_feed_id(id).await.ok().flatten(),
-        None => None,
-    };
-
-    let title = post.as_ref().map(|p| p.title.clone()).unwrap_or_default();
+    let title = post.map(|p| p.title.clone()).unwrap_or_default();
     let description = if !space.content.is_empty() {
         extract_description(&space.content)
     } else {
-        post.as_ref()
-            .map(|p| extract_description(&p.body.0.to_html()))
+        post.map(|p| extract_description(&p.body.0.to_html()))
             .unwrap_or_default()
     };
 
-    let (poll_count, discussion_count, quiz_count, follow_count) = count_actions(&space_pk).await;
+    let (poll_count, discussion_count, quiz_count, follow_count) = tally_actions(action_counts);
     let total_actions = poll_count + discussion_count + quiz_count + follow_count;
     let heat = derive_heat(space.participants);
 
@@ -225,23 +248,17 @@ async fn build_hot_space_card(space: SpaceCommon, rank: i64) -> HotSpaceResponse
 }
 
 #[cfg(feature = "server")]
-async fn count_actions(space_pk: &Partition) -> (i64, i64, i64, i64) {
-    let space_id: SpacePartition = space_pk.clone().into();
-    let actions = match SpaceAction::list_by_space(&space_id).await {
-        Ok(actions) => actions,
-        Err(_) => return (0, 0, 0, 0),
-    };
-
+fn tally_actions(counts: &[(SpaceActionType, i64)]) -> (i64, i64, i64, i64) {
     let mut polls = 0i64;
     let mut discussions = 0i64;
     let mut quizzes = 0i64;
     let mut follows = 0i64;
-    for a in actions {
-        match a.space_action_type {
-            SpaceActionType::Poll => polls += 1,
-            SpaceActionType::TopicDiscussion => discussions += 1,
-            SpaceActionType::Quiz => quizzes += 1,
-            SpaceActionType::Follow => follows += 1,
+    for (kind, n) in counts {
+        match kind {
+            SpaceActionType::Poll => polls += n,
+            SpaceActionType::TopicDiscussion => discussions += n,
+            SpaceActionType::Quiz => quizzes += n,
+            SpaceActionType::Follow => follows += n,
             SpaceActionType::Meet | SpaceActionType::Announcement => {}
         }
     }

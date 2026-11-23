@@ -292,6 +292,25 @@ impl SpaceCommon {
             .map_err(crate::common::Error::from)
     }
 
+    /// Every existing space among `space_pks` in one `IN` query, keyed by
+    /// `space_pk`. Keys with no row are absent from the map.
+    pub async fn get_many_by_partitions(
+        space_pks: &[Partition],
+    ) -> Result<std::collections::HashMap<String, Self>> {
+        use postgres::ops::StringOp;
+        if space_pks.is_empty() {
+            return Ok(Default::default());
+        }
+        let keys: Vec<String> = space_pks.iter().map(|pk| pk.to_string()).collect();
+        Ok(Self::repository()
+            .find_rows(Self::query().space_pk(StringOp::In(keys)))
+            .await
+            .map_err(crate::common::Error::from)?
+            .into_iter()
+            .map(|space| (space.space_pk.clone(), space))
+            .collect())
+    }
+
     /// Every space authored by a user (`find_by_user_pk` GSI1), newest first.
     pub async fn find_by_user_pk(user_pk: &Partition) -> Result<Vec<Self>> {
         use postgres::ops::StringOp;
