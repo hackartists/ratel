@@ -6,12 +6,15 @@ pub type PgClient = PgPool;
 
 /// Process-global Postgres connection pool. Built lazily on first access from
 /// [`PostgresConfig`] (which reads `DATABASE_URL`). Mirrors the DynamoDB `DB`
-/// lazy in the sibling `dynamodb.rs`.
+/// lazy in the sibling `dynamodb.rs`. `run.rs` dereferences it before serving, so
+/// the pool and its `min_connections` are established at boot, not on the
+/// first request.
 pub static POOL: Lazy<PgPool> = Lazy::new(|| async move {
     let config = PostgresConfig::default();
 
     let pool = PgPoolOptions::new()
         .max_connections(config.max_connections)
+        .min_connections(config.min_connections.min(config.max_connections))
         // Explicit acquire timeout (sqlx default is 30s) — kept modest so a
         // genuinely exhausted pool surfaces fast instead of hanging requests.
         .acquire_timeout(std::time::Duration::from_secs(30))
@@ -24,6 +27,10 @@ pub static POOL: Lazy<PgPool> = Lazy::new(|| async move {
 pub struct PostgresConfig {
     pub database_url: String,
     pub max_connections: u32,
+    /// Connections the pool keeps open while idle (`POSTGRES_MIN_CONNECTIONS`,
+    /// default 2) so the first request after a quiet period does not pay for
+    /// TCP/TLS/auth setup.
+    pub min_connections: u32,
 }
 
 impl Default for PostgresConfig {
@@ -41,9 +48,15 @@ impl Default for PostgresConfig {
             .and_then(|v| v.trim().parse().ok())
             .unwrap_or(20);
 
+        let min_connections = std::env::var("POSTGRES_MIN_CONNECTIONS")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(2);
+
         PostgresConfig {
             database_url,
             max_connections,
+            min_connections,
         }
     }
 }
