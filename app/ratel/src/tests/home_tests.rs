@@ -317,3 +317,218 @@ async fn test_hot_spaces_excludes_low_participant_space() {
         body.items
     );
 }
+
+// ----- Query shape: hot-spaces paging/cache, my-spaces batching ----------
+
+async fn reset_hot_spaces() {
+    use postgres::PostgresEntity;
+    crate::features::spaces::space_common::models::HotSpace::repository()
+        .db()
+        .execute_sql("DELETE FROM hot_spaces")
+        .await
+        .unwrap();
+}
+
+async fn seed_hot_row(score: u32, title: &str) -> String {
+    use crate::features::spaces::space_common::models::{HOT_SPACE_RANK_PK, HotSpace};
+    let space_id = uuid::Uuid::now_v7().to_string();
+    let now = crate::common::utils::time::get_now_timestamp_millis();
+    HotSpace {
+        id: uuid::Uuid::now_v7(),
+        space_id: space_id.clone(),
+        created_at: now,
+        updated_at: now,
+        rank_pk: HOT_SPACE_RANK_PK.to_string(),
+        rank_key: format!("W0001{score:020}"),
+        post_id: uuid::Uuid::now_v7().to_string(),
+        title: title.to_string(),
+        space_created_at: now,
+        ..Default::default()
+    }
+    .upsert()
+    .await
+    .unwrap();
+    space_id
+}
+
+async fn get_hot(
+    ctx: &TestContext,
+) -> (
+    crate::axum::http::HeaderMap,
+    crate::common::types::ListResponse<HotSpaceResponse>,
+) {
+    let (status, headers, body) = crate::test_get! {
+        app: ctx.app.clone(),
+        path: "/api/hot-spaces",
+        response_type: crate::common::types::ListResponse<HotSpaceResponse>,
+    };
+    assert_eq!(status, 200, "hot-spaces: {:?}", body);
+    (headers, body)
+}
+
+/// Exactly `page_size` rows → no next page; the ranks are 1..=20 in ascending
+/// `rank_key` order.
+#[by_macros::pg_test]
+async fn test_hot_spaces_exactly_page_size_has_no_next() {
+    let ctx = TestContext::setup().await;
+    reset_hot_spaces().await;
+    for score in (0..20).rev() {
+        seed_hot_row(score, &format!("t{score}")).await;
+    }
+
+    let (_, body) = get_hot(&ctx).await;
+    assert_eq!(body.items.len(), 20);
+    assert_eq!(body.bookmark, None);
+    let titles: Vec<&str> = body.items.iter().map(|i| i.title.as_str()).collect();
+    let expected: Vec<String> = (0..20).map(|s| format!("t{s}")).collect();
+    assert_eq!(titles, expected.iter().map(String::as_str).collect::<Vec<_>>());
+    let ranks: Vec<i64> = body.items.iter().map(|i| i.rank).collect();
+    assert_eq!(ranks, (1..=20).collect::<Vec<i64>>());
+}
+
+/// `page_size + 1` rows → the page is still 20 items, the worst row is cut and
+/// the bookmark points at page 2.
+#[by_macros::pg_test]
+async fn test_hot_spaces_page_size_plus_one_has_next() {
+    let ctx = TestContext::setup().await;
+    reset_hot_spaces().await;
+    for score in 0..21 {
+        seed_hot_row(score, &format!("t{score}")).await;
+    }
+
+    let (_, body) = get_hot(&ctx).await;
+    assert_eq!(body.items.len(), 20);
+    assert_eq!(body.bookmark.as_deref(), Some("2"));
+    assert_eq!(body.items.first().unwrap().title, "t0");
+    assert_eq!(body.items.last().unwrap().title, "t19");
+    assert!(body.items.iter().all(|i| i.title != "t20"));
+}
+
+/// Fewer than `page_size` rows and an empty table both report no next page.
+#[by_macros::pg_test]
+async fn test_hot_spaces_under_page_size_and_empty() {
+    let ctx = TestContext::setup().await;
+    reset_hot_spaces().await;
+    let (_, empty) = get_hot(&ctx).await;
+    assert!(empty.items.is_empty());
+    assert_eq!(empty.bookmark, None);
+
+    for score in 0..19 {
+        seed_hot_row(score, &format!("t{score}")).await;
+    }
+    crate::features::spaces::space_common::controllers::clear_hot_spaces_cache().await;
+    let (_, body) = get_hot(&ctx).await;
+    assert_eq!(body.items.len(), 19);
+    assert_eq!(body.bookmark, None);
+}
+
+/// A second request inside the TTL returns the identical body even though the
+/// table changed, carries `Cache-Control`, and a cleared cache sees the change.
+#[by_macros::pg_test]
+async fn test_hot_spaces_cache_serves_same_body_within_ttl() {
+    let ctx = TestContext::setup().await;
+    reset_hot_spaces().await;
+    seed_hot_row(5, "first").await;
+
+    let (headers, first) = get_hot(&ctx).await;
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .and_then(|v| v.to_str().ok()),
+        Some("public, max-age=30")
+    );
+    assert_eq!(first.items.len(), 1);
+
+    seed_hot_row(1, "better").await;
+    let (_, cached) = get_hot(&ctx).await;
+    assert_eq!(cached, first);
+
+    crate::features::spaces::space_common::controllers::clear_hot_spaces_cache().await;
+    let (_, refreshed) = get_hot(&ctx).await;
+    assert_eq!(refreshed.items.len(), 2);
+    assert_eq!(refreshed.items[0].title, "better");
+}
+
+/// my-spaces output with several spaces: per-type action counts, post title,
+/// ordering, and a participant row whose space row is missing is skipped.
+#[by_macros::pg_test]
+async fn test_my_spaces_batched_output_and_missing_space_skipped() {
+    use crate::features::spaces::pages::actions::models::SpaceAction;
+    use crate::features::spaces::pages::actions::types::SpaceActionType;
+
+    let ctx = TestContext::setup().await;
+    let user = ctx.test_user.0.clone();
+
+    let a = seed_space(&ctx, &user, SpaceStatus::Ongoing).await;
+    let b = seed_space(&ctx, &user, SpaceStatus::Ongoing).await;
+    let c = seed_space(&ctx, &user, SpaceStatus::Finished).await;
+    seed_participant(&ctx, &a.partition(), &user, Some(3_000)).await;
+    seed_participant(&ctx, &b.partition(), &user, Some(2_000)).await;
+    seed_participant(&ctx, &c.partition(), &user, Some(9_000)).await;
+    let ghost = Partition::Space(uuid::Uuid::now_v7().to_string());
+    seed_participant(&ctx, &ghost, &user, Some(10_000)).await;
+
+    let a_id: SpacePartition = a.partition().into();
+    let b_id: SpacePartition = b.partition().into();
+    for (kind, n) in [
+        (SpaceActionType::Poll, 2),
+        (SpaceActionType::TopicDiscussion, 1),
+        (SpaceActionType::Meet, 1),
+    ] {
+        for _ in 0..n {
+            SpaceAction::new(a_id.clone(), uuid::Uuid::now_v7().to_string(), kind)
+                .save()
+                .await
+                .unwrap();
+        }
+    }
+    SpaceAction::new(
+        b_id.clone(),
+        uuid::Uuid::now_v7().to_string(),
+        SpaceActionType::Quiz,
+    )
+    .save()
+    .await
+    .unwrap();
+
+    let (status, _, body) = crate::test_get! {
+        app: ctx.app.clone(),
+        path: "/api/home/my-spaces",
+        headers: ctx.test_user.1.clone(),
+        response_type: crate::common::types::ListResponse<HotSpaceResponse>,
+    };
+    assert_eq!(status, 200, "my-spaces: {:?}", body);
+
+    let ids: Vec<String> = body.items.iter().map(|i| i.space_id.to_string()).collect();
+    assert_eq!(
+        ids,
+        vec![
+            space_id_str(&a.partition()),
+            space_id_str(&b.partition()),
+            space_id_str(&c.partition()),
+        ],
+        "active first by last activity, then the rest; ghost skipped"
+    );
+    assert_eq!(
+        body.items.iter().map(|i| i.rank).collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+
+    let item_a = &body.items[0];
+    assert_eq!(
+        (
+            item_a.poll_count,
+            item_a.discussion_count,
+            item_a.quiz_count,
+            item_a.follow_count,
+            item_a.total_actions
+        ),
+        (2, 1, 0, 0, 3)
+    );
+    assert_eq!(item_a.title, format!("Test Space {}", a.partition()));
+    let item_b = &body.items[1];
+    assert_eq!((item_b.quiz_count, item_b.total_actions), (1, 1));
+    let item_c = &body.items[2];
+    assert_eq!(item_c.total_actions, 0);
+    assert_eq!(item_c.participants, 50);
+}
