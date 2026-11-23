@@ -481,6 +481,25 @@ impl<T: PostgresEntity> PostgresRepository<T> {
         self.fetch_page_by_spec(spec).await
     }
 
+    /// [`find`](Self::find) 와 같은 조회 + hydrate 이되 `COUNT(*) OVER()` 를 붙이지 않고 행만
+    /// 돌려준다. 전체 개수가 필요 없는 목록(`limit + 1` 로 다음 페이지 유무만 판단하는 경우)이
+    /// 윈도우 집계 비용 없이 `ORDER BY … LIMIT` 인덱스 스캔을 쓰게 하려는 용도다.
+    pub async fn find_rows(&self, query: T::Query) -> Result<Vec<T>> {
+        let table = T::table_name();
+        let select_columns = T::select_columns(None);
+        let mut qb =
+            QueryBuilder::<Postgres>::new(format!("SELECT {select_columns} FROM \"{table}\""));
+        query.spec().render(&mut qb);
+
+        let rows = self.db.fetch_all(qb).await?;
+        let mut items = rows
+            .iter()
+            .map(T::from_pg_row)
+            .collect::<Result<Vec<T>>>()?;
+        T::hydrate(&self.db, &mut items, &query).await?;
+        Ok(items)
+    }
+
     /// `find`/`find_by_spec` 공유 코어: 명시적 컬럼 + `COUNT(*) OVER()` 로 페이지 행 + 전체 수를
     /// 한 쿼리에서 얻어 [`Page`] 를 만든다 (hydrate 는 하지 않는다 — 호출자 책임).
     async fn fetch_page_by_spec(&self, spec: &crate::query::QuerySpec) -> Result<Page<T>> {

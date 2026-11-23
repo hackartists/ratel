@@ -45,13 +45,11 @@ pub async fn list_hot_spaces_handler() -> Result<ListResponse<HotSpaceResponse>>
     let page = 1i64;
     let page_size = 20i64;
 
-    let result = HotSpace::find_ranked(page, page_size).await?;
-    let has_next = result.page < result.total_pages;
+    let (rows, has_next) = HotSpace::find_ranked(page, page_size).await?;
 
     // Preserve the absolute 1-based rank across pages.
     let base_rank = (page - 1) * page_size;
-    let items: Vec<HotSpaceResponse> = result
-        .items
+    let items: Vec<HotSpaceResponse> = rows
         .into_iter()
         .enumerate()
         .map(|(idx, h)| HotSpaceResponse {

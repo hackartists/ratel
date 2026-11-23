@@ -94,19 +94,22 @@ pub struct HotSpace {
 #[cfg(feature = "server")]
 impl HotSpace {
     /// Global ranked stream, best-first (`rank_key` ascending), page-paginated.
-    /// Mirrors the DynamoDB GSI1 forward scan on the `HSR#ALL` partition.
-    pub async fn find_ranked(page: i64, page_size: i64) -> postgres::Result<postgres::Page<Self>> {
-        Self::repository()
-            .find(
+    /// Fetches `page_size + 1` rows without a total count so `has_next` comes
+    /// from the extra row and the query stays an index-ordered `LIMIT` scan.
+    /// Returns the page's items (at most `page_size`) and `has_next`.
+    pub async fn find_ranked(page: i64, page_size: i64) -> postgres::Result<(Vec<Self>, bool)> {
+        let page = page.max(1);
+        let mut items = Self::repository()
+            .find_rows(
                 Self::query()
-                    // One ascending scan is the whole ranking: the key encodes
-                    // both window and score inverted, so ASC yields
-                    // newest-window-first, best-score-first.
                     .order_by(HotSpaceColumn::RankKey, postgres::Order::Asc)
-                    .page(page)
-                    .page_size(page_size),
+                    .limit(page_size + 1)
+                    .offset((page - 1) * page_size),
             )
-            .await
+            .await?;
+        let has_next = items.len() as i64 > page_size;
+        items.truncate(page_size.max(0) as usize);
+        Ok((items, has_next))
     }
 
     /// Delete this space's hot row (best-effort; missing row is not an error).
