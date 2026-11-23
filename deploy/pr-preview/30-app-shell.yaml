@@ -100,6 +100,8 @@ spec:
             # leak check under the e2e run.
             - name: POSTGRES_MAX_CONNECTIONS
               value: "10"
+            - name: POSTGRES_MIN_CONNECTIONS
+              value: "2"
           # app-shell is API-only after the React frontend migration (see
           # docs/superpower/2026-09-14-react-frontend-migration.md § 5.1) —
           # `/` no longer exists. `/launchpad/health` is NOT a substitute:

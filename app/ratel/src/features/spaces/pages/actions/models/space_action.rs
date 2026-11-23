@@ -226,9 +226,7 @@ impl SpaceAction {
             .map_err(crate::common::Error::from)
     }
 
-    /// Action counts per type for many spaces in one grouped query
-    /// (`GROUP BY space_id, space_action_type`), keyed by bare `space_id`.
-    /// Spaces without actions are absent from the map.
+    /// Returns action counts per type keyed by `space_id`; spaces without actions are absent.
     pub async fn count_by_type_for_spaces(
         space_ids: &[String],
     ) -> crate::common::Result<std::collections::HashMap<String, Vec<(SpaceActionType, i64)>>> {

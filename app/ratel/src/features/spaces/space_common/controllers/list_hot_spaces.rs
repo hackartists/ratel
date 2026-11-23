@@ -1,13 +1,6 @@
 //! Read-only Hot Spaces feed.
 //!
-//! Every viewer (anonymous + logged-in) sees the same global ranked stream.
-//! Ranking work happens in `services::space_fanout`, which writes one
-//! `HotSpace` row per eligible space (Public+Published with at least
-//! `MIN_PARTICIPANTS_FOR_HOT` participants) on the `HSR#ALL` GSI partition,
-//! sorted by `WindowedRankKey`.
-//!
-//! This handler is a single GSI query against that index. No timeline
-//! gating, no per-viewer fanout, no in-memory sort.
+//! Cached global ranked feed of hot spaces, identical for every viewer.
 
 use crate::common::*;
 #[cfg(feature = "server")]
@@ -53,8 +46,7 @@ static HOT_SPACES_CACHE: tokio::sync::RwLock<Option<HotSpacesSnapshot>> =
 #[cfg(feature = "server")]
 static HOT_SPACES_REFRESH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// Drops the cached hot-spaces page so the next request reads the database.
-/// Tests call this between cases because the cache is process-global.
+/// Clears the cached hot-spaces page.
 #[cfg(feature = "server")]
 pub async fn clear_hot_spaces_cache() {
     *HOT_SPACES_CACHE.write().await = None;
@@ -70,10 +62,7 @@ async fn fresh_cached_hot_spaces() -> Option<ListResponse<HotSpaceResponse>> {
         .map(|(_, v)| v.clone())
 }
 
-/// Returns the hot-spaces page from a 30s process-local cache. The feed is
-/// identical for every viewer, so one entry serves all requests. Concurrent
-/// misses are single-flighted: one request reloads while the rest wait on the
-/// refresh lock and then read the entry it stored. Entries expire by TTL only.
+/// Returns the cached hot-spaces page, reloading it when the cache is stale.
 #[cfg(feature = "server")]
 async fn cached_hot_spaces() -> Result<ListResponse<HotSpaceResponse>> {
     if let Some(hit) = fresh_cached_hot_spaces().await {
@@ -104,13 +93,11 @@ pub async fn list_hot_spaces_handler() -> Result<ListResponse<HotSpaceResponse>>
 
 #[cfg(feature = "server")]
 async fn load_hot_spaces() -> Result<ListResponse<HotSpaceResponse>> {
-    // The original endpoint took no input bookmark — return the top page.
     let page = 1i64;
     let page_size = 20i64;
 
     let (rows, has_next) = HotSpace::find_ranked(page, page_size).await?;
 
-    // Preserve the absolute 1-based rank across pages.
     let base_rank = (page - 1) * page_size;
     let items: Vec<HotSpaceResponse> = rows
         .into_iter()

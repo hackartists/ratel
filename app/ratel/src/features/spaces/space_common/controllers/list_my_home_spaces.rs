@@ -23,8 +23,6 @@ pub async fn list_my_home_spaces_handler(
     use postgres::ops::StringOp;
 
     let user_pk = user.pk();
-
-    // `bookmark` carries the 1-based page number (opaque to the client).
     let page = bookmark
         .as_deref()
         .and_then(|b| b.parse::<i64>().ok())
@@ -61,16 +59,6 @@ pub async fn list_my_home_spaces_handler(
         .collect();
 
     let fetched: Vec<SpaceCommon> = fetch_spaces(&space_pks).await?;
-
-    // Active (Ongoing/Open) spaces come first so the carousel leads with
-    // what the user can still engage with; Finished/Designing/Draft still
-    // surface below for history access (result review, archive revisit,
-    // notification deep-links) AND so creators see their own in-progress
-    // designs — `create_space_handler` writes a participant row for the
-    // author at creation time, but the space starts in `publish_state =
-    // Draft`, so filtering on `is_published()` would hide the creator's
-    // own brand-new space from this list. Within each bucket, sort by
-    // last participant activity.
     let mut spaces: Vec<SpaceCommon> = fetched;
     spaces.sort_by(|a, b| {
         b.is_active().cmp(&a.is_active()).then_with(|| {
@@ -101,17 +89,12 @@ pub async fn list_my_invited_spaces_handler(
     use postgres::ops::{EnumOp, StringOp};
 
     let user_pk = user.pk();
-
-    // `bookmark` carries the 1-based page number (opaque string to the client).
     let page = bookmark
         .as_deref()
         .and_then(|b| b.parse::<i64>().ok())
         .filter(|p| *p >= 1)
         .unwrap_or(1);
     let page_size = 10i64;
-
-    // Invited-only, newest first — replaces the DynamoDB
-    // `find_user_invitations_by_status_latest` GSI scan.
     let invitations = SpaceInvitationMember::repository()
         .find(
             SpaceInvitationMember::query()
@@ -133,8 +116,6 @@ pub async fn list_my_invited_spaces_handler(
     } else {
         None
     };
-
-    // Each invitation row's `space_pk` (full `Partition` string) IS the space key.
     let space_pks: Vec<Partition> = invitations
         .items
         .iter()
@@ -148,10 +129,7 @@ pub async fn list_my_invited_spaces_handler(
     Ok((items, next_bookmark).into())
 }
 
-/// Fetch the `SpaceCommon` rows for the given partitions with one `IN` query,
-/// returned in `space_pks` order. Missing rows are silently skipped — same
-/// semantics as the old DynamoDB `batch_get`, which also just omitted keys that
-/// didn't resolve to an item.
+/// Returns the `SpaceCommon` rows for `space_pks` in the same order, skipping missing ones.
 #[cfg(feature = "server")]
 async fn fetch_spaces(space_pks: &[Partition]) -> Result<Vec<SpaceCommon>> {
     let by_pk = SpaceCommon::get_many_by_partitions(space_pks).await?;
@@ -161,10 +139,7 @@ async fn fetch_spaces(space_pks: &[Partition]) -> Result<Vec<SpaceCommon>> {
         .collect())
 }
 
-/// Build the home carousel cards (`HotSpaceResponse`) for `spaces`, shared by
-/// the "my spaces" and "invited" home lists. `rank` is the 1-based position in
-/// `spaces`. Backing posts and per-type action counts are loaded for the whole
-/// page at once (one query each) instead of per space.
+/// Builds the home carousel cards for `spaces`; `rank` is the 1-based position.
 #[cfg(feature = "server")]
 async fn build_hot_space_cards(spaces: Vec<SpaceCommon>) -> Result<Vec<HotSpaceResponse>> {
     let post_ids: Vec<uuid::Uuid> = spaces
@@ -203,8 +178,7 @@ fn post_uuid_of(space_pk: &Partition) -> Option<uuid::Uuid> {
     }
 }
 
-/// Build one home carousel card from a `SpaceCommon`, its backing Feed post
-/// (title/description live there, not on `SpaceCommon`) and its action counts.
+/// Builds one home carousel card from a space, its post and its action counts.
 #[cfg(feature = "server")]
 fn build_hot_space_card(
     space: SpaceCommon,

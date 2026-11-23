@@ -292,8 +292,7 @@ impl SpaceCommon {
             .map_err(crate::common::Error::from)
     }
 
-    /// Every existing space among `space_pks` in one `IN` query, keyed by
-    /// `space_pk`. Keys with no row are absent from the map.
+    /// Returns the spaces among `space_pks` keyed by `space_pk`; missing keys are absent.
     pub async fn get_many_by_partitions(
         space_pks: &[Partition],
     ) -> Result<std::collections::HashMap<String, Self>> {

@@ -481,9 +481,7 @@ impl<T: PostgresEntity> PostgresRepository<T> {
         self.fetch_page_by_spec(spec).await
     }
 
-    /// [`find`](Self::find) 와 같은 조회 + hydrate 이되 `COUNT(*) OVER()` 를 붙이지 않고 행만
-    /// 돌려준다. 전체 개수가 필요 없는 목록(`limit + 1` 로 다음 페이지 유무만 판단하는 경우)이
-    /// 윈도우 집계 비용 없이 `ORDER BY … LIMIT` 인덱스 스캔을 쓰게 하려는 용도다.
+    /// [`find`](Self::find)와 같은 조회 결과에서 전체 개수 없이 행만 반환한다.
     pub async fn find_rows(&self, query: T::Query) -> Result<Vec<T>> {
         let table = T::table_name();
         let select_columns = T::select_columns(None);

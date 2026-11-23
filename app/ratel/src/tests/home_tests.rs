@@ -322,8 +322,6 @@ async fn test_hot_spaces_excludes_low_participant_space() {
     );
 }
 
-// ----- Query shape: hot-spaces paging/cache, my-spaces batching ----------
-
 async fn reset_hot_spaces() {
     use postgres::PostgresEntity;
     crate::features::spaces::space_common::models::HotSpace::repository()

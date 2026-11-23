@@ -23,6 +23,7 @@ services:
       # Playwright run a leak check: if a connection leak survives, a 10-pool
       # exhausts fast (PoolTimeout) instead of being masked by a large pool.
       POSTGRES_MAX_CONNECTIONS: "10"
+      POSTGRES_MIN_CONNECTIONS: "2"
       RUST_LOG: "error"
     ports:
       - "8080:8080"
@@ -359,6 +360,7 @@ services:
       PORT: "8080"
       DATABASE_URL: "postgres://ratel:ratel@postgres:5432/ratel"
       POSTGRES_MAX_CONNECTIONS: "10"
+      POSTGRES_MIN_CONNECTIONS: "2"
       AWS_REGION: "ap-northeast-2"
       AWS_DEFAULT_REGION: "ap-northeast-2"
       AWS_ACCESS_KEY_ID: "test"

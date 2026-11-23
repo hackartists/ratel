@@ -67,10 +67,7 @@ pub struct HotSpace {
     pub rank_pk: String,
 
     /// `WindowedRankKey` Display: `W{window:04}{score:020}` (base-62,
-    /// descending by quality). Ascending scan returns best-first within each
-    /// window. Indexed (`index(version = 1)` so already-provisioned tables get
-    /// it through the versioned migration) so `ORDER BY rank_key LIMIT n` is
-    /// an index scan instead of a full-table sort.
+    /// descending by quality). Ascending order is best-first within each window.
     #[postgres(order, index(version = 1))]
     pub rank_key: String,
 
@@ -94,8 +91,6 @@ pub struct HotSpace {
 #[cfg(feature = "server")]
 impl HotSpace {
     /// Global ranked stream, best-first (`rank_key` ascending), page-paginated.
-    /// Fetches `page_size + 1` rows without a total count so `has_next` comes
-    /// from the extra row and the query stays an index-ordered `LIMIT` scan.
     /// Returns the page's items (at most `page_size`) and `has_next`.
     pub async fn find_ranked(page: i64, page_size: i64) -> postgres::Result<(Vec<Self>, bool)> {
         let page = page.max(1);
