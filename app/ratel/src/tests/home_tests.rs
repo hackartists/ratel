@@ -35,6 +35,7 @@ async fn seed_space_with_participants(
     space.author_display_name = author.display_name.clone();
     space.author_username = author.username.clone();
     space.participants = participants;
+    space.hot_eligible = true;
     space.create().await.unwrap();
 
     let post = Post {
@@ -247,6 +248,7 @@ async fn test_my_spaces_requires_auth() {
 #[by_macros::pg_test]
 async fn test_hot_spaces_anonymous_sees_global_stream() {
     let ctx = TestContext::setup().await;
+    reset_hot_spaces().await;
     let author = ctx.test_user.0.clone();
 
     let space = seed_space(&ctx, &author, SpaceStatus::Ongoing).await;
@@ -272,6 +274,7 @@ async fn test_hot_spaces_anonymous_sees_global_stream() {
 #[by_macros::pg_test]
 async fn test_hot_spaces_logged_in_sees_same_stream_as_anonymous() {
     let ctx = TestContext::setup().await;
+    reset_hot_spaces().await;
     let author = ctx.test_user.0.clone();
     let (_viewer, viewer_headers) = ctx.create_another_user().await;
 
@@ -298,6 +301,7 @@ async fn test_hot_spaces_logged_in_sees_same_stream_as_anonymous() {
 #[by_macros::pg_test]
 async fn test_hot_spaces_excludes_low_participant_space() {
     let ctx = TestContext::setup().await;
+    reset_hot_spaces().await;
     let author = ctx.test_user.0.clone();
 
     // 1 participant — well below the gate.
@@ -469,6 +473,14 @@ async fn test_my_spaces_batched_output_and_missing_space_skipped() {
     seed_participant(&ctx, &ghost, &user, Some(10_000)).await;
 
     let a_id: SpacePartition = a.partition().into();
+    Post {
+        id: uuid::Uuid::parse_str(&a_id.0).unwrap(),
+        title: "Titled A".to_string(),
+        ..Default::default()
+    }
+    .create()
+    .await
+    .unwrap();
     let b_id: SpacePartition = b.partition().into();
     for (kind, n) in [
         (SpaceActionType::Poll, 2),
@@ -476,7 +488,7 @@ async fn test_my_spaces_batched_output_and_missing_space_skipped() {
         (SpaceActionType::Meet, 1),
     ] {
         for _ in 0..n {
-            SpaceAction::new(a_id.clone(), uuid::Uuid::now_v7().to_string(), kind)
+            SpaceAction::new(a_id.clone(), uuid::Uuid::now_v7().to_string(), kind.clone())
                 .save()
                 .await
                 .unwrap();
@@ -525,8 +537,9 @@ async fn test_my_spaces_batched_output_and_missing_space_skipped() {
         ),
         (2, 1, 0, 0, 3)
     );
-    assert_eq!(item_a.title, format!("Test Space {}", a.partition()));
+    assert_eq!(item_a.title, "Titled A");
     let item_b = &body.items[1];
+    assert_eq!(item_b.title, "");
     assert_eq!((item_b.quiz_count, item_b.total_actions), (1, 1));
     let item_c = &body.items[2];
     assert_eq!(item_c.total_actions, 0);
