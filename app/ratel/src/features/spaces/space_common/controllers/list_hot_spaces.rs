@@ -37,10 +37,73 @@ pub struct HotSpaceResponse {
     pub created_at: i64,
 }
 
+#[cfg(feature = "server")]
+const HOT_SPACES_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+#[cfg(feature = "server")]
+const HOT_SPACES_CACHE_CONTROL: &str = "public, max-age=30";
+
+#[cfg(feature = "server")]
+type HotSpacesSnapshot = (std::time::Instant, ListResponse<HotSpaceResponse>);
+
+#[cfg(feature = "server")]
+static HOT_SPACES_CACHE: tokio::sync::RwLock<Option<HotSpacesSnapshot>> =
+    tokio::sync::RwLock::const_new(None);
+
+#[cfg(feature = "server")]
+static HOT_SPACES_REFRESH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Drops the cached hot-spaces page so the next request reads the database.
+/// Tests call this between cases because the cache is process-global.
+#[cfg(feature = "server")]
+pub async fn clear_hot_spaces_cache() {
+    *HOT_SPACES_CACHE.write().await = None;
+}
+
+#[cfg(feature = "server")]
+async fn fresh_cached_hot_spaces() -> Option<ListResponse<HotSpaceResponse>> {
+    HOT_SPACES_CACHE
+        .read()
+        .await
+        .as_ref()
+        .filter(|(at, _)| at.elapsed() < HOT_SPACES_TTL)
+        .map(|(_, v)| v.clone())
+}
+
+/// Returns the hot-spaces page from a 30s process-local cache. The feed is
+/// identical for every viewer, so one entry serves all requests. Concurrent
+/// misses are single-flighted: one request reloads while the rest wait on the
+/// refresh lock and then read the entry it stored. Entries expire by TTL only.
+#[cfg(feature = "server")]
+async fn cached_hot_spaces() -> Result<ListResponse<HotSpaceResponse>> {
+    if let Some(hit) = fresh_cached_hot_spaces().await {
+        return Ok(hit);
+    }
+    let _refresh = HOT_SPACES_REFRESH.lock().await;
+    if let Some(hit) = fresh_cached_hot_spaces().await {
+        return Ok(hit);
+    }
+    let loaded = load_hot_spaces().await?;
+    *HOT_SPACES_CACHE.write().await = Some((std::time::Instant::now(), loaded.clone()));
+    Ok(loaded)
+}
+
 #[get("/api/hot-spaces")]
 pub async fn list_hot_spaces_handler() -> Result<ListResponse<HotSpaceResponse>> {
     debug!("Listing hot spaces");
 
+    let response = cached_hot_spaces().await?;
+    if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
+        ctx.add_response_header(
+            dioxus::fullstack::axum::http::header::CACHE_CONTROL,
+            dioxus::fullstack::axum::http::HeaderValue::from_static(HOT_SPACES_CACHE_CONTROL),
+        );
+    }
+    Ok(response)
+}
+
+#[cfg(feature = "server")]
+async fn load_hot_spaces() -> Result<ListResponse<HotSpaceResponse>> {
     // The original endpoint took no input bookmark — return the top page.
     let page = 1i64;
     let page_size = 20i64;

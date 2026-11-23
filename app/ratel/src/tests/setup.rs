@@ -27,6 +27,9 @@ impl TestContext {
         #[cfg(feature = "server")]
         init_test_postgres().await;
 
+        #[cfg(feature = "server")]
+        crate::features::spaces::space_common::controllers::clear_hot_spaces_cache().await;
+
         let config = crate::config::get();
         let cli = config.common.dynamodb();
 
